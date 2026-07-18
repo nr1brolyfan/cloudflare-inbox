@@ -114,7 +114,6 @@ const sessionPredicate = `exists (
      and session.expires_at > ?
      and user.disabled_at is null
      and session.auth_time = ?
-     and session.authentication_events = ?
      and session.aal = ?
      and session.amr = ?
      and ((session.mfa_verified_at is null and ? is null) or session.mfa_verified_at = ?)
@@ -136,7 +135,7 @@ const ownerIdentityPredicate = `exists (
     from auth_user_identity
    where user_id = ?
      and scope_type = 'global'
-     and scope_id = ''
+     and scope_id in ('', 'global')
      and kind = 'email'
      and normalized_value = ?
      and verified_at is not null
@@ -275,7 +274,6 @@ const sessionParams = (
     requestAuth.sessionSecretHash,
     now,
     validated.issued.authTime,
-    JSON.stringify(validated.issued.authenticationEvents),
     validated.issued.aal,
     JSON.stringify(validated.issued.amr),
     mfaVerifiedAt,

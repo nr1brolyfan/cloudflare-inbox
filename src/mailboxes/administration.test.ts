@@ -78,7 +78,7 @@ const insertCurrentSession = (
       `insert into auth_user_identity
         (id, user_id, scope_type, scope_id, kind, value, normalized_value,
          verified_at, is_primary_login, created_at, updated_at)
-       values (?, ?, 'global', '', 'email', ?, ?, ?, 1, ?, ?)`
+       values (?, ?, 'global', 'global', 'email', ?, ?, ?, 1, ?, ?)`
     )
     .run(
       `identity-${validated.actor.userId}`,
@@ -321,6 +321,30 @@ describe("mailbox administration", () => {
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
       }).toStrictEqual({ grants: 0, guards: 0, mailboxes: 0, members: 0 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("accepts semantically equivalent authentication event JSON", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      database
+        .prepare(
+          "update auth_session set authentication_events = '[ ]' where id = ?"
+        )
+        .run(validated.actor.sessionId);
+
+      const mailbox = await Effect.runPromise(
+        bootstrap(d1, validated, "bootstrap-guard")
+      );
+
+      expect(mailbox.id).toBe("primary");
     } finally {
       database.close();
     }

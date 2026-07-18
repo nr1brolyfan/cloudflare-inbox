@@ -314,28 +314,36 @@ function SignedIn({
       </p>
       <div className="mt-6">
         {bootstrapResult?.ok ? (
-          <Notice>
-            Primary inbox ready: {bootstrapResult.mailbox.displayName}
-          </Notice>
+          <div className="space-y-3">
+            <Notice>
+              Primary inbox ready: {bootstrapResult.mailbox.displayName}
+            </Notice>
+            <p className="text-sm leading-6 text-[var(--sea-ink-soft)]">
+              Mailbox navigation and message views arrive with the next
+              MailboxDO and inbox UI stages.
+            </p>
+          </div>
         ) : bootstrapResult ? (
           <ErrorNotice>{bootstrapResult.error.message}</ErrorNotice>
         ) : bootstrapError ? (
           <ErrorNotice>Mailbox setup request failed. Try again.</ErrorNotice>
         ) : null}
       </div>
-      <button
-        type="button"
-        onClick={onBootstrap}
-        disabled={isBootstrapPending}
-        className="mt-8 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
-      >
-        {isBootstrapPending ? (
-          <LoaderCircle className="animate-spin" size={17} />
-        ) : (
-          <Mail size={17} />
-        )}
-        Create primary inbox
-      </button>
+      {bootstrapResult?.ok ? null : (
+        <button
+          type="button"
+          onClick={onBootstrap}
+          disabled={isBootstrapPending}
+          className="mt-8 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
+        >
+          {isBootstrapPending ? (
+            <LoaderCircle className="animate-spin" size={17} />
+          ) : (
+            <Mail size={17} />
+          )}
+          Create primary inbox
+        </button>
+      )}
       <button
         type="button"
         onClick={onLogout}
