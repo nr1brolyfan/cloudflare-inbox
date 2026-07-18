@@ -1,6 +1,8 @@
+import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { forwardMailboxMutation } from "./backend";
+import { BackendClient } from "./backend-client";
 
 const mailbox = {
   createdAt: 1000,
@@ -12,29 +14,44 @@ const mailbox = {
   version: 1,
 } as const;
 
+const runForward = (
+  fetch: (request: Request) => Promise<Response>,
+  input: Omit<Parameters<typeof forwardMailboxMutation>[0], "operation">
+) =>
+  Effect.runPromise(
+    forwardMailboxMutation({ ...input, operation: "website.test" }).pipe(
+      Effect.provideService(
+        BackendClient,
+        BackendClient.of({
+          fetch: (_, request) => Effect.promise(() => fetch(request)),
+        })
+      )
+    )
+  );
+
 describe("Website Backend forwarding", () => {
   it("forwards only trusted request metadata and the mailbox payload", async () => {
     let forwarded: Request | undefined;
-    const result = await forwardMailboxMutation({
-      backend: {
-        fetch: (request) => {
-          forwarded = request;
-          return Promise.resolve(Response.json(mailbox, { status: 201 }));
-        },
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(mailbox, { status: 201 }));
       },
-      incoming: new Request("https://inbox.test/_server", {
-        headers: {
-          cookie: "__Host-session=session-a.secret",
-          origin: "https://inbox.test",
-          referer: "https://inbox.test/",
-          "user-agent": "test-browser",
-          "x-forwarded-for": "203.0.113.10",
-        },
-      }),
-      method: "POST",
-      path: "/api/mailboxes/bootstrap-owner",
-      payload: { displayName: "Inbox" },
-    });
+      {
+        incoming: new Request("https://inbox.test/_server", {
+          headers: {
+            cookie: "__Host-session=session-a.secret",
+            origin: "https://inbox.test",
+            referer: "https://inbox.test/",
+            "user-agent": "test-browser",
+            "x-forwarded-for": "203.0.113.10",
+          },
+        }),
+        method: "POST",
+        path: "/api/mailboxes/bootstrap-owner",
+        payload: { displayName: "Inbox" },
+      }
+    );
 
     expect(result).toStrictEqual({ mailbox, ok: true });
     expect(forwarded).toBeDefined();
@@ -64,47 +81,47 @@ describe("Website Backend forwarding", () => {
       message: "Mailbox operation denied",
     };
 
-    const result = await forwardMailboxMutation({
-      backend: {
-        fetch: () => {
-          requests += 1;
-          return Promise.resolve(Response.json(error, { status: 403 }));
-        },
+    const result = await runForward(
+      () => {
+        requests += 1;
+        return Promise.resolve(Response.json(error, { status: 403 }));
       },
-      incoming: new Request("https://inbox.test/_server", {
-        headers: { origin: "https://inbox.test" },
-      }),
-      method: "PATCH",
-      path: "/api/mailboxes/primary",
-      payload: { displayName: "Recruiting" },
-    });
+      {
+        incoming: new Request("https://inbox.test/_server", {
+          headers: { origin: "https://inbox.test" },
+        }),
+        method: "PATCH",
+        path: "/api/mailboxes/primary",
+        payload: { displayName: "Recruiting" },
+      }
+    );
 
     expect(result).toStrictEqual({ error, ok: false, status: 403 });
     expect(requests).toBe(1);
   });
 
   it("replaces malformed Backend responses with a generic gateway error", async () => {
-    const result = await forwardMailboxMutation({
-      backend: {
-        fetch: () =>
-          Promise.resolve(
-            Response.json(
-              {
-                _tag: "DatabaseError",
-                code: "internal_error",
-                message: "select * from auth_session failed",
-              },
-              { status: 503 }
-            )
-          ),
-      },
-      incoming: new Request("https://inbox.test/_server", {
-        headers: { origin: "https://inbox.test" },
-      }),
-      method: "POST",
-      path: "/api/mailboxes/bootstrap-owner",
-      payload: { displayName: "Inbox" },
-    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json(
+            {
+              _tag: "DatabaseError",
+              code: "internal_error",
+              message: "select * from auth_session failed",
+            },
+            { status: 503 }
+          )
+        ),
+      {
+        incoming: new Request("https://inbox.test/_server", {
+          headers: { origin: "https://inbox.test" },
+        }),
+        method: "POST",
+        path: "/api/mailboxes/bootstrap-owner",
+        payload: { displayName: "Inbox" },
+      }
+    );
 
     expect(result).toStrictEqual({
       error: {

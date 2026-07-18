@@ -31,7 +31,7 @@ import { describe, expect, it } from "vitest";
 import {
   CurrentRequestAuth,
   CurrentValidatedSession,
-  makeCurrentRequestAuthLive,
+  currentRequestAuthContext,
   validateRequestSession,
 } from "./session";
 
@@ -100,8 +100,10 @@ describe("current request auth", () => {
       "https://inbox.test/private?userId=attacker-controlled-user"
     );
     const contexts = await Effect.runPromise(
-      readCurrentContexts.pipe(
-        Effect.provide(makeCurrentRequestAuthLive(request)),
+      currentRequestAuthContext(request).pipe(
+        Effect.flatMap((context) =>
+          Effect.provideContext(readCurrentContexts, context)
+        ),
         Effect.provide(servicesLive)
       )
     );

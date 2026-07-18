@@ -4,14 +4,20 @@ import type {
   DevEmailMessage,
   DevEmailStoreOperation,
 } from "@effect-auth/core/DevEmail";
-import type { RuntimeContext } from "alchemy";
+import { RuntimeContext } from "alchemy";
 import type * as Cloudflare from "alchemy/Cloudflare";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 export type D1DevEmailDatabase = Effect.Success<
   ReturnType<typeof Cloudflare.D1.QueryDatabase>
 >;
+
+/** D1 client used only by the development mail adapter. */
+export const DevEmailDatabase = Context.Service<D1DevEmailDatabase>(
+  "cloudflare-inbox/DevEmailDatabase"
+);
 
 interface DevEmailRow {
   readonly message_json: string;
@@ -63,15 +69,12 @@ const storeError = (
     cause,
   });
 
-const eraseRuntimeContext = <A>(
-  effect: Effect.Effect<A, never, RuntimeContext>
-): Effect.Effect<A> => effect as Effect.Effect<A>;
-
 const storeOperation = <A>(
   operation: DevEmailStoreOperation,
   effect: Effect.Effect<A, never, RuntimeContext>
 ): Effect.Effect<A, DevEmailStoreError> =>
-  eraseRuntimeContext(effect).pipe(
+  effect.pipe(
+    Effect.provide(RuntimeContext.phantom),
     Effect.catchCause((cause) => Effect.fail(storeError(operation, cause)))
   );
 
@@ -83,12 +86,13 @@ const decodeMessage = (
     catch: (cause) => storeError("list", cause),
   });
 
-export const makeD1DevEmailStoreLive = (
-  database: D1DevEmailDatabase
-): Layer.Layer<DevEmailStore> =>
-  Layer.succeed(
-    DevEmailStore,
-    DevEmailStore.of({
+/** Adapts the app D1 table to effect-auth's environment-free DevEmailStore. */
+export const D1DevEmailStoreLive = Layer.effect(
+  DevEmailStore,
+  Effect.gen(function* () {
+    const database = yield* DevEmailDatabase;
+
+    return DevEmailStore.of({
       save: (message) =>
         Effect.gen(function* () {
           const messageJson = yield* Effect.try({
@@ -134,5 +138,6 @@ export const makeD1DevEmailStoreLive = (
         storeOperation("clear", database.prepare(clearMessages).run()).pipe(
           Effect.asVoid
         ),
-    })
-  );
+    });
+  })
+);

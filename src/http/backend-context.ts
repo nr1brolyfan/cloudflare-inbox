@@ -3,7 +3,7 @@ import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
-import type { AuthHttpApiLiveOptions } from "../auth/live";
+import type { AuthRuntimeConfigShape } from "../auth/live";
 
 type ControlPlaneClient = Effect.Success<
   ReturnType<typeof Cloudflare.D1.QueryDatabase>
@@ -15,23 +15,25 @@ type RawMessagesClient = Effect.Success<
 export interface BackendResources {
   readonly authRateLimit: AlchemyRateLimitDurableObjectNamespace;
   readonly controlPlane: ControlPlaneClient;
-  readonly database: AuthHttpApiLiveOptions["database"];
-  readonly emailSender: AuthHttpApiLiveOptions["emailSender"];
+  readonly database: AuthRuntimeConfigShape["database"];
+  readonly emailSender: AuthRuntimeConfigShape["emailSender"];
   readonly rawMessages: RawMessagesClient;
 }
 
+/** Runtime Cloudflare handles acquired once when the Backend Worker starts. */
 export const BackendResources = Context.Service<BackendResources>(
   "cloudflare-inbox/BackendResources"
 );
 
-export interface BackendAuthConfig {
-  readonly emailFrom: AuthHttpApiLiveOptions["emailFrom"];
+export interface BackendConfig {
+  readonly emailFrom: AuthRuntimeConfigShape["emailFrom"];
   readonly isDevelopment: boolean;
   readonly mailboxOwnerEmail: string;
   readonly publicOrigin: string;
-  readonly secrets: AuthHttpApiLiveOptions["secrets"];
+  readonly secrets: AuthRuntimeConfigShape["secrets"];
 }
 
-export const BackendAuthConfig = Context.Service<BackendAuthConfig>(
-  "cloudflare-inbox/BackendAuthConfig"
+/** Validated deployment configuration shared by auth and mailbox composition. */
+export const BackendConfig = Context.Service<BackendConfig>(
+  "cloudflare-inbox/BackendConfig"
 );

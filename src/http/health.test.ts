@@ -2,11 +2,14 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
 import * as Health from "./health";
+import { HealthGroup } from "./health-contract";
 import { HttpApiPlatformLive } from "./platform";
 
+const HealthTestApi = HttpApi.make("AuthApi").add(HealthGroup);
 const healthyReport: Health.BackendHealthReport = {
   service: "backend",
   status: "ok",
@@ -20,7 +23,8 @@ const healthyReport: Health.BackendHealthReport = {
 
 const makeHealthHandler = (report: Health.BackendHealthReport) =>
   HttpRouter.toWebHandler(
-    Health.HealthHttpLive.pipe(
+    HttpApiBuilder.layer(HealthTestApi).pipe(
+      Layer.provide(Health.HealthGroupLive),
       Layer.provide(
         Layer.succeed(
           Health.BackendHealth,

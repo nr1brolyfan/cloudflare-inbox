@@ -3,7 +3,7 @@ export interface CompletionCredentials {
   readonly secret?: string;
 }
 
-export const makeCompletionUrl = (
+export const completionUrl = (
   publicOrigin: string,
   path: string,
   credentials: CompletionCredentials

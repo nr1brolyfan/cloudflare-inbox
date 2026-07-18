@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { makeCompletionUrl, parseCompletionHash } from "./completion-url";
+import { completionUrl, parseCompletionHash } from "./completion-url";
 
 describe("completion URLs", () => {
   it("keeps authentication credentials out of the request URL", () => {
-    const url = makeCompletionUrl(
+    const url = completionUrl(
       "https://inbox.example.com",
       "/auth-complete/magic-link",
       {

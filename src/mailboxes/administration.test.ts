@@ -20,7 +20,10 @@ import {
   MailRole,
   mailboxScope,
 } from "../authorization/catalog";
-import { makeMailPermissionsLive } from "../authorization/live";
+import {
+  MailPermissionDatabase,
+  MailPermissionsLive,
+} from "../authorization/live";
 import type { MailAuthorization } from "../authorization/mail-authorization";
 import { MailAuthorizationLive } from "../authorization/mail-authorization";
 import * as Resources from "../authorization/resources";
@@ -28,7 +31,8 @@ import { applyControlPlaneMigrations, makeTestD1Database } from "../test/d1";
 import {
   MailboxAdministration,
   MailboxAdministrationError,
-  makeMailboxAdministrationLive,
+  MailboxAdministrationConfig,
+  MailboxAdministrationLive,
 } from "./administration";
 
 const now = 2000;
@@ -194,11 +198,19 @@ const bootstrap = (
       return yield* administration.bootstrapOwner({ displayName: "Inbox" });
     }).pipe(
       Effect.provide(
-        makeMailboxAdministrationLive(database, {
-          now: () => now,
-          ownerEmail: "user-a@example.test",
-          randomId: () => nonce,
-        })
+        MailboxAdministrationLive.pipe(
+          Layer.provide(
+            Layer.succeed(
+              MailboxAdministrationConfig,
+              MailboxAdministrationConfig.of({
+                database,
+                now: () => now,
+                ownerEmail: "user-a@example.test",
+                randomId: () => nonce,
+              })
+            )
+          )
+        )
       )
     ),
     validated
@@ -217,11 +229,19 @@ const rename = (
       return yield* administration.rename({ displayName, mailboxId });
     }).pipe(
       Effect.provide(
-        makeMailboxAdministrationLive(database, {
-          now: () => now + 1000,
-          ownerEmail: "user-a@example.test",
-          randomId: () => "rename-guard",
-        })
+        MailboxAdministrationLive.pipe(
+          Layer.provide(
+            Layer.succeed(
+              MailboxAdministrationConfig,
+              MailboxAdministrationConfig.of({
+                database,
+                now: () => now + 1000,
+                ownerEmail: "user-a@example.test",
+                randomId: () => "rename-guard",
+              })
+            )
+          )
+        )
       ),
       Effect.provide(mailAuthorizationLive)
     ),
@@ -258,7 +278,13 @@ describe("mailbox administration", () => {
               validated.actor.userId
             ),
           });
-        }).pipe(Effect.provide(makeMailPermissionsLive(d1)))
+        }).pipe(
+          Effect.provide(
+            MailPermissionsLive.pipe(
+              Layer.provide(Layer.succeed(MailPermissionDatabase, d1))
+            )
+          )
+        )
       );
 
       expect(mailbox).toMatchObject({
@@ -468,7 +494,12 @@ describe("mailbox administration", () => {
       await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
       const mailAuthorizationLive = MailAuthorizationLive.pipe(
         Layer.provide(
-          Layer.merge(makeMailPermissionsLive(d1), makeResolverLive())
+          Layer.merge(
+            MailPermissionsLive.pipe(
+              Layer.provide(Layer.succeed(MailPermissionDatabase, d1))
+            ),
+            makeResolverLive()
+          )
         )
       );
 

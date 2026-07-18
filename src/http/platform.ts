@@ -10,6 +10,7 @@ const HttpPlatformStub = Layer.succeed(HttpPlatform.HttpPlatform, {
     Effect.die("HttpPlatform.fileWebResponse is not supported"),
 });
 
+/** Minimal HttpApi platform support; Backend routes never serve files. */
 export const HttpApiPlatformLive = Layer.mergeAll(
   Etag.layer,
   Path.layer,

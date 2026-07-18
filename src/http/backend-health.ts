@@ -3,7 +3,7 @@ import {
   Permissions,
   PermissionSubject,
 } from "@effect-auth/core/Permission";
-import type { RuntimeContext } from "alchemy";
+import { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
@@ -13,10 +13,7 @@ import { MailPermission, mailboxScope } from "../authorization/catalog";
 import { BackendResources } from "./backend-context";
 import * as Health from "./health";
 
-const eraseRuntimeContext = <A, E>(
-  effect: Effect.Effect<A, E, RuntimeContext>
-): Effect.Effect<A, E> => effect as Effect.Effect<A, E>;
-
+/** Probes every persistent binding used by request handling. */
 export const BackendHealthLive = Layer.effect(
   Health.BackendHealth,
   Effect.gen(function* () {
@@ -41,19 +38,21 @@ export const BackendHealthLive = Layer.effect(
       });
     });
     // A zero-token request verifies the Durable Object binding without consuming quota.
-    const probeAuthRateLimit = eraseRuntimeContext(
-      resources.authRateLimit.getByName("health").fixedWindow({
+    const probeAuthRateLimit = resources.authRateLimit
+      .getByName("health")
+      .fixedWindow({
         limit: undefined,
         refillMillis: 1,
         tokens: 0,
       })
-    );
-    const probeControlPlane = eraseRuntimeContext(
-      resources.controlPlane.prepare("select 1 as ready").first()
-    );
-    const probeRawMessages = eraseRuntimeContext(
-      resources.rawMessages.head("__health__")
-    );
+      .pipe(Effect.provide(RuntimeContext.phantom));
+    const probeControlPlane = resources.controlPlane
+      .prepare("select 1 as ready")
+      .first()
+      .pipe(Effect.provide(RuntimeContext.phantom));
+    const probeRawMessages = resources.rawMessages
+      .head("__health__")
+      .pipe(Effect.provide(RuntimeContext.phantom));
     const check = Effect.all(
       {
         authRateLimit: probeAuthRateLimit.pipe(Effect.exit),

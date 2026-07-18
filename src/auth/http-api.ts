@@ -1,8 +1,5 @@
-import { BotProtectionNoopLive } from "@effect-auth/core/AbuseProtection";
 import {
   AuthBadRequestError,
-  AuthOriginCheckMiddlewareLive,
-  AuthSchemaErrorMiddlewareLive,
   CoreAuthEmailVerificationGroupLive,
   CoreAuthHttpApi,
   CoreAuthLoginApprovalGroupLive,
@@ -44,28 +41,21 @@ export const RestrictedEmailOtpGroupLive = HttpApiBuilder.group(
   })
 );
 
-export const makeCoreAuthHttpApiLive = (publicOrigin: string) =>
-  HttpApiBuilder.layer(CoreAuthHttpApi).pipe(
-    Layer.provide(CoreAuthPasswordGroupLive),
-    Layer.provide(CoreAuthSessionGroupLive),
-    Layer.provide(CoreAuthEmailVerificationGroupLive),
-    Layer.provide(RestrictedEmailOtpGroupLive),
-    Layer.provide(CoreAuthMagicLinkGroupLive),
-    Layer.provide(CoreAuthLoginApprovalGroupLive),
-    Layer.provide(CoreAuthLoginNotificationGroupLive),
-    Layer.provide(PasswordHttpOperationsLive),
-    Layer.provide(SessionHttpOperationsLive),
-    Layer.provide(EmailVerificationHttpOperationsLive),
-    Layer.provide(EmailOtpHttpOperationsLive),
-    Layer.provide(MagicLinkHttpOperationsLive),
-    Layer.provide(LoginApprovalHttpOperationsLive),
-    Layer.provide(LoginNotificationHttpOperationsLive),
-    Layer.provide(
-      AuthOriginCheckMiddlewareLive({
-        allowMissingOrigin: false,
-        allowedOrigins: [publicOrigin],
-      })
-    ),
-    Layer.provide(AuthSchemaErrorMiddlewareLive),
-    Layer.provide(BotProtectionNoopLive)
-  );
+/** Group handlers for CoreAuthHttpApi; domain operations are provided separately. */
+export const CoreAuthGroupHandlersLive = Layer.mergeAll(
+  CoreAuthPasswordGroupLive,
+  CoreAuthSessionGroupLive,
+  CoreAuthEmailVerificationGroupLive,
+  RestrictedEmailOtpGroupLive,
+  CoreAuthMagicLinkGroupLive,
+  CoreAuthLoginApprovalGroupLive,
+  CoreAuthLoginNotificationGroupLive
+).pipe(
+  Layer.provide(PasswordHttpOperationsLive),
+  Layer.provide(SessionHttpOperationsLive),
+  Layer.provide(EmailVerificationHttpOperationsLive),
+  Layer.provide(EmailOtpHttpOperationsLive),
+  Layer.provide(MagicLinkHttpOperationsLive),
+  Layer.provide(LoginApprovalHttpOperationsLive),
+  Layer.provide(LoginNotificationHttpOperationsLive)
+);

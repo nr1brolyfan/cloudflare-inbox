@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { startTransition, useState } from "react";
 
-import type { DevEmailRecord } from "../http/dev-emails";
+import type { DevEmailRecord } from "../http/dev-email-contract";
 import { clearDevEmails, listDevEmails } from "../server/dev-email-functions";
 
 const kindLabel = (kind: DevEmailRecord["kind"]) =>

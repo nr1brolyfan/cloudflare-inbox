@@ -1,14 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
+import * as Effect from "effect/Effect";
 
-import { env } from "../../server/env";
-import { traceBackendRequest } from "../../server/tracing";
+import { BackendClient } from "../../server/backend-client";
+import { BackendClientLive } from "../../server/backend-client-live";
 
 export const Route = createFileRoute("/api/health")({
   server: {
     handlers: {
       GET: ({ request }) =>
-        traceBackendRequest("website.health.backend", request, () =>
-          env.BACKEND.fetch(request)
+        Effect.runPromise(
+          BackendClient.pipe(
+            Effect.flatMap((backend) =>
+              backend.fetch("website.health.backend", request)
+            ),
+            Effect.provide(BackendClientLive)
+          )
         ),
     },
   },

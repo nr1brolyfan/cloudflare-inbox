@@ -1,6 +1,10 @@
 import { AuthSecretsLive } from "@effect-auth/core/AuthConfig";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import {
+  AuthOriginCheckMiddlewareLive,
+  AuthSchemaErrorMiddlewareLive,
+} from "@effect-auth/core/HttpApi";
+import {
   SessionId,
   SessionToken,
   UnixMillis,
@@ -22,22 +26,23 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
+import { CurrentRequestAuthMiddlewareLive } from "../auth/session";
 import { MailAuthorization } from "../authorization/mail-authorization";
 import type { MailboxAdministration as MailboxAdministrationService } from "../mailboxes/administration";
 import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "../mailboxes/administration";
-import {
-  MailboxGroupLive,
-  MailboxHttpLive,
-  makeMailboxHttpMiddlewareLive,
-} from "./mailboxes";
+import { MailboxRecord } from "../mailboxes/model";
+import { MailboxGroup } from "./mailbox-contract";
+import { MailboxGroupLive } from "./mailboxes";
 import { HttpApiPlatformLive } from "./platform";
 
 const publicOrigin = "https://inbox.test";
+const MailboxTestApi = HttpApi.make("AuthApi").add(MailboxGroup);
 const userId = UserId("user-a");
 const sessionId = SessionId("session-a");
 const sessionToken = SessionToken(`${sessionId}.secret`);
@@ -63,15 +68,15 @@ const validatedSession = {
     userId,
   },
 } satisfies ValidatedSession;
-const mailbox = {
+const mailbox = new MailboxRecord({
   createdAt: 1000,
   createdByUserId: userId,
   displayName: "Inbox",
   id: "primary",
-  status: "active" as const,
+  status: "active",
   updatedAt: 1000,
   version: 1,
-};
+});
 
 const makeAdministration = (
   overrides: Partial<MailboxAdministrationService> = {}
@@ -79,7 +84,9 @@ const makeAdministration = (
   MailboxAdministration.of({
     bootstrapOwner: () => Effect.succeed(mailbox),
     rename: ({ displayName }) =>
-      Effect.succeed({ ...mailbox, displayName, version: 2 }),
+      Effect.succeed(
+        new MailboxRecord({ ...mailbox, displayName, version: 2 })
+      ),
     ...overrides,
   });
 
@@ -97,7 +104,14 @@ const makeHandler = (
       session: Redacted.make("session-secret"),
     })
   );
-  const middlewareLive = makeMailboxHttpMiddlewareLive(publicOrigin);
+  const middlewareLive = Layer.mergeAll(
+    AuthSchemaErrorMiddlewareLive,
+    AuthOriginCheckMiddlewareLive({
+      allowMissingOrigin: false,
+      allowedOrigins: [publicOrigin],
+    }),
+    CurrentRequestAuthMiddlewareLive.pipe(Layer.provide(requestAuthLive))
+  );
   const groupLive = MailboxGroupLive.pipe(
     Layer.provide(
       Layer.mergeAll(
@@ -113,7 +127,7 @@ const makeHandler = (
   );
 
   return HttpRouter.toWebHandler(
-    MailboxHttpLive.pipe(
+    HttpApiBuilder.layer(MailboxTestApi).pipe(
       Layer.provide(Layer.merge(groupLive, middlewareLive)),
       Layer.provide(HttpApiPlatformLive),
       Layer.provide(NodeServices.layer)

@@ -11,13 +11,16 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
 import { BackendHttpLive } from "../http/backend";
-import { BackendAuthConfig, BackendResources } from "../http/backend-context";
+import { BackendConfig, BackendResources } from "../http/backend-context";
 import {
   AuthEmailSender,
   ControlPlaneDatabase,
   RawMessagesBucket,
 } from "../infra/resources";
-import { makeBackendObservabilityLive } from "../observability/backend";
+import {
+  BackendObservabilityConfig,
+  BackendObservabilityLive,
+} from "../observability/backend";
 
 export default class Backend extends Cloudflare.Worker<Backend>()(
   "Backend",
@@ -67,9 +70,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const sessionSecret = yield* Config.redacted("AUTH_SESSION_SECRET");
     const challengeSecret = yield* Config.redacted("AUTH_CHALLENGE_SECRET");
     const privacySecret = yield* Config.redacted("AUTH_PRIVACY_SECRET");
-    const authConfigLive = Layer.succeed(
-      BackendAuthConfig,
-      BackendAuthConfig.of({
+    const backendConfigLive = Layer.succeed(
+      BackendConfig,
+      BackendConfig.of({
         emailFrom,
         isDevelopment,
         mailboxOwnerEmail,
@@ -81,12 +84,17 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         },
       })
     );
-    const observabilityLive = makeBackendObservabilityLive({
-      isDevelopment,
-      otlpBaseUrl,
-    });
+    const observabilityLive = BackendObservabilityLive.pipe(
+      Layer.provide(
+        Layer.succeed(
+          BackendObservabilityConfig,
+          BackendObservabilityConfig.of({ isDevelopment, otlpBaseUrl })
+        )
+      )
+    );
     return {
       fetch: Effect.gen(function* () {
+        // Building in Alchemy's request scope flushes OTLP finalizers through waitUntil.
         const observabilityContext = yield* Layer.build(observabilityLive);
         const request = yield* HttpServerRequest.HttpServerRequest;
         const requestUrl = new URL(request.url, publicOrigin);
@@ -106,7 +114,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
                 })
               )
             ),
-            Layer.provide(authConfigLive)
+            Layer.provide(backendConfigLive)
           );
           const handler = yield* HttpRouter.toHttpEffect(routesLive);
 

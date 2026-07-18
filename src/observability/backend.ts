@@ -1,3 +1,5 @@
+import * as Context from "effect/Context";
+import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
@@ -10,46 +12,54 @@ export interface BackendObservabilityOptions {
   readonly otlpBaseUrl?: string;
 }
 
+/** Selects Cloudflare production logging or local OTLP export. */
+export const BackendObservabilityConfig =
+  Context.Service<BackendObservabilityOptions>(
+    "cloudflare-inbox/BackendObservabilityConfig"
+  );
+
 const signalUrl = (baseUrl: string, signal: "logs" | "traces") =>
   new URL(
     `v1/${signal}`,
     baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`
   ).toString();
 
-export const makeBackendObservabilityLive = (
-  options: BackendObservabilityOptions
-): Layer.Layer<never> => {
-  if (!options.isDevelopment) {
-    return Logger.layer([Logger.consoleStructured]);
-  }
+/** Request-scoped logging and tracing; its scope flushes through Alchemy waitUntil. */
+export const BackendObservabilityLive = Layer.unwrap(
+  Effect.gen(function* () {
+    const options = yield* BackendObservabilityConfig;
+    if (!options.isDevelopment) {
+      return Logger.layer([Logger.consoleStructured]);
+    }
 
-  if (options.otlpBaseUrl === undefined) {
-    return Layer.empty;
-  }
+    if (options.otlpBaseUrl === undefined) {
+      return Layer.empty;
+    }
 
-  const resource = {
-    serviceName: "cloudflare-inbox-backend",
-    attributes: {
-      "deployment.environment.name": "local",
-    },
-  };
+    const resource = {
+      serviceName: "cloudflare-inbox-backend",
+      attributes: {
+        "deployment.environment.name": "local",
+      },
+    };
 
-  return Layer.merge(
-    OtlpLogger.layer({
-      exportInterval: "1 second",
-      mergeWithExisting: true,
-      resource,
-      shutdownTimeout: "1 second",
-      url: signalUrl(options.otlpBaseUrl, "logs"),
-    }),
-    OtlpTracer.layer({
-      exportInterval: "1 second",
-      resource,
-      shutdownTimeout: "1 second",
-      url: signalUrl(options.otlpBaseUrl, "traces"),
-    })
-  ).pipe(
-    Layer.provide(OtlpSerialization.layerJson),
-    Layer.provide(FetchHttpClient.layer)
-  );
-};
+    return Layer.merge(
+      OtlpLogger.layer({
+        exportInterval: "1 second",
+        mergeWithExisting: true,
+        resource,
+        shutdownTimeout: "1 second",
+        url: signalUrl(options.otlpBaseUrl, "logs"),
+      }),
+      OtlpTracer.layer({
+        exportInterval: "1 second",
+        resource,
+        shutdownTimeout: "1 second",
+        url: signalUrl(options.otlpBaseUrl, "traces"),
+      })
+    ).pipe(
+      Layer.provide(OtlpSerialization.layerJson),
+      Layer.provide(FetchHttpClient.layer)
+    );
+  })
+);

@@ -17,18 +17,11 @@ import {
 } from "../authorization/catalog";
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import { MailAuthorization } from "../authorization/mail-authorization";
+import { ControlPlaneBatchError } from "./control-plane-batch-error";
+import type { ControlPlaneCommitState } from "./control-plane-batch-error";
+import { MailboxRecord } from "./model";
 
-export interface MailboxRecord {
-  readonly createdAt: number;
-  readonly createdByUserId: string;
-  readonly displayName: string;
-  readonly id: string;
-  readonly status: "active";
-  readonly updatedAt: number;
-  readonly version: number;
-}
-
-export type ControlPlaneCommitState = "not-committed" | "committed" | "unknown";
+export type { ControlPlaneCommitState } from "./control-plane-batch-error";
 
 export class MailboxAdministrationError extends Data.TaggedError(
   "MailboxAdministrationError"
@@ -69,6 +62,7 @@ export interface MailboxAdministration {
   >;
 }
 
+/** Transactional mailbox writes with in-transaction session and permission checks. */
 export const MailboxAdministration = Context.Service<MailboxAdministration>(
   "cloudflare-inbox/MailboxAdministration"
 );
@@ -78,30 +72,18 @@ interface Statement {
   readonly sql: string;
 }
 
-interface ControlPlaneBatchError {
-  readonly _tag: "ControlPlaneBatchError";
-  readonly cause: unknown;
-  readonly commitState: ControlPlaneCommitState;
-  readonly statement?: number;
-}
-
-const controlPlaneBatchError = (
-  input: Omit<ControlPlaneBatchError, "_tag">
-): ControlPlaneBatchError => ({ _tag: "ControlPlaneBatchError", ...input });
-
-const isControlPlaneBatchError = (
-  error: unknown
-): error is ControlPlaneBatchError =>
-  typeof error === "object" &&
-  error !== null &&
-  "_tag" in error &&
-  error._tag === "ControlPlaneBatchError";
-
-interface LiveOptions {
+export interface MailboxAdministrationConfigShape {
+  readonly database: D1EffectQbDatabaseLike;
   readonly now?: () => number;
   readonly ownerEmail: string;
   readonly randomId?: () => string;
 }
+
+/** Stable dependencies used by transactional mailbox administration. */
+export const MailboxAdministrationConfig =
+  Context.Service<MailboxAdministrationConfigShape>(
+    "cloudflare-inbox/MailboxAdministrationConfig"
+  );
 
 const sessionPredicate = `exists (
   select 1
@@ -205,7 +187,7 @@ const executeBatch = (
           try {
             return database.prepare(sql).bind(...params);
           } catch (error) {
-            throw controlPlaneBatchError({
+            throw new ControlPlaneBatchError({
               cause: error,
               commitState: "not-committed",
               statement,
@@ -213,9 +195,9 @@ const executeBatch = (
           }
         });
       } catch (error) {
-        throw isControlPlaneBatchError(error)
+        throw error instanceof ControlPlaneBatchError
           ? error
-          : controlPlaneBatchError({
+          : new ControlPlaneBatchError({
               cause: error,
               commitState: "not-committed",
             });
@@ -226,7 +208,7 @@ const executeBatch = (
       try {
         results = await database.batch(prepared);
       } catch (error) {
-        throw controlPlaneBatchError({
+        throw new ControlPlaneBatchError({
           cause: error,
           commitState: "unknown",
         });
@@ -236,14 +218,14 @@ const executeBatch = (
         (result) => result.success === false || result.error !== undefined
       );
       if (failed !== -1) {
-        throw controlPlaneBatchError({
+        throw new ControlPlaneBatchError({
           cause: results[failed]?.error ?? "D1 batch statement failed",
           commitState: "not-committed",
           statement: failed,
         });
       }
       if (results.length !== statements.length) {
-        throw controlPlaneBatchError({
+        throw new ControlPlaneBatchError({
           cause: new Error(
             `D1 batch returned ${results.length} results for ${statements.length} statements`
           ),
@@ -254,9 +236,9 @@ const executeBatch = (
       return results;
     },
     catch: (error) =>
-      isControlPlaneBatchError(error)
+      error instanceof ControlPlaneBatchError
         ? error
-        : controlPlaneBatchError({
+        : new ControlPlaneBatchError({
             cause: error,
             commitState: "unknown",
           }),
@@ -375,26 +357,29 @@ const resultRows = <Row extends Readonly<Record<string, unknown>>>(
   statement: number
 ) => (results[statement]?.results ?? []) as readonly Row[];
 
-export const makeMailboxAdministrationLive = (
-  database: D1EffectQbDatabaseLike,
-  options: LiveOptions
-) => {
-  const now = options.now ?? Date.now;
-  const randomId = options.randomId ?? (() => crypto.randomUUID());
-  const ownerEmail = (() => {
-    const trimmed = options.ownerEmail.trim();
-    const separator = trimmed.lastIndexOf("@");
+/** Transactional mailbox service built from explicit Effect configuration. */
+export const MailboxAdministrationLive = Layer.effect(
+  MailboxAdministration,
+  Effect.gen(function* () {
+    const options = yield* MailboxAdministrationConfig;
+    const { database, ownerEmail: configuredOwnerEmail } = options;
+    const now = options.now ?? Date.now;
+    const randomId = options.randomId ?? (() => crypto.randomUUID());
+    const ownerEmail = yield* Effect.sync(() => {
+      const trimmed = configuredOwnerEmail.trim();
+      const separator = trimmed.lastIndexOf("@");
 
-    if (separator <= 0 || !/^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u.test(trimmed)) {
-      throw new Error("MAILBOX_OWNER_EMAIL is invalid");
-    }
+      if (
+        separator <= 0 ||
+        !/^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u.test(trimmed)
+      ) {
+        throw new Error("MAILBOX_OWNER_EMAIL is invalid");
+      }
 
-    return `${trimmed.slice(0, separator)}${trimmed.slice(separator).toLowerCase()}`;
-  })();
+      return `${trimmed.slice(0, separator)}${trimmed.slice(separator).toLowerCase()}`;
+    });
 
-  return Layer.succeed(
-    MailboxAdministration,
-    MailboxAdministration.of({
+    return MailboxAdministration.of({
       bootstrapOwner: (input) =>
         Effect.gen(function* () {
           const requestAuth = yield* CurrentRequestAuth;
@@ -545,15 +530,15 @@ export const makeMailboxAdministrationLive = (
             });
           }
 
-          return {
+          return new MailboxRecord({
             createdAt: timestamp,
             createdByUserId: validated.actor.userId,
             displayName,
             id: mailboxId,
-            status: "active" as const,
+            status: "active",
             updatedAt: timestamp,
             version: 1,
-          };
+          });
         }),
       rename: (input) =>
         Effect.gen(function* () {
@@ -663,16 +648,16 @@ export const makeMailboxAdministrationLive = (
             });
           }
 
-          return {
+          return new MailboxRecord({
             createdAt: row.created_at,
             createdByUserId: row.created_by_user_id,
             displayName: row.display_name,
             id: row.id,
-            status: "active" as const,
+            status: "active",
             updatedAt: row.updated_at,
             version: row.version,
-          };
+          });
         }),
-    })
-  );
-};
+    });
+  })
+);

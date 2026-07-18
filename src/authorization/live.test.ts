@@ -7,6 +7,7 @@ import {
   PermissionSubject,
 } from "@effect-auth/core/Permission";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../test/d1";
@@ -18,7 +19,7 @@ import {
   mailPermissionDefinitions,
   mailRolePermissions,
 } from "./catalog";
-import { makeMailPermissionsLive } from "./live";
+import { MailPermissionDatabase, MailPermissionsLive } from "./live";
 
 describe("D1 mail authorization", () => {
   it("applies mailbox registry constraints and seeds the typed catalog", async () => {
@@ -197,7 +198,16 @@ describe("D1 mail authorization", () => {
           })
         ).toBeFalsy();
       }).pipe(
-        Effect.provide(makeMailPermissionsLive(makeTestD1Database(database)))
+        Effect.provide(
+          MailPermissionsLive.pipe(
+            Layer.provide(
+              Layer.succeed(
+                MailPermissionDatabase,
+                makeTestD1Database(database)
+              )
+            )
+          )
+        )
       );
 
       await Effect.runPromise(program);

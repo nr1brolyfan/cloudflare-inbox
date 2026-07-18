@@ -80,6 +80,7 @@ export interface MailAuthorization {
   >;
 }
 
+/** Resolves resource ownership and enforces the matching mail permission. */
 export const MailAuthorization = Context.Service<MailAuthorization>(
   "cloudflare-inbox/MailAuthorization"
 );
@@ -102,6 +103,7 @@ const ensureResolverInvariant = (
         new Error(`Mail resource resolver violated ${resource._tag} invariant`)
       );
 
+/** Policy implementation backed by effect-auth permissions and resource resolution. */
 export const MailAuthorizationLive = Layer.effect(
   MailAuthorization,
   Effect.gen(function* () {
