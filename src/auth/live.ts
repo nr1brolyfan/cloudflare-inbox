@@ -17,10 +17,7 @@ import {
   EmailDeliveryFromAuthMailerLive,
   EmailVerificationDefaultLive,
 } from "@effect-auth/core/EmailVerification";
-import {
-  AuthHttpApiConfigLive,
-  CoreAuthHttpApiLive,
-} from "@effect-auth/core/HttpApi";
+import { AuthHttpApiConfigLive } from "@effect-auth/core/HttpApi";
 import type { Email } from "@effect-auth/core/Identifiers";
 import { IdentityKindRegistryDefaultLive } from "@effect-auth/core/Identity";
 import { LoginApprovalLive } from "@effect-auth/core/LoginApproval";
@@ -43,6 +40,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { RateLimiter as PersistenceRateLimiter } from "effect/unstable/persistence";
 
+import { makeCoreAuthHttpApiLive } from "./http-api";
 import type { D1OutboxDatabase } from "./outbox-mailer";
 import { D1OutboxMailerLive } from "./outbox-mailer";
 
@@ -214,7 +212,7 @@ export const makeAuthLive = (options: AuthHttpApiLiveOptions) => {
     authRateLimitLive
   );
 
-  const httpApiLive = CoreAuthHttpApiLive.pipe(
+  const httpApiLive = makeCoreAuthHttpApiLive(options.publicOrigin).pipe(
     Layer.provide(
       AuthHttpApiConfigLive({
         originCheck: {
