@@ -101,9 +101,14 @@ type MailboxPublicError =
 const mapAdministrationError = (
   error: MailboxAdministrationError
 ): Effect.Effect<never, MailboxPublicError> => {
+  const fail = <E>(publicError: E) =>
+    Effect.logWarning(
+      `Mailbox ${error.operation} rejected: ${error.reason}`
+    ).pipe(Effect.flatMap(() => Effect.fail(publicError)));
+
   switch (error.reason) {
     case "invalid-input": {
-      return Effect.fail(
+      return fail(
         new AuthBadRequestError({
           code: "bad_request",
           message: "Invalid mailbox request",
@@ -111,7 +116,7 @@ const mapAdministrationError = (
       );
     }
     case "conflict": {
-      return Effect.fail(
+      return fail(
         new AuthConflictError({
           code: "conflict",
           message: "Mailbox already exists",
@@ -119,28 +124,42 @@ const mapAdministrationError = (
       );
     }
     case "not-found": {
-      return Effect.fail(
+      return fail(
         new AuthNotFoundError({
           code: "not_found",
           message: "Mailbox not found",
         })
       );
     }
-    case "authorization-recheck":
-    case "owner-not-eligible":
-    case "session-recheck": {
-      return Effect.fail(
+    case "authorization-recheck": {
+      return fail(
         new AuthPolicyDeniedError({
           code: "policy_denied",
           message: "Mailbox operation denied",
         })
       );
     }
+    case "owner-not-eligible": {
+      return fail(
+        new AuthPolicyDeniedError({
+          code: "policy_denied",
+          message: "Mailbox owner account required",
+        })
+      );
+    }
+    case "session-recheck": {
+      return fail(
+        new AuthPolicyDeniedError({
+          code: "policy_denied",
+          message: "Complete account verification and sign in again",
+        })
+      );
+    }
     case "storage": {
-      return Effect.fail(internalError());
+      return fail(internalError());
     }
     default: {
-      return Effect.fail(internalError());
+      return fail(internalError());
     }
   }
 };

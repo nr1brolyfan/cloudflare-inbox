@@ -84,6 +84,17 @@ const invalidBackendResponse = (): MailboxServerResult => ({
   status: 502,
 });
 
+const policyDeniedMessage = (body: object) => {
+  if (!("message" in body) || typeof body.message !== "string") {
+    return publicErrors.policy_denied.message;
+  }
+
+  return body.message === "Mailbox owner account required" ||
+    body.message === "Complete account verification and sign in again"
+    ? body.message
+    : publicErrors.policy_denied.message;
+};
+
 export const forwardMailboxMutation = async (
   input: ForwardMailboxMutationInput
 ): Promise<MailboxServerResult> => {
@@ -132,12 +143,16 @@ export const forwardMailboxMutation = async (
   }
 
   const definition = publicErrors[body.code as keyof typeof publicErrors];
+  const message =
+    body.code === "policy_denied"
+      ? policyDeniedMessage(body)
+      : definition.message;
   return response.status === definition.status
     ? {
         error: {
           _tag: definition._tag,
           code: body.code,
-          message: definition.message,
+          message,
         },
         ok: false,
         status: response.status,
