@@ -1,23 +1,17 @@
 import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 import { authClient, authErrorMessage } from "../../auth/client";
 import { CompletionShell } from "../../auth/completion-shell";
-
-const readString = (value: unknown) => (typeof value === "string" ? value : "");
+import { useCompletionCredentials } from "../../auth/use-completion-credentials";
 
 export const Route = createFileRoute("/auth-complete/password-reset")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    challengeId: readString(search.challengeId),
-    secret: readString(search.secret),
-  }),
   component: PasswordResetCompletion,
 });
 
 function PasswordResetCompletion() {
-  const search = Route.useSearch();
-  const [credentials] = useState(search);
+  const credentials = useCompletionCredentials();
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const navigate = useNavigate();
@@ -29,15 +23,12 @@ function PasswordResetCompletion() {
     passwordsMatch
   );
 
-  useEffect(() => {
-    window.history.replaceState({}, "", window.location.pathname);
-  }, []);
-
   const verify = useMutation({
     mutationFn: () =>
       authClient.password.reset.verify({
-        ...credentials,
+        challengeId: credentials.challengeId,
         password,
+        secret: credentials.secret ?? "",
       }),
     retry: false,
     onSuccess: () => navigate({ to: "/" }),

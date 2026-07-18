@@ -1,30 +1,18 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 
 import { authClient, authErrorMessage } from "../../auth/client";
 import { CompletionShell } from "../../auth/completion-shell";
-
-const readString = (value: unknown) =>
-  typeof value === "string" ? value : undefined;
+import { useCompletionCredentials } from "../../auth/use-completion-credentials";
 
 export const Route = createFileRoute("/auth-complete/email-verification")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    challengeId: readString(search.challengeId) ?? "",
-    secret: readString(search.secret),
-  }),
   component: EmailVerificationCompletion,
 });
 
 function EmailVerificationCompletion() {
-  const search = Route.useSearch();
-  const [credentials] = useState(search);
+  const credentials = useCompletionCredentials();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
-
-  useEffect(() => {
-    window.history.replaceState({}, "", window.location.pathname);
-  }, []);
 
   const verify = useMutation({
     mutationFn: () =>

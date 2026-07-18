@@ -1,4 +1,5 @@
 import * as Alchemy from "alchemy";
+import { ALCHEMY_DEV } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
@@ -15,9 +16,24 @@ export class Website extends Cloudflare.Website.Vite<Website>()("Website", {
   },
   env: {
     BACKEND: Backend,
+    DEV_EMAIL_INBOX_ENABLED: ALCHEMY_DEV,
   },
   assets: {
     runWorkerFirst: true,
+  },
+  observability: {
+    enabled: true,
+    logs: {
+      enabled: true,
+      headSamplingRate: 1,
+      invocationLogs: true,
+      persist: true,
+    },
+    traces: {
+      enabled: true,
+      headSamplingRate: 1,
+      persist: true,
+    },
   },
 }) {}
 

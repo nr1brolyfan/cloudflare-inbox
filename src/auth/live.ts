@@ -10,6 +10,7 @@ import { AuthFlowStateLive } from "@effect-auth/core/AuthFlow";
 import { AuthKernelLive } from "@effect-auth/core/AuthKernel";
 import { AuthRateLimitStandardLive } from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
+import { AuthMailerFromDevEmailStoreLive } from "@effect-auth/core/DevEmail";
 import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import { D1EffectQbSqliteAuthStorageLive } from "@effect-auth/core/EffectQbSqliteStorage";
 import { EmailOtpDefaultLive } from "@effect-auth/core/EmailOtp";
@@ -40,9 +41,10 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { RateLimiter as PersistenceRateLimiter } from "effect/unstable/persistence";
 
+import { makeCompletionUrl } from "./completion-url";
+import type { D1DevEmailDatabase } from "./dev-email-store";
+import { makeD1DevEmailStoreLive } from "./dev-email-store";
 import { makeCoreAuthHttpApiLive } from "./http-api";
-import type { D1OutboxDatabase } from "./outbox-mailer";
-import { D1OutboxMailerLive } from "./outbox-mailer";
 
 export type AuthEmailSendClient = Effect.Success<
   ReturnType<typeof Cloudflare.Email.Send>
@@ -53,7 +55,7 @@ export interface AuthHttpApiLiveOptions {
   readonly emailFrom: Email;
   readonly emailSender?: AuthEmailSendClient;
   readonly isDevelopment: boolean;
-  readonly outboxDatabase: D1OutboxDatabase;
+  readonly devEmailDatabase: D1DevEmailDatabase;
   readonly publicOrigin: string;
   readonly rateLimitNamespace: AlchemyRateLimitDurableObjectNamespace;
   readonly secrets: AuthSecretsShape;
@@ -64,16 +66,11 @@ const makeFlowUrl = (
   path: string,
   challengeId: string,
   secret?: Redacted.Redacted<string>
-) => {
-  const url = new URL(path, publicOrigin);
-  url.searchParams.set("challengeId", challengeId);
-
-  if (secret !== undefined) {
-    url.searchParams.set("secret", Redacted.value(secret));
-  }
-
-  return url.toString();
-};
+) =>
+  makeCompletionUrl(publicOrigin, path, {
+    challengeId,
+    ...(secret === undefined ? {} : { secret: Redacted.value(secret) }),
+  });
 
 const MinimumPasswordRiskPolicyLive = Layer.succeed(
   PasswordRiskPolicy,
@@ -111,9 +108,6 @@ export const makeAuthLive = (options: AuthHttpApiLiveOptions) => {
       })
     );
   };
-  const transportLive = options.isDevelopment
-    ? D1OutboxMailerLive(options.outboxDatabase)
-    : productionTransportLive();
   const defaultTemplates = makeDefaultAuthEmailTemplates();
   const emailTemplatesLive = Layer.succeed(
     AuthEmailTemplates,
@@ -137,10 +131,15 @@ export const makeAuthLive = (options: AuthHttpApiLiveOptions) => {
       },
     })
   );
-  const authMailerLive = AuthMailerLive({ from: options.emailFrom }).pipe(
-    Layer.provide(emailTemplatesLive),
-    Layer.provide(transportLive)
-  );
+  const authMailerLive = options.isDevelopment
+    ? AuthMailerFromDevEmailStoreLive({ from: options.emailFrom }).pipe(
+        Layer.provide(emailTemplatesLive),
+        Layer.provide(makeD1DevEmailStoreLive(options.devEmailDatabase))
+      )
+    : AuthMailerLive({ from: options.emailFrom }).pipe(
+        Layer.provide(emailTemplatesLive),
+        Layer.provide(productionTransportLive())
+      );
   const sessionLive = AuthKernelLive.pipe(
     Layer.provideMerge(storageLive),
     Layer.provideMerge(WebCryptoLive()),

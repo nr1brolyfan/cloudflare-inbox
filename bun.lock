@@ -5,7 +5,7 @@
     "": {
       "name": "cloudflare-inbox",
       "dependencies": {
-        "@effect-auth/core": "0.1.0-alpha.18",
+        "@effect-auth/core": "0.1.0-alpha.19",
         "@effect/platform-bun": "4.0.0-beta.98",
         "@effect/platform-node": "4.0.0-beta.98",
         "@tailwindcss/vite": "^4.1.18",
@@ -194,7 +194,7 @@
 
     "@distilled.cloud/planetscale": ["@distilled.cloud/planetscale@0.29.0", "", { "dependencies": { "@distilled.cloud/core": "0.29.0" }, "peerDependencies": { "effect": ">=4.0.0-beta.97 || >=4.0.0" } }, "sha512-CDieF5POk7mfoNjjPnU93h8RtHQxlsNUWJaHtaQcNSOBZ4y1xjgJFOejiBRK06AA8GoGYCt50s78J+eYmJWUmA=="],
 
-    "@effect-auth/core": ["@effect-auth/core@0.1.0-alpha.18", "", { "peerDependencies": { "@effect/sql-d1": "4.0.0-beta.98", "@effect/sql-pg": "4.0.0-beta.98", "@effect/sql-sqlite-bun": "4.0.0-beta.98", "@effect/sql-sqlite-do": "4.0.0-beta.98", "@effect/sql-sqlite-node": "4.0.0-beta.98", "@effect/sql-sqlite-wasm": "4.0.0-beta.98", "drizzle-orm": "1.0.0-rc.4", "effect": "4.0.0-beta.98", "effect-qb": "4.0.0-beta.98" }, "optionalPeers": ["@effect/sql-d1", "@effect/sql-pg", "@effect/sql-sqlite-bun", "@effect/sql-sqlite-do", "@effect/sql-sqlite-node", "@effect/sql-sqlite-wasm", "drizzle-orm", "effect-qb"] }, "sha512-bfiAkyxMp8mVSA3pJaNbY87H4u48YxvlF5Br5JATkVNrYJexNXTwLOaaQWZXoIMmCO11NJN+4PhWzZ+WUtlI9g=="],
+    "@effect-auth/core": ["@effect-auth/core@0.1.0-alpha.19", "", { "peerDependencies": { "@effect/sql-d1": "4.0.0-beta.98", "@effect/sql-pg": "4.0.0-beta.98", "@effect/sql-sqlite-bun": "4.0.0-beta.98", "@effect/sql-sqlite-node": "4.0.0-beta.98", "drizzle-orm": "1.0.0-rc.4", "effect": "4.0.0-beta.98", "effect-qb": "4.0.0-beta.98" }, "optionalPeers": ["@effect/sql-d1", "@effect/sql-pg", "@effect/sql-sqlite-bun", "@effect/sql-sqlite-node", "drizzle-orm", "effect-qb"] }, "sha512-Yq6rjzUe8xwhoceyZG3osf3hYRde5ZfS5qrc5YjQ4IIJ0KnVjz5aFZIrdnFixePq7RfpTH7g1V72pQcvlnYJYA=="],
 
     "@effect/platform-bun": ["@effect/platform-bun@4.0.0-beta.98", "", { "dependencies": { "@effect/platform-node-shared": "^4.0.0-beta.98" }, "peerDependencies": { "effect": "^4.0.0-beta.98" } }, "sha512-QorRKhvwHDPwvE8lH5lE0r0dI2z+zj12VUN4h7hfoIunKUiXSoSOMZqF3w13W30RpV6ivsvJywUycaa/18yMPA=="],
 

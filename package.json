@@ -23,7 +23,7 @@
     "check": "bun run check:auth-migrations && bun run format:check && bun run lint"
   },
   "dependencies": {
-    "@effect-auth/core": "0.1.0-alpha.18",
+    "@effect-auth/core": "0.1.0-alpha.19",
     "@effect/platform-bun": "4.0.0-beta.98",
     "@effect/platform-node": "4.0.0-beta.98",
     "@tailwindcss/vite": "^4.1.18",

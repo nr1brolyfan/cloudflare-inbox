@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowRight,
   CheckCircle2,
@@ -13,13 +13,33 @@ import {
 import { useState } from "react";
 
 import { authClient, authErrorMessage, emailIdentity } from "../auth/client";
+import { getDevEmailInboxStatus } from "../server/dev-email-functions";
 import { bootstrapMailboxOwner } from "../server/mailbox-functions";
 
-export const Route = createFileRoute("/")({ component: Home });
+export const Route = createFileRoute("/")({
+  loader: () => getDevEmailInboxStatus(),
+  component: Home,
+});
 
 type AuthMode = "magic" | "otp" | "password";
 
+function DevEmailInboxLink({ enabled }: { readonly enabled: boolean }) {
+  if (!enabled) {
+    return null;
+  }
+
+  return (
+    <Link
+      to="/dev-email-inbox"
+      className="mt-3 inline-flex items-center gap-2 text-xs font-extrabold"
+    >
+      <Mail size={14} /> Open development email inbox
+    </Link>
+  );
+}
+
 function Home() {
+  const devEmailInbox = Route.useLoaderData();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<AuthMode>("magic");
   const [email, setEmail] = useState("");
@@ -171,6 +191,7 @@ function Home() {
                 <p className="mt-3 text-sm leading-6 text-[var(--sea-ink-soft)]">
                   Use a one-time link, email code, or your password.
                 </p>
+                <DevEmailInboxLink enabled={devEmailInbox.enabled} />
 
                 <div className="mt-7 grid grid-cols-3 rounded-xl bg-[var(--sand)]/75 p-1">
                   {(["magic", "otp", "password"] as const).map((value) => (

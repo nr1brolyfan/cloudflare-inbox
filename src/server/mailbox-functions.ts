@@ -3,6 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 
 import { forwardMailboxMutation } from "./backend";
 import { env } from "./env";
+import { traceBackendRequest } from "./tracing";
 
 interface BootstrapOwnerInput {
   readonly displayName: string;
@@ -39,24 +40,30 @@ const renameInput = (input: unknown): RenameMailboxInput => {
 
 export const bootstrapMailboxOwner = createServerFn({ method: "POST" })
   .validator(bootstrapInput)
-  .handler(({ data }) =>
-    forwardMailboxMutation({
-      backend: env.BACKEND,
-      incoming: getRequest(),
-      method: "POST",
-      path: "/api/mailboxes/bootstrap-owner",
-      payload: { displayName: data.displayName },
-    })
-  );
+  .handler(({ data }) => {
+    const request = getRequest();
+    return traceBackendRequest("website.mailbox.bootstrap", request, () =>
+      forwardMailboxMutation({
+        backend: env.BACKEND,
+        incoming: request,
+        method: "POST",
+        path: "/api/mailboxes/bootstrap-owner",
+        payload: { displayName: data.displayName },
+      })
+    );
+  });
 
 export const renameMailbox = createServerFn({ method: "POST" })
   .validator(renameInput)
-  .handler(({ data }) =>
-    forwardMailboxMutation({
-      backend: env.BACKEND,
-      incoming: getRequest(),
-      method: "PATCH",
-      path: `/api/mailboxes/${encodeURIComponent(data.mailboxId)}`,
-      payload: { displayName: data.displayName },
-    })
-  );
+  .handler(({ data }) => {
+    const request = getRequest();
+    return traceBackendRequest("website.mailbox.rename", request, () =>
+      forwardMailboxMutation({
+        backend: env.BACKEND,
+        incoming: request,
+        method: "PATCH",
+        path: `/api/mailboxes/${encodeURIComponent(data.mailboxId)}`,
+        payload: { displayName: data.displayName },
+      })
+    );
+  });

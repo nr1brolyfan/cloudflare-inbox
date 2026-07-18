@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { makeD1DevEmailStoreLive } from "../auth/dev-email-store";
 import { makeAuthLive } from "../auth/live";
 import { makeMailPermissionsLive } from "../authorization/live";
 import { MailAuthorizationLive } from "../authorization/mail-authorization";
@@ -8,6 +9,7 @@ import * as MailResources from "../authorization/resources";
 import { makeMailboxAdministrationLive } from "../mailboxes/administration";
 import { BackendAuthConfig, BackendResources } from "./backend-context";
 import { BackendHealthLive } from "./backend-health";
+import { makeDevEmailHttpLive } from "./dev-emails";
 import * as Health from "./health";
 import {
   MailboxGroupLive,
@@ -71,7 +73,7 @@ const BackendRoutesLive = Layer.unwrap(
       emailFrom: authConfig.emailFrom,
       emailSender: resources.emailSender,
       isDevelopment: authConfig.isDevelopment,
-      outboxDatabase: resources.controlPlane,
+      devEmailDatabase: resources.controlPlane,
       publicOrigin: authConfig.publicOrigin,
       rateLimitNamespace: resources.authRateLimit,
       secrets: authConfig.secrets,
@@ -102,8 +104,16 @@ const BackendRoutesLive = Layer.unwrap(
     const healthHttpLive = Health.HealthHttpLive.pipe(
       Layer.provide(BackendHealthLive.pipe(Layer.provide(permissionsLive)))
     );
+    const devEmailHttpLive = authConfig.isDevelopment
+      ? makeDevEmailHttpLive(makeD1DevEmailStoreLive(resources.controlPlane))
+      : Layer.empty;
 
-    return Layer.mergeAll(auth.httpApiLive, healthHttpLive, mailboxHttpLive);
+    return Layer.mergeAll(
+      auth.httpApiLive,
+      healthHttpLive,
+      mailboxHttpLive,
+      devEmailHttpLive
+    );
   })
 );
 

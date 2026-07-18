@@ -5,7 +5,9 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
 import { BackendHttpLive } from "../http/backend";
@@ -15,6 +17,7 @@ import {
   ControlPlaneDatabase,
   RawMessagesBucket,
 } from "../infra/resources";
+import { makeBackendObservabilityLive } from "../observability/backend";
 
 export default class Backend extends Cloudflare.Worker<Backend>()(
   "Backend",
@@ -28,6 +31,20 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       port: 1338,
       strictPort: true,
     },
+    observability: {
+      enabled: true,
+      logs: {
+        enabled: true,
+        headSamplingRate: 1,
+        invocationLogs: true,
+        persist: true,
+      },
+      traces: {
+        enabled: true,
+        headSamplingRate: 1,
+        persist: true,
+      },
+    },
     url: false,
   },
   Effect.gen(function* () {
@@ -36,6 +53,11 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
     const authRateLimit = yield* RateLimitDurableObject;
     const isDevelopment = yield* ALCHEMY_DEV;
+    const otlpBaseUrl = isDevelopment
+      ? Option.getOrUndefined(
+          yield* Config.option(Config.string("OTEL_EXPORTER_OTLP_ENDPOINT"))
+        )
+      : undefined;
     const emailSender = isDevelopment
       ? undefined
       : yield* Cloudflare.Email.Send(AuthEmailSender);
@@ -59,28 +81,48 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         },
       })
     );
+    const observabilityLive = makeBackendObservabilityLive({
+      isDevelopment,
+      otlpBaseUrl,
+    });
     return {
       fetch: Effect.gen(function* () {
-        const controlPlaneDatabase = yield* controlPlane.raw;
-        const routesLive = BackendHttpLive.pipe(
-          Layer.provide(
-            Layer.succeed(
-              BackendResources,
-              BackendResources.of({
-                authRateLimit,
-                controlPlane,
-                database: controlPlaneDatabase,
-                emailSender,
-                rawMessages,
-              })
-            )
-          ),
-          Layer.provide(authConfigLive)
-        );
-        const handler = yield* HttpRouter.toHttpEffect(routesLive);
+        const observabilityContext = yield* Layer.build(observabilityLive);
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const requestUrl = new URL(request.url, publicOrigin);
 
-        return yield* handler.pipe(
-          Effect.catchTag("HttpServerError", HttpServerRespondable.toResponse)
+        return yield* Effect.gen(function* () {
+          const controlPlaneDatabase = yield* controlPlane.raw;
+          const routesLive = BackendHttpLive.pipe(
+            Layer.provide(
+              Layer.succeed(
+                BackendResources,
+                BackendResources.of({
+                  authRateLimit,
+                  controlPlane,
+                  database: controlPlaneDatabase,
+                  emailSender,
+                  rawMessages,
+                })
+              )
+            ),
+            Layer.provide(authConfigLive)
+          );
+          const handler = yield* HttpRouter.toHttpEffect(routesLive);
+
+          return yield* handler.pipe(
+            Effect.catchTag("HttpServerError", HttpServerRespondable.toResponse)
+          );
+        }).pipe(
+          Effect.withSpan("backend.request", {
+            attributes: {
+              "http.request.method": request.method,
+              "url.path": requestUrl.pathname,
+            },
+            kind: "server",
+            root: true,
+          }),
+          Effect.provide(observabilityContext)
         );
       }),
     };

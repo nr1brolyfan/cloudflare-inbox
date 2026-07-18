@@ -28,8 +28,9 @@
     "0025_auth_permission_definition",
     "0026_auth_user_identity",
     "0027_auth_audit_log_storage_order",
-    "0028_auth_oauth_client_secret_key"
+    "0028_auth_oauth_client_secret_key",
+    "0029_auth_oauth_device_authorization"
   ],
   "package": "@effect-auth/core",
-  "version": "0.1.0-alpha.18"
+  "version": "0.1.0-alpha.19"
 }

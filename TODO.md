@@ -5,7 +5,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-18
-- Postęp zadań: **40/107 (37%)**
+- Postęp zadań: **42/109 (39%)**
 - Ukończone etapy: **2/11**
 - Aktualny etap: **5. MailboxDO i domena pocztowa**
 - Aktualne zadanie: **Effect schemas i publiczne kontrakty domenowe**
@@ -13,8 +13,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
 | 1   | Toolchain i zależności                | DONE        | 7/7    |
-| 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 9/12   |
-| 3   | Effect-auth i sesje                   | IN PROGRESS | 14/19  |
+| 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 10/13  |
+| 3   | Effect-auth i sesje                   | IN PROGRESS | 15/20  |
 | 4   | Permissions i control plane           | DONE        | 10/10  |
 | 5   | MailboxDO i domena pocztowa           | CURRENT     | 0/9    |
 | 6   | Inbound email                         | TODO        | 0/9    |
@@ -36,7 +36,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 - [x] Zachować pojedynczy projekt bez przedwczesnego monorepo.
 - [x] Przejść na Bun i commitować `bun.lock`.
-- [x] Przypiąć `@effect-auth/core@0.1.0-alpha.18`.
+- [x] Przypiąć `@effect-auth/core@0.1.0-alpha.19`.
 - [x] Przypiąć kompatybilne Effect, Effect-QB i Alchemy beta.
 - [x] Dodać aktualne typy Cloudflare Workers.
 - [x] Zapewnić czysty build, typecheck, test, Oxlint i Oxfmt check.
@@ -53,6 +53,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Zadeklarować produkcyjny Cloudflare `send_email` binding dla auth.
 - [x] Dodać konfigurację originu, nadawcy i sekretów auth per environment.
 - [x] Zapewnić stabilne porty i lokalny graf zasobów z local Alchemy state.
+- [x] Włączyć bazowe Workers Logs, native traces i lokalny OTLP do Motel.
 - [ ] Utworzyć i podłączyć `MailboxDO`.
 - [ ] Utworzyć zasoby Cloudflare Workflows dla inbound/outbound.
 - [ ] Dodać Email Routing handler i mailbox sending bindings.
@@ -71,8 +72,9 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Dodać password sign-in/reset i minimum 12 znaków dla nowych haseł.
 - [x] Zbudować responsywny Auth UI dla magic link, OTP i password sign-in.
 - [x] Dodać completion pages dla magic link, resetu i email verification.
-- [x] Zapisywać wiadomości auth do D1 outbox w development.
+- [x] Zapisywać wiadomości auth w D1 `DevEmailStore` i wystawić dev inbox.
 - [x] Użyć Cloudflare Email Sending jako transportu produkcyjnego.
+- [x] Usunąć bearer credentials z query stringów auth completion links.
 - [ ] Domknąć password sign-up wraz z identity API i wysłaniem verification.
 - [ ] Dodać passkey jako silny faktor.
 - [ ] Dodać recovery codes.
@@ -161,7 +163,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## 11. Hardening i produkcja
 
 - [ ] Dodać reconciliation jobs.
-- [ ] Dodać observability dla Workerów, Workflows i Durable Objects.
+- [ ] Rozszerzyć observability o Workflows, Durable Objects, custom spans, alerty i eksport.
 - [ ] Dodać administracyjny audit trail.
 - [ ] Dodać backup danych.
 - [ ] Dodać eksport mailboxa.
@@ -181,5 +183,5 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 ## Uwagi wersji
 
-- Implementacja używa `@effect-auth/core@0.1.0-alpha.18` i peer versions z jego manifestu.
+- Implementacja używa `@effect-auth/core@0.1.0-alpha.19` i peer versions z jego manifestu.
 - Strony Installation i Package Exports mogą nadal wymieniać alpha.17; źródłem prawdy są manifest pakietu, publiczne exports i lockfile repozytorium.

@@ -1,32 +1,25 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
 
 import { authClient, authErrorMessage } from "../../auth/client";
 import { CompletionShell } from "../../auth/completion-shell";
-
-const readString = (value: unknown) => (typeof value === "string" ? value : "");
+import { useCompletionCredentials } from "../../auth/use-completion-credentials";
 
 export const Route = createFileRoute("/auth-complete/magic-link")({
-  validateSearch: (search: Record<string, unknown>) => ({
-    challengeId: readString(search.challengeId),
-    secret: readString(search.secret),
-  }),
   component: MagicLinkCompletion,
 });
 
 function MagicLinkCompletion() {
-  const search = Route.useSearch();
-  const [credentials] = useState(search);
+  const credentials = useCompletionCredentials();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  useEffect(() => {
-    window.history.replaceState({}, "", window.location.pathname);
-  }, []);
-
   const verify = useMutation({
-    mutationFn: () => authClient.magicLink.verify(credentials),
+    mutationFn: () =>
+      authClient.magicLink.verify({
+        challengeId: credentials.challengeId,
+        secret: credentials.secret ?? "",
+      }),
     retry: false,
     onSuccess: async (result) => {
       if (result.type !== "authenticated") {
