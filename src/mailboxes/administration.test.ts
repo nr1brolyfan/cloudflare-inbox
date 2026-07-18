@@ -72,6 +72,23 @@ const insertCurrentSession = (
        values (?, ?, ?)`
     )
     .run(validated.actor.userId, 1000, 1000);
+  const email = `${validated.actor.userId}@example.test`;
+  database
+    .prepare(
+      `insert into auth_user_identity
+        (id, user_id, scope_type, scope_id, kind, value, normalized_value,
+         verified_at, is_primary_login, created_at, updated_at)
+       values (?, ?, 'global', '', 'email', ?, ?, ?, 1, ?, ?)`
+    )
+    .run(
+      `identity-${validated.actor.userId}`,
+      validated.actor.userId,
+      email,
+      email,
+      1000,
+      1000,
+      1000
+    );
   database
     .prepare(
       `insert into auth_session
@@ -179,6 +196,7 @@ const bootstrap = (
       Effect.provide(
         makeMailboxAdministrationLive(database, {
           now: () => now,
+          ownerEmail: "user-a@example.test",
           randomId: () => nonce,
         })
       )
@@ -201,6 +219,7 @@ const rename = (
       Effect.provide(
         makeMailboxAdministrationLive(database, {
           now: () => now + 1000,
+          ownerEmail: "user-a@example.test",
           randomId: () => "rename-guard",
         })
       ),
@@ -340,7 +359,7 @@ describe("mailbox administration", () => {
     }
   });
 
-  it("does not let a second actor take ownership of an existing mailbox", async () => {
+  it("does not let an unconfigured actor take ownership", async () => {
     const database = new DatabaseSync(":memory:");
 
     try {
@@ -350,13 +369,14 @@ describe("mailbox administration", () => {
       const second = makeValidatedSession("user-b", "session-b");
       insertCurrentSession(database, first);
       insertCurrentSession(database, second);
-      await Effect.runPromise(bootstrap(d1, first, "bootstrap-guard-a"));
 
       const error = await Effect.runPromise(
         bootstrap(d1, second, "bootstrap-guard-b").pipe(Effect.flip)
       );
 
-      expect(error).toMatchObject({ reason: "conflict" });
+      expect(error).toMatchObject({ reason: "owner-not-eligible" });
+      expect(countRows(database, "app_mailbox")).toBe(0);
+      await Effect.runPromise(bootstrap(d1, first, "bootstrap-guard-a"));
       expect(
         database
           .prepare("select created_by_user_id from app_mailbox where id = ?")
@@ -384,6 +404,34 @@ describe("mailbox administration", () => {
       database.close();
     }
   });
+
+  it.each([
+    ["unverified", "verified_at = null"],
+    ["revoked", "revoked_at = 1500"],
+    ["replaced", "replaced_by_id = 'replacement-identity'"],
+  ] as const)(
+    "rejects a configured but %s owner identity",
+    async (_, update) => {
+      const database = new DatabaseSync(":memory:");
+
+      try {
+        await applyControlPlaneMigrations(database);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+        database.exec(`update auth_user_identity set ${update}`);
+
+        const error = await Effect.runPromise(
+          bootstrap(d1, validated, "bootstrap-guard").pipe(Effect.flip)
+        );
+
+        expect(error).toMatchObject({ reason: "owner-not-eligible" });
+        expect(countRows(database, "app_mailbox")).toBe(0);
+      } finally {
+        database.close();
+      }
+    }
+  );
 
   it("renames only after policy and transactional permission checks succeed", async () => {
     const database = new DatabaseSync(":memory:");

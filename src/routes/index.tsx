@@ -13,6 +13,7 @@ import {
 import { useState } from "react";
 
 import { authClient, authErrorMessage, emailIdentity } from "../auth/client";
+import { bootstrapMailboxOwner } from "../server/mailbox-functions";
 
 export const Route = createFileRoute("/")({ component: Home });
 
@@ -91,6 +92,10 @@ function Home() {
     onSuccess: () =>
       queryClient.invalidateQueries({ queryKey: ["auth", "session"] }),
   });
+  const mailboxBootstrap = useMutation({
+    mutationFn: () => bootstrapMailboxOwner({ data: { displayName: "Inbox" } }),
+    retry: false,
+  });
 
   const activeMutation =
     mode === "magic"
@@ -149,8 +154,12 @@ function Home() {
               </div>
             ) : session.data ? (
               <SignedIn
+                bootstrapError={mailboxBootstrap.error}
+                bootstrapResult={mailboxBootstrap.data}
                 userId={session.data.userId}
+                isBootstrapPending={mailboxBootstrap.isPending}
                 isPending={logout.isPending}
+                onBootstrap={() => mailboxBootstrap.mutate()}
                 onLogout={() => logout.mutate()}
               />
             ) : (
@@ -274,12 +283,20 @@ function Home() {
 }
 
 function SignedIn({
+  bootstrapError,
+  bootstrapResult,
   userId,
+  isBootstrapPending,
   isPending,
+  onBootstrap,
   onLogout,
 }: {
+  bootstrapError: Error | null;
+  bootstrapResult?: Awaited<ReturnType<typeof bootstrapMailboxOwner>>;
   userId: string;
+  isBootstrapPending: boolean;
   isPending: boolean;
+  onBootstrap: () => void;
   onLogout: () => void;
 }) {
   return (
@@ -295,11 +312,35 @@ function SignedIn({
         Your mailbox workspace is the next stage of the build. Session
         principal: <code>{userId.slice(0, 12)}...</code>
       </p>
+      <div className="mt-6">
+        {bootstrapResult?.ok ? (
+          <Notice>
+            Primary inbox ready: {bootstrapResult.mailbox.displayName}
+          </Notice>
+        ) : bootstrapResult ? (
+          <ErrorNotice>{bootstrapResult.error.message}</ErrorNotice>
+        ) : bootstrapError ? (
+          <ErrorNotice>Mailbox setup request failed. Try again.</ErrorNotice>
+        ) : null}
+      </div>
+      <button
+        type="button"
+        onClick={onBootstrap}
+        disabled={isBootstrapPending}
+        className="mt-8 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
+      >
+        {isBootstrapPending ? (
+          <LoaderCircle className="animate-spin" size={17} />
+        ) : (
+          <Mail size={17} />
+        )}
+        Create primary inbox
+      </button>
       <button
         type="button"
         onClick={onLogout}
         disabled={isPending}
-        className="mt-8 flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/70 px-5 py-3 font-bold hover:bg-white disabled:opacity-50"
+        className="mt-3 flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/70 px-5 py-3 font-bold hover:bg-white disabled:opacity-50"
       >
         {isPending ? (
           <LoaderCircle className="animate-spin" size={17} />

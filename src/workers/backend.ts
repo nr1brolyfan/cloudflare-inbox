@@ -41,6 +41,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       : yield* Cloudflare.Email.Send(AuthEmailSender);
     const publicOrigin = yield* Config.string("PUBLIC_ORIGIN");
     const emailFrom = Email(yield* Config.string("AUTH_EMAIL_FROM"));
+    const mailboxOwnerEmail = yield* Config.string("MAILBOX_OWNER_EMAIL");
     const sessionSecret = yield* Config.redacted("AUTH_SESSION_SECRET");
     const challengeSecret = yield* Config.redacted("AUTH_CHALLENGE_SECRET");
     const privacySecret = yield* Config.redacted("AUTH_PRIVACY_SECRET");
@@ -49,6 +50,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       BackendAuthConfig.of({
         emailFrom,
         isDevelopment,
+        mailboxOwnerEmail,
         publicOrigin,
         secrets: {
           challenge: challengeSecret,

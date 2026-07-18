@@ -1,26 +1,72 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { makeAuthHttpApiLive } from "../auth/live";
+import { makeAuthLive } from "../auth/live";
 import { makeMailPermissionsLive } from "../authorization/live";
+import { MailAuthorizationLive } from "../authorization/mail-authorization";
+import * as MailResources from "../authorization/resources";
+import { makeMailboxAdministrationLive } from "../mailboxes/administration";
 import { BackendAuthConfig, BackendResources } from "./backend-context";
 import { BackendHealthLive } from "./backend-health";
 import * as Health from "./health";
+import {
+  MailboxGroupLive,
+  MailboxHttpLive,
+  makeMailboxHttpMiddlewareLive,
+} from "./mailboxes";
 import { HttpApiPlatformLive } from "./platform";
 
-const AuthorizationLive = Layer.unwrap(
-  Effect.gen(function* () {
-    const resources = yield* BackendResources;
-    return makeMailPermissionsLive(resources.database);
+const MailResourceResolverUnavailableLive = Layer.succeed(
+  MailResources.MailResourceResolver,
+  MailResources.MailResourceResolver.of({
+    resolveAttachment: (resource) =>
+      Effect.fail(
+        new MailResources.MailResourceResolveError({
+          message: "Mail resource storage is not available",
+          reason: "storage",
+          resource,
+        })
+      ),
+    resolveDraft: (resource) =>
+      Effect.fail(
+        new MailResources.MailResourceResolveError({
+          message: "Mail resource storage is not available",
+          reason: "storage",
+          resource,
+        })
+      ),
+    resolveFolder: (resource) =>
+      Effect.fail(
+        new MailResources.MailResourceResolveError({
+          message: "Mail resource storage is not available",
+          reason: "storage",
+          resource,
+        })
+      ),
+    resolveMessage: (resource) =>
+      Effect.fail(
+        new MailResources.MailResourceResolveError({
+          message: "Mail resource storage is not available",
+          reason: "storage",
+          resource,
+        })
+      ),
+    resolveRule: (resource) =>
+      Effect.fail(
+        new MailResources.MailResourceResolveError({
+          message: "Mail resource storage is not available",
+          reason: "storage",
+          resource,
+        })
+      ),
   })
 );
 
-const AuthHttpLive = Layer.unwrap(
+const BackendRoutesLive = Layer.unwrap(
   Effect.gen(function* () {
     const resources = yield* BackendResources;
     const authConfig = yield* BackendAuthConfig;
-
-    return makeAuthHttpApiLive({
+    const auth = makeAuthLive({
       database: resources.database,
       emailFrom: authConfig.emailFrom,
       emailSender: resources.emailSender,
@@ -30,13 +76,37 @@ const AuthHttpLive = Layer.unwrap(
       rateLimitNamespace: resources.authRateLimit,
       secrets: authConfig.secrets,
     });
+    const permissionsLive = makeMailPermissionsLive(resources.database);
+    const mailAuthorizationLive = MailAuthorizationLive.pipe(
+      Layer.provide(
+        Layer.merge(permissionsLive, MailResourceResolverUnavailableLive)
+      )
+    );
+    const mailboxMiddlewareLive = makeMailboxHttpMiddlewareLive(
+      authConfig.publicOrigin
+    );
+    const mailboxDependenciesLive = Layer.mergeAll(
+      makeMailboxAdministrationLive(resources.database, {
+        ownerEmail: authConfig.mailboxOwnerEmail,
+      }),
+      mailAuthorizationLive,
+      auth.sessionLive,
+      mailboxMiddlewareLive
+    );
+    const mailboxGroupLive = MailboxGroupLive.pipe(
+      Layer.provide(mailboxDependenciesLive)
+    );
+    const mailboxHttpLive = MailboxHttpLive.pipe(
+      Layer.provide(Layer.merge(mailboxGroupLive, mailboxMiddlewareLive))
+    );
+    const healthHttpLive = Health.HealthHttpLive.pipe(
+      Layer.provide(BackendHealthLive.pipe(Layer.provide(permissionsLive)))
+    );
+
+    return Layer.mergeAll(auth.httpApiLive, healthHttpLive, mailboxHttpLive);
   })
 );
 
-const HealthHttpLive = Health.HealthHttpLive.pipe(
-  Layer.provide(BackendHealthLive.pipe(Layer.provide(AuthorizationLive)))
-);
-
-export const BackendHttpLive = Layer.merge(HealthHttpLive, AuthHttpLive).pipe(
+export const BackendHttpLive = BackendRoutesLive.pipe(
   Layer.provide(HttpApiPlatformLive)
 );

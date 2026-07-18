@@ -35,7 +35,9 @@ Private application handlers derive `CurrentSession`, `CurrentActor`, and `Curre
 
 Mailbox owner bootstrap derives the owner from an unrestricted validated session and creates the singleton `primary` mailbox, discovery membership, and scoped owner grant in one D1 batch. Control-plane mutations repeat the token-bound session and permission checks inside the same batch as the guarded write, closing the revoke-between-check-and-write race without treating membership rows as authorization evidence.
 
-Every environment requires the values documented in `.env.example`. `PUBLIC_ORIGIN` must be the exact Website origin, `AUTH_EMAIL_FROM` must use a domain configured for Cloudflare Email Routing in production, and each auth secret must be a separate high-entropy value. Alchemy binds these values as Worker secrets.
+The signed-in Website invokes mailbox mutations through TanStack Start server functions. The Website forwards only selected request metadata over the private `BACKEND` binding; the Backend independently enforces the exact public origin, validates the session cookie, and maps domain failures to cause-free HTTP errors.
+
+Every environment requires the values documented in `.env.example`. `PUBLIC_ORIGIN` must be the exact Website origin, `AUTH_EMAIL_FROM` must use a domain configured for Cloudflare Email Routing in production, and `MAILBOX_OWNER_EMAIL` must identify the verified account allowed to claim the singleton mailbox. Each auth secret must be a separate high-entropy value. Alchemy binds these values as Worker secrets.
 
 ## Commands
 

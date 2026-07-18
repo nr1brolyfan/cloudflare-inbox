@@ -27,6 +27,7 @@ export const BackendResources = Context.Service<BackendResources>(
 export interface BackendAuthConfig {
   readonly emailFrom: AuthHttpApiLiveOptions["emailFrom"];
   readonly isDevelopment: boolean;
+  readonly mailboxOwnerEmail: string;
   readonly publicOrigin: string;
   readonly secrets: AuthHttpApiLiveOptions["secrets"];
 }

@@ -43,6 +43,7 @@ export class MailboxAdministrationError extends Data.TaggedError(
     | "conflict"
     | "invalid-input"
     | "not-found"
+    | "owner-not-eligible"
     | "session-recheck"
     | "storage";
   readonly scope?: AuthPermission.PermissionScope;
@@ -98,6 +99,7 @@ const isControlPlaneBatchError = (
 
 interface LiveOptions {
   readonly now?: () => number;
+  readonly ownerEmail: string;
   readonly randomId?: () => string;
 }
 
@@ -127,6 +129,19 @@ const activeOwnerRolePredicate = `exists (
    where id = ?
      and disabled_at is null
      and deleted_at is null
+)`;
+
+const ownerIdentityPredicate = `exists (
+  select 1
+    from auth_user_identity
+   where user_id = ?
+     and scope_type = 'global'
+     and scope_id = ''
+     and kind = 'email'
+     and normalized_value = ?
+     and verified_at is not null
+     and revoked_at is null
+     and replaced_by_id is null
 )`;
 
 const permissionPredicate = `(
@@ -364,10 +379,20 @@ const resultRows = <Row extends Readonly<Record<string, unknown>>>(
 
 export const makeMailboxAdministrationLive = (
   database: D1EffectQbDatabaseLike,
-  options: LiveOptions = {}
+  options: LiveOptions
 ) => {
   const now = options.now ?? Date.now;
   const randomId = options.randomId ?? (() => crypto.randomUUID());
+  const ownerEmail = (() => {
+    const trimmed = options.ownerEmail.trim();
+    const separator = trimmed.lastIndexOf("@");
+
+    if (separator <= 0 || !/^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u.test(trimmed)) {
+      throw new Error("MAILBOX_OWNER_EMAIL is invalid");
+    }
+
+    return `${trimmed.slice(0, separator)}${trimmed.slice(separator).toLowerCase()}`;
+  })();
 
   return Layer.succeed(
     MailboxAdministration,
@@ -391,8 +416,15 @@ export const makeMailboxAdministrationLive = (
               sql: `insert into app_authorization_guard (nonce)
                     select ?
                      where ${sessionPredicate}
-                       and ${activeOwnerRolePredicate}`,
-              params: [nonce, ...trustedSessionParams, MailRole.owner],
+                       and ${activeOwnerRolePredicate}
+                       and ${ownerIdentityPredicate}`,
+              params: [
+                nonce,
+                ...trustedSessionParams,
+                MailRole.owner,
+                validated.actor.userId,
+                ownerEmail,
+              ],
             },
             {
               sql: `insert into app_mailbox
@@ -456,10 +488,17 @@ export const makeMailboxAdministrationLive = (
             {
               sql: `select cast(${sessionPredicate} as integer) as session_valid,
                            cast(${activeOwnerRolePredicate} as integer) as catalog_valid,
+                           cast(${ownerIdentityPredicate} as integer) as owner_eligible,
                            cast(exists (
                              select 1 from app_authorization_guard where nonce = ?
                            ) as integer) as authorized`,
-              params: [...trustedSessionParams, MailRole.owner, nonce],
+              params: [
+                ...trustedSessionParams,
+                MailRole.owner,
+                validated.actor.userId,
+                ownerEmail,
+                nonce,
+              ],
             },
             {
               sql: "delete from app_authorization_guard where nonce = ?",
@@ -472,6 +511,7 @@ export const makeMailboxAdministrationLive = (
           const [status] = resultRows<{
             readonly authorized: number;
             readonly catalog_valid: number;
+            readonly owner_eligible: number;
             readonly session_valid: number;
           }>(results, 4);
 
@@ -486,6 +526,13 @@ export const makeMailboxAdministrationLive = (
             return yield* Effect.die(
               new Error("Owner role catalog is not active")
             );
+          }
+          if (status.owner_eligible !== 1) {
+            return yield* new MailboxAdministrationError({
+              message: "Current user is not eligible to own the mailbox",
+              operation: "bootstrap-owner",
+              reason: "owner-not-eligible",
+            });
           }
           if (status.authorized !== 1) {
             return yield* Effect.die(

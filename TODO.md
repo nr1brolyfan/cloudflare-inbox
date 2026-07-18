@@ -5,18 +5,18 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-18
-- Postęp zadań: **39/107 (36%)**
-- Ukończone etapy: **1/11**
-- Aktualny etap: **4. Permissions i control plane**
-- Aktualne zadanie: **pierwsze chronione server functions i testy odmowy**
+- Postęp zadań: **40/107 (37%)**
+- Ukończone etapy: **2/11**
+- Aktualny etap: **5. MailboxDO i domena pocztowa**
+- Aktualne zadanie: **Effect schemas i publiczne kontrakty domenowe**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
 | 1   | Toolchain i zależności                | DONE        | 7/7    |
 | 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 9/12   |
 | 3   | Effect-auth i sesje                   | IN PROGRESS | 14/19  |
-| 4   | Permissions i control plane           | CURRENT     | 9/10   |
-| 5   | MailboxDO i domena pocztowa           | TODO        | 0/9    |
+| 4   | Permissions i control plane           | DONE        | 10/10  |
+| 5   | MailboxDO i domena pocztowa           | CURRENT     | 0/9    |
 | 6   | Inbound email                         | TODO        | 0/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | TODO        | 0/9    |
 | 8   | Reguły automatyczne                   | TODO        | 0/6    |
@@ -90,11 +90,11 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Dostarczać zaufany `CurrentPrincipal` z bieżącej sesji.
 - [x] Zaimplementować aplikacyjny `MailAuthorization` dla hierarchii zasobów.
 - [x] Dodać owner bootstrap oraz transactional authorization recheck.
-- [ ] CURRENT Dodać pierwsze chronione server functions i testy odmowy dostępu.
+- [x] Dodać pierwsze chronione server functions i testy odmowy dostępu.
 
 ## 5. MailboxDO i domena pocztowa
 
-- [ ] Zdefiniować Effect schemas i publiczne kontrakty domenowe.
+- [ ] CURRENT Zdefiniować Effect schemas i publiczne kontrakty domenowe.
 - [ ] Zdefiniować typed errors oraz statusy inbound/outbound.
 - [ ] Utworzyć SQLite-backed Durable Object per logiczny mailbox.
 - [ ] Dodać wersjonowane migracje SQLite MailboxDO.
