@@ -7,8 +7,10 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
-    "generate-routes": "tsr generate",
+    "dev": "ALCHEMY_STATE=local alchemy dev",
+    "dev:vite": "vite dev --port 3000",
+    "deploy": "alchemy deploy",
+    "destroy": "alchemy destroy",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -19,6 +21,8 @@
   },
   "dependencies": {
     "@effect-auth/core": "0.1.0-alpha.18",
+    "@effect/platform-bun": "4.0.0-beta.98",
+    "@effect/platform-node": "4.0.0-beta.98",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "latest",
     "@tanstack/react-query": "latest",
@@ -59,5 +63,9 @@
     "typescript": "^6.0.2",
     "vite": "^8.0.0",
     "vitest": "^4.1.5"
+  },
+  "overrides": {
+    "@effect/platform-node-shared": "4.0.0-beta.98",
+    "@effect/vitest": "4.0.0-beta.98"
   }
 }
