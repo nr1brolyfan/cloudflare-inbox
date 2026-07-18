@@ -10,7 +10,8 @@ import {
 } from "./identifiers";
 import { MailAddress } from "./mail-address";
 import { MessageDetailSchema } from "./message-detail";
-import { MessageSummary } from "./message-summary";
+import { MessageSummarySchema } from "./message-summary";
+import { OutboundDeliveryStatus } from "./outbound-delivery-status";
 import {
   EmailAddress,
   MessageDirection,
@@ -45,6 +46,7 @@ export const MessageFilters = Schema.Struct({
   starred: Schema.optional(Schema.Boolean),
   hasAttachment: Schema.optional(Schema.Boolean),
   direction: Schema.optional(MessageDirection),
+  deliveryStatus: Schema.optional(OutboundDeliveryStatus),
   needsReply: Schema.optional(Schema.Boolean),
 }).check(
   Schema.makeFilter((filters) =>
@@ -58,7 +60,7 @@ export const MessageFilters = Schema.Struct({
 export type MessageFilters = Schema.Schema.Type<typeof MessageFilters>;
 
 export const MessagePage = Schema.Struct({
-  items: Schema.Array(MessageSummary),
+  items: Schema.Array(MessageSummarySchema),
   nextCursor: Schema.optional(Cursor),
 });
 export type MessagePage = Schema.Schema.Type<typeof MessagePage>;
@@ -145,7 +147,7 @@ export type RemoveMessageLabelInput = Schema.Schema.Type<
   typeof RemoveMessageLabelInput
 >;
 
-export const MessageMutationResult = MessageSummary;
+export const MessageMutationResult = MessageSummarySchema;
 export type MessageMutationResult = Schema.Schema.Type<
   typeof MessageMutationResult
 >;

@@ -28,6 +28,12 @@ export const ByteSize = Schema.Int.pipe(
 );
 export type ByteSize = Schema.Schema.Type<typeof ByteSize>;
 
+export const AttemptCount = Schema.Int.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+  Schema.brand("cloudflare-inbox/AttemptCount")
+);
+export type AttemptCount = Schema.Schema.Type<typeof AttemptCount>;
+
 export const PageSize = Schema.Int.pipe(
   Schema.check(
     Schema.isGreaterThanOrEqualTo(1),

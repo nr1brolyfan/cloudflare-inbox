@@ -52,6 +52,11 @@ export const OutboundDeliveryId = ResourceId.pipe(
 );
 export type OutboundDeliveryId = Schema.Schema.Type<typeof OutboundDeliveryId>;
 
+export const InboundIngestId = ResourceId.pipe(
+  Schema.brand("cloudflare-inbox/InboundIngestId")
+);
+export type InboundIngestId = Schema.Schema.Type<typeof InboundIngestId>;
+
 export const OperationId = ResourceId.pipe(
   Schema.brand("cloudflare-inbox/OperationId")
 );
