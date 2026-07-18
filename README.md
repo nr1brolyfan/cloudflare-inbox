@@ -33,6 +33,8 @@ Child-resource authorization resolves mailbox and folder ancestry through the tr
 
 Private application handlers derive `CurrentSession`, `CurrentActor`, and `CurrentPrincipal` by validating the incoming session cookie directly against D1. Client-provided user or session identifiers are never accepted as authorization evidence.
 
+Mailbox owner bootstrap derives the owner from an unrestricted validated session and creates the singleton `primary` mailbox, discovery membership, and scoped owner grant in one D1 batch. Control-plane mutations repeat the token-bound session and permission checks inside the same batch as the guarded write, closing the revoke-between-check-and-write race without treating membership rows as authorization evidence.
+
 Every environment requires the values documented in `.env.example`. `PUBLIC_ORIGIN` must be the exact Website origin, `AUTH_EMAIL_FROM` must use a domain configured for Cloudflare Email Routing in production, and each auth secret must be a separate high-entropy value. Alchemy binds these values as Worker secrets.
 
 ## Commands
@@ -61,6 +63,7 @@ src/auth/                   effect-auth layers and development mail transport
 src/authorization/          mail permission catalog and D1-backed layers
 src/http/                   declarative Effect HTTP APIs and router composition
 src/infra/                  Cloudflare resource declarations
+src/mailboxes/              mailbox control-plane application services
 src/server/                 server-only frontend Worker code
 src/workers/backend.ts      private Effect backend Worker
 ```

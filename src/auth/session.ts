@@ -1,3 +1,5 @@
+import { AuthSecrets } from "@effect-auth/core/AuthConfig";
+import { Crypto } from "@effect-auth/core/Crypto";
 import {
   AuthInternalError,
   AuthUnauthenticatedError,
@@ -12,7 +14,11 @@ import {
   SessionCookie,
   Sessions,
 } from "@effect-auth/core/Sessions";
-import type { SessionValidateError } from "@effect-auth/core/Sessions";
+import type {
+  SessionValidateError,
+  ValidatedSession,
+} from "@effect-auth/core/Sessions";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
@@ -30,6 +36,19 @@ const validationError = (error: SessionValidateError) =>
         code: "internal_error",
         message: "Failed to validate session",
       });
+
+export const CurrentValidatedSession = Context.Service<ValidatedSession>(
+  "cloudflare-inbox/CurrentValidatedSession"
+);
+
+export interface CurrentRequestAuthShape {
+  readonly sessionSecretHash: string;
+  readonly validated: ValidatedSession;
+}
+
+export const CurrentRequestAuth = Context.Service<CurrentRequestAuthShape>(
+  "cloudflare-inbox/CurrentRequestAuth"
+);
 
 export const validateRequestSession = (request: Request) =>
   Effect.gen(function* () {
@@ -50,19 +69,52 @@ export const validateRequestSession = (request: Request) =>
 
 export const makeCurrentRequestAuthLive = (request: Request) =>
   Layer.unwrap(
-    validateRequestSession(request).pipe(
-      Effect.map((validated) =>
-        Layer.mergeAll(
-          Layer.succeed(
-            CurrentSession,
-            CurrentSession.of(validated.currentSession)
-          ),
-          Layer.succeed(CurrentActor, CurrentActor.of(validated.actor)),
-          Layer.succeed(
-            CurrentPrincipal,
-            CurrentPrincipal.of(PermissionSubject.user(validated.actor.userId))
+    Effect.gen(function* () {
+      const validated = yield* validateRequestSession(request);
+      const crypto = yield* Crypto;
+      const secrets = yield* AuthSecrets;
+      const token = String(validated.issued.token);
+      const separator = token.indexOf(".");
+
+      if (separator <= 0 || separator === token.length - 1) {
+        return yield* Effect.die(
+          new Error("Validated session contains an invalid token")
+        );
+      }
+
+      const sessionSecretHash = yield* crypto
+        .hmacSha256({
+          data: token.slice(separator + 1),
+          key: secrets.session,
+        })
+        .pipe(
+          Effect.mapError(
+            () =>
+              new AuthInternalError({
+                code: "internal_error",
+                message: "Failed to bind validated session",
+              })
           )
+        );
+
+      return Layer.mergeAll(
+        Layer.succeed(
+          CurrentRequestAuth,
+          CurrentRequestAuth.of({ sessionSecretHash, validated })
+        ),
+        Layer.succeed(
+          CurrentValidatedSession,
+          CurrentValidatedSession.of(validated)
+        ),
+        Layer.succeed(
+          CurrentSession,
+          CurrentSession.of(validated.currentSession)
+        ),
+        Layer.succeed(CurrentActor, CurrentActor.of(validated.actor)),
+        Layer.succeed(
+          CurrentPrincipal,
+          CurrentPrincipal.of(PermissionSubject.user(validated.actor.userId))
         )
-      )
-    )
+      );
+    })
   );

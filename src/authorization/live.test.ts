@@ -1,12 +1,5 @@
-import { readdir, readFile } from "node:fs/promises";
-import type { SQLInputValue } from "node:sqlite";
 import { DatabaseSync } from "node:sqlite";
 
-import type {
-  D1EffectQbDatabaseLike,
-  D1EffectQbPreparedStatementLike,
-  D1EffectQbResult,
-} from "@effect-auth/core/EffectQbSqliteStorage";
 import { UnixMillis } from "@effect-auth/core/Identifiers";
 import {
   PermissionAdministration,
@@ -16,6 +9,7 @@ import {
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
+import { applyControlPlaneMigrations, makeTestD1Database } from "../test/d1";
 import {
   MailPermission,
   MailRole,
@@ -26,69 +20,12 @@ import {
 } from "./catalog";
 import { makeMailPermissionsLive } from "./live";
 
-const migrationsDirectory = new URL(
-  "../../migrations/control-plane/",
-  import.meta.url
-);
-
-const applyMigrations = async (database: DatabaseSync) => {
-  const directoryEntries = await readdir(migrationsDirectory);
-  const migrationFiles = directoryEntries.filter((file) =>
-    file.endsWith(".sql")
-  );
-  // oxlint-disable-next-line unicorn/no-array-sort -- Migration order is part of the schema contract.
-  migrationFiles.sort();
-  const migrations = await Promise.all(
-    migrationFiles.map((file) =>
-      readFile(new URL(file, migrationsDirectory), "utf-8")
-    )
-  );
-
-  database.exec("pragma foreign_keys = on");
-  for (const migration of migrations) {
-    database.exec(migration);
-  }
-};
-
-const errorMessage = (error: unknown) =>
-  error instanceof Error ? error.message : String(error);
-
-const makeD1Database = (database: DatabaseSync): D1EffectQbDatabaseLike => {
-  const makeStatement = (
-    sql: string,
-    values: readonly unknown[] = []
-  ): D1EffectQbPreparedStatementLike => ({
-    all: <Row extends Readonly<Record<string, unknown>>>() => {
-      try {
-        return Promise.resolve({
-          results: database
-            .prepare(sql)
-            .all(...(values as readonly SQLInputValue[])) as Row[],
-          success: true,
-        } satisfies D1EffectQbResult<Row>);
-      } catch (error) {
-        return Promise.resolve({
-          error: errorMessage(error),
-          success: false,
-        } satisfies D1EffectQbResult<Row>);
-      }
-    },
-    bind: (...boundValues) => makeStatement(sql, boundValues),
-  });
-
-  return {
-    batch: (statements) =>
-      Promise.all(statements.map((statement) => statement.all())),
-    prepare: (sql) => makeStatement(sql),
-  };
-};
-
 describe("D1 mail authorization", () => {
   it("applies mailbox registry constraints and seeds the typed catalog", async () => {
     const database = new DatabaseSync(":memory:");
 
     try {
-      await applyMigrations(database);
+      await applyControlPlaneMigrations(database);
       database
         .prepare(
           `insert into app_mailbox
@@ -176,7 +113,7 @@ describe("D1 mail authorization", () => {
     const database = new DatabaseSync(":memory:");
 
     try {
-      await applyMigrations(database);
+      await applyControlPlaneMigrations(database);
       const program = Effect.gen(function* () {
         const administration = yield* PermissionAdministration;
         const permissions = yield* Permissions;
@@ -260,7 +197,7 @@ describe("D1 mail authorization", () => {
           })
         ).toBeFalsy();
       }).pipe(
-        Effect.provide(makeMailPermissionsLive(makeD1Database(database)))
+        Effect.provide(makeMailPermissionsLive(makeTestD1Database(database)))
       );
 
       await Effect.runPromise(program);

@@ -1,3 +1,5 @@
+import { AuthSecretsLive } from "@effect-auth/core/AuthConfig";
+import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import {
   AuthInternalError,
   AuthUnauthenticatedError,
@@ -23,9 +25,15 @@ import {
 } from "@effect-auth/core/Sessions";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 
-import { makeCurrentRequestAuthLive, validateRequestSession } from "./session";
+import {
+  CurrentRequestAuth,
+  CurrentValidatedSession,
+  makeCurrentRequestAuthLive,
+  validateRequestSession,
+} from "./session";
 
 const userId = UserId("trusted-user");
 const sessionId = SessionId("session-a");
@@ -52,9 +60,15 @@ const validatedSession = {
 } satisfies ValidatedSession;
 
 const makeSessionServicesLive = (validate: SessionsService["validate"]) =>
-  Layer.merge(
+  Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
-    Layer.succeed(Sessions, Sessions.of({ validate } as SessionsService))
+    Layer.succeed(Sessions, Sessions.of({ validate } as SessionsService)),
+    WebCryptoLive(),
+    AuthSecretsLive({
+      challenge: Redacted.make("challenge-secret"),
+      privacy: Redacted.make("privacy-secret"),
+      session: Redacted.make("session-secret"),
+    })
   );
 
 const requestWithSession = (url = "https://inbox.test/private") =>
@@ -68,7 +82,9 @@ const requestWithSession = (url = "https://inbox.test/private") =>
 const readCurrentContexts = Effect.all({
   actor: CurrentActor,
   principal: CurrentPrincipal,
+  requestAuth: CurrentRequestAuth,
   session: CurrentSession,
+  validated: CurrentValidatedSession,
 });
 
 describe("current request auth", () => {
@@ -90,11 +106,14 @@ describe("current request auth", () => {
       )
     );
 
-    expect(contexts).toStrictEqual({
+    expect(contexts).toMatchObject({
       actor,
       principal: { id: userId, type: "user" },
+      requestAuth: { validated: validatedSession },
       session: currentSession,
+      validated: validatedSession,
     });
+    expect(contexts.requestAuth.sessionSecretHash).toHaveLength(43);
     expect(validations).toBe(1);
   });
 
