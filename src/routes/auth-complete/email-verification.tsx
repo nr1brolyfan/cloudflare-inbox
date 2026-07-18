@@ -1,7 +1,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 
-import { authClient, authErrorMessage } from "../../auth/client";
+import {
+  authClient,
+  authErrorMessage,
+  authSessionQueryKey,
+} from "../../auth/client";
 import { CompletionShell } from "../../auth/completion-shell";
 import { useCompletionCredentials } from "../../auth/use-completion-credentials";
 
@@ -22,7 +26,7 @@ function EmailVerificationCompletion() {
       }),
     retry: false,
     onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
+      await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
       await navigate({ to: "/" });
     },
   });

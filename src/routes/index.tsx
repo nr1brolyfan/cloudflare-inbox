@@ -12,7 +12,14 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { authClient, authErrorMessage, emailIdentity } from "../auth/client";
+import {
+  authClient,
+  authErrorMessage,
+  authSessionQueryKey,
+  clearCachedAuthSession,
+  currentSessionForQuery,
+  emailIdentity,
+} from "../auth/client";
 import { getDevEmailInboxStatus } from "../server/dev-email-functions";
 import { bootstrapMailboxOwner } from "../server/mailbox-functions";
 
@@ -49,8 +56,8 @@ function Home() {
   const [notice, setNotice] = useState<string>();
 
   const session = useQuery({
-    queryKey: ["auth", "session"],
-    queryFn: ({ signal }) => authClient.session.currentOrUndefined({ signal }),
+    queryKey: authSessionQueryKey,
+    queryFn: ({ signal }) => currentSessionForQuery(signal),
     retry: false,
   });
 
@@ -61,7 +68,7 @@ function Home() {
     }
 
     setNotice(undefined);
-    await queryClient.invalidateQueries({ queryKey: ["auth", "session"] });
+    await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
   };
 
   const magicLink = useMutation({
@@ -109,8 +116,7 @@ function Home() {
   const logout = useMutation({
     mutationFn: () => authClient.session.logout(),
     retry: false,
-    onSuccess: () =>
-      queryClient.invalidateQueries({ queryKey: ["auth", "session"] }),
+    onSuccess: () => clearCachedAuthSession(queryClient),
   });
   const mailboxBootstrap = useMutation({
     mutationFn: () => bootstrapMailboxOwner({ data: { displayName: "Inbox" } }),
