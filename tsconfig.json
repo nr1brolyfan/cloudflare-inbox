@@ -20,8 +20,9 @@
     /* Linting */
     "skipLibCheck": true,
     "strict": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
+    /* effect-qb publishes TypeScript sources; Biome checks unused app code. */
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   }

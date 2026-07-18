@@ -29,6 +29,18 @@ Backend: http://localhost:1338
 binding. `bun run dev:vite` starts only the TanStack Vite application and does
 not provide Cloudflare bindings.
 
+Auth requests are served from the public origin under `/auth/*` and forwarded
+to the private Backend Worker. Development uses development-only fallback
+secrets and writes rendered auth messages to `app_auth_email_outbox` in the
+development D1 database. The full effect-auth Core API is enabled, including
+email OTP, magic link, session, password registration, sign-in, and reset
+endpoints.
+
+Deployed environments require the values documented in `.env.example`.
+`PUBLIC_ORIGIN` must be the exact Website origin, `AUTH_EMAIL_FROM` must use a
+domain configured for Cloudflare Email Routing, and each auth secret must be a
+separate high-entropy value. Alchemy binds these values as Worker secrets.
+
 ## Commands
 
 ```bash
@@ -37,9 +49,13 @@ bun run typecheck
 bun run test
 bun run check
 bun run format
+bun run generate:auth-migrations
 bun run deploy
 bun run destroy
 ```
+
+Run `bun run generate:auth-migrations` after changing `@effect-auth/core`.
+Committed migrations are verified automatically by `bun run check`.
 
 Production deployment uses Alchemy's Cloudflare state store. Local development
 sets `ALCHEMY_STATE=local` and keeps generated state under the ignored
@@ -50,6 +66,8 @@ sets `ALCHEMY_STATE=local` and keeps generated state under the ignored
 ```text
 alchemy.run.ts              Cloudflare resource graph
 src/routes/                 TanStack Start routes
+src/auth/                   effect-auth layers and development mail transport
+src/infra/                  Cloudflare resource declarations
 src/server/                 server-only frontend Worker code
 src/workers/backend.ts      private Effect backend Worker
 ```
