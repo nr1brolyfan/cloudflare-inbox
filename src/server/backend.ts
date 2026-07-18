@@ -3,7 +3,7 @@ import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { MailboxRecord } from "../mailboxes/model";
+import { MailboxRecordSchema } from "../mailboxes/model";
 import { BackendClient } from "./backend-client";
 
 export interface MailboxPublicError {
@@ -14,7 +14,7 @@ export interface MailboxPublicError {
 
 export type MailboxServerResult =
   | {
-      readonly mailbox: Schema.Codec.Encoded<typeof MailboxRecord>;
+      readonly mailbox: Schema.Codec.Encoded<typeof MailboxRecordSchema>;
       readonly ok: true;
     }
   | {
@@ -129,10 +129,10 @@ export const forwardMailboxMutation = (
     const body = bodyOption.value;
 
     if (response.ok) {
-      const decoded = Schema.decodeUnknownExit(MailboxRecord)(body);
+      const decoded = Schema.decodeUnknownExit(MailboxRecordSchema)(body);
       return Exit.isSuccess(decoded)
         ? {
-            mailbox: Schema.encodeSync(MailboxRecord)(decoded.value),
+            mailbox: Schema.encodeSync(MailboxRecordSchema)(decoded.value),
             ok: true,
           }
         : invalidBackendResponse();

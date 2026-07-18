@@ -78,7 +78,7 @@ src/auth/                   effect-auth layers and development mail transport
 src/authorization/          mail permission catalog and D1-backed layers
 src/http/                   declarative Effect HTTP APIs and router composition
 src/infra/                  Cloudflare resource declarations
-src/mailboxes/              mailbox control-plane application services
+src/mailboxes/              mail domain contracts and control-plane services
 src/observability/          Effect logging and local OTLP composition
 src/server/                 server-only frontend Worker code
 src/workers/backend.ts      private Effect backend Worker

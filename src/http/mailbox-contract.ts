@@ -16,18 +16,20 @@ import {
 } from "effect/unstable/httpapi";
 
 import { CurrentRequestAuthMiddleware } from "../auth/session";
-import { MailboxRecord } from "../mailboxes/model";
+import { MailboxId } from "../mailboxes/identifiers";
+import { MailboxRecordSchema } from "../mailboxes/model";
+import { MailboxDisplayName } from "../mailboxes/primitives";
 
 export const MailboxDisplayNamePayloadSchema = Schema.Struct({
-  displayName: Schema.String,
+  displayName: MailboxDisplayName,
 });
 
 export const RenameMailboxInputSchema = Schema.Struct({
-  displayName: Schema.String,
-  mailboxId: Schema.String,
+  displayName: MailboxDisplayName,
+  mailboxId: MailboxId,
 });
 
-const MailboxParams = Schema.Struct({ mailboxId: Schema.String });
+const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
 const MailboxErrors = [
   AuthBadRequestError,
   AuthUnauthenticatedError,
@@ -43,7 +45,7 @@ export const BootstrapOwnerEndpoint = HttpApiEndpoint.post(
   {
     error: MailboxErrors,
     payload: MailboxDisplayNamePayloadSchema,
-    success: MailboxRecord.pipe(HttpApiSchema.status(201)),
+    success: MailboxRecordSchema.pipe(HttpApiSchema.status(201)),
   }
 );
 
@@ -54,7 +56,7 @@ export const RenameMailboxEndpoint = HttpApiEndpoint.patch(
     error: MailboxErrors,
     params: MailboxParams,
     payload: MailboxDisplayNamePayloadSchema,
-    success: MailboxRecord,
+    success: MailboxRecordSchema,
   }
 );
 

@@ -7,6 +7,7 @@ import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuthShape } from "../auth/session";
 import { CurrentRequestAuth } from "../auth/session";
@@ -19,7 +20,8 @@ import type { MailAuthorizationError } from "../authorization/mail-authorization
 import { MailAuthorization } from "../authorization/mail-authorization";
 import { ControlPlaneBatchError } from "./control-plane-batch-error";
 import type { ControlPlaneCommitState } from "./control-plane-batch-error";
-import { MailboxRecord } from "./model";
+import { MailboxRecordSchema } from "./model";
+import type { MailboxRecord } from "./model";
 
 export type { ControlPlaneCommitState } from "./control-plane-batch-error";
 
@@ -530,7 +532,7 @@ export const MailboxAdministrationLive = Layer.effect(
             });
           }
 
-          return new MailboxRecord({
+          return Schema.decodeUnknownSync(MailboxRecordSchema)({
             createdAt: timestamp,
             createdByUserId: validated.actor.userId,
             displayName,
@@ -648,7 +650,7 @@ export const MailboxAdministrationLive = Layer.effect(
             });
           }
 
-          return new MailboxRecord({
+          return Schema.decodeUnknownSync(MailboxRecordSchema)({
             createdAt: row.created_at,
             createdByUserId: row.created_by_user_id,
             displayName: row.display_name,

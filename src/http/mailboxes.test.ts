@@ -25,6 +25,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
@@ -36,7 +37,7 @@ import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "../mailboxes/administration";
-import { MailboxRecord } from "../mailboxes/model";
+import { MailboxRecordSchema } from "../mailboxes/model";
 import { MailboxGroup } from "./mailbox-contract";
 import { MailboxGroupLive } from "./mailboxes";
 import { HttpApiPlatformLive } from "./platform";
@@ -68,7 +69,7 @@ const validatedSession = {
     userId,
   },
 } satisfies ValidatedSession;
-const mailbox = new MailboxRecord({
+const mailbox = Schema.decodeUnknownSync(MailboxRecordSchema)({
   createdAt: 1000,
   createdByUserId: userId,
   displayName: "Inbox",
@@ -85,7 +86,11 @@ const makeAdministration = (
     bootstrapOwner: () => Effect.succeed(mailbox),
     rename: ({ displayName }) =>
       Effect.succeed(
-        new MailboxRecord({ ...mailbox, displayName, version: 2 })
+        Schema.decodeUnknownSync(MailboxRecordSchema)({
+          ...mailbox,
+          displayName,
+          version: 2,
+        })
       ),
     ...overrides,
   });
