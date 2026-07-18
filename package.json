@@ -11,13 +11,15 @@
     "dev:vite": "vite dev --port 3000",
     "deploy": "alchemy deploy",
     "destroy": "alchemy destroy",
+    "generate:auth-migrations": "bun scripts/write-auth-migrations.ts",
+    "check:auth-migrations": "bun scripts/write-auth-migrations.ts --check",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "format": "biome format --write",
     "lint": "biome lint",
-    "check": "biome check"
+    "check": "bun run check:auth-migrations && biome check"
   },
   "dependencies": {
     "@effect-auth/core": "0.1.0-alpha.18",
