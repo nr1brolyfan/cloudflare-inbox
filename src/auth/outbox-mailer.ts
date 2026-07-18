@@ -28,6 +28,14 @@ const insertEmail = `
 const encode = (value: unknown): string | null =>
   value === undefined ? null : JSON.stringify(value);
 
+const developmentEmailPreview = (message: EmailMessage) =>
+  [
+    "Development auth email",
+    `To: ${JSON.stringify(message.to)}`,
+    `Subject: ${message.subject}`,
+    message.text ?? message.html ?? "",
+  ].join("\n");
+
 // Alchemy clients are runtime-colored but close over their Worker binding.
 const eraseRuntimeContext = <A, E>(
   effect: Effect.Effect<A, E, RuntimeContext>
@@ -59,6 +67,7 @@ export const D1OutboxMailerLive = (
               )
               .run()
           ).pipe(
+            Effect.tap(() => Effect.logInfo(developmentEmailPreview(message))),
             Effect.asVoid,
             Effect.catchCause((cause) =>
               Effect.fail(

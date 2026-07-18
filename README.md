@@ -25,7 +25,7 @@ Backend: http://localhost:1338
 
 `GET http://localhost:1337/api/health` verifies the Website to Backend service binding. `bun run dev:vite` starts only the TanStack Vite application and does not provide Cloudflare bindings.
 
-Auth requests are served from the public origin under `/auth/*` and forwarded to the private Backend Worker. Development writes rendered auth messages to `app_auth_email_outbox` in the development D1 database. The full effect-auth Core API is enabled, including email OTP, magic link, session, password registration, sign-in, and reset endpoints. Password creation and reset enforce a 12-character minimum.
+Auth requests are served from the public origin under `/auth/*` and forwarded to the private Backend Worker. Development writes rendered auth messages to `app_auth_email_outbox` in D1 and prints their recipient, subject, and body to the `bun run dev` terminal, including OTP codes and magic links. The full effect-auth Core API is enabled, including email OTP, magic link, session, password registration, sign-in, and reset endpoints. Password creation and reset enforce a 12-character minimum.
 
 The D1 control plane stores the mailbox registry, mailbox membership projection, user preferences, and effect-auth's scoped grants. `app_mailbox_member` is used only to discover a user's mailboxes; effect-auth role and permission grants remain the authorization source of truth.
 
