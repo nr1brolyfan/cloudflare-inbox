@@ -20,7 +20,7 @@
     /* Linting */
     "skipLibCheck": true,
     "strict": true,
-    /* effect-qb publishes TypeScript sources; Biome checks unused app code. */
+    /* effect-qb publishes TypeScript sources; Oxlint checks unused app code. */
     "noUnusedLocals": false,
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true,

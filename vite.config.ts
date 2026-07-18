@@ -6,19 +6,19 @@ import viteReact, { reactCompilerPreset } from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
 const config = defineConfig({
-	build: {
-		rolldownOptions: {
-			external: ["cloudflare:email", "cloudflare:workers"],
-		},
-	},
-	resolve: { tsconfigPaths: true },
-	plugins: [
-		devtools(),
-		tailwindcss(),
-		tanstackStart(),
-		viteReact(),
-		babel({ presets: [reactCompilerPreset()] }),
-	],
+  build: {
+    rolldownOptions: {
+      external: ["cloudflare:email", "cloudflare:workers"],
+    },
+  },
+  resolve: { tsconfigPaths: true },
+  plugins: [
+    devtools(),
+    tailwindcss(),
+    tanstackStart(),
+    viteReact(),
+    babel({ presets: [reactCompilerPreset()] }),
+  ],
 });
 
 export default config;

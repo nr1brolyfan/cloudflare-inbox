@@ -1,8 +1,6 @@
 # Cloudflare Inbox v1
 
-Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder,
-inbound, organizacja i wyszukiwanie, reguły, bezpieczne renderowanie, outbound
-z undo send oraz AI ograniczone do odczytu i draftów.
+Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbound, organizacja i wyszukiwanie, reguły, bezpieczne renderowanie, outbound z undo send oraz AI ograniczone do odczytu i draftów.
 
 ## Status
 
@@ -12,19 +10,19 @@ z undo send oraz AI ograniczone do odczytu i draftów.
 - Aktualny etap: **4. Permissions i control plane**
 - Aktualne zadanie: **model D1 mailbox registry i definicje scoped permissions**
 
-| # | Etap | Status | Postęp |
-| --- | --- | --- | --- |
-| 1 | Toolchain i zależności | DONE | 7/7 |
-| 2 | Split Worker i infrastruktura Alchemy | IN PROGRESS | 9/12 |
-| 3 | Effect-auth i sesje | IN PROGRESS | 14/19 |
-| 4 | Permissions i control plane | CURRENT | 0/10 |
-| 5 | MailboxDO i domena pocztowa | TODO | 0/9 |
-| 6 | Inbound email | TODO | 0/9 |
-| 7 | Inbox UI i bezpieczne renderowanie | TODO | 0/9 |
-| 8 | Reguły automatyczne | TODO | 0/6 |
-| 9 | Drafty i outbound | TODO | 0/9 |
-| 10 | AI | TODO | 0/6 |
-| 11 | Hardening i produkcja | TODO | 0/11 |
+| #   | Etap                                  | Status      | Postęp |
+| --- | ------------------------------------- | ----------- | ------ |
+| 1   | Toolchain i zależności                | DONE        | 7/7    |
+| 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 9/12   |
+| 3   | Effect-auth i sesje                   | IN PROGRESS | 14/19  |
+| 4   | Permissions i control plane           | CURRENT     | 0/10   |
+| 5   | MailboxDO i domena pocztowa           | TODO        | 0/9    |
+| 6   | Inbound email                         | TODO        | 0/9    |
+| 7   | Inbox UI i bezpieczne renderowanie    | TODO        | 0/9    |
+| 8   | Reguły automatyczne                   | TODO        | 0/6    |
+| 9   | Drafty i outbound                     | TODO        | 0/9    |
+| 10  | AI                                    | TODO        | 0/6    |
+| 11  | Hardening i produkcja                 | TODO        | 0/11   |
 
 ### Zasady aktualizacji
 
@@ -41,7 +39,7 @@ z undo send oraz AI ograniczone do odczytu i draftów.
 - [x] Przypiąć `@effect-auth/core@0.1.0-alpha.18`.
 - [x] Przypiąć kompatybilne Effect, Effect-QB i Alchemy beta.
 - [x] Dodać aktualne typy Cloudflare Workers.
-- [x] Zapewnić czysty build, typecheck, test i Biome check.
+- [x] Zapewnić czysty build, typecheck, test, Oxlint i Oxfmt check.
 - [x] Zweryfikować minimalny `alchemy dev` lokalnym smoke testem.
 
 ## 2. Split Worker i infrastruktura Alchemy
@@ -183,7 +181,5 @@ z undo send oraz AI ograniczone do odczytu i draftów.
 
 ## Uwagi wersji
 
-- Implementacja używa `@effect-auth/core@0.1.0-alpha.18` i peer versions z jego
-  manifestu.
-- Strony Installation i Package Exports mogą nadal wymieniać alpha.17; źródłem
-  prawdy są manifest pakietu, publiczne exports i lockfile repozytorium.
+- Implementacja używa `@effect-auth/core@0.1.0-alpha.18` i peer versions z jego manifestu.
+- Strony Installation i Package Exports mogą nadal wymieniać alpha.17; źródłem prawdy są manifest pakietu, publiczne exports i lockfile repozytorium.
