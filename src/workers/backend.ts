@@ -29,6 +29,20 @@ const HttpPlatformStub = Layer.succeed(HttpPlatform.HttpPlatform, {
 const developmentSecret = (purpose: string) =>
 	Redacted.make(`cloudflare-inbox-development-${purpose}-secret`);
 
+const hasCallerProvidedOtpSecret = (request: Request) =>
+	Effect.tryPromise({
+		try: () => request.clone().json(),
+		catch: () => undefined,
+	}).pipe(
+		Effect.map(
+			(payload) =>
+				typeof payload === "object" &&
+				payload !== null &&
+				Object.hasOwn(payload, "secret"),
+		),
+		Effect.catchCause(() => Effect.succeed(false)),
+	);
+
 export default class Backend extends Cloudflare.Worker<Backend>()(
 	"Backend",
 	{
@@ -79,6 +93,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
 		return {
 			fetch: Effect.gen(function* () {
 				const request = yield* HttpServerRequest;
+				const webRequest = yield* Cloudflare.Request;
 				const url = new URL(request.url, "http://backend");
 
 				if (request.method === "GET" && url.pathname === "/api/health") {
@@ -122,6 +137,21 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
 				}
 
 				if (url.pathname.startsWith("/auth/")) {
+					if (
+						request.method === "POST" &&
+						url.pathname === "/auth/email-otp/start" &&
+						(yield* hasCallerProvidedOtpSecret(webRequest))
+					) {
+						return yield* HttpServerResponse.json(
+							{
+								_tag: "AuthBadRequestError",
+								code: "bad_request",
+								message: "Invalid email OTP request",
+							},
+							{ status: 400 },
+						);
+					}
+
 					return yield* Effect.scoped(
 						Effect.gen(function* () {
 							const authHandler = yield* makeAuthHttpApiLive({
