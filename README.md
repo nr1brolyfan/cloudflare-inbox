@@ -27,6 +27,8 @@ Backend: http://localhost:1338
 
 Auth requests are served from the public origin under `/auth/*` and forwarded to the private Backend Worker. Development uses development-only fallback secrets and writes rendered auth messages to `app_auth_email_outbox` in the development D1 database. The full effect-auth Core API is enabled, including email OTP, magic link, session, password registration, sign-in, and reset endpoints. Password creation and reset enforce a 12-character minimum.
 
+The D1 control plane stores the mailbox registry, mailbox membership projection, user preferences, and effect-auth's scoped grants. `app_mailbox_member` is used only to discover a user's mailboxes; effect-auth role and permission grants remain the authorization source of truth.
+
 Deployed environments require the values documented in `.env.example`. `PUBLIC_ORIGIN` must be the exact Website origin, `AUTH_EMAIL_FROM` must use a domain configured for Cloudflare Email Routing, and each auth secret must be a separate high-entropy value. Alchemy binds these values as Worker secrets.
 
 ## Commands
@@ -52,6 +54,7 @@ Production deployment uses Alchemy's Cloudflare state store. Local development s
 alchemy.run.ts              Cloudflare resource graph
 src/routes/                 TanStack Start routes
 src/auth/                   effect-auth layers and development mail transport
+src/authorization/          mail permission catalog and D1-backed layers
 src/infra/                  Cloudflare resource declarations
 src/server/                 server-only frontend Worker code
 src/workers/backend.ts      private Effect backend Worker

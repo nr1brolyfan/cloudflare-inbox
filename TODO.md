@@ -5,17 +5,17 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-18
-- Postęp zadań: **30/107 (28%)**
+- Postęp zadań: **36/107 (34%)**
 - Ukończone etapy: **1/11**
 - Aktualny etap: **4. Permissions i control plane**
-- Aktualne zadanie: **model D1 mailbox registry i definicje scoped permissions**
+- Aktualne zadanie: **zaufany CurrentPrincipal z bieżącej sesji**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
 | 1   | Toolchain i zależności                | DONE        | 7/7    |
 | 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 9/12   |
 | 3   | Effect-auth i sesje                   | IN PROGRESS | 14/19  |
-| 4   | Permissions i control plane           | CURRENT     | 0/10   |
+| 4   | Permissions i control plane           | CURRENT     | 6/10   |
 | 5   | MailboxDO i domena pocztowa           | TODO        | 0/9    |
 | 6   | Inbound email                         | TODO        | 0/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | TODO        | 0/9    |
@@ -81,13 +81,13 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 ## 4. Permissions i control plane
 
-- [ ] CURRENT Zaprojektować migrację D1 dla mailbox registry i user preferences.
-- [ ] Zdefiniować permissions mailbox/folder/message/draft/rule/attachment/export.
-- [ ] Zdefiniować role `owner`, `manager`, `editor`, `viewer`.
-- [ ] Zdefiniować scopes `mailbox:{id}` i `folder:{id}`.
-- [ ] Podłączyć `PermissionAdministration`.
-- [ ] Podłączyć `PermissionsFromStoreLive` do D1.
-- [ ] Dostarczać zaufany `CurrentPrincipal` z bieżącej sesji.
+- [x] Zaprojektować migrację D1 dla mailbox registry i user preferences.
+- [x] Zdefiniować permissions mailbox/folder/message/draft/rule/attachment/export.
+- [x] Zdefiniować role `owner`, `manager`, `editor`, `viewer`.
+- [x] Zdefiniować scopes `mailbox:{id}` i `folder:{id}`.
+- [x] Podłączyć `PermissionAdministration`.
+- [x] Podłączyć `PermissionsFromStoreLive` do D1.
+- [ ] CURRENT Dostarczać zaufany `CurrentPrincipal` z bieżącej sesji.
 - [ ] Zaimplementować aplikacyjny `MailAuthorization` dla hierarchii zasobów.
 - [ ] Dodać owner bootstrap oraz transactional authorization recheck.
 - [ ] Dodać pierwsze chronione server functions i testy odmowy dostępu.

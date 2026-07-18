@@ -1,11 +1,17 @@
 import { RateLimitDurableObject } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
 import { Email } from "@effect-auth/core/Identifiers";
+import {
+  PermissionAdministration,
+  Permissions,
+  PermissionSubject,
+} from "@effect-auth/core/Permission";
 import { ALCHEMY_DEV } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Redacted from "effect/Redacted";
 import * as Etag from "effect/unstable/http/Etag";
@@ -15,6 +21,8 @@ import { HttpServerRequest } from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import { makeAuthHttpApiLive } from "../auth/live";
+import { MailPermission, mailboxScope } from "../authorization/catalog";
+import { makeMailAuthorizationLive } from "../authorization/live";
 import {
   AuthEmailSender,
   ControlPlaneDatabase,
@@ -95,6 +103,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       fetch: Effect.gen(function* () {
         const request = yield* HttpServerRequest;
         const webRequest = yield* Cloudflare.Request;
+        const controlPlaneDatabase = yield* controlPlane.raw;
+        const authorizationLive =
+          makeMailAuthorizationLive(controlPlaneDatabase);
         const url = new URL(request.url, "http://backend");
 
         if (request.method === "GET" && url.pathname === "/api/health") {
@@ -108,6 +119,26 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
                   tokens: 0,
                 })
                 .pipe(Effect.exit),
+              authorization: Effect.gen(function* () {
+                const administration = yield* PermissionAdministration;
+                const permissions = yield* Permissions;
+                const definition =
+                  yield* administration.getPermissionDefinition(
+                    MailPermission.mailboxRead
+                  );
+
+                if (Option.isNone(definition)) {
+                  return yield* Effect.fail(
+                    new Error("Mail permission catalog is not installed")
+                  );
+                }
+
+                yield* permissions.hasPermission({
+                  permission: MailPermission.mailboxRead,
+                  scope: mailboxScope("__health__"),
+                  subject: PermissionSubject.make("health", "backend"),
+                });
+              }).pipe(Effect.provide(authorizationLive), Effect.exit),
               controlPlane: controlPlane
                 .prepare("select 1 as ready")
                 .first()
@@ -118,6 +149,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           );
           const storage = {
             authRateLimit: Exit.isSuccess(checks.authRateLimit)
+              ? "ok"
+              : "error",
+            authorization: Exit.isSuccess(checks.authorization)
               ? "ok"
               : "error",
             controlPlane: Exit.isSuccess(checks.controlPlane) ? "ok" : "error",
@@ -156,7 +190,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           return yield* Effect.scoped(
             Effect.gen(function* () {
               const authHandler = yield* makeAuthHttpApiLive({
-                database: yield* controlPlane.raw,
+                database: controlPlaneDatabase,
                 emailFrom,
                 emailSender,
                 isDevelopment,
