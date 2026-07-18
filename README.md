@@ -29,6 +29,8 @@ Auth requests are served from the public origin under `/auth/*` and forwarded to
 
 The D1 control plane stores the mailbox registry, mailbox membership projection, user preferences, and effect-auth's scoped grants. `app_mailbox_member` is used only to discover a user's mailboxes; effect-auth role and permission grants remain the authorization source of truth.
 
+Private application handlers derive `CurrentSession`, `CurrentActor`, and `CurrentPrincipal` by validating the incoming session cookie directly against D1. Client-provided user or session identifiers are never accepted as authorization evidence.
+
 Deployed environments require the values documented in `.env.example`. `PUBLIC_ORIGIN` must be the exact Website origin, `AUTH_EMAIL_FROM` must use a domain configured for Cloudflare Email Routing, and each auth secret must be a separate high-entropy value. Alchemy binds these values as Worker secrets.
 
 ## Commands

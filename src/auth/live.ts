@@ -89,7 +89,7 @@ const MinimumPasswordRiskPolicyLive = Layer.succeed(
   })
 );
 
-export const makeAuthHttpApiLive = (options: AuthHttpApiLiveOptions) => {
+export const makeAuthLive = (options: AuthHttpApiLiveOptions) => {
   const storageLive = D1EffectQbSqliteAuthStorageLive(options.database);
   const productionTransportLive = () => {
     const { emailSender } = options;
@@ -143,10 +143,12 @@ export const makeAuthHttpApiLive = (options: AuthHttpApiLiveOptions) => {
     Layer.provide(emailTemplatesLive),
     Layer.provide(transportLive)
   );
-  const baseLive = AuthKernelLive.pipe(
+  const sessionLive = AuthKernelLive.pipe(
     Layer.provideMerge(storageLive),
     Layer.provideMerge(WebCryptoLive()),
-    Layer.provideMerge(AuthSecretsLive(options.secrets)),
+    Layer.provideMerge(AuthSecretsLive(options.secrets))
+  );
+  const baseLive = sessionLive.pipe(
     Layer.provideMerge(
       AuthDomainConfigLive({
         emailVerificationSessionPolicy: { mode: "limited-session" },
@@ -212,7 +214,7 @@ export const makeAuthHttpApiLive = (options: AuthHttpApiLiveOptions) => {
     authRateLimitLive
   );
 
-  return CoreAuthHttpApiLive.pipe(
+  const httpApiLive = CoreAuthHttpApiLive.pipe(
     Layer.provide(
       AuthHttpApiConfigLive({
         originCheck: {
@@ -224,4 +226,9 @@ export const makeAuthHttpApiLive = (options: AuthHttpApiLiveOptions) => {
     ),
     Layer.provide(requirementsLive)
   );
+
+  return { httpApiLive, sessionLive } as const;
 };
+
+export const makeAuthHttpApiLive = (options: AuthHttpApiLiveOptions) =>
+  makeAuthLive(options).httpApiLive;

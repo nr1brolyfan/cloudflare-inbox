@@ -5,17 +5,17 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-18
-- Postęp zadań: **36/107 (34%)**
+- Postęp zadań: **37/107 (35%)**
 - Ukończone etapy: **1/11**
 - Aktualny etap: **4. Permissions i control plane**
-- Aktualne zadanie: **zaufany CurrentPrincipal z bieżącej sesji**
+- Aktualne zadanie: **MailAuthorization dla hierarchii zasobów**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
 | 1   | Toolchain i zależności                | DONE        | 7/7    |
 | 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 9/12   |
 | 3   | Effect-auth i sesje                   | IN PROGRESS | 14/19  |
-| 4   | Permissions i control plane           | CURRENT     | 6/10   |
+| 4   | Permissions i control plane           | CURRENT     | 7/10   |
 | 5   | MailboxDO i domena pocztowa           | TODO        | 0/9    |
 | 6   | Inbound email                         | TODO        | 0/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | TODO        | 0/9    |
@@ -87,8 +87,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Zdefiniować scopes `mailbox:{id}` i `folder:{id}`.
 - [x] Podłączyć `PermissionAdministration`.
 - [x] Podłączyć `PermissionsFromStoreLive` do D1.
-- [ ] CURRENT Dostarczać zaufany `CurrentPrincipal` z bieżącej sesji.
-- [ ] Zaimplementować aplikacyjny `MailAuthorization` dla hierarchii zasobów.
+- [x] Dostarczać zaufany `CurrentPrincipal` z bieżącej sesji.
+- [ ] CURRENT Zaimplementować aplikacyjny `MailAuthorization` dla hierarchii zasobów.
 - [ ] Dodać owner bootstrap oraz transactional authorization recheck.
 - [ ] Dodać pierwsze chronione server functions i testy odmowy dostępu.
 
