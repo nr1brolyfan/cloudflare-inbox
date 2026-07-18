@@ -10,7 +10,7 @@ import {
 } from "@effect-auth/core/Permission";
 import * as Layer from "effect/Layer";
 
-export const makeMailAuthorizationLive = (database: D1EffectQbDatabaseLike) => {
+export const makeMailPermissionsLive = (database: D1EffectQbDatabaseLike) => {
   const storeLive = Layer.succeed(
     PermissionStore,
     makeEffectQbSqlitePermissionStore(makeD1EffectQbSqliteExecutor(database))

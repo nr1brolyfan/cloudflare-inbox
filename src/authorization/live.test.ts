@@ -24,7 +24,7 @@ import {
   mailPermissionDefinitions,
   mailRolePermissions,
 } from "./catalog";
-import { makeMailAuthorizationLive } from "./live";
+import { makeMailPermissionsLive } from "./live";
 
 const migrationsDirectory = new URL(
   "../../migrations/control-plane/",
@@ -260,7 +260,7 @@ describe("D1 mail authorization", () => {
           })
         ).toBeFalsy();
       }).pipe(
-        Effect.provide(makeMailAuthorizationLive(makeD1Database(database)))
+        Effect.provide(makeMailPermissionsLive(makeD1Database(database)))
       );
 
       await Effect.runPromise(program);

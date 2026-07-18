@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { makeAuthHttpApiLive } from "../auth/live";
-import { makeMailAuthorizationLive } from "../authorization/live";
+import { makeMailPermissionsLive } from "../authorization/live";
 import { BackendAuthConfig, BackendResources } from "./backend-context";
 import { BackendHealthLive } from "./backend-health";
 import * as Health from "./health";
@@ -11,7 +11,7 @@ import { HttpApiPlatformLive } from "./platform";
 const AuthorizationLive = Layer.unwrap(
   Effect.gen(function* () {
     const resources = yield* BackendResources;
-    return makeMailAuthorizationLive(resources.database);
+    return makeMailPermissionsLive(resources.database);
   })
 );
 
