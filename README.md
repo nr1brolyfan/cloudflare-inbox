@@ -34,7 +34,7 @@ to the private Backend Worker. Development uses development-only fallback
 secrets and writes rendered auth messages to `app_auth_email_outbox` in the
 development D1 database. The full effect-auth Core API is enabled, including
 email OTP, magic link, session, password registration, sign-in, and reset
-endpoints.
+endpoints. Password creation and reset enforce a 12-character minimum.
 
 Deployed environments require the values documented in `.env.example`.
 `PUBLIC_ORIGIN` must be the exact Website origin, `AUTH_EMAIL_FROM` must use a

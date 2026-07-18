@@ -37,6 +37,7 @@ import {
 	PasswordDefaultLive,
 	PasswordResetLive,
 } from "@effect-auth/core/Password";
+import { PasswordRiskPolicy } from "@effect-auth/core/PasswordRisk";
 import { RateLimiterLive } from "@effect-auth/core/RateLimiter";
 import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
@@ -75,6 +76,18 @@ const makeFlowUrl = (
 
 	return url.toString();
 };
+
+const MinimumPasswordRiskPolicyLive = Layer.succeed(
+	PasswordRiskPolicy,
+	PasswordRiskPolicy.of({
+		decide: ({ password }) =>
+			Effect.succeed(
+				[...Redacted.value(password)].length >= 12
+					? { type: "Allow" as const }
+					: { type: "Deny" as const },
+			),
+	}),
+);
 
 export const makeAuthHttpApiLive = (options: AuthHttpApiLiveOptions) => {
 	const storageLive = D1EffectQbSqliteAuthStorageLive(options.database);
@@ -142,9 +155,10 @@ export const makeAuthHttpApiLive = (options: AuthHttpApiLiveOptions) => {
 		Layer.merge(IdentityKindRegistryDefaultLive),
 		Layer.merge(authMailerLive),
 	);
-	const passwordBaseLive = PasswordDefaultLive().pipe(
-		Layer.provideMerge(baseLive),
-	);
+	const passwordBaseLive = PasswordDefaultLive(
+		undefined,
+		MinimumPasswordRiskPolicyLive,
+	).pipe(Layer.provideMerge(baseLive));
 	const passwordLive = PasswordResetLive({
 		makeUrl: ({ challengeId, secret }) =>
 			makeFlowUrl(
