@@ -11,6 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
+import { Route as AuthCompletePasswordResetRouteImport } from './routes/auth-complete/password-reset'
+import { Route as AuthCompleteMagicLinkRouteImport } from './routes/auth-complete/magic-link'
+import { Route as AuthCompleteEmailVerificationRouteImport } from './routes/auth-complete/email-verification'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 
 const IndexRoute = IndexRouteImport.update({
@@ -23,6 +26,23 @@ const AuthSplatRoute = AuthSplatRouteImport.update({
   path: '/auth/$',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCompletePasswordResetRoute =
+  AuthCompletePasswordResetRouteImport.update({
+    id: '/auth-complete/password-reset',
+    path: '/auth-complete/password-reset',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const AuthCompleteMagicLinkRoute = AuthCompleteMagicLinkRouteImport.update({
+  id: '/auth-complete/magic-link',
+  path: '/auth-complete/magic-link',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthCompleteEmailVerificationRoute =
+  AuthCompleteEmailVerificationRouteImport.update({
+    id: '/auth-complete/email-verification',
+    path: '/auth-complete/email-verification',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -32,30 +52,61 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
+  '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
+  '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
+  '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
+  '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
+  '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
+  '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/api/health': typeof ApiHealthRoute
+  '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
+  '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
+  '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/api/health' | '/auth/$'
+  fullPaths:
+    | '/'
+    | '/api/health'
+    | '/auth-complete/email-verification'
+    | '/auth-complete/magic-link'
+    | '/auth-complete/password-reset'
+    | '/auth/$'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/api/health' | '/auth/$'
-  id: '__root__' | '/' | '/api/health' | '/auth/$'
+  to:
+    | '/'
+    | '/api/health'
+    | '/auth-complete/email-verification'
+    | '/auth-complete/magic-link'
+    | '/auth-complete/password-reset'
+    | '/auth/$'
+  id:
+    | '__root__'
+    | '/'
+    | '/api/health'
+    | '/auth-complete/email-verification'
+    | '/auth-complete/magic-link'
+    | '/auth-complete/password-reset'
+    | '/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  AuthCompleteEmailVerificationRoute: typeof AuthCompleteEmailVerificationRoute
+  AuthCompleteMagicLinkRoute: typeof AuthCompleteMagicLinkRoute
+  AuthCompletePasswordResetRoute: typeof AuthCompletePasswordResetRoute
   AuthSplatRoute: typeof AuthSplatRoute
 }
 
@@ -75,6 +126,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthSplatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth-complete/password-reset': {
+      id: '/auth-complete/password-reset'
+      path: '/auth-complete/password-reset'
+      fullPath: '/auth-complete/password-reset'
+      preLoaderRoute: typeof AuthCompletePasswordResetRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth-complete/magic-link': {
+      id: '/auth-complete/magic-link'
+      path: '/auth-complete/magic-link'
+      fullPath: '/auth-complete/magic-link'
+      preLoaderRoute: typeof AuthCompleteMagicLinkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth-complete/email-verification': {
+      id: '/auth-complete/email-verification'
+      path: '/auth-complete/email-verification'
+      fullPath: '/auth-complete/email-verification'
+      preLoaderRoute: typeof AuthCompleteEmailVerificationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -88,6 +160,9 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ApiHealthRoute: ApiHealthRoute,
+  AuthCompleteEmailVerificationRoute: AuthCompleteEmailVerificationRoute,
+  AuthCompleteMagicLinkRoute: AuthCompleteMagicLinkRoute,
+  AuthCompletePasswordResetRoute: AuthCompletePasswordResetRoute,
   AuthSplatRoute: AuthSplatRoute,
 }
 export const routeTree = rootRouteImport
