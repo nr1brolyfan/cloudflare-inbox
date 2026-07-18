@@ -1,41 +1,31 @@
-import type {
-  PermissionDefinition,
-  PermissionScope,
-  RoleDefinition,
-  RolePermission,
-} from "@effect-auth/core/Permission";
-import {
-  PermissionId,
-  PermissionScope as EffectAuthPermissionScope,
-  RoleId,
-} from "@effect-auth/core/Permission";
+import * as AuthPermission from "@effect-auth/core/Permission";
 
 export const MAILBOX_SCOPE_TYPE = "mailbox";
 export const FOLDER_SCOPE_TYPE = "folder";
 
 export const MailPermission = {
-  attachmentRead: PermissionId("attachment.read"),
-  attachmentUpload: PermissionId("attachment.upload"),
-  draftCreate: PermissionId("draft.create"),
-  draftSend: PermissionId("draft.send"),
-  folderModify: PermissionId("folder.modify"),
-  folderRead: PermissionId("folder.read"),
-  mailboxExport: PermissionId("mailbox.export"),
-  mailboxManageMembers: PermissionId("mailbox.manage_members"),
-  mailboxManageSettings: PermissionId("mailbox.manage_settings"),
-  mailboxModify: PermissionId("mailbox.modify"),
-  mailboxRead: PermissionId("mailbox.read"),
-  mailboxSend: PermissionId("mailbox.send"),
-  messageModify: PermissionId("message.modify"),
-  messageRead: PermissionId("message.read"),
-  ruleManage: PermissionId("rule.manage"),
+  attachmentRead: AuthPermission.PermissionId("attachment.read"),
+  attachmentUpload: AuthPermission.PermissionId("attachment.upload"),
+  draftCreate: AuthPermission.PermissionId("draft.create"),
+  draftSend: AuthPermission.PermissionId("draft.send"),
+  folderModify: AuthPermission.PermissionId("folder.modify"),
+  folderRead: AuthPermission.PermissionId("folder.read"),
+  mailboxExport: AuthPermission.PermissionId("mailbox.export"),
+  mailboxManageMembers: AuthPermission.PermissionId("mailbox.manage_members"),
+  mailboxManageSettings: AuthPermission.PermissionId("mailbox.manage_settings"),
+  mailboxModify: AuthPermission.PermissionId("mailbox.modify"),
+  mailboxRead: AuthPermission.PermissionId("mailbox.read"),
+  mailboxSend: AuthPermission.PermissionId("mailbox.send"),
+  messageModify: AuthPermission.PermissionId("message.modify"),
+  messageRead: AuthPermission.PermissionId("message.read"),
+  ruleManage: AuthPermission.PermissionId("rule.manage"),
 } as const;
 
 export const MailRole = {
-  editor: RoleId("editor"),
-  manager: RoleId("manager"),
-  owner: RoleId("owner"),
-  viewer: RoleId("viewer"),
+  editor: AuthPermission.RoleId("editor"),
+  manager: AuthPermission.RoleId("manager"),
+  owner: AuthPermission.RoleId("owner"),
+  viewer: AuthPermission.RoleId("viewer"),
 } as const;
 
 export const mailPermissionDefinitions = [
@@ -114,7 +104,7 @@ export const mailPermissionDefinitions = [
     description: "Export mailbox data",
     scopeType: MAILBOX_SCOPE_TYPE,
   },
-] as const satisfies readonly PermissionDefinition[];
+] as const satisfies readonly AuthPermission.PermissionDefinition[];
 
 export const mailRoleDefinitions = [
   { id: MailRole.owner, description: "Full mailbox control" },
@@ -130,7 +120,7 @@ export const mailRoleDefinitions = [
     id: MailRole.viewer,
     description: "Read allowed mailbox or folder content",
   },
-] as const satisfies readonly RoleDefinition[];
+] as const satisfies readonly AuthPermission.RoleDefinition[];
 
 const permissionScopeTypes = new Map(
   mailPermissionDefinitions.map(({ id, scopeType }) => [id, scopeType] as const)
@@ -139,7 +129,7 @@ const permissionScopeTypes = new Map(
 const assignPermissions = (
   role: (typeof MailRole)[keyof typeof MailRole],
   permissions: readonly (typeof MailPermission)[keyof typeof MailPermission][]
-): readonly RolePermission[] =>
+): readonly AuthPermission.RolePermission[] =>
   permissions.map((permission) => ({
     permission,
     role,
@@ -182,10 +172,12 @@ export const mailRolePermissions = [
     MailPermission.messageRead,
     MailPermission.attachmentRead,
   ]),
-] as const satisfies readonly RolePermission[];
+] as const satisfies readonly AuthPermission.RolePermission[];
 
-export const mailboxScope = (mailboxId: string): PermissionScope =>
-  EffectAuthPermissionScope.make(MAILBOX_SCOPE_TYPE, mailboxId);
+export const mailboxScope = (
+  mailboxId: string
+): AuthPermission.PermissionScope =>
+  AuthPermission.PermissionScope.make(MAILBOX_SCOPE_TYPE, mailboxId);
 
-export const folderScope = (folderId: string): PermissionScope =>
-  EffectAuthPermissionScope.make(FOLDER_SCOPE_TYPE, folderId);
+export const folderScope = (folderId: string): AuthPermission.PermissionScope =>
+  AuthPermission.PermissionScope.make(FOLDER_SCOPE_TYPE, folderId);
