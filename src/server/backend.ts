@@ -49,6 +49,14 @@ export const websiteBackend = {
     websiteRuntime.runPromise(
       DevEmailOperations.pipe(Effect.flatMap((operations) => operations.status))
     ),
+  getMailboxNavigation: () =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.getNavigation(incoming);
+      })
+    ),
   listDevEmails: () =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {

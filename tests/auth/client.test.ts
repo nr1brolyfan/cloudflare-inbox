@@ -28,9 +28,15 @@ describe("auth session query cache", () => {
   it("removes the cached session immediately after logout", async () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(authSessionQueryKey, { userId: "user-a" });
+    queryClient.setQueryData(["mailbox", "navigation", "user-a"], {
+      mailbox: "sensitive cached data",
+    });
 
     await clearCachedAuthSession(queryClient);
 
-    expect(queryClient.getQueryData(authSessionQueryKey)).toBeNull();
+    expect({
+      mailbox: queryClient.getQueryData(["mailbox", "navigation", "user-a"]),
+      session: queryClient.getQueryData(authSessionQueryKey),
+    }).toStrictEqual({ mailbox: undefined, session: null });
   });
 });

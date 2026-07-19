@@ -26,6 +26,10 @@ export const getDevEmailInboxStatus = createServerFn({
   method: "GET",
 }).handler(() => websiteBackend.getDevEmailInboxStatus());
 
+export const getMailboxNavigation = createServerFn({ method: "GET" }).handler(
+  () => websiteBackend.getMailboxNavigation()
+);
+
 export const listDevEmails = createServerFn({ method: "GET" }).handler(() =>
   websiteBackend.listDevEmails()
 );

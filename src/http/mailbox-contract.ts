@@ -30,6 +30,7 @@ import {
   InboundProcessingResult,
   ReplayInboundInput,
 } from "../mailboxes/inbound";
+import { MailboxNavigationResult } from "../mailboxes/navigation";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
 const InboundReplayParams = Schema.Struct({
@@ -61,6 +62,15 @@ export const BootstrapOwnerEndpoint = HttpApiEndpoint.post(
   }
 );
 
+export const GetMailboxNavigationEndpoint = HttpApiEndpoint.get(
+  "getNavigation",
+  "/api/mailboxes/current/navigation",
+  {
+    error: MailboxErrors,
+    success: MailboxNavigationResult,
+  }
+);
+
 export const RenameMailboxEndpoint = HttpApiEndpoint.patch(
   "rename",
   "/api/mailboxes/:mailboxId",
@@ -88,7 +98,12 @@ export const ReplayInboundEndpoint = HttpApiEndpoint.post(
 );
 
 export class MailboxGroup extends HttpApiGroup.make("mailboxes")
-  .add(BootstrapOwnerEndpoint, RenameMailboxEndpoint, ReplayInboundEndpoint)
+  .add(
+    BootstrapOwnerEndpoint,
+    GetMailboxNavigationEndpoint,
+    RenameMailboxEndpoint,
+    ReplayInboundEndpoint
+  )
   .middleware(AuthSchemaErrorMiddleware)
   .middleware(CurrentRequestAuthMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}

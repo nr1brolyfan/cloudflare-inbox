@@ -17,6 +17,7 @@ export const currentSessionForQuery = async (signal?: AbortSignal) =>
   );
 
 export const clearCachedAuthSession = async (queryClient: QueryClient) => {
+  queryClient.removeQueries({ queryKey: ["mailbox"] });
   queryClient.setQueryData(authSessionQueryKey, null);
   await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
 };

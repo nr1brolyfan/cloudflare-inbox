@@ -21,6 +21,8 @@ import type {
 } from "../mailboxes/errors";
 import { InboundReplay } from "../mailboxes/inbound";
 import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
+import type { MailboxNavigationError } from "../mailboxes/navigation";
+import { MailboxNavigation } from "../mailboxes/navigation";
 import { BackendHttpApi } from "./api";
 import { MailboxPublicErrorSchema } from "./mailbox-contract";
 
@@ -114,6 +116,7 @@ type MailboxHandlerError =
   | AuthUnauthenticatedError
   | MailAuthorizationError
   | MailboxAdministrationError
+  | MailboxNavigationError
   | MailboxDomainError
   | MailboxRepositoryError
   | WorkflowStartError;
@@ -135,11 +138,24 @@ const mapInboundDomainError = (
         })
       );
 
+const mapNavigationError = (
+  error: MailboxNavigationError
+): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
+  error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Mailbox not found",
+        })
+      )
+    : Effect.fail(internalError());
+
 const mapHttpErrors = <A, R>(
   effect: Effect.Effect<A, MailboxHandlerError, R>
 ) =>
   mapAuthGuardErrors(effect).pipe(
     Effect.catchTag("MailboxAdministrationError", mapAdministrationError),
+    Effect.catchTag("MailboxNavigationError", mapNavigationError),
     Effect.catchTag("MailboxDomainError", mapInboundDomainError),
     Effect.catchTags({
       MailboxRepositoryError: () => Effect.fail(internalError()),
@@ -165,6 +181,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
   "mailboxes",
   Effect.fn("backend.http.mailbox_group")(function* (handlers) {
     const administration = yield* MailboxAdministration;
+    const navigation = yield* MailboxNavigation;
     const replayAuthorization = yield* InboundReplayAuthorization;
     const inboundReplay = yield* InboundReplay;
 
@@ -174,6 +191,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
           .bootstrapOwner({ displayName: payload.displayName })
           .pipe(mapHttpErrors)
       )
+      .handle("getNavigation", () => navigation.getCurrent.pipe(mapHttpErrors))
       .handle("rename", ({ params, payload }) =>
         administration
           .rename({

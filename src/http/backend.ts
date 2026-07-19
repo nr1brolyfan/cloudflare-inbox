@@ -27,6 +27,7 @@ import {
   MailboxAdministrationLive,
   MailboxAdministrationRuntimeLive,
 } from "../control-plane/mailbox-administration-live";
+import { MailboxNavigationLive } from "../control-plane/mailbox-navigation-live";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
 import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
 import {
@@ -98,6 +99,9 @@ const BackendRoutesLive = Layer.unwrap(
         Layer.merge(MailboxAdministrationRuntimeLive, mailAuthorizationLive)
       )
     );
+    const mailboxNavigationLive = MailboxNavigationLive.pipe(
+      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+    );
     const inboundReplayLive = InboundReplayLive.pipe(
       Layer.provide(
         Layer.merge(
@@ -110,6 +114,7 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(
         Layer.mergeAll(
           mailboxAdministrationLive,
+          mailboxNavigationLive,
           InboundReplayAuthorizationLive.pipe(
             Layer.provide(mailAuthorizationLive)
           ),

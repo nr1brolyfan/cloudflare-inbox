@@ -2,10 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
-import type {
-  MailboxBackendOperationsShape,
-  MailboxServerResult,
-} from "#/server/mailbox-backend";
+import type { MailboxBackendOperationsShape } from "#/server/mailbox-backend";
 import {
   MailboxBackendOperations,
   MailboxBackendOperationsLive,
@@ -21,12 +18,23 @@ const mailbox = {
   updatedAt: 1000,
   version: 1,
 } as const;
+const navigation = {
+  mailbox: { displayName: "Inbox", id: "primary" },
+  folders: [
+    {
+      id: "inbox",
+      kind: "inbox",
+      messageCount: 4,
+      name: "Inbox",
+      unreadCount: 2,
+    },
+  ],
+  labels: [],
+} as const;
 
-const runForward = (
+const runForward = <A>(
   fetch: (request: Request) => Promise<Response>,
-  operation: (
-    operations: MailboxBackendOperationsShape
-  ) => Effect.Effect<MailboxServerResult>
+  operation: (operations: MailboxBackendOperationsShape) => Effect.Effect<A>
 ) =>
   Effect.runPromise(
     MailboxBackendOperations.pipe(
@@ -47,6 +55,71 @@ const runForward = (
   );
 
 describe("Website mailbox Backend forwarding", () => {
+  it("forwards and validates the current mailbox navigation read", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: {
+        cookie: "__Host-session=session-a.secret",
+        origin: "https://inbox.test",
+        "x-forwarded-for": "203.0.113.10",
+      },
+    });
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(navigation));
+      },
+      (operations) => operations.getNavigation(incoming)
+    );
+
+    expect(result).toStrictEqual({ navigation, ok: true });
+    expect(forwarded).toBeDefined();
+    expect({
+      contentType: forwarded?.headers.get("content-type"),
+      cookie: forwarded?.headers.get("cookie"),
+      method: forwarded?.method,
+      path:
+        forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
+      proxy: forwarded?.headers.get("x-forwarded-for"),
+    }).toStrictEqual({
+      contentType: null,
+      cookie: "__Host-session=session-a.secret",
+      method: "GET",
+      path: "/api/mailboxes/current/navigation",
+      proxy: null,
+    });
+  });
+
+  it("rejects invalid navigation count invariants", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json({
+            ...navigation,
+            folders: [
+              {
+                ...navigation.folders[0],
+                messageCount: 1,
+                unreadCount: 2,
+              },
+            ],
+          })
+        ),
+      (operations) => operations.getNavigation(incoming)
+    );
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "AuthInternalError",
+        code: "internal_error",
+        message: "Invalid Backend response",
+      },
+      ok: false,
+      status: 502,
+    });
+  });
+
   it("forwards only trusted request metadata and the mailbox payload", async () => {
     let forwarded: Request | undefined;
     const incoming = new Request("https://inbox.test/_server", {

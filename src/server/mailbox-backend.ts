@@ -8,26 +8,40 @@ import * as Schema from "effect/Schema";
 import type { MailboxPublicError } from "../http/mailbox-contract";
 import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import { MailboxRecordSchema } from "../mailboxes/core";
+import { MailboxNavigationResult } from "../mailboxes/navigation";
 import { BackendClient } from "./website-platform";
+
+export interface MailboxServerErrorResult {
+  readonly error: MailboxPublicError;
+  readonly ok: false;
+  readonly status: number;
+}
 
 export type MailboxServerResult =
   | {
       readonly mailbox: Schema.Codec.Encoded<typeof MailboxRecordSchema>;
       readonly ok: true;
     }
-  | {
-      readonly error: MailboxPublicError;
-      readonly ok: false;
-      readonly status: number;
-    };
+  | MailboxServerErrorResult;
 
-interface ForwardMailboxMutationInput {
+export type MailboxNavigationServerResult =
+  | {
+      readonly navigation: Schema.Codec.Encoded<typeof MailboxNavigationResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+interface ForwardMailboxRequestInput {
   readonly incoming: Request;
-  readonly method: "PATCH" | "POST";
+  readonly method: "GET" | "PATCH" | "POST";
   readonly operation: string;
   readonly path: string;
-  readonly payload: Readonly<Record<string, unknown>>;
+  readonly payload?: Readonly<Record<string, unknown>>;
 }
+
+type ForwardMailboxResult =
+  | { readonly body: unknown; readonly ok: true }
+  | MailboxServerErrorResult;
 
 const forwardedHeaderNames = [
   "cookie",
@@ -77,7 +91,7 @@ const publicErrors = {
 const isPublicErrorCode = (code: string): code is keyof typeof publicErrors =>
   Object.hasOwn(publicErrors, code);
 
-const invalidBackendResponse = (): MailboxServerResult => ({
+const invalidBackendResponse = (): MailboxServerErrorResult => ({
   error: {
     _tag: "AuthInternalError",
     code: "internal_error",
@@ -103,6 +117,9 @@ export interface MailboxBackendOperationsShape {
     readonly displayName: string;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxServerResult>;
+  readonly getNavigation: (
+    incoming: Request
+  ) => Effect.Effect<MailboxNavigationServerResult>;
   readonly rename: (input: {
     readonly displayName: string;
     readonly incoming: Request;
@@ -120,11 +137,14 @@ export const MailboxBackendOperationsLive = Layer.effect(
   MailboxBackendOperations,
   Effect.gen(function* () {
     const backend = yield* BackendClient;
-    const forwardMutation = (
-      input: ForwardMailboxMutationInput
-    ): Effect.Effect<MailboxServerResult> =>
+    const forwardRequest = (
+      input: ForwardMailboxRequestInput
+    ): Effect.Effect<ForwardMailboxResult> =>
       Effect.gen(function* () {
-        const headers = new Headers({ "content-type": "application/json" });
+        const headers = new Headers();
+        if (input.payload !== undefined) {
+          headers.set("content-type", "application/json");
+        }
         for (const name of forwardedHeaderNames) {
           const value = input.incoming.headers.get(name);
           if (value !== null) {
@@ -136,7 +156,10 @@ export const MailboxBackendOperationsLive = Layer.effect(
         const response = yield* backend.fetch(
           input.operation,
           new Request(url, {
-            body: JSON.stringify(input.payload),
+            body:
+              input.payload === undefined
+                ? undefined
+                : JSON.stringify(input.payload),
             headers,
             method: input.method,
           })
@@ -151,13 +174,7 @@ export const MailboxBackendOperationsLive = Layer.effect(
         const body = bodyOption.value;
 
         if (response.ok) {
-          const decoded = Schema.decodeUnknownExit(MailboxRecordSchema)(body);
-          return Exit.isSuccess(decoded)
-            ? {
-                mailbox: Schema.encodeSync(MailboxRecordSchema)(decoded.value),
-                ok: true,
-              }
-            : invalidBackendResponse();
+          return { body, ok: true };
         }
 
         const decodedError = Schema.decodeUnknownExit(MailboxPublicErrorSchema)(
@@ -196,21 +213,79 @@ export const MailboxBackendOperationsLive = Layer.effect(
 
     return MailboxBackendOperations.of({
       bootstrapOwner: ({ displayName, incoming }) =>
-        forwardMutation({
+        forwardRequest({
           incoming,
           method: "POST",
           operation: "website.mailbox.bootstrap",
           path: "/api/mailboxes/bootstrap-owner",
           payload: { displayName },
-        }),
+        }).pipe(
+          Effect.map((result): MailboxServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(MailboxRecordSchema)(
+              result.body
+            );
+            return Exit.isSuccess(decoded)
+              ? {
+                  mailbox: Schema.encodeSync(MailboxRecordSchema)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        ),
+      getNavigation: (incoming) =>
+        forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.navigation",
+          path: "/api/mailboxes/current/navigation",
+        }).pipe(
+          Effect.map((result): MailboxNavigationServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(MailboxNavigationResult)(
+              result.body
+            );
+            return Exit.isSuccess(decoded)
+              ? {
+                  navigation: Schema.encodeSync(MailboxNavigationResult)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        ),
       rename: ({ displayName, incoming, mailboxId }) =>
-        forwardMutation({
+        forwardRequest({
           incoming,
           method: "PATCH",
           operation: "website.mailbox.rename",
           path: `/api/mailboxes/${encodeURIComponent(mailboxId)}`,
           payload: { displayName },
-        }),
+        }).pipe(
+          Effect.map((result): MailboxServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(MailboxRecordSchema)(
+              result.body
+            );
+            return Exit.isSuccess(decoded)
+              ? {
+                  mailbox: Schema.encodeSync(MailboxRecordSchema)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        ),
     });
   })
 );

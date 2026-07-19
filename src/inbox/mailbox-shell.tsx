@@ -1,33 +1,73 @@
+import type * as Schema from "effect/Schema";
 import {
+  Archive,
+  Clock3,
+  FilePenLine,
+  Folder,
   Inbox,
   LoaderCircle,
   LogOut,
   Mail,
   Menu,
   PanelLeftClose,
+  Send,
   ShieldCheck,
+  ShieldAlert,
+  Tag,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { MailboxNavigationResult } from "../mailboxes/navigation";
+
+type MailboxNavigationData = Schema.Codec.Encoded<
+  typeof MailboxNavigationResult
+>;
+type NavigationFolder = MailboxNavigationData["folders"][number];
+type NavigationLabel = MailboxNavigationData["labels"][number];
+
+const folderIconByKind = {
+  archive: Archive,
+  custom: Folder,
+  drafts: FilePenLine,
+  inbox: Inbox,
+  scheduled: Clock3,
+  sent: Send,
+  spam: ShieldAlert,
+  trash: Trash2,
+} satisfies Record<NavigationFolder["kind"], typeof Inbox>;
+
 interface MailboxShellProps {
   readonly children: ReactNode;
+  readonly folders: readonly NavigationFolder[];
   readonly isSigningOut: boolean;
+  readonly labels: readonly NavigationLabel[];
   readonly mailboxName: string;
   readonly onSignOut: () => void;
   readonly principalLabel: string;
+  readonly selectedFolderId?: string;
+  readonly selectedLabelId?: string;
+  readonly viewTitle: string;
 }
 
-interface MailboxNavigationProps extends Omit<MailboxShellProps, "children"> {
+interface MailboxNavigationProps extends Omit<
+  MailboxShellProps,
+  "children" | "viewTitle"
+> {
   readonly onClose?: () => void;
 }
 
 function MailboxNavigation({
+  folders,
   isSigningOut,
+  labels,
   mailboxName,
   onClose,
   onSignOut,
   principalLabel,
+  selectedFolderId,
+  selectedLabelId,
 }: MailboxNavigationProps) {
   return (
     <div className="flex h-full flex-col bg-[var(--sea-ink)] text-white">
@@ -73,18 +113,90 @@ function MailboxNavigation({
         </div>
       </div>
 
-      <nav aria-label="Mailbox" className="flex-1 px-4 pt-7">
-        <p className="px-3 text-[0.62rem] font-extrabold tracking-[0.16em] text-white/36 uppercase">
-          Mail
-        </p>
-        <a
-          href="/inbox"
-          aria-current="page"
-          className="mt-2 flex items-center gap-3 rounded-xl bg-white px-3.5 py-3 text-sm font-extrabold text-[var(--sea-ink)] no-underline shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
-        >
-          <Inbox size={18} />
-          Inbox
-        </a>
+      <nav
+        aria-label="Mailbox"
+        className="min-h-0 flex-1 overflow-y-auto px-4 pt-7 pb-5"
+      >
+        <section aria-label="Folders">
+          <h2 className="px-3 text-[0.62rem] font-extrabold tracking-[0.16em] text-white/36 uppercase">
+            Folders
+          </h2>
+          <div className="mt-2 space-y-1">
+            {folders.map((folder) => {
+              const selected = folder.id === selectedFolderId;
+              const FolderIcon = folderIconByKind[folder.kind];
+              return (
+                <a
+                  key={folder.id}
+                  href={`/inbox?folder=${encodeURIComponent(folder.id)}`}
+                  aria-current={selected ? "page" : undefined}
+                  title={`${folder.messageCount} messages`}
+                  className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
+                    selected
+                      ? "bg-white font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
+                      : "font-bold text-white/66 hover:bg-white/8 hover:text-white"
+                  }`}
+                >
+                  <span className={selected ? "text-[var(--palm)]" : ""}>
+                    <FolderIcon size={17} strokeWidth={2} />
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{folder.name}</span>
+                  {folder.unreadCount > 0 ? (
+                    <span
+                      aria-label={`${folder.unreadCount} unread`}
+                      className={`rounded-full px-2 py-0.5 text-[0.62rem] font-extrabold ${
+                        selected
+                          ? "bg-[var(--sand)] text-[var(--palm)]"
+                          : "bg-white/10 text-white/72"
+                      }`}
+                    >
+                      {folder.unreadCount}
+                    </span>
+                  ) : null}
+                </a>
+              );
+            })}
+          </div>
+        </section>
+
+        <section aria-label="Labels" className="mt-7">
+          <h2 className="px-3 text-[0.62rem] font-extrabold tracking-[0.16em] text-white/36 uppercase">
+            Labels
+          </h2>
+          {labels.length > 0 ? (
+            <div className="mt-2 space-y-1">
+              {labels.map((label) => {
+                const selected = label.id === selectedLabelId;
+                return (
+                  <a
+                    key={label.id}
+                    href={`/inbox?label=${encodeURIComponent(label.id)}`}
+                    aria-current={selected ? "page" : undefined}
+                    className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
+                      selected
+                        ? "bg-white font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
+                        : "font-bold text-white/66 hover:bg-white/8 hover:text-white"
+                    }`}
+                  >
+                    <Tag
+                      size={16}
+                      className={
+                        selected ? "text-[var(--palm)]" : "text-[var(--lagoon)]"
+                      }
+                    />
+                    <span className="min-w-0 flex-1 truncate">
+                      {label.name}
+                    </span>
+                  </a>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="px-3 pt-3 text-xs leading-5 text-white/38">
+              No labels yet
+            </p>
+          )}
+        </section>
       </nav>
 
       <div className="border-t border-white/10 p-4">
@@ -120,10 +232,15 @@ function MailboxNavigation({
 
 export function MailboxShell({
   children,
+  folders,
   isSigningOut,
+  labels,
   mailboxName,
   onSignOut,
   principalLabel,
+  selectedFolderId,
+  selectedLabelId,
+  viewTitle,
 }: MailboxShellProps) {
   const [navigationOpen, setNavigationOpen] = useState(false);
 
@@ -147,10 +264,14 @@ export function MailboxShell({
       <div className="mx-auto flex min-h-dvh max-w-[100rem] overflow-hidden bg-[var(--surface-strong)] shadow-[0_28px_90px_rgba(23,58,64,0.16)] backdrop-blur-xl sm:min-h-[calc(100dvh-1.5rem)] sm:rounded-[1.75rem] sm:border sm:border-[var(--line)] lg:min-h-[calc(100dvh-2.5rem)]">
         <aside className="hidden w-72 shrink-0 lg:block">
           <MailboxNavigation
+            folders={folders}
             isSigningOut={isSigningOut}
+            labels={labels}
             mailboxName={mailboxName}
             onSignOut={onSignOut}
             principalLabel={principalLabel}
+            selectedFolderId={selectedFolderId}
+            selectedLabelId={selectedLabelId}
           />
         </aside>
 
@@ -169,11 +290,15 @@ export function MailboxShell({
               className="relative m-0 h-full max-h-none w-[min(19rem,88vw)] max-w-none border-0 p-0 shadow-2xl"
             >
               <MailboxNavigation
+                folders={folders}
                 isSigningOut={isSigningOut}
+                labels={labels}
                 mailboxName={mailboxName}
                 onClose={() => setNavigationOpen(false)}
                 onSignOut={onSignOut}
                 principalLabel={principalLabel}
+                selectedFolderId={selectedFolderId}
+                selectedLabelId={selectedLabelId}
               />
             </dialog>
           </div>
@@ -196,7 +321,7 @@ export function MailboxShell({
                   {mailboxName}
                 </p>
                 <h1 className="display-title truncate text-2xl font-bold tracking-tight sm:text-[1.7rem]">
-                  Inbox
+                  {viewTitle}
                 </h1>
               </div>
             </div>

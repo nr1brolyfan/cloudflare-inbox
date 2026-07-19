@@ -45,6 +45,11 @@ import {
 import { MailboxRecordSchema } from "#/mailboxes/core";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
+import {
+  MailboxNavigation,
+  MailboxNavigationError,
+  MailboxNavigationResult,
+} from "#/mailboxes/navigation";
 
 const publicOrigin = "https://inbox.test";
 const MailboxTestApi = HttpApi.make("AuthApi").add(MailboxGroup);
@@ -91,6 +96,19 @@ const replayedProcessing = Schema.decodeUnknownSync(InboundProcessingSchema)({
   updatedAt: 2000,
   version: 3,
 });
+const mailboxNavigation = Schema.decodeUnknownSync(MailboxNavigationResult)({
+  mailbox: { displayName: "Inbox", id: "primary" },
+  folders: [
+    {
+      id: "inbox",
+      kind: "inbox",
+      messageCount: 4,
+      name: "Inbox",
+      unreadCount: 2,
+    },
+  ],
+  labels: [],
+});
 
 const makeAdministration = (
   overrides: Partial<MailboxAdministrationService> = {}
@@ -110,7 +128,11 @@ const makeAdministration = (
 
 const makeHandler = (
   administration: MailboxAdministrationService,
-  validate: SessionsService["validate"] = () => Effect.succeed(validatedSession)
+  validate: SessionsService["validate"] = () =>
+    Effect.succeed(validatedSession),
+  navigation: MailboxNavigation = MailboxNavigation.of({
+    getCurrent: Effect.succeed(mailboxNavigation),
+  })
 ) => {
   const requestAuthLive = Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
@@ -138,6 +160,7 @@ const makeHandler = (
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(MailboxAdministration, administration),
+        Layer.succeed(MailboxNavigation, navigation),
         Layer.succeed(
           InboundReplay,
           InboundReplay.of({
@@ -166,28 +189,90 @@ const makeHandler = (
 
 const mailboxRequest = (
   path: string,
-  method: "PATCH" | "POST",
+  method: "GET" | "PATCH" | "POST",
   options: {
     readonly body?: unknown;
     readonly cookie?: boolean;
     readonly origin?: string | null;
   } = {}
-) =>
-  new Request(`https://backend.test${path}`, {
+) => {
+  const headers = {
+    "content-type": "application/json",
+    ...(options.cookie === false
+      ? {}
+      : { cookie: `__Host-session=${sessionToken}` }),
+    ...(options.origin === null
+      ? {}
+      : { origin: options.origin ?? publicOrigin }),
+  };
+
+  if (method === "GET") {
+    return new Request(`https://backend.test${path}`, { headers });
+  }
+  const mutationMethod = method === "PATCH" ? "PATCH" : "POST";
+
+  return new Request(`https://backend.test${path}`, {
     body: JSON.stringify(options.body ?? { displayName: "Recruiting" }),
-    headers: {
-      "content-type": "application/json",
-      ...(options.cookie === false
-        ? {}
-        : { cookie: `__Host-session=${sessionToken}` }),
-      ...(options.origin === null
-        ? {}
-        : { origin: options.origin ?? publicOrigin }),
-    },
-    method,
+    headers,
+    method: mutationMethod,
   });
+};
 
 describe("protected mailbox API", () => {
+  it("returns authorized mailbox navigation", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/current/navigation", "GET")
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        folders: [{ id: "inbox", unreadCount: 2 }],
+        labels: [],
+        mailbox: { displayName: "Inbox", id: "primary" },
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("maps missing current mailbox navigation to a sanitized response", async () => {
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      () => Effect.succeed(validatedSession),
+      MailboxNavigation.of({
+        getCurrent: Effect.fail(
+          new MailboxNavigationError({
+            cause: new Error("member lookup details"),
+            message: "Current mailbox was not found",
+            reason: "not-found",
+          })
+        ),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/current/navigation", "GET")
+      );
+      const body = await response.json();
+
+      expect({ body, status: response.status }).toStrictEqual({
+        body: {
+          _tag: "AuthNotFoundError",
+          code: "not_found",
+          message: "Mailbox not found",
+        },
+        status: 404,
+      });
+      expect(JSON.stringify(body)).not.toContain("member lookup");
+    } finally {
+      await dispose();
+    }
+  });
+
   it("accepts a fenced inbound replay request", async () => {
     const { dispose, handler } = makeHandler(makeAdministration());
 
