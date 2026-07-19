@@ -299,6 +299,7 @@ describe("mail domain contracts", () => {
     expect(
       Schema.decodeUnknownSync(SetMessageReadInput)({
         mailboxId: "primary",
+        operationId: "read-message-1",
         messageId: "message-1",
         expectedVersion: 3,
         read: true,

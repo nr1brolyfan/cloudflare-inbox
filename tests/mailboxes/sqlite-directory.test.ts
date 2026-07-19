@@ -391,6 +391,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
           yield* renameFolder(
             Schema.decodeUnknownSync(RenameFolderInput)({
               mailboxId,
+              operationId: "rename-folder-op",
               folderId: "folder-projects",
               expectedVersion: 1,
               name: "Work",
@@ -407,6 +408,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
             yield* renameFolder(
               Schema.decodeUnknownSync(RenameFolderInput)({
                 mailboxId,
+                operationId: "rename-folder-stale",
                 folderId: "folder-projects",
                 expectedVersion: 1,
                 name: "Stale",
@@ -417,6 +419,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
             yield* deleteFolder(
               Schema.decodeUnknownSync(DeleteFolderInput)({
                 mailboxId,
+                operationId: "delete-folder-not-empty",
                 folderId: "folder-projects",
                 expectedVersion: 2,
               })
@@ -433,6 +436,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
           yield* deleteFolder(
             Schema.decodeUnknownSync(DeleteFolderInput)({
               mailboxId,
+              operationId: "delete-folder-op",
               folderId: "folder-projects",
               expectedVersion: 2,
             })
@@ -445,6 +449,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
             yield* deleteFolder(
               Schema.decodeUnknownSync(DeleteFolderInput)({
                 mailboxId,
+                operationId: "delete-folder-missing",
                 folderId: "folder-projects",
                 expectedVersion: 3,
               })
@@ -467,6 +472,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
           yield* deleteFolder(
             Schema.decodeUnknownSync(DeleteFolderInput)({
               mailboxId,
+              operationId: "delete-inbox-op",
               folderId: "inbox",
               expectedVersion: 1,
             })
@@ -512,6 +518,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
         yield* renameLabel(
           Schema.decodeUnknownSync(RenameLabelInput)({
             mailboxId,
+            operationId: "rename-label-op",
             labelId: "label-important",
             expectedVersion: 1,
             name: "Priority",
@@ -528,6 +535,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
           yield* deleteLabel(
             Schema.decodeUnknownSync(DeleteLabelInput)({
               mailboxId,
+              operationId: "delete-label-stale",
               labelId: "label-important",
               expectedVersion: 1,
             })
@@ -538,6 +546,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
         yield* deleteLabel(
           Schema.decodeUnknownSync(DeleteLabelInput)({
             mailboxId,
+            operationId: "delete-label-op",
             labelId: "label-important",
             expectedVersion: 2,
           })
@@ -549,6 +558,101 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
       }).toMatchObject({
         deleted: { deletedAt: 1000, version: 3 },
         remaining: [],
+      });
+    });
+  });
+
+  it.effect("replays versioned folder and label mutations", () => {
+    let generated = 0;
+    const runtime = MailboxRuntime.of({
+      now: () => 1000,
+      randomId: () => `generated-${(generated += 1)}`,
+    });
+    return Effect.gen(function* () {
+      yield* initialize(runtime);
+      const folderRecord = resultSuccess(
+        yield* createFolder(
+          Schema.decodeUnknownSync(CreateFolderInput)({
+            mailboxId,
+            operationId: "create-versioned-folder",
+            name: "Versioned Folder",
+          })
+        )
+      );
+      const labelRecord = resultSuccess(
+        yield* createLabel(
+          Schema.decodeUnknownSync(CreateLabelInput)({
+            mailboxId,
+            operationId: "create-versioned-label",
+            name: "Versioned Label",
+          })
+        )
+      );
+      const renameFolderInput = Schema.decodeUnknownSync(RenameFolderInput)({
+        mailboxId,
+        operationId: "rename-versioned-folder",
+        folderId: folderRecord.id,
+        expectedVersion: 1,
+        name: "Renamed Folder",
+      });
+      const renameLabelInput = Schema.decodeUnknownSync(RenameLabelInput)({
+        mailboxId,
+        operationId: "rename-versioned-label",
+        labelId: labelRecord.id,
+        expectedVersion: 1,
+        name: "Renamed Label",
+      });
+      const renamedFolder = resultSuccess(
+        yield* renameFolder(renameFolderInput)
+      );
+      const renamedFolderReplay = resultSuccess(
+        yield* renameFolder(renameFolderInput)
+      );
+      const renamedLabel = resultSuccess(yield* renameLabel(renameLabelInput));
+      const renamedLabelReplay = resultSuccess(
+        yield* renameLabel(renameLabelInput)
+      );
+      const deleteFolderInput = Schema.decodeUnknownSync(DeleteFolderInput)({
+        mailboxId,
+        operationId: "delete-versioned-folder",
+        folderId: folderRecord.id,
+        expectedVersion: 2,
+      });
+      const deleteLabelInput = Schema.decodeUnknownSync(DeleteLabelInput)({
+        mailboxId,
+        operationId: "delete-versioned-label",
+        labelId: labelRecord.id,
+        expectedVersion: 2,
+      });
+      const deletedFolder = resultSuccess(
+        yield* deleteFolder(deleteFolderInput)
+      );
+      const deletedFolderReplay = resultSuccess(
+        yield* deleteFolder(deleteFolderInput)
+      );
+      const deletedLabel = resultSuccess(yield* deleteLabel(deleteLabelInput));
+      const deletedLabelReplay = resultSuccess(
+        yield* deleteLabel(deleteLabelInput)
+      );
+
+      expect({
+        renamedFolder,
+        renamedFolderReplay,
+        renamedLabel,
+        renamedLabelReplay,
+        deletedFolder,
+        deletedFolderReplay,
+        deletedLabel,
+        deletedLabelReplay,
+      }).toMatchObject({
+        renamedFolder: { name: "Renamed Folder", version: 2 },
+        renamedFolderReplay: { name: "Renamed Folder", version: 2 },
+        renamedLabel: { name: "Renamed Label", version: 2 },
+        renamedLabelReplay: { name: "Renamed Label", version: 2 },
+        deletedFolder: { version: 3 },
+        deletedFolderReplay: { version: 3 },
+        deletedLabel: { version: 3 },
+        deletedLabelReplay: { version: 3 },
       });
     });
   });
@@ -578,6 +682,7 @@ layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {
         yield* renameFolder(
           Schema.decodeUnknownSync(RenameFolderInput)({
             mailboxId,
+            operationId: "rename-after-create-op",
             folderId: first.id,
             expectedVersion: 1,
             name: "Renamed",

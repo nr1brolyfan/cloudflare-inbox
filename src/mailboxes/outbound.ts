@@ -244,6 +244,7 @@ export type GetOutboundDeliveryInput = Schema.Schema.Type<
 
 export const CancelOutboundDeliveryInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   outboundDeliveryId: OutboundDeliveryId,
   expectedVersion: Version,
 });

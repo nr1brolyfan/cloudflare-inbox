@@ -99,6 +99,7 @@ export type CreateFolderInput = Schema.Schema.Type<typeof CreateFolderInput>;
 
 export const RenameFolderInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   folderId: FolderId,
   expectedVersion: Version,
   name: FolderName,
@@ -107,6 +108,7 @@ export type RenameFolderInput = Schema.Schema.Type<typeof RenameFolderInput>;
 
 export const DeleteFolderInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   folderId: FolderId,
   expectedVersion: Version,
 });
@@ -130,6 +132,7 @@ export type CreateLabelInput = Schema.Schema.Type<typeof CreateLabelInput>;
 
 export const RenameLabelInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   labelId: LabelId,
   expectedVersion: Version,
   name: LabelName,
@@ -138,6 +141,7 @@ export type RenameLabelInput = Schema.Schema.Type<typeof RenameLabelInput>;
 
 export const DeleteLabelInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   labelId: LabelId,
   expectedVersion: Version,
 });

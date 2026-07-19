@@ -66,6 +66,7 @@ export type GetDraftInput = Schema.Schema.Type<typeof GetDraftInput>;
 
 export const UpdateDraftInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   draftId: DraftId,
   expectedVersion: Version,
   content: DraftContent,

@@ -16,6 +16,7 @@ import {
   MessageSnippet,
   MessageSubject,
   MimeType,
+  OperationId,
   OutboundDeliveryId,
   PageSize,
   RfcMessageId,
@@ -277,6 +278,7 @@ export type GetThreadResult = Schema.Schema.Type<typeof GetThreadResult>;
 
 export const SetMessageReadInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   messageId: MessageId,
   expectedVersion: Version,
   read: Schema.Boolean,
@@ -287,6 +289,7 @@ export type SetMessageReadInput = Schema.Schema.Type<
 
 export const SetMessageStarredInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   messageId: MessageId,
   expectedVersion: Version,
   starred: Schema.Boolean,
@@ -297,6 +300,7 @@ export type SetMessageStarredInput = Schema.Schema.Type<
 
 export const MoveMessageInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   messageId: MessageId,
   expectedVersion: Version,
   folderId: FolderId,
@@ -305,6 +309,7 @@ export type MoveMessageInput = Schema.Schema.Type<typeof MoveMessageInput>;
 
 export const AddMessageLabelInput = Schema.Struct({
   mailboxId: MailboxId,
+  operationId: OperationId,
   messageId: MessageId,
   expectedVersion: Version,
   labelId: LabelId,

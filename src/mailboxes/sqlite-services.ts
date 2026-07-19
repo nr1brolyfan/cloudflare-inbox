@@ -16,49 +16,49 @@ import {
   UnixMillis,
   Version,
 } from "./core";
-import type {
-  CreateFolderInput,
-  CreateLabelInput,
-  DeleteFolderInput,
-  DeleteLabelInput,
-  RenameFolderInput,
-  RenameLabelInput,
-} from "./directory";
+import type { CreateFolderInput, CreateLabelInput } from "./directory";
 import {
   DeletedFolder,
   DeletedLabel,
+  DeleteFolderInput,
+  DeleteLabelInput,
   FolderList,
   FolderSchema,
   FolderSummarySchema,
   LabelList,
   LabelSchema,
+  RenameFolderInput,
+  RenameLabelInput,
 } from "./directory";
-import { CreateDraftInput, DraftSchema } from "./drafts";
-import type { GetDraftInput, UpdateDraftInput } from "./drafts";
+import { CreateDraftInput, DraftSchema, UpdateDraftInput } from "./drafts";
+import type { GetDraftInput } from "./drafts";
 import { MailboxDomainError } from "./errors";
 import {
+  AddMessageLabelInput,
   AttachmentMetadata,
+  MoveMessageInput,
   MessageDetailSchema,
   MessageFilters as MessageFiltersSchema,
+  MessageMutationResult,
   MessagePage,
   MessageSummarySchema,
+  RemoveMessageLabelInput,
+  SetMessageReadInput,
+  SetMessageStarredInput,
   ThreadDetailSchema,
   ThreadSummarySchema,
 } from "./messages";
 import type {
-  AddMessageLabelInput,
   GetMessageInput,
   GetThreadInput,
   ListMessagesInput,
   MessageFilters,
-  MoveMessageInput,
-  RemoveMessageLabelInput,
   SearchMessagesInput,
-  SetMessageReadInput,
-  SetMessageStarredInput,
 } from "./messages";
 import {
+  CancelOutboundDeliveryInput,
   OutboundDeliveryFailure,
+  OutboundDeliveryResult,
   OutboundDeliverySchema,
   OutboundFailureCode,
   ResendOutboundInput,
@@ -66,10 +66,7 @@ import {
   ScheduleOutboundInput,
   ScheduleOutboundResult,
 } from "./outbound";
-import type {
-  CancelOutboundDeliveryInput,
-  GetOutboundDeliveryInput,
-} from "./outbound";
+import type { GetOutboundDeliveryInput } from "./outbound";
 import {
   AttachmentLocation,
   DraftLocation,
@@ -435,13 +432,30 @@ const createFolder = (
     );
   });
 
-const renameFolder = (mailboxId: MailboxId, input: RenameFolderInput) =>
+const renameFolder = (
+  mailboxId: MailboxId,
+  input: RenameFolderInput,
+  operations: MailboxOperationStore
+) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
 
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        const requestKey = JSON.stringify(
+          Schema.encodeSync(RenameFolderInput)(input)
+        );
+        const previous = yield* operations.replay(
+          input.operationId,
+          "rename-folder",
+          "rename-folder",
+          requestKey,
+          FolderSchema
+        );
+        if (previous !== undefined) {
+          return previous;
+        }
         const [row] = yield* tx
           .select()
           .from(folder)
@@ -489,22 +503,58 @@ const renameFolder = (mailboxId: MailboxId, input: RenameFolderInput) =>
           )
           .returning();
         if (updated === undefined) {
-          return yield* Effect.die(
-            new Error("Renamed folder was not returned")
+          return Result.fail(
+            mailboxDomainError(
+              "rename-folder",
+              "version-conflict",
+              "Folder version does not match",
+              {
+                resourceType: "folder",
+                resourceId: input.folderId,
+                expectedVersion: input.expectedVersion,
+                actualVersion: current.version,
+              }
+            )
           );
         }
-        return Result.succeed(folderFromRow(updated, mailboxId));
+        const result = folderFromRow(updated, mailboxId);
+        yield* operations.store(
+          input.operationId,
+          "rename-folder",
+          requestKey,
+          input.folderId,
+          JSON.stringify(Schema.encodeSync(FolderSchema)(result)),
+          updatedAt
+        );
+        return Result.succeed(result);
       })
     );
   });
 
-const deleteFolder = (mailboxId: MailboxId, input: DeleteFolderInput) =>
+const deleteFolder = (
+  mailboxId: MailboxId,
+  input: DeleteFolderInput,
+  operations: MailboxOperationStore
+) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
 
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        const requestKey = JSON.stringify(
+          Schema.encodeSync(DeleteFolderInput)(input)
+        );
+        const previous = yield* operations.replay(
+          input.operationId,
+          "delete-folder",
+          "delete-folder",
+          requestKey,
+          DeletedFolder
+        );
+        if (previous !== undefined) {
+          return previous;
+        }
         const [row] = yield* tx
           .select()
           .from(folder)
@@ -563,7 +613,7 @@ const deleteFolder = (mailboxId: MailboxId, input: DeleteFolderInput) =>
           );
         }
         const deletedAt = Math.max(runtime.now(), current.updatedAt);
-        yield* tx
+        const [updated] = yield* tx
           .update(folder)
           .set({
             deletedAt,
@@ -576,14 +626,37 @@ const deleteFolder = (mailboxId: MailboxId, input: DeleteFolderInput) =>
               eq(folder.version, input.expectedVersion),
               isNull(folder.deletedAt)
             )
+          )
+          .returning({ id: folder.id });
+        if (updated === undefined) {
+          return Result.fail(
+            mailboxDomainError(
+              "delete-folder",
+              "version-conflict",
+              "Folder version does not match",
+              {
+                resourceType: "folder",
+                resourceId: input.folderId,
+                expectedVersion: input.expectedVersion,
+                actualVersion: current.version,
+              }
+            )
           );
-        return Result.succeed(
-          Schema.decodeUnknownSync(DeletedFolder)({
-            id: input.folderId,
-            deletedAt,
-            version: input.expectedVersion + 1,
-          })
+        }
+        const result = Schema.decodeUnknownSync(DeletedFolder)({
+          id: input.folderId,
+          deletedAt,
+          version: input.expectedVersion + 1,
+        });
+        yield* operations.store(
+          input.operationId,
+          "delete-folder",
+          requestKey,
+          input.folderId,
+          JSON.stringify(Schema.encodeSync(DeletedFolder)(result)),
+          deletedAt
         );
+        return Result.succeed(result);
       })
     );
   });
@@ -646,13 +719,30 @@ const createLabel = (
     );
   });
 
-const renameLabel = (mailboxId: MailboxId, input: RenameLabelInput) =>
+const renameLabel = (
+  mailboxId: MailboxId,
+  input: RenameLabelInput,
+  operations: MailboxOperationStore
+) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
 
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        const requestKey = JSON.stringify(
+          Schema.encodeSync(RenameLabelInput)(input)
+        );
+        const previous = yield* operations.replay(
+          input.operationId,
+          "rename-label",
+          "rename-label",
+          requestKey,
+          LabelSchema
+        );
+        if (previous !== undefined) {
+          return previous;
+        }
         const [row] = yield* tx
           .select()
           .from(label)
@@ -700,20 +790,58 @@ const renameLabel = (mailboxId: MailboxId, input: RenameLabelInput) =>
           )
           .returning();
         if (updated === undefined) {
-          return yield* Effect.die(new Error("Renamed label was not returned"));
+          return Result.fail(
+            mailboxDomainError(
+              "rename-label",
+              "version-conflict",
+              "Label version does not match",
+              {
+                resourceType: "label",
+                resourceId: input.labelId,
+                expectedVersion: input.expectedVersion,
+                actualVersion: current.version,
+              }
+            )
+          );
         }
-        return Result.succeed(labelFromRow(updated, mailboxId));
+        const result = labelFromRow(updated, mailboxId);
+        yield* operations.store(
+          input.operationId,
+          "rename-label",
+          requestKey,
+          input.labelId,
+          JSON.stringify(Schema.encodeSync(LabelSchema)(result)),
+          updatedAt
+        );
+        return Result.succeed(result);
       })
     );
   });
 
-const deleteLabel = (mailboxId: MailboxId, input: DeleteLabelInput) =>
+const deleteLabel = (
+  mailboxId: MailboxId,
+  input: DeleteLabelInput,
+  operations: MailboxOperationStore
+) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
 
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        const requestKey = JSON.stringify(
+          Schema.encodeSync(DeleteLabelInput)(input)
+        );
+        const previous = yield* operations.replay(
+          input.operationId,
+          "delete-label",
+          "delete-label",
+          requestKey,
+          DeletedLabel
+        );
+        if (previous !== undefined) {
+          return previous;
+        }
         const [row] = yield* tx
           .select()
           .from(label)
@@ -745,7 +873,7 @@ const deleteLabel = (mailboxId: MailboxId, input: DeleteLabelInput) =>
           );
         }
         const deletedAt = Math.max(runtime.now(), current.updatedAt);
-        yield* tx
+        const [updated] = yield* tx
           .update(label)
           .set({
             deletedAt,
@@ -758,14 +886,37 @@ const deleteLabel = (mailboxId: MailboxId, input: DeleteLabelInput) =>
               eq(label.version, input.expectedVersion),
               isNull(label.deletedAt)
             )
+          )
+          .returning({ id: label.id });
+        if (updated === undefined) {
+          return Result.fail(
+            mailboxDomainError(
+              "delete-label",
+              "version-conflict",
+              "Label version does not match",
+              {
+                resourceType: "label",
+                resourceId: input.labelId,
+                expectedVersion: input.expectedVersion,
+                actualVersion: current.version,
+              }
+            )
           );
-        return Result.succeed(
-          Schema.decodeUnknownSync(DeletedLabel)({
-            id: input.labelId,
-            deletedAt,
-            version: input.expectedVersion + 1,
-          })
+        }
+        const result = Schema.decodeUnknownSync(DeletedLabel)({
+          id: input.labelId,
+          deletedAt,
+          version: input.expectedVersion + 1,
+        });
+        yield* operations.store(
+          input.operationId,
+          "delete-label",
+          requestKey,
+          input.labelId,
+          JSON.stringify(Schema.encodeSync(DeletedLabel)(result)),
+          deletedAt
         );
+        return Result.succeed(result);
       })
     );
   });
@@ -800,9 +951,17 @@ const makeMailboxDirectoryStore = (
       runtime
     ),
   renameFolder: (input: RenameFolderInput) =>
-    provideDirectoryDependencies(renameFolder(mailboxId, input), db, runtime),
+    provideDirectoryDependencies(
+      renameFolder(mailboxId, input, operations),
+      db,
+      runtime
+    ),
   deleteFolder: (input: DeleteFolderInput) =>
-    provideDirectoryDependencies(deleteFolder(mailboxId, input), db, runtime),
+    provideDirectoryDependencies(
+      deleteFolder(mailboxId, input, operations),
+      db,
+      runtime
+    ),
   listLabels: () =>
     provideDirectoryDependencies(listLabels(mailboxId), db, runtime),
   createLabel: (input: CreateLabelInput) =>
@@ -812,9 +971,17 @@ const makeMailboxDirectoryStore = (
       runtime
     ),
   renameLabel: (input: RenameLabelInput) =>
-    provideDirectoryDependencies(renameLabel(mailboxId, input), db, runtime),
+    provideDirectoryDependencies(
+      renameLabel(mailboxId, input, operations),
+      db,
+      runtime
+    ),
   deleteLabel: (input: DeleteLabelInput) =>
-    provideDirectoryDependencies(deleteLabel(mailboxId, input), db, runtime),
+    provideDirectoryDependencies(
+      deleteLabel(mailboxId, input, operations),
+      db,
+      runtime
+    ),
 });
 
 export type MailboxDirectoryStore = ReturnType<
@@ -1585,16 +1752,90 @@ type MessageMutation =
   | { readonly _tag: "AddLabel"; readonly input: AddMessageLabelInput }
   | { readonly _tag: "RemoveLabel"; readonly input: RemoveMessageLabelInput };
 
+const messageMutationOperationKind = (mutation: MessageMutation) => {
+  switch (mutation._tag) {
+    case "Read": {
+      return "set-message-read";
+    }
+    case "Starred": {
+      return "set-message-starred";
+    }
+    case "Move": {
+      return "move-message";
+    }
+    case "AddLabel": {
+      return "add-message-label";
+    }
+    case "RemoveLabel": {
+      return "remove-message-label";
+    }
+    default: {
+      const exhaustive: never = mutation;
+      return exhaustive;
+    }
+  }
+};
+
+const messageMutationRequestKey = (mutation: MessageMutation) => {
+  switch (mutation._tag) {
+    case "Read": {
+      return JSON.stringify(
+        Schema.encodeSync(SetMessageReadInput)(mutation.input)
+      );
+    }
+    case "Starred": {
+      return JSON.stringify(
+        Schema.encodeSync(SetMessageStarredInput)(mutation.input)
+      );
+    }
+    case "Move": {
+      return JSON.stringify(
+        Schema.encodeSync(MoveMessageInput)(mutation.input)
+      );
+    }
+    case "AddLabel": {
+      return JSON.stringify(
+        Schema.encodeSync(AddMessageLabelInput)(mutation.input)
+      );
+    }
+    case "RemoveLabel": {
+      return JSON.stringify(
+        Schema.encodeSync(RemoveMessageLabelInput)(mutation.input)
+      );
+    }
+    default: {
+      const exhaustive: never = mutation;
+      return exhaustive;
+    }
+  }
+};
+
 const mutateMessage = (
   mailboxId: MailboxId,
   mutation: MessageMutation,
-  runtime: MailboxRuntime
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
 ) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
         const { input } = mutation;
+        const operationKind = messageMutationOperationKind(mutation);
+        const requestKey = messageMutationRequestKey(mutation);
+        const previous = yield* operations.replay(
+          input.operationId,
+          "mutate-message",
+          operationKind,
+          requestKey,
+          MessageMutationResult
+        );
+        if (previous !== undefined) {
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
+        }
         const [row] = yield* tx
           .select()
           .from(message)
@@ -1779,7 +2020,16 @@ const mutateMessage = (
           );
         }
         const detail = yield* readMessageDetailRow(tx, next, mailboxId);
-        return readMessageSummaryRow(detail);
+        const result = readMessageSummaryRow(detail);
+        yield* operations.store(
+          input.operationId,
+          operationKind,
+          requestKey,
+          input.messageId,
+          JSON.stringify(Schema.encodeSync(MessageMutationResult)(result)),
+          now
+        );
+        return result;
       })
     );
   });
@@ -1787,7 +2037,8 @@ const mutateMessage = (
 const makeMailboxMessageStore = (
   db: MailboxDatabase,
   runtime: MailboxRuntime,
-  mailboxId: MailboxId
+  mailboxId: MailboxId,
+  operations: MailboxOperationStore
 ) => {
   const provideDatabase = <A, E>(
     effect: Effect.Effect<A, E, MailboxDatabase>
@@ -1804,23 +2055,38 @@ const makeMailboxMessageStore = (
       provideDatabase(getThread(mailboxId, input)),
     setMessageRead: (input: SetMessageReadInput) =>
       provideDatabase(
-        mutateMessage(mailboxId, { _tag: "Read", input }, runtime)
+        mutateMessage(mailboxId, { _tag: "Read", input }, runtime, operations)
       ),
     setMessageStarred: (input: SetMessageStarredInput) =>
       provideDatabase(
-        mutateMessage(mailboxId, { _tag: "Starred", input }, runtime)
+        mutateMessage(
+          mailboxId,
+          { _tag: "Starred", input },
+          runtime,
+          operations
+        )
       ),
     moveMessage: (input: MoveMessageInput) =>
       provideDatabase(
-        mutateMessage(mailboxId, { _tag: "Move", input }, runtime)
+        mutateMessage(mailboxId, { _tag: "Move", input }, runtime, operations)
       ),
     addMessageLabel: (input: AddMessageLabelInput) =>
       provideDatabase(
-        mutateMessage(mailboxId, { _tag: "AddLabel", input }, runtime)
+        mutateMessage(
+          mailboxId,
+          { _tag: "AddLabel", input },
+          runtime,
+          operations
+        )
       ),
     removeMessageLabel: (input: RemoveMessageLabelInput) =>
       provideDatabase(
-        mutateMessage(mailboxId, { _tag: "RemoveLabel", input }, runtime)
+        mutateMessage(
+          mailboxId,
+          { _tag: "RemoveLabel", input },
+          runtime,
+          operations
+        )
       ),
   };
 };
@@ -1837,8 +2103,9 @@ export const MailboxMessageStoreLive = Layer.effect(
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
     const { mailboxId } = yield* MailboxIdentity;
+    const operations = yield* MailboxOperationStore;
     return MailboxMessageStore.of(
-      makeMailboxMessageStore(db, runtime, mailboxId)
+      makeMailboxMessageStore(db, runtime, mailboxId, operations)
     );
   })
 );
@@ -1937,12 +2204,29 @@ const getDraft = (mailboxId: MailboxId, input: GetDraftInput) =>
 const updateDraft = (
   mailboxId: MailboxId,
   input: UpdateDraftInput,
-  runtime: MailboxRuntime
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
 ) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        const requestKey = JSON.stringify(
+          Schema.encodeSync(UpdateDraftInput)(input)
+        );
+        const previous = yield* operations.replay(
+          input.operationId,
+          "update-draft",
+          "update-draft",
+          requestKey,
+          DraftSchema
+        );
+        if (previous !== undefined) {
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
+        }
         const [current] = yield* tx
           .select()
           .from(draft)
@@ -1999,7 +2283,16 @@ const updateDraft = (
             actualVersion: Schema.decodeUnknownSync(Version)(current.version),
           });
         }
-        return readDraftRow(updated, mailboxId);
+        const result = readDraftRow(updated, mailboxId);
+        yield* operations.store(
+          input.operationId,
+          "update-draft",
+          requestKey,
+          input.draftId,
+          JSON.stringify(Schema.encodeSync(DraftSchema)(result)),
+          result.updatedAt
+        );
+        return result;
       })
     );
   });
@@ -2020,7 +2313,7 @@ const makeMailboxDraftStore = (
     getDraft: (input: GetDraftInput) =>
       provideDatabase(getDraft(mailboxId, input)),
     updateDraft: (input: UpdateDraftInput) =>
-      provideDatabase(updateDraft(mailboxId, input, runtime)),
+      provideDatabase(updateDraft(mailboxId, input, runtime, operations)),
   };
 };
 
@@ -2298,12 +2591,29 @@ const scheduleOutbound = (
 const cancelOutboundDelivery = (
   mailboxId: MailboxId,
   input: CancelOutboundDeliveryInput,
-  runtime: MailboxRuntime
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
 ) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        const requestKey = JSON.stringify(
+          Schema.encodeSync(CancelOutboundDeliveryInput)(input)
+        );
+        const previous = yield* operations.replay(
+          input.operationId,
+          "cancel-outbound",
+          "cancel-outbound",
+          requestKey,
+          OutboundDeliveryResult
+        );
+        if (previous !== undefined) {
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
+        }
         const [current] = yield* tx
           .select()
           .from(outboundDelivery)
@@ -2361,7 +2671,16 @@ const cancelOutboundDelivery = (
             current.version
           );
         }
-        return readOutboundDeliveryRow(updated, mailboxId);
+        const result = readOutboundDeliveryRow(updated, mailboxId);
+        yield* operations.store(
+          input.operationId,
+          "cancel-outbound",
+          requestKey,
+          input.outboundDeliveryId,
+          JSON.stringify(Schema.encodeSync(OutboundDeliveryResult)(result)),
+          result.updatedAt
+        );
+        return result;
       })
     );
   });
@@ -2539,7 +2858,9 @@ const makeMailboxOutboundStore = (
     scheduleOutbound: (input: ScheduleOutboundInput) =>
       provideDatabase(scheduleOutbound(mailboxId, input, runtime, operations)),
     cancelOutboundDelivery: (input: CancelOutboundDeliveryInput) =>
-      provideDatabase(cancelOutboundDelivery(mailboxId, input, runtime)),
+      provideDatabase(
+        cancelOutboundDelivery(mailboxId, input, runtime, operations)
+      ),
     resendOutbound: (input: ResendOutboundInput) =>
       provideDatabase(resendOutbound(mailboxId, input, runtime, operations)),
   };

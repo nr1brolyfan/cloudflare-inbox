@@ -278,6 +278,7 @@ describe("Mailbox mail data SQLite", () => {
           return yield* repository.updateDraft(
             Schema.decodeUnknownSync(UpdateDraftInput)({
               mailboxId,
+              operationId: "missing-draft-op",
               draftId: "missing-draft",
               expectedVersion: 1,
               content: {
@@ -628,17 +629,19 @@ describe("Mailbox mail data SQLite", () => {
           createdAt: 0,
           updatedAt: 0,
         });
-        const read = yield* setMessageRead(
-          Schema.decodeUnknownSync(SetMessageReadInput)({
-            mailboxId,
-            messageId: "m1",
-            expectedVersion: 1,
-            read: false,
-          })
-        );
+        const readInput = Schema.decodeUnknownSync(SetMessageReadInput)({
+          mailboxId,
+          operationId: "read-op",
+          messageId: "m1",
+          expectedVersion: 1,
+          read: false,
+        });
+        const read = yield* setMessageRead(readInput);
+        const readReplay = yield* setMessageRead(readInput);
         const labelled = yield* addMessageLabel(
           Schema.decodeUnknownSync(AddMessageLabelInput)({
             mailboxId,
+            operationId: "label-message-op",
             messageId: "m1",
             expectedVersion: 2,
             labelId: "important",
@@ -647,6 +650,7 @@ describe("Mailbox mail data SQLite", () => {
         const moved = yield* moveMessage(
           Schema.decodeUnknownSync(MoveMessageInput)({
             mailboxId,
+            operationId: "move-message-op",
             messageId: "m1",
             expectedVersion: 3,
             folderId: "archive",
@@ -657,6 +661,7 @@ describe("Mailbox mail data SQLite", () => {
             setMessageRead(
               Schema.decodeUnknownSync(SetMessageReadInput)({
                 mailboxId,
+                operationId: "read-stale-op",
                 messageId: "m1",
                 expectedVersion: 1,
                 read: true,
@@ -669,6 +674,7 @@ describe("Mailbox mail data SQLite", () => {
             moveMessage(
               Schema.decodeUnknownSync(MoveMessageInput)({
                 mailboxId,
+                operationId: "move-missing-folder-op",
                 messageId: "m1",
                 expectedVersion: 4,
                 folderId: "missing",
@@ -678,16 +684,56 @@ describe("Mailbox mail data SQLite", () => {
         );
         expect({
           read: read.version,
+          readReplay: readReplay.version,
           labels: labelled.labelIds,
           folder: moved.folderId,
           conflict,
           missingTarget,
         }).toMatchObject({
           read: 2,
+          readReplay: 2,
           labels: ["important"],
           folder: "archive",
           conflict: { reason: "version-conflict", actualVersion: 4 },
           missingTarget: { reason: "not-found", resourceType: "folder" },
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("rolls back message mutations when the operation ledger write fails", async () => {
+    const runtime = makeRuntime();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        yield* db.run(
+          sql.raw(`CREATE TRIGGER reject_message_mutation_operation
+          BEFORE INSERT ON mailbox_operation
+          WHEN NEW.operation_kind = 'set-message-read'
+          BEGIN SELECT RAISE(ABORT, 'ledger unavailable'); END`)
+        );
+
+        const result = yield* Effect.result(
+          setMessageRead(
+            Schema.decodeUnknownSync(SetMessageReadInput)({
+              mailboxId,
+              operationId: "rollback-read-op",
+              messageId: "m1",
+              expectedVersion: 1,
+              read: true,
+            })
+          )
+        );
+        const [row] = yield* db
+          .select({ read: message.read, version: message.version })
+          .from(message)
+          .where(eq(message.id, "m1"));
+
+        expect({ failed: Result.isFailure(result), row }).toStrictEqual({
+          failed: true,
+          row: { read: 0, version: 1 },
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
@@ -722,18 +768,19 @@ describe("Mailbox mail data SQLite", () => {
             )
           )
         );
-        const updated = yield* updateDraft(
-          Schema.decodeUnknownSync(UpdateDraftInput)({
-            mailboxId,
-            draftId: created.id,
-            expectedVersion: 1,
-            content: {
-              ...input.content,
-              subject: "Updated",
-              textBody: undefined,
-            },
-          })
-        );
+        const updateInput = Schema.decodeUnknownSync(UpdateDraftInput)({
+          mailboxId,
+          operationId: "update-draft-op",
+          draftId: created.id,
+          expectedVersion: 1,
+          content: {
+            ...input.content,
+            subject: "Updated",
+            textBody: undefined,
+          },
+        });
+        const updated = yield* updateDraft(updateInput);
+        const updateReplay = yield* updateDraft(updateInput);
         const found = yield* getDraft(
           Schema.decodeUnknownSync(GetDraftInput)({
             mailboxId,
@@ -745,6 +792,7 @@ describe("Mailbox mail data SQLite", () => {
             updateDraft(
               Schema.decodeUnknownSync(UpdateDraftInput)({
                 mailboxId,
+                operationId: "stale-draft-op",
                 draftId: created.id,
                 expectedVersion: 1,
                 content: input.content,
@@ -752,15 +800,21 @@ describe("Mailbox mail data SQLite", () => {
             )
           )
         );
-        expect({ replay, replayConflict, updated, found, stale }).toMatchObject(
-          {
-            replay: { id: created.id, subject: "Draft", version: 1 },
-            replayConflict: { reason: "idempotency-conflict" },
-            updated: { subject: "Updated", version: 2 },
-            found: { subject: "Updated", version: 2 },
-            stale: { reason: "version-conflict", actualVersion: 2 },
-          }
-        );
+        expect({
+          replay,
+          replayConflict,
+          updated,
+          updateReplay,
+          found,
+          stale,
+        }).toMatchObject({
+          replay: { id: created.id, subject: "Draft", version: 1 },
+          replayConflict: { reason: "idempotency-conflict" },
+          updated: { subject: "Updated", version: 2 },
+          updateReplay: { subject: "Updated", version: 2 },
+          found: { subject: "Updated", version: 2 },
+          stale: { reason: "version-conflict", actualVersion: 2 },
+        });
         expect(updated.textBody).toBeUndefined();
         expect(found.textBody).toBeUndefined();
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
@@ -801,18 +855,22 @@ describe("Mailbox mail data SQLite", () => {
             outboundDeliveryId: scheduled.delivery.id,
           })
         );
-        const cancelled = yield* cancelOutboundDelivery(
-          Schema.decodeUnknownSync(CancelOutboundDeliveryInput)({
-            mailboxId,
-            outboundDeliveryId: scheduled.delivery.id,
-            expectedVersion: 1,
-          })
-        );
+        const cancelInput = Schema.decodeUnknownSync(
+          CancelOutboundDeliveryInput
+        )({
+          mailboxId,
+          operationId: "cancel-op",
+          outboundDeliveryId: scheduled.delivery.id,
+          expectedVersion: 1,
+        });
+        const cancelled = yield* cancelOutboundDelivery(cancelInput);
+        const cancelReplay = yield* cancelOutboundDelivery(cancelInput);
         const staleCancel = failure(
           yield* Effect.result(
             cancelOutboundDelivery(
               Schema.decodeUnknownSync(CancelOutboundDeliveryInput)({
                 mailboxId,
+                operationId: "stale-cancel-op",
                 outboundDeliveryId: scheduled.delivery.id,
                 expectedVersion: 1,
               })
@@ -824,6 +882,7 @@ describe("Mailbox mail data SQLite", () => {
             cancelOutboundDelivery(
               Schema.decodeUnknownSync(CancelOutboundDeliveryInput)({
                 mailboxId,
+                operationId: "invalid-cancel-op",
                 outboundDeliveryId: scheduled.delivery.id,
                 expectedVersion: 2,
               })
@@ -835,6 +894,7 @@ describe("Mailbox mail data SQLite", () => {
           replay,
           found,
           cancelled,
+          cancelReplay,
           staleCancel,
           invalidState,
         }).toMatchObject({
@@ -842,6 +902,7 @@ describe("Mailbox mail data SQLite", () => {
           replay: { delivery: { id: scheduled.delivery.id } },
           found: { status: "scheduled" },
           cancelled: { status: "cancelled", version: 2 },
+          cancelReplay: { status: "cancelled", version: 2 },
           staleCancel: { reason: "version-conflict", actualVersion: 2 },
           invalidState: { reason: "invalid-state" },
         });
