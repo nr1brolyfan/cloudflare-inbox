@@ -1,7 +1,14 @@
 /* oxlint-disable max-classes-per-file -- Mailbox errors are intentionally consolidated. */
 import * as Data from "effect/Data";
 
-import type { OperationId, RuleId, UnixMillis, Version } from "./core";
+import type {
+  InboundIngestId,
+  OperationId,
+  OutboundDeliveryId,
+  RuleId,
+  UnixMillis,
+  Version,
+} from "./core";
 
 export class BlobStoreError extends Data.TaggedError("BlobStoreError")<{
   readonly operation: "read" | "write" | "head" | "delete";
@@ -126,7 +133,7 @@ export class RuleEvaluationError extends Data.TaggedError(
 
 export class WorkflowStartError extends Data.TaggedError("WorkflowStartError")<{
   readonly workflow: "inbound" | "outbound";
-  readonly operationId: OperationId;
+  readonly instanceId: InboundIngestId | OperationId | OutboundDeliveryId;
   readonly message: string;
   readonly cause: unknown;
 }> {}

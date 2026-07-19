@@ -5,7 +5,7 @@ import * as Schema from "effect/Schema";
 
 import { InboundIngestId, UnixMillis } from "./core";
 import { BlobStoreError } from "./errors";
-import { InboundEmailRejected } from "./inbound";
+import { InboundEmailRejected, InboundWorkflowStarter } from "./inbound";
 import type { InboundEmailRoutingMessage } from "./inbound-email-routing";
 import { InboundEmailIngress } from "./inbound-email-routing";
 
@@ -79,12 +79,20 @@ const rejectStorageFailure = (cause: unknown) =>
     reason: "processing-unavailable",
   });
 
+const rejectWorkflowFailure = (cause: unknown) =>
+  new InboundEmailRejected({
+    cause,
+    message: "Inbound email processing is not available",
+    reason: "processing-unavailable",
+  });
+
 /** Streams the original MIME bytes to private R2 before downstream processing. */
 export const InboundEmailIngressLive = Layer.effect(
   InboundEmailIngress,
   Effect.gen(function* () {
     const rawMessages = yield* RawMessagesR2Client;
     const runtime = yield* InboundEmailIngressRuntime;
+    const workflow = yield* InboundWorkflowStarter;
 
     return InboundEmailIngress.of({
       receive: (message) =>
@@ -136,6 +144,16 @@ export const InboundEmailIngressLive = Layer.effect(
               )
             );
           }
+
+          yield* workflow
+            .start({
+              envelope: message.envelope,
+              formatVersion: 1,
+              inboundIngestId,
+              mailboxId: message.mailboxId,
+              receivedAt,
+            })
+            .pipe(Effect.mapError(rejectWorkflowFailure));
         }),
     });
   })

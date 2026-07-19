@@ -1,10 +1,13 @@
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { InboundIngestId } from "#/mailboxes/core";
 import {
   DeliveryIndeterminateError,
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
   MailboxRepositoryError,
+  WorkflowStartError,
 } from "#/mailboxes/errors";
 
 describe("mail domain errors", () => {
@@ -57,5 +60,20 @@ describe("mail domain errors", () => {
       "DeliveryTemporaryFailureError",
       "DeliveryIndeterminateError",
     ]);
+  });
+
+  it("keeps Workflow identity tied to the inbound ingest", () => {
+    const error = new WorkflowStartError({
+      cause: new Error("binding unavailable"),
+      instanceId: Schema.decodeUnknownSync(InboundIngestId)("ingest-1"),
+      message: "Failed to start inbound workflow",
+      workflow: "inbound",
+    });
+
+    expect(error).toMatchObject({
+      _tag: "WorkflowStartError",
+      instanceId: "ingest-1",
+      workflow: "inbound",
+    });
   });
 });

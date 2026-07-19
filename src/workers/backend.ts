@@ -32,12 +32,17 @@ import {
   RawMessagesR2Client,
 } from "../mailboxes/inbound-email-ingress-live";
 import { handleCloudflareEmailRoutingMessage } from "../mailboxes/inbound-email-routing";
+import {
+  InboundWorkflowClient,
+  InboundWorkflowStarterLive,
+} from "../mailboxes/inbound-workflow-starter-live";
 import { MailboxDO } from "../mailboxes/mailbox-do";
 import {
   BackendObservabilityConfig,
   BackendObservabilityLive,
 } from "../observability/backend";
 import { BackendHealthBindings } from "../observability/backend-health-live";
+import InboundWorkflow from "../workflows/inbound-workflow";
 import {
   EmailRoutingEventSource,
   EmailRoutingEventSourceLive,
@@ -78,6 +83,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
     const authRateLimit = yield* RateLimitDurableObject;
     const mailboxDataPlane = yield* MailboxDO;
+    const inboundWorkflow = yield* InboundWorkflow;
     const emailRouting = yield* EmailRoutingEventSource;
     const isDevelopment = yield* ALCHEMY_DEV;
     const otlpBaseUrl = isDevelopment
@@ -164,9 +170,23 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
                 .pipe(Effect.provide(RuntimeContext.phantom)),
           })
         );
+        const workflowClientLive = Layer.succeed(
+          InboundWorkflowClient,
+          InboundWorkflowClient.of({
+            create: (options) => inboundWorkflow.create(options),
+            get: (instanceId) => inboundWorkflow.get(instanceId),
+          })
+        );
+        const workflowStarterLive = InboundWorkflowStarterLive.pipe(
+          Layer.provide(workflowClientLive)
+        );
         const inboundEmailIngressLive = InboundEmailIngressLive.pipe(
           Layer.provide(
-            Layer.merge(rawMessagesLive, InboundEmailIngressRuntimeLive)
+            Layer.mergeAll(
+              rawMessagesLive,
+              InboundEmailIngressRuntimeLive,
+              workflowStarterLive
+            )
           )
         );
         const inboundServicesLive = Layer.merge(

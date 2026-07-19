@@ -15,6 +15,7 @@ import {
   UnixMillis,
   Version,
 } from "./core";
+import type { WorkflowStartError } from "./errors";
 
 export const InboundFailureCode = Schema.Literals([
   "malformed_message",
@@ -155,4 +156,36 @@ export interface InboundMailboxResolver {
 /** Resolves a validated SMTP envelope recipient before selecting a MailboxDO. */
 export const InboundMailboxResolver = Context.Service<InboundMailboxResolver>(
   "cloudflare-inbox/InboundMailboxResolver"
+);
+
+export const InboundWorkflowParamsV1 = Schema.Struct({
+  formatVersion: Schema.Literal(1),
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  envelope: ReceiveInboundEmailInput,
+  receivedAt: UnixMillis,
+});
+export type InboundWorkflowParamsV1 = Schema.Schema.Type<
+  typeof InboundWorkflowParamsV1
+>;
+
+export const InboundWorkflowResultV1 = Schema.Struct({
+  formatVersion: Schema.Literal(1),
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  status: Schema.Literal("raw_stored"),
+});
+export type InboundWorkflowResultV1 = Schema.Schema.Type<
+  typeof InboundWorkflowResultV1
+>;
+
+export interface InboundWorkflowStarter {
+  readonly start: (
+    params: InboundWorkflowParamsV1
+  ) => Effect.Effect<void, WorkflowStartError>;
+}
+
+/** Starts the durable processor using the ingest ID as its instance identity. */
+export const InboundWorkflowStarter = Context.Service<InboundWorkflowStarter>(
+  "cloudflare-inbox/InboundWorkflowStarter"
 );

@@ -5,9 +5,11 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { MailboxId } from "#/mailboxes/core";
-import { BlobStoreError } from "#/mailboxes/errors";
+import { BlobStoreError, WorkflowStartError } from "#/mailboxes/errors";
+import type { InboundWorkflowStarter as InboundWorkflowStarterShape } from "#/mailboxes/inbound";
 import {
   InboundEmailRejected,
+  InboundWorkflowStarter,
   ReceiveInboundEmailInput,
 } from "#/mailboxes/inbound";
 import type {
@@ -64,7 +66,8 @@ const runtime = (
 const runIngress = (
   input: InboundEmailRoutingMessage,
   put: RawMessagesR2ClientShape["put"],
-  enforceLength?: InboundEmailIngressRuntimeShape["enforceLength"]
+  enforceLength?: InboundEmailIngressRuntimeShape["enforceLength"],
+  start: InboundWorkflowStarterShape["start"] = () => Effect.void
 ) =>
   Effect.runPromise(
     InboundEmailIngress.pipe(
@@ -72,12 +75,16 @@ const runIngress = (
       Effect.provide(
         InboundEmailIngressLive.pipe(
           Layer.provide(
-            Layer.merge(
+            Layer.mergeAll(
               Layer.succeed(
                 RawMessagesR2Client,
                 RawMessagesR2Client.of({ put })
               ),
-              runtime(enforceLength)
+              runtime(enforceLength),
+              Layer.succeed(
+                InboundWorkflowStarter,
+                InboundWorkflowStarter.of({ start })
+              )
             )
           )
         )
@@ -95,12 +102,15 @@ describe("inbound raw MIME R2 ingress", () => {
         }
       | undefined;
     let enforcedLength: number | undefined;
+    const events: string[] = [];
+    let workflowParams: unknown;
     const input = message();
 
     await runIngress(
       input,
       (key, raw, options) =>
         Effect.promise(async () => {
+          events.push("r2-put");
           const stored = new Uint8Array(
             await new Response(raw as unknown as BodyInit).arrayBuffer()
           );
@@ -110,10 +120,15 @@ describe("inbound raw MIME R2 ingress", () => {
       (raw, expectedLength) => {
         enforcedLength = expectedLength;
         return raw;
-      }
+      },
+      (params) =>
+        Effect.sync(() => {
+          events.push("workflow-start");
+          workflowParams = params;
+        })
     );
 
-    expect({ captured, enforcedLength }).toStrictEqual({
+    expect({ captured, enforcedLength, events, workflowParams }).toStrictEqual({
       captured: {
         bytes: [...bytes],
         key: "inbound/ingest-1/raw.eml",
@@ -134,6 +149,14 @@ describe("inbound raw MIME R2 ingress", () => {
         },
       },
       enforcedLength: bytes.length,
+      events: ["r2-put", "workflow-start"],
+      workflowParams: {
+        envelope: input.envelope,
+        formatVersion: 1,
+        inboundIngestId: "ingest-1",
+        mailboxId: "primary",
+        receivedAt: 2000,
+      },
     });
   });
 
@@ -152,8 +175,15 @@ describe("inbound raw MIME R2 ingress", () => {
     ["collision", null],
     ["size mismatch", { size: bytes.length + 1 }],
   ] as const)("fails closed on an R2 %s", async (_, result) => {
-    const failure = await runIngress(message(), () =>
-      Effect.succeed(result)
+    let workflowStarts = 0;
+    const failure = await runIngress(
+      message(),
+      () => Effect.succeed(result),
+      undefined,
+      () =>
+        Effect.sync(() => {
+          workflowStarts += 1;
+        })
     ).catch((error: unknown) => error);
 
     expect(failure).toMatchObject({
@@ -164,6 +194,7 @@ describe("inbound raw MIME R2 ingress", () => {
       },
       reason: "processing-unavailable",
     });
+    expect(workflowStarts).toBe(0);
   });
 
   it.each([
@@ -200,6 +231,47 @@ describe("inbound raw MIME R2 ingress", () => {
     expect(failure).toMatchObject({
       cause: { _tag: "BlobStoreError" },
       reason: "processing-unavailable",
+    });
+  });
+
+  it("retains stored raw MIME when Workflow start fails", async () => {
+    const events: string[] = [];
+
+    const failure = await runIngress(
+      message(),
+      () =>
+        Effect.sync(() => {
+          events.push("r2-put");
+          return { size: bytes.length };
+        }),
+      undefined,
+      (params) =>
+        Effect.sync(() => {
+          events.push("workflow-start");
+        }).pipe(
+          Effect.andThen(
+            Effect.fail(
+              new WorkflowStartError({
+                cause: new Error("Workflow unavailable"),
+                instanceId: params.inboundIngestId,
+                message: "Failed to start inbound workflow",
+                workflow: "inbound",
+              })
+            )
+          )
+        )
+    ).catch((error: unknown) => error);
+
+    expect({ events, failure }).toMatchObject({
+      events: ["r2-put", "workflow-start"],
+      failure: {
+        cause: {
+          _tag: "WorkflowStartError",
+          instanceId: "ingest-1",
+          workflow: "inbound",
+        },
+        reason: "processing-unavailable",
+      },
     });
   });
 });
