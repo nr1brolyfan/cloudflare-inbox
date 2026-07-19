@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-19
-- Postęp zadań: **54/109 (50%)**
+- Postęp zadań: **55/109 (50%)**
 - Ukończone etapy: **3/11**
 - Aktualny etap: **6. Inbound email**
-- Aktualne zadanie: **Zapis raw MIME do R2 przed parsowaniem**
+- Aktualne zadanie: **Trwały inbound Workflow**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -17,7 +17,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 3   | Effect-auth i sesje                   | IN PROGRESS | 15/20  |
 | 4   | Permissions i control plane           | DONE        | 10/10  |
 | 5   | MailboxDO i domena pocztowa           | DONE        | 9/9    |
-| 6   | Inbound email                         | CURRENT     | 2/9    |
+| 6   | Inbound email                         | CURRENT     | 3/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | TODO        | 0/9    |
 | 8   | Reguły automatyczne                   | TODO        | 0/6    |
 | 9   | Drafty i outbound                     | TODO        | 0/9    |
@@ -110,8 +110,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 - [x] Dodać Cloudflare Email Routing handler.
 - [x] Mapować mailbox po SMTP envelope recipient, nie po nagłówku `To`.
-- [ ] CURRENT Zapisywać raw MIME do R2 przed parsowaniem.
-- [ ] Uruchamiać trwały inbound Workflow.
+- [x] Zapisywać raw MIME do R2 przed parsowaniem.
+- [ ] CURRENT Uruchamiać trwały inbound Workflow.
 - [ ] Parsować MIME przez `postal-mime`.
 - [ ] Ekstrahować attachmenty i CID do R2.
 - [ ] Obsłużyć deduplikację oraz idempotentny commit w MailboxDO.

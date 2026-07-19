@@ -1,5 +1,5 @@
 import { RateLimitDurableObject } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
-import { ALCHEMY_DEV } from "alchemy";
+import { ALCHEMY_DEV, RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
@@ -27,9 +27,11 @@ import {
 import { EmailAddress } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
 import {
-  handleCloudflareEmailRoutingMessage,
-  InboundEmailIngressUnavailableLive,
-} from "../mailboxes/inbound-email-routing";
+  InboundEmailIngressLive,
+  InboundEmailIngressRuntimeLive,
+  RawMessagesR2Client,
+} from "../mailboxes/inbound-email-ingress-live";
+import { handleCloudflareEmailRoutingMessage } from "../mailboxes/inbound-email-routing";
 import { MailboxDO } from "../mailboxes/mailbox-do";
 import {
   BackendObservabilityConfig,
@@ -153,11 +155,25 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
             )
           )
         );
+        const rawMessagesLive = Layer.succeed(
+          RawMessagesR2Client,
+          RawMessagesR2Client.of({
+            put: (key, value, options) =>
+              rawMessages
+                .put(key, value as unknown as ReadableStream, options)
+                .pipe(Effect.provide(RuntimeContext.phantom)),
+          })
+        );
+        const inboundEmailIngressLive = InboundEmailIngressLive.pipe(
+          Layer.provide(
+            Layer.merge(rawMessagesLive, InboundEmailIngressRuntimeLive)
+          )
+        );
         const inboundServicesLive = Layer.merge(
           InboundMailboxResolverLive.pipe(
             Layer.provide(controlPlaneDatabaseLive)
           ),
-          InboundEmailIngressUnavailableLive
+          inboundEmailIngressLive
         );
 
         return yield* handleCloudflareEmailRoutingMessage(message).pipe(
