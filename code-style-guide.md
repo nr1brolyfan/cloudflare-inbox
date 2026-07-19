@@ -1,0 +1,23 @@
+Pisz kod w idiomatycznym stylu Effect.
+
+- Unikaj eksportowanych factories typu makeXLive/createXService.
+- Zależności i konfigurację modeluj przez Context.Service oraz jawne Layer.
+- Używaj Layer.effect/Layer.unwrap zamiast ręcznego składania obiektów i ukrywania zależności.
+- Encje domenowe definiuj przez Schema.Class.
+- Identyfikatory i prymitywy branduj oraz waliduj przez Effect Schema.
+- Błędy domenowe definiuj przez Data.TaggedError lub schema-backed errors.
+- Cross-field invariants egzekwuj przez checked schemas.
+- Payloady, komendy i query bez tożsamości modeluj przez Schema.Struct.
+- Publiczne kontrakty mają być transport-neutralne; HTTP i Durable Objects są tylko adapterami.
+- Nie wystawiaj szczegółów storage w publicznych modelach.
+- Unikaj wrapperów withX(effect), callbackowych helperów i castów usuwających wymagania środowiska.
+- Preferuj HttpApiMiddleware, wyspecjalizowane serwisy i czytelne .pipe().
+- Zależności muszą być widoczne w typach Effect i grafie Layer.
+- Dla jednego Workera używaj jednego wspólnego HttpApi i jednego composition root.
+- Oddzielaj kontrakty, implementacje handlerów i composition root.
+- Preferuj małe moduły o jednej odpowiedzialności.
+- XLive oznacza konkretną stałą warstwę.
+- Stub, fallback i unavailable adapter nazywaj jawnie.
+- Dodawaj krótkie komentarze przy nieoczywistych serwisach, warstwach, invariants i decyzjach bezpieczeństwa.
+- Nie twórz abstrakcji, która tylko przenosi tę samą złożoność do helpera.
+- Współdziel schemas zamiast duplikować walidatory.

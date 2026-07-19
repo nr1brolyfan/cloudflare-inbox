@@ -9,11 +9,31 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { MailPermission, mailboxScope } from "../authorization/catalog";
 import { ControlPlaneDatabase } from "../control-plane/database";
+import type { MailboxDoStub } from "../mailboxes/do-client";
+import {
+  DirectoryRpcRequest,
+  DirectoryRpcResponse,
+  MailDataRpcRequest,
+  MailDataRpcResponse,
+} from "../mailboxes/do-protocol";
+import {
+  MailboxResourceLookup,
+  MailboxResourceLookupResult,
+} from "../mailboxes/repository";
 import { BackendResources } from "./backend-context";
 import * as Health from "./health";
+
+interface MailboxHealthStub extends MailboxDoStub {
+  readonly sqliteReady: () => Effect.Effect<unknown, unknown, RuntimeContext>;
+}
+
+interface MailboxHealthNamespace {
+  readonly getByName: (name: string) => MailboxHealthStub;
+}
 
 /** Probes every persistent binding used by request handling. */
 export const BackendHealthLive = Layer.effect(
@@ -52,22 +72,50 @@ export const BackendHealthLive = Layer.effect(
     const probeControlPlane = controlPlane.get<{ readonly ready: number }>(
       sql`select 1 as ready`
     );
-    const healthMailbox = resources.mailboxDataPlane.getByName("__health__");
-    const probeMailboxDataPlane = Effect.all({
-      ready: healthMailbox.sqliteReady(),
-      folders: healthMailbox.executeDirectory({
-        _tag: "ListFolders",
-        input: { mailboxId: "__health__" },
-      }),
-      messages: healthMailbox.executeMailData({
-        _tag: "ListMessages",
-        input: { mailboxId: "__health__" },
-      }),
-      missing: healthMailbox.resolveMailResource({
+    const mailboxNamespace: MailboxHealthNamespace = resources.mailboxDataPlane;
+    const healthMailbox = mailboxNamespace.getByName("__health__");
+    const probeMailboxDataPlane = Effect.gen(function* () {
+      const directoryRequest = yield* Schema.decodeUnknownEffect(
+        DirectoryRpcRequest
+      )({ _tag: "ListFolders", input: { mailboxId: "__health__" } });
+      const mailDataRequest = yield* Schema.decodeUnknownEffect(
+        MailDataRpcRequest
+      )({ _tag: "ListMessages", input: { mailboxId: "__health__" } });
+      const resourceLookup = yield* Schema.decodeUnknownEffect(
+        MailboxResourceLookup
+      )({
         _tag: "Folder",
         mailboxId: "__health__",
         folderId: "__health__",
-      }),
+      });
+      const encodedDirectoryRequest =
+        yield* Schema.encodeEffect(DirectoryRpcRequest)(directoryRequest);
+      const encodedMailDataRequest =
+        yield* Schema.encodeEffect(MailDataRpcRequest)(mailDataRequest);
+      const encodedResourceLookup = yield* Schema.encodeEffect(
+        MailboxResourceLookup
+      )(resourceLookup);
+
+      return yield* Effect.all({
+        ready: healthMailbox.sqliteReady(),
+        folders: healthMailbox
+          .executeDirectory(encodedDirectoryRequest)
+          .pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(DirectoryRpcResponse))
+          ),
+        messages: healthMailbox
+          .executeMailData(encodedMailDataRequest)
+          .pipe(
+            Effect.flatMap(Schema.decodeUnknownEffect(MailDataRpcResponse))
+          ),
+        missing: healthMailbox
+          .resolveMailResource(encodedResourceLookup)
+          .pipe(
+            Effect.flatMap(
+              Schema.decodeUnknownEffect(MailboxResourceLookupResult)
+            )
+          ),
+      });
     }).pipe(
       Effect.tap(({ folders, messages, missing }) => {
         if (missing._tag !== "NotFound") {

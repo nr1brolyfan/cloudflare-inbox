@@ -6,8 +6,8 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const sourceDirectory = path.join(root, "src");
 const allowed = new Set([
   "src/control-plane/batch-live.ts",
-  "src/mailboxes/administration.ts",
-  "src/mailboxes/mailbox-migrations.ts",
+  "src/control-plane/mailbox-administration-live.ts",
+  "src/mailboxes/sqlite-migrations.ts",
 ]);
 const violations: string[] = [];
 

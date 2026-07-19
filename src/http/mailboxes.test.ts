@@ -37,7 +37,7 @@ import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "../mailboxes/administration";
-import { MailboxRecordSchema } from "../mailboxes/model";
+import { MailboxRecordSchema } from "../mailboxes/core";
 import { MailboxGroup } from "./mailbox-contract";
 import { MailboxGroupLive } from "./mailboxes";
 import { HttpApiPlatformLive } from "./platform";

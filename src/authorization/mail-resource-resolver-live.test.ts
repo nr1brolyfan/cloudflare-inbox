@@ -4,11 +4,8 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxRepositoryError } from "../mailboxes/errors/mailbox-repository-error";
-import {
-  MailboxRepository,
-  MessageLocation,
-} from "../mailboxes/mailbox-repository";
+import { MailboxRepositoryError } from "../mailboxes/errors";
+import { MailboxRepository, MessageLocation } from "../mailboxes/repository";
 import { MailResourceResolverLive } from "./mail-resource-resolver-live";
 import { MailResourceResolver } from "./resources";
 

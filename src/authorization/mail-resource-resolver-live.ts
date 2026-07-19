@@ -3,7 +3,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { MailboxRepositoryError } from "../mailboxes/errors/mailbox-repository-error";
 import {
   AttachmentId,
   DraftId,
@@ -11,8 +10,9 @@ import {
   MailboxId,
   MessageId,
   RuleId,
-} from "../mailboxes/identifiers";
-import { MailboxRepository } from "../mailboxes/mailbox-repository";
+} from "../mailboxes/core";
+import type { MailboxRepositoryError } from "../mailboxes/errors";
+import { MailboxRepository } from "../mailboxes/repository";
 import * as Resources from "./resources";
 
 const resolveError = (

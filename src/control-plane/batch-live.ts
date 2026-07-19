@@ -2,8 +2,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { ControlPlaneBatchError } from "../mailboxes/control-plane-batch-error";
-import { ControlPlaneBatch } from "./batch";
+import { ControlPlaneBatch, ControlPlaneBatchError } from "./batch";
 import { ControlPlaneD1Binding } from "./database";
 
 export const ControlPlaneBatchLive = Layer.effect(

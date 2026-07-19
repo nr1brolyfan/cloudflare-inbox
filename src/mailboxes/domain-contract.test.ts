@@ -6,26 +6,30 @@ import { MailboxDisplayNamePayloadSchema } from "../http/mailbox-contract";
 import {
   CreateMailboxAddressInput,
   MailboxAddressList,
-} from "./address-contract";
-import { AttachmentMetadata } from "./attachment-metadata";
-import { CreateFolderInput } from "./directory-contract";
-import { CreateDraftInput } from "./draft-contract";
-import { Folder, FolderSchema } from "./folder";
-import { MailboxId } from "./identifiers";
-import { MailboxAddressSchema } from "./mailbox-address";
+  MailboxAddressSchema,
+} from "./addresses";
 import {
-  ListMessagesInput,
-  MessageFilters,
-  SetMessageReadInput,
-} from "./message-contract";
-import { MessageDetail, MessageDetailSchema } from "./message-detail";
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "./administration";
 import {
   EmailAddress,
   MailboxDisplayName,
+  MailboxId,
   PageSize,
   Version,
-} from "./primitives";
-import { ThreadDetailSchema } from "./thread-detail";
+} from "./core";
+import { CreateFolderInput, Folder, FolderSchema } from "./directory";
+import { CreateDraftInput } from "./drafts";
+import {
+  AttachmentMetadata,
+  ListMessagesInput,
+  MessageDetail,
+  MessageDetailSchema,
+  MessageFilters,
+  SetMessageReadInput,
+  ThreadDetailSchema,
+} from "./messages";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,
@@ -70,6 +74,26 @@ const messageInput = (overrides: Readonly<Record<string, unknown>> = {}) => ({
 });
 
 describe("mail domain contracts", () => {
+  it("decodes transport-neutral mailbox administration commands", () => {
+    expect(
+      Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+        displayName: "  Inbox  ",
+      })
+    ).toStrictEqual({ displayName: "Inbox" });
+    expect(
+      Schema.decodeUnknownSync(RenameMailboxCommand)({
+        displayName: "  Recruiting  ",
+        mailboxId: "primary",
+      })
+    ).toStrictEqual({ displayName: "Recruiting", mailboxId: "primary" });
+    expect(
+      decodeSucceeds(RenameMailboxCommand, {
+        displayName: "Recruiting",
+        mailboxId: " primary ",
+      })
+    ).toBeFalsy();
+  });
+
   it("validates branded identifiers, versions, page sizes, and Unicode names", () => {
     expect([
       decodeSucceeds(MailboxId, "primary"),

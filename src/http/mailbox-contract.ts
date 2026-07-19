@@ -16,9 +16,11 @@ import {
 } from "effect/unstable/httpapi";
 
 import { CurrentRequestAuthMiddleware } from "../auth/session";
-import { MailboxId } from "../mailboxes/identifiers";
-import { MailboxRecordSchema } from "../mailboxes/model";
-import { MailboxDisplayName } from "../mailboxes/primitives";
+import {
+  MailboxDisplayName,
+  MailboxId,
+  MailboxRecordSchema,
+} from "../mailboxes/core";
 
 export const MailboxDisplayNamePayloadSchema = Schema.Struct({
   displayName: MailboxDisplayName,

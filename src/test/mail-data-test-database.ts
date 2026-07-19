@@ -9,11 +9,31 @@ import * as DrizzleNode from "drizzle-orm/effect-sqlite-node";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { MailboxDatabase } from "../mailboxes/mailbox-database";
-import { applyMailboxMigrations } from "../mailboxes/mailbox-migrations";
-import { mailboxRelations } from "../mailboxes/mailbox-schema";
+import type { MailboxId } from "../mailboxes/core";
+import { MailboxDoHandlerLive } from "../mailboxes/do-handler";
+import type { MailboxDoHandler } from "../mailboxes/do-handler";
+import { applyMailboxMigrations } from "../mailboxes/sqlite-migrations";
+import { mailboxRelations } from "../mailboxes/sqlite-schema";
+import { MailboxDatabase, MailboxIdentity } from "../mailboxes/sqlite-services";
+import type {
+  MailboxDirectoryStore,
+  MailboxDraftStore,
+  MailboxMessageStore,
+  MailboxOutboundStore,
+  MailboxResourceIndex,
+  MailboxRuntime,
+} from "../mailboxes/sqlite-services";
+import { mailboxStoresTestLayer } from "./mailbox-database";
 
-export const makeMailDataTestDatabase = () => {
+const defaultRuntime: MailboxRuntime = {
+  now: () => 1000,
+  randomId: () => crypto.randomUUID(),
+};
+
+export const makeMailDataTestDatabase = (
+  mailboxId: MailboxId,
+  runtime: MailboxRuntime = defaultRuntime
+) => {
   const directory = mkdtempSync(
     path.join(tmpdir(), "cloudflare-inbox-mail-data-")
   );
@@ -60,9 +80,32 @@ export const makeMailDataTestDatabase = () => {
     })
   ).pipe(Layer.provide(SqliteLive));
 
-  return <A, E>(program: Effect.Effect<A, E, MailboxDatabase>) =>
+  const StoresLive = mailboxStoresTestLayer(mailboxId, runtime);
+  const StoresAndIdentityLive = Layer.merge(
+    StoresLive,
+    Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId }))
+  );
+  const HandlerLive = MailboxDoHandlerLive.pipe(
+    Layer.provide(StoresAndIdentityLive)
+  );
+  const MailDataTestLive = Layer.merge(StoresAndIdentityLive, HandlerLive);
+
+  return <A, E>(
+    program: Effect.Effect<
+      A,
+      E,
+      | MailboxDatabase
+      | MailboxDoHandler
+      | MailboxDirectoryStore
+      | MailboxDraftStore
+      | MailboxMessageStore
+      | MailboxOutboundStore
+      | MailboxResourceIndex
+    >
+  ) =>
     Effect.runPromise(
       program.pipe(
+        Effect.provide(MailDataTestLive),
         Effect.provide(DatabaseLive),
         Effect.ensuring(
           Effect.sync(() => rmSync(directory, { recursive: true, force: true }))

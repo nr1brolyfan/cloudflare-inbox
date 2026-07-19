@@ -1,8 +1,17 @@
 import type { D1EffectQbResult } from "@effect-auth/core/EffectQbSqliteStorage";
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 
-import type { ControlPlaneBatchError } from "../mailboxes/control-plane-batch-error";
+export type ControlPlaneCommitState = "not-committed" | "committed" | "unknown";
+
+export class ControlPlaneBatchError extends Data.TaggedError(
+  "ControlPlaneBatchError"
+)<{
+  readonly cause: unknown;
+  readonly commitState: ControlPlaneCommitState;
+  readonly statement?: number;
+}> {}
 
 export interface ControlPlaneStatement {
   readonly params?: readonly unknown[];

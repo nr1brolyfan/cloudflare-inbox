@@ -9,9 +9,20 @@ import * as DrizzleNode from "drizzle-orm/effect-sqlite-node";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { MailboxDatabase } from "../mailboxes/mailbox-database";
-import { applyMailboxMigrations } from "../mailboxes/mailbox-migrations";
-import { mailboxRelations } from "../mailboxes/mailbox-schema";
+import type { MailboxId } from "../mailboxes/core";
+import { applyMailboxMigrations } from "../mailboxes/sqlite-migrations";
+import { mailboxRelations } from "../mailboxes/sqlite-schema";
+import {
+  MailboxDatabase,
+  MailboxDirectoryStoreLive,
+  MailboxDraftStoreLive,
+  MailboxIdentity,
+  MailboxMessageStoreLive,
+  MailboxOutboundStoreLive,
+  MailboxResourceIndexLive,
+  MailboxRuntime,
+} from "../mailboxes/sqlite-services";
+import type { MailboxRuntime as MailboxRuntimeType } from "../mailboxes/sqlite-services";
 
 const directory = mkdtempSync(path.join(tmpdir(), "cloudflare-inbox-mailbox-"));
 const filename = path.join(directory, "mailbox.sqlite");
@@ -54,3 +65,20 @@ export const MailboxDatabaseTest = Layer.effect(
     return MailboxDatabase.of(Object.assign(database, { $client: client }));
   })
 ).pipe(Layer.provide(SqliteLive));
+
+export const mailboxStoresTestLayer = (
+  mailboxId: MailboxId,
+  runtime: MailboxRuntimeType
+) => {
+  const dependencies = Layer.merge(
+    Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
+    Layer.succeed(MailboxRuntime, runtime)
+  );
+  return Layer.mergeAll(
+    MailboxResourceIndexLive,
+    MailboxDirectoryStoreLive,
+    MailboxMessageStoreLive,
+    MailboxDraftStoreLive,
+    MailboxOutboundStoreLive
+  ).pipe(Layer.provide(dependencies));
+};
