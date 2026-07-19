@@ -1,14 +1,16 @@
-import type { EffectDrizzleQueryError } from "drizzle-orm/effect-core";
 import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import type { SqlError } from "effect/unstable/sql/SqlError";
 
 import { MailboxDomainErrorDto } from "./directory-rpc";
 import type { MailboxDomainErrorDto as MailboxDomainErrorDtoType } from "./directory-rpc";
 import type { MailboxDomainError } from "./errors/mailbox-domain-error";
 import type { MailboxId } from "./identifiers";
 import { MailDataRpcResponse } from "./mail-data-rpc";
-import type { MailDataRpcRequest } from "./mail-data-rpc";
+import type {
+  MailDataRpcRequest,
+  MailDataRpcResponse as MailDataRpcResponseType,
+} from "./mail-data-rpc";
 import type { MailboxDirectoryRuntime } from "./mailbox-directory-runtime";
 import { createDraft, getDraft, updateDraft } from "./mailbox-draft-sqlite";
 import {
@@ -40,22 +42,6 @@ const domainErrorDto = (error: MailboxDomainError): MailboxDomainErrorDtoType =>
     actualVersion: error.actualVersion,
   });
 
-const encode = <A, R>(
-  effect: Effect.Effect<
-    A,
-    MailboxDomainError | EffectDrizzleQueryError | SqlError,
-    R
-  >,
-  onSuccess: (value: A) => Schema.Schema.Type<typeof MailDataRpcResponse>
-) =>
-  Effect.matchEffect(effect, {
-    onFailure: (error) =>
-      error._tag === "MailboxDomainError"
-        ? Effect.succeed(domainErrorDto(error))
-        : Effect.fail(error),
-    onSuccess: (value) => Effect.succeed(onSuccess(value)),
-  }).pipe(Effect.flatMap(Schema.encodeEffect(MailDataRpcResponse)));
-
 export const executeMailDataRequest = (
   mailboxId: MailboxId,
   runtime: MailboxDirectoryRuntime,
@@ -63,100 +49,287 @@ export const executeMailDataRequest = (
 ) => {
   switch (request._tag) {
     case "ListMessages": {
-      return encode(listMessages(mailboxId, request.input), (value) => ({
-        _tag: "MessagesListed",
-        value,
-      }));
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          listMessages(mailboxId, request.input)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "MessagesListed",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "GetMessage": {
-      return encode(getMessage(mailboxId, request.input), (value) => ({
-        _tag: "MessageFound",
-        value,
-      }));
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          getMessage(mailboxId, request.input)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "MessageFound",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "GetThread": {
-      return encode(getThread(mailboxId, request.input), (value) => ({
-        _tag: "ThreadFound",
-        value,
-      }));
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          getThread(mailboxId, request.input)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "ThreadFound",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "SetMessageRead": {
-      return encode(
-        setMessageRead(mailboxId, request.input, runtime),
-        (value) => ({ _tag: "MessageMutated", value })
-      );
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          setMessageRead(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "MessageMutated",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "SetMessageStarred": {
-      return encode(
-        setMessageStarred(mailboxId, request.input, runtime),
-        (value) => ({ _tag: "MessageMutated", value })
-      );
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          setMessageStarred(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "MessageMutated",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "MoveMessage": {
-      return encode(
-        moveMessage(mailboxId, request.input, runtime),
-        (value) => ({ _tag: "MessageMutated", value })
-      );
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          moveMessage(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "MessageMutated",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "AddMessageLabel": {
-      return encode(
-        addMessageLabel(mailboxId, request.input, runtime),
-        (value) => ({ _tag: "MessageMutated", value })
-      );
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          addMessageLabel(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "MessageMutated",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "RemoveMessageLabel": {
-      return encode(
-        removeMessageLabel(mailboxId, request.input, runtime),
-        (value) => ({ _tag: "MessageMutated", value })
-      );
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          removeMessageLabel(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "MessageMutated",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "CreateDraft": {
-      return encode(
-        createDraft(mailboxId, request.input, runtime),
-        (value) => ({
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          createDraft(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
           _tag: "DraftCreated",
-          value,
-        })
-      );
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "GetDraft": {
-      return encode(getDraft(mailboxId, request.input), (value) => ({
-        _tag: "DraftFound",
-        value,
-      }));
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(getDraft(mailboxId, request.input));
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "DraftFound",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "UpdateDraft": {
-      return encode(
-        updateDraft(mailboxId, request.input, runtime),
-        (value) => ({
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          updateDraft(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
           _tag: "DraftUpdated",
-          value,
-        })
-      );
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "ScheduleOutbound": {
-      return encode(
-        scheduleOutbound(mailboxId, request.input, runtime),
-        (value) => ({ _tag: "OutboundScheduled", value })
-      );
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          scheduleOutbound(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "OutboundScheduled",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "GetOutboundDelivery": {
-      return encode(getOutboundDelivery(mailboxId, request.input), (value) => ({
-        _tag: "OutboundFound",
-        value,
-      }));
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          getOutboundDelivery(mailboxId, request.input)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "OutboundFound",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "CancelOutboundDelivery": {
-      return encode(
-        cancelOutboundDelivery(mailboxId, request.input, runtime),
-        (value) => ({ _tag: "OutboundCancelled", value })
-      );
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          cancelOutboundDelivery(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "OutboundCancelled",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     case "ResendOutbound": {
-      return encode(
-        resendOutbound(mailboxId, request.input, runtime),
-        (value) => ({ _tag: "OutboundResent", value })
-      );
+      return Effect.gen(function* () {
+        const result = yield* Effect.result(
+          resendOutbound(mailboxId, request.input, runtime)
+        );
+        if (Result.isFailure(result)) {
+          if (result.failure._tag !== "MailboxDomainError") {
+            return yield* Effect.fail(result.failure);
+          }
+          return yield* Schema.encodeEffect(MailDataRpcResponse)(
+            domainErrorDto(result.failure)
+          );
+        }
+        return yield* Schema.encodeEffect(MailDataRpcResponse)({
+          _tag: "OutboundResent",
+          value: result.success,
+        } satisfies MailDataRpcResponseType);
+      });
     }
     default: {
       const exhaustive: never = request;

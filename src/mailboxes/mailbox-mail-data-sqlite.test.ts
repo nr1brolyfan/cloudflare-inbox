@@ -275,6 +275,110 @@ describe("Mailbox mail data SQLite", () => {
     );
   });
 
+  it("keeps cursors bounded and query-bound for many long label IDs", async () => {
+    const run = makeMailDataTestDatabase();
+    await run(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        const labelIds = Array.from({ length: 24 }, (_, index) =>
+          `label-${index}-`.padEnd(128, "x")
+        );
+        yield* db.insert(label).values(
+          labelIds.map((id, index) => ({
+            id,
+            name: `Long label ${index}`,
+            createdAt: 0,
+            updatedAt: 0,
+          }))
+        );
+        yield* db.insert(messageLabel).values(
+          labelIds.flatMap((labelId) => [
+            { messageId: "m1", labelId },
+            { messageId: "m2", labelId },
+          ])
+        );
+
+        const first = yield* listMessages(
+          mailboxId,
+          Schema.decodeUnknownSync(ListMessagesInput)({
+            mailboxId,
+            filters: { labelIds },
+            page: { limit: 1 },
+          })
+        );
+        if (first.nextCursor === undefined) {
+          return yield* Effect.die("Expected a next cursor");
+        }
+        const next = yield* listMessages(
+          mailboxId,
+          Schema.decodeUnknownSync(ListMessagesInput)({
+            mailboxId,
+            filters: { labelIds },
+            page: { limit: 1, cursor: first.nextCursor },
+          })
+        );
+        const wrongQuery = failure(
+          yield* Effect.result(
+            listMessages(
+              mailboxId,
+              Schema.decodeUnknownSync(ListMessagesInput)({
+                mailboxId,
+                filters: { labelIds: labelIds.slice(1) },
+                page: { limit: 1, cursor: first.nextCursor },
+              })
+            )
+          )
+        );
+
+        expect(first.nextCursor.length).toBeLessThanOrEqual(2048);
+        expect(next.items.map((item) => item.id)).toStrictEqual(["m1"]);
+        expect(wrongQuery.reason).toBe("validation");
+      })
+    );
+  });
+
+  it("projects acceptedAt from the canonical outbound delivery", async () => {
+    const run = makeMailDataTestDatabase();
+    await run(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        yield* db.insert(outboundDelivery).values({
+          id: "delivery-1",
+          messageId: "m1",
+          status: "accepted",
+          sendAt: 200,
+          acceptedAt: 400,
+          createdAt: 200,
+          updatedAt: 400,
+        });
+        yield* db
+          .update(message)
+          .set({
+            direction: "outbound",
+            outboundDeliveryId: "delivery-1",
+            receivedAt: null,
+            scheduledAt: 200,
+            acceptedAt: 300,
+          })
+          .where(eq(message.id, "m1"));
+
+        const detail = yield* getMessage(
+          mailboxId,
+          Schema.decodeUnknownSync(GetMessageInput)({
+            mailboxId,
+            messageId: "m1",
+          })
+        );
+
+        expect(detail.acceptedAt).toBe(400);
+      })
+    );
+  });
+
   it("returns chronological threads with a derived summary", async () => {
     const run = makeMailDataTestDatabase();
     await run(

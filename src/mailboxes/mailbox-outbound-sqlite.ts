@@ -1,20 +1,23 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { MailboxDomainError } from "./errors/mailbox-domain-error";
 import type { MailboxId } from "./identifiers";
 import { MailboxDatabase } from "./mailbox-database";
-import type { MailboxDatabase as MailboxDatabaseType } from "./mailbox-database";
 import type { MailboxDirectoryRuntime } from "./mailbox-directory-runtime";
-import { readOutboundDeliveryRow } from "./mailbox-mail-row";
 import {
-  attachment,
-  draft,
-  mailboxOperation,
-  message,
-  outboundDelivery,
-} from "./mailbox-schema";
+  AddressList,
+  decodeJson,
+  readOutboundDeliveryRow,
+  StringList,
+} from "./mailbox-mail-row";
+import {
+  replayMailboxOperation,
+  storeMailboxOperation,
+} from "./mailbox-operation-sqlite";
+import { attachment, draft, message, outboundDelivery } from "./mailbox-schema";
 import type {
   CancelOutboundDeliveryInput,
   GetOutboundDeliveryInput,
@@ -26,9 +29,6 @@ import {
   ScheduleOutboundResult,
 } from "./outbound-contract";
 import { Version } from "./primitives";
-
-const UnknownList = Schema.Array(Schema.Unknown);
-const StringList = Schema.Array(Schema.String);
 
 const deliveryNotFound = (
   operation: MailboxDomainError["operation"],
@@ -56,37 +56,6 @@ const versionConflict = (
     resourceId: id,
     expectedVersion,
     actualVersion: Schema.decodeUnknownSync(Version)(actualVersion),
-  });
-
-const replayOperation = <A>(
-  db: Omit<MailboxDatabaseType, "$client">,
-  operationId: string,
-  operation: "schedule-outbound" | "resend-outbound",
-  requestKey: string,
-  schema: Schema.Decoder<A>
-) =>
-  Effect.gen(function* () {
-    const [row] = yield* db
-      .select({
-        operationKind: mailboxOperation.operationKind,
-        requestKey: mailboxOperation.requestKey,
-        resultPayload: mailboxOperation.resultPayload,
-      })
-      .from(mailboxOperation)
-      .where(eq(mailboxOperation.operationId, operationId))
-      .limit(1);
-    if (row === undefined) {
-      return;
-    }
-    if (row.operationKind !== operation || row.requestKey !== requestKey) {
-      return yield* new MailboxDomainError({
-        operation,
-        reason: "idempotency-conflict",
-        message: "Operation ID was already used for a different request",
-        resourceId: operationId,
-      });
-    }
-    return Schema.decodeUnknownSync(schema)(JSON.parse(row.resultPayload));
   });
 
 export const getOutboundDelivery = (
@@ -123,15 +92,18 @@ export const scheduleOutbound = (
         const requestKey = JSON.stringify(
           Schema.encodeSync(ScheduleOutboundInput)(input)
         );
-        const previous = yield* replayOperation(
-          tx,
+        const previous = yield* replayMailboxOperation(
           input.operationId,
+          "schedule-outbound",
           "schedule-outbound",
           requestKey,
           ScheduleOutboundResult
         );
         if (previous !== undefined) {
-          return previous;
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
         }
         const [sourceDraft] = yield* tx
           .select()
@@ -171,15 +143,9 @@ export const scheduleOutbound = (
           });
         }
         const recipients = [
-          ...Schema.decodeUnknownSync(UnknownList)(
-            JSON.parse(sourceDraft.toJson)
-          ),
-          ...Schema.decodeUnknownSync(UnknownList)(
-            JSON.parse(sourceDraft.ccJson)
-          ),
-          ...Schema.decodeUnknownSync(UnknownList)(
-            JSON.parse(sourceDraft.bccJson)
-          ),
+          ...decodeJson(AddressList, sourceDraft.toJson),
+          ...decodeJson(AddressList, sourceDraft.ccJson),
+          ...decodeJson(AddressList, sourceDraft.bccJson),
         ];
         if (recipients.length === 0) {
           return yield* new MailboxDomainError({
@@ -190,8 +156,9 @@ export const scheduleOutbound = (
             resourceId: input.draftId,
           });
         }
-        const attachmentIds = Schema.decodeUnknownSync(StringList)(
-          JSON.parse(sourceDraft.attachmentIdsJson)
+        const attachmentIds = decodeJson(
+          StringList,
+          sourceDraft.attachmentIdsJson
         );
         const attachments = yield* Effect.all(
           attachmentIds.map((attachmentId) =>
@@ -301,16 +268,14 @@ export const scheduleOutbound = (
           delivery: readOutboundDeliveryRow(deliveryRow, mailboxId),
           serverNow: now,
         });
-        yield* tx.insert(mailboxOperation).values({
-          operationId: input.operationId,
-          operationKind: "schedule-outbound",
+        yield* storeMailboxOperation(
+          input.operationId,
+          "schedule-outbound",
           requestKey,
-          resourceId: deliveryId,
-          resultPayload: JSON.stringify(
-            Schema.encodeSync(ScheduleOutboundResult)(result)
-          ),
-          createdAt: now,
-        });
+          deliveryId,
+          JSON.stringify(Schema.encodeSync(ScheduleOutboundResult)(result)),
+          now
+        );
         return result;
       })
     );
@@ -399,15 +364,18 @@ export const resendOutbound = (
         const requestKey = JSON.stringify(
           Schema.encodeSync(ResendOutboundInput)(input)
         );
-        const previous = yield* replayOperation(
-          tx,
+        const previous = yield* replayMailboxOperation(
           input.operationId,
+          "resend-outbound",
           "resend-outbound",
           requestKey,
           ResendOutboundResult
         );
         if (previous !== undefined) {
-          return previous;
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
         }
         const [source] = yield* tx
           .select()
@@ -527,16 +495,14 @@ export const resendOutbound = (
           sourceDeliveryId: input.outboundDeliveryId,
           delivery: readOutboundDeliveryRow(deliveryRow, mailboxId),
         });
-        yield* tx.insert(mailboxOperation).values({
-          operationId: input.operationId,
-          operationKind: "resend-outbound",
+        yield* storeMailboxOperation(
+          input.operationId,
+          "resend-outbound",
           requestKey,
-          resourceId: deliveryId,
-          resultPayload: JSON.stringify(
-            Schema.encodeSync(ResendOutboundResult)(result)
-          ),
-          createdAt: now,
-        });
+          deliveryId,
+          JSON.stringify(Schema.encodeSync(ResendOutboundResult)(result)),
+          now
+        );
         return result;
       })
     );

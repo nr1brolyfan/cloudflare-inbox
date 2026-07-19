@@ -23,7 +23,8 @@ export const replayMailboxOperation = <A>(
         resultPayload: mailboxOperation.resultPayload,
       })
       .from(mailboxOperation)
-      .where(eq(mailboxOperation.operationId, operationId));
+      .where(eq(mailboxOperation.operationId, operationId))
+      .limit(1);
 
     if (row === undefined) {
       return;

@@ -21,7 +21,11 @@ import type { MailboxId } from "./identifiers";
 import { LabelSchema } from "./label";
 import { MailboxDatabase } from "./mailbox-database";
 import { MailboxDirectoryRuntime } from "./mailbox-directory-runtime";
-import { folder, label, mailboxOperation, message } from "./mailbox-schema";
+import {
+  replayMailboxOperation,
+  storeMailboxOperation,
+} from "./mailbox-operation-sqlite";
+import { folder, label, message } from "./mailbox-schema";
 
 const systemFolders = [
   { id: "inbox", kind: "inbox", name: "Inbox" },
@@ -111,41 +115,6 @@ const labelFromRow = (row: typeof label.$inferSelect, mailboxId: MailboxId) =>
     version: row.version,
   });
 
-const operationResult = <A>(
-  operationId: string,
-  operationKind: "create-folder" | "create-label",
-  requestKey: string,
-  schema: Schema.Decoder<A>
-) =>
-  Effect.gen(function* () {
-    const db = yield* MailboxDatabase;
-    const [row] = yield* db
-      .select({
-        operationKind: mailboxOperation.operationKind,
-        requestKey: mailboxOperation.requestKey,
-        resultPayload: mailboxOperation.resultPayload,
-      })
-      .from(mailboxOperation)
-      .where(eq(mailboxOperation.operationId, operationId));
-
-    if (row === undefined) {
-      return;
-    }
-    if (row.operationKind !== operationKind || row.requestKey !== requestKey) {
-      return Result.fail(
-        mailboxDomainError(
-          operationKind,
-          "idempotency-conflict",
-          "Operation ID was already used for a different request",
-          { resourceId: operationId }
-        )
-      );
-    }
-    return Result.succeed(
-      Schema.decodeUnknownSync(schema)(JSON.parse(row.resultPayload))
-    );
-  });
-
 export const listFolders = (mailboxId: MailboxId) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
@@ -202,8 +171,9 @@ export const createFolder = (mailboxId: MailboxId, input: CreateFolderInput) =>
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
         const requestKey = JSON.stringify({ name: input.name });
-        const previous = yield* operationResult(
+        const previous = yield* replayMailboxOperation(
           input.operationId,
+          "create-folder",
           "create-folder",
           requestKey,
           FolderSchema
@@ -230,16 +200,14 @@ export const createFolder = (mailboxId: MailboxId, input: CreateFolderInput) =>
           );
         }
         const result = folderFromRow(row, mailboxId);
-        yield* tx.insert(mailboxOperation).values({
-          operationId: input.operationId,
-          operationKind: "create-folder",
+        yield* storeMailboxOperation(
+          input.operationId,
+          "create-folder",
           requestKey,
-          resourceId: id,
-          resultPayload: JSON.stringify(
-            Schema.encodeSync(FolderSchema)(result)
-          ),
-          createdAt: now,
-        });
+          id,
+          JSON.stringify(Schema.encodeSync(FolderSchema)(result)),
+          now
+        );
         return Result.succeed(result);
       })
     );
@@ -419,8 +387,9 @@ export const createLabel = (mailboxId: MailboxId, input: CreateLabelInput) =>
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
         const requestKey = JSON.stringify({ name: input.name });
-        const previous = yield* operationResult(
+        const previous = yield* replayMailboxOperation(
           input.operationId,
+          "create-label",
           "create-label",
           requestKey,
           LabelSchema
@@ -438,14 +407,14 @@ export const createLabel = (mailboxId: MailboxId, input: CreateLabelInput) =>
           return yield* Effect.die(new Error("Created label was not returned"));
         }
         const result = labelFromRow(row, mailboxId);
-        yield* tx.insert(mailboxOperation).values({
-          operationId: input.operationId,
-          operationKind: "create-label",
+        yield* storeMailboxOperation(
+          input.operationId,
+          "create-label",
           requestKey,
-          resourceId: id,
-          resultPayload: JSON.stringify(Schema.encodeSync(LabelSchema)(result)),
-          createdAt: now,
-        });
+          id,
+          JSON.stringify(Schema.encodeSync(LabelSchema)(result)),
+          now
+        );
         return Result.succeed(result);
       })
     );

@@ -1,5 +1,6 @@
 import { and, eq, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { DraftSchema } from "./draft";
@@ -7,16 +8,20 @@ import { CreateDraftInput } from "./draft-contract";
 import type { GetDraftInput, UpdateDraftInput } from "./draft-contract";
 import { MailboxDomainError } from "./errors/mailbox-domain-error";
 import type { MailboxId } from "./identifiers";
-import { MailAddress } from "./mail-address";
 import { MailboxDatabase } from "./mailbox-database";
-import type { MailboxDatabase as MailboxDatabaseType } from "./mailbox-database";
 import type { MailboxDirectoryRuntime } from "./mailbox-directory-runtime";
-import { encodeJson, readDraftRow } from "./mailbox-mail-row";
-import { draft, mailboxOperation } from "./mailbox-schema";
+import {
+  AddressList,
+  encodeJson,
+  readDraftRow,
+  StringList,
+} from "./mailbox-mail-row";
+import {
+  replayMailboxOperation,
+  storeMailboxOperation,
+} from "./mailbox-operation-sqlite";
+import { draft } from "./mailbox-schema";
 import { Version } from "./primitives";
-
-const AddressList = Schema.Array(MailAddress);
-const StringList = Schema.Array(Schema.String);
 
 const notFound = (draftId: string) =>
   new MailboxDomainError({
@@ -25,35 +30,6 @@ const notFound = (draftId: string) =>
     message: "Draft was not found",
     resourceType: "draft",
     resourceId: draftId,
-  });
-
-const replayCreateDraft = (
-  db: Omit<MailboxDatabaseType, "$client">,
-  operationId: string,
-  requestKey: string
-) =>
-  Effect.gen(function* () {
-    const [row] = yield* db
-      .select({
-        operationKind: mailboxOperation.operationKind,
-        requestKey: mailboxOperation.requestKey,
-        resultPayload: mailboxOperation.resultPayload,
-      })
-      .from(mailboxOperation)
-      .where(eq(mailboxOperation.operationId, operationId))
-      .limit(1);
-    if (row === undefined) {
-      return;
-    }
-    if (row.operationKind !== "create-draft" || row.requestKey !== requestKey) {
-      return yield* new MailboxDomainError({
-        operation: "create-draft",
-        reason: "idempotency-conflict",
-        message: "Operation ID was already used for a different request",
-        resourceId: operationId,
-      });
-    }
-    return Schema.decodeUnknownSync(DraftSchema)(JSON.parse(row.resultPayload));
   });
 
 export const createDraft = (
@@ -68,13 +44,18 @@ export const createDraft = (
         const requestKey = JSON.stringify(
           Schema.encodeSync(CreateDraftInput)(input)
         );
-        const previous = yield* replayCreateDraft(
-          tx,
+        const previous = yield* replayMailboxOperation(
           input.operationId,
-          requestKey
+          "create-draft",
+          "create-draft",
+          requestKey,
+          DraftSchema
         );
         if (previous !== undefined) {
-          return previous;
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
         }
         const id = runtime.randomId();
         const now = runtime.now();
@@ -102,16 +83,14 @@ export const createDraft = (
           return yield* Effect.die("Draft insert returned no row");
         }
         const created = readDraftRow(row, mailboxId);
-        yield* tx.insert(mailboxOperation).values({
-          operationId: input.operationId,
-          operationKind: "create-draft",
+        yield* storeMailboxOperation(
+          input.operationId,
+          "create-draft",
           requestKey,
-          resourceId: id,
-          resultPayload: JSON.stringify(
-            Schema.encodeSync(DraftSchema)(created)
-          ),
-          createdAt: now,
-        });
+          id,
+          JSON.stringify(Schema.encodeSync(DraftSchema)(created)),
+          now
+        );
         return created;
       })
     );

@@ -4,8 +4,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { MailboxDomainError } from "./errors/mailbox-domain-error";
-import { Cursor } from "./identifiers";
-import type { MailboxId } from "./identifiers";
+import { Cursor, MailboxId, MessageId } from "./identifiers";
 import { MailboxDatabase } from "./mailbox-database";
 import type { MailboxDirectoryRuntime } from "./mailbox-directory-runtime";
 import {
@@ -28,16 +27,16 @@ import {
   MessageFilters as MessageFiltersSchema,
   MessagePage,
 } from "./message-contract";
-import { Version } from "./primitives";
+import { UnixMillis, Version } from "./primitives";
 import { ThreadDetailSchema } from "./thread-detail";
 import { ThreadSummarySchema } from "./thread-summary";
 
 const CursorPayload = Schema.Struct({
-  mailboxId: Schema.String,
+  mailboxId: MailboxId,
   scope: Schema.String,
-  filterKey: Schema.String,
-  activityAt: Schema.Number,
-  id: Schema.String,
+  filterFingerprint: Schema.String,
+  activityAt: UnixMillis,
+  id: MessageId,
 });
 
 const domainError = (
@@ -56,11 +55,26 @@ const domainError = (
     ...details,
   });
 
-const filterKey = (filters: MessageFilters | undefined) =>
-  JSON.stringify(
-    filters === undefined
-      ? {}
-      : Schema.encodeSync(MessageFiltersSchema)(filters)
+const fingerprint = (value: string) => {
+  let first = 0;
+  let second = 0;
+  for (const character of value) {
+    const codePoint = character.codePointAt(0) ?? 0;
+    first = (first * 31 + codePoint) % 2_147_483_647;
+    second = (second * 131 + codePoint) % 2_147_483_629;
+  }
+  return [first, second]
+    .map((part) => part.toString(36).padStart(6, "0"))
+    .join("");
+};
+
+const filterFingerprint = (filters: MessageFilters | undefined) =>
+  fingerprint(
+    JSON.stringify(
+      filters === undefined
+        ? {}
+        : Schema.encodeSync(MessageFiltersSchema)(filters)
+    )
   );
 
 const encodeCursor = (payload: Schema.Schema.Type<typeof CursorPayload>) =>
@@ -72,7 +86,7 @@ const decodeCursor = (
   value: string,
   mailboxId: MailboxId,
   scope: string,
-  expectedFilterKey: string,
+  expectedFilterFingerprint: string,
   operation: MailboxDomainError["operation"]
 ) => {
   const parsed = Result.try({
@@ -92,7 +106,7 @@ const decodeCursor = (
   const cursor = decoded.success;
   return cursor.mailboxId === mailboxId &&
     cursor.scope === scope &&
-    cursor.filterKey === expectedFilterKey
+    cursor.filterFingerprint === expectedFilterFingerprint
     ? Result.succeed(cursor)
     : Result.fail(
         domainError(
@@ -159,7 +173,7 @@ const matchesFilters = (
 export const listMessages = (mailboxId: MailboxId, input: ListMessagesInput) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
-    const key = filterKey(input.filters);
+    const key = filterFingerprint(input.filters);
     const decodedCursor =
       input.page?.cursor === undefined
         ? Result.void
@@ -208,7 +222,7 @@ export const listMessages = (mailboxId: MailboxId, input: ListMessagesInput) =>
           ? encodeCursor({
               mailboxId,
               scope: "messages-desc",
-              filterKey: key,
+              filterFingerprint: key,
               activityAt: last.activityAt,
               id: last.id,
             })
@@ -238,7 +252,7 @@ export const getMessage = (mailboxId: MailboxId, input: GetMessageInput) =>
 export const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
-    const key = JSON.stringify({ threadId: input.threadId });
+    const key = fingerprint(JSON.stringify({ threadId: input.threadId }));
     const decodedCursor =
       input.page?.cursor === undefined
         ? Result.void
@@ -307,7 +321,7 @@ export const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
           ? encodeCursor({
               mailboxId,
               scope: `thread:${input.threadId}:asc`,
-              filterKey: key,
+              filterFingerprint: key,
               activityAt: last.activityAt,
               id: last.id,
             })
@@ -362,42 +376,6 @@ const mutateMessage = (
         }
 
         const now = runtime.now();
-        const mutateLabel = (labelId: string, add: boolean) =>
-          Effect.gen(function* () {
-            const [target] = yield* tx
-              .select({ id: label.id })
-              .from(label)
-              .where(and(eq(label.id, labelId), isNull(label.deletedAt)))
-              .limit(1);
-            if (target === undefined) {
-              return yield* domainError(
-                "mutate-message",
-                "not-found",
-                "Label was not found",
-                { resourceType: "label", resourceId: labelId }
-              );
-            }
-            if (add) {
-              yield* tx
-                .insert(messageLabel)
-                .values({ messageId: input.messageId, labelId })
-                .onConflictDoNothing();
-            }
-            if (!add) {
-              yield* tx
-                .delete(messageLabel)
-                .where(
-                  and(
-                    eq(messageLabel.messageId, input.messageId),
-                    eq(messageLabel.labelId, labelId)
-                  )
-                );
-            }
-            yield* tx
-              .update(message)
-              .set({ updatedAt: sql`max(${message.updatedAt}, ${now})` })
-              .where(eq(message.id, input.messageId));
-          });
 
         switch (mutation._tag) {
           case "Read": {
@@ -452,11 +430,74 @@ const mutateMessage = (
             break;
           }
           case "AddLabel": {
-            yield* mutateLabel(mutation.input.labelId, true);
+            const [target] = yield* tx
+              .select({ id: label.id })
+              .from(label)
+              .where(
+                and(
+                  eq(label.id, mutation.input.labelId),
+                  isNull(label.deletedAt)
+                )
+              )
+              .limit(1);
+            if (target === undefined) {
+              return yield* domainError(
+                "mutate-message",
+                "not-found",
+                "Label was not found",
+                {
+                  resourceType: "label",
+                  resourceId: mutation.input.labelId,
+                }
+              );
+            }
+            yield* tx
+              .insert(messageLabel)
+              .values({
+                messageId: input.messageId,
+                labelId: mutation.input.labelId,
+              })
+              .onConflictDoNothing();
+            yield* tx
+              .update(message)
+              .set({ updatedAt: sql`max(${message.updatedAt}, ${now})` })
+              .where(eq(message.id, input.messageId));
             break;
           }
           case "RemoveLabel": {
-            yield* mutateLabel(mutation.input.labelId, false);
+            const [target] = yield* tx
+              .select({ id: label.id })
+              .from(label)
+              .where(
+                and(
+                  eq(label.id, mutation.input.labelId),
+                  isNull(label.deletedAt)
+                )
+              )
+              .limit(1);
+            if (target === undefined) {
+              return yield* domainError(
+                "mutate-message",
+                "not-found",
+                "Label was not found",
+                {
+                  resourceType: "label",
+                  resourceId: mutation.input.labelId,
+                }
+              );
+            }
+            yield* tx
+              .delete(messageLabel)
+              .where(
+                and(
+                  eq(messageLabel.messageId, input.messageId),
+                  eq(messageLabel.labelId, mutation.input.labelId)
+                )
+              );
+            yield* tx
+              .update(message)
+              .set({ updatedAt: sql`max(${message.updatedAt}, ${now})` })
+              .where(eq(message.id, input.messageId));
             break;
           }
           default: {

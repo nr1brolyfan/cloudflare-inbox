@@ -20,13 +20,13 @@ import { OutboundDeliverySchema } from "./outbound-delivery";
 import { OutboundDeliveryFailure } from "./outbound-delivery-failure";
 import { OutboundFailureCode } from "./outbound-failure-code";
 
-const AddressList = Schema.Array(MailAddress);
-const StringList = Schema.Array(Schema.String);
+export const AddressList = Schema.Array(MailAddress);
+export const StringList = Schema.Array(Schema.String);
 
 export const encodeJson = <A, I>(schema: Schema.Codec<A, I>, value: A) =>
   JSON.stringify(Schema.encodeSync(schema)(value));
 
-const decodeJson = <A>(schema: Schema.Decoder<A>, value: string) =>
+export const decodeJson = <A>(schema: Schema.Decoder<A>, value: string) =>
   Schema.decodeUnknownSync(schema)(JSON.parse(value));
 
 const optionalAddress = (value: string | null) =>
@@ -158,7 +158,7 @@ export const readMessageDetailRow = (
       headerDate: row.headerDate ?? undefined,
       receivedAt: row.receivedAt ?? undefined,
       scheduledAt: row.scheduledAt ?? undefined,
-      acceptedAt: row.acceptedAt ?? undefined,
+      acceptedAt: deliveryRows[0]?.acceptedAt ?? undefined,
       attachments,
     });
   });

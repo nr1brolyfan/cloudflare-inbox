@@ -59,20 +59,26 @@ export const BackendHealthLive = Layer.effect(
         _tag: "ListFolders",
         input: { mailboxId: "__health__" },
       }),
+      messages: healthMailbox.executeMailData({
+        _tag: "ListMessages",
+        input: { mailboxId: "__health__" },
+      }),
       missing: healthMailbox.resolveMailResource({
         _tag: "Folder",
         mailboxId: "__health__",
         folderId: "__health__",
       }),
     }).pipe(
-      Effect.tap(({ folders, missing }) => {
+      Effect.tap(({ folders, messages, missing }) => {
         if (missing._tag !== "NotFound") {
           return Effect.die(
             new Error("MailboxDO repository probe found test data")
           );
         }
         return folders._tag === "FoldersListed" &&
-          folders.value.items.length === 7
+          folders.value.items.length === 7 &&
+          messages._tag === "MessagesListed" &&
+          messages.value.items.length === 0
           ? Effect.void
           : Effect.die(
               new Error("MailboxDO system folders are not initialized")
