@@ -5,14 +5,26 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { RawMessagesBucket } from "../infra/resources";
+import { InboundManifestMismatchError } from "../mailboxes/errors";
+import type { ParsedInboundMessageV1 as ParsedInboundMessageV1Type } from "../mailboxes/inbound";
 import {
+  InboundAttachmentStore,
+  InboundAttachmentsStoredCheckpointV1,
+  InboundMimeAttachmentExtractor,
   InboundMimeParser,
   InboundRawMessageReader,
   InboundRawStoredCheckpointV1,
   InboundWorkflowParamsV1,
   InboundWorkflowResultV1,
+  ParsedInboundMessageV1,
 } from "../mailboxes/inbound";
 import {
+  InboundAttachmentR2Client,
+  InboundAttachmentStoreR2Live,
+  InboundAttachmentStoreRuntimeLive,
+} from "../mailboxes/inbound-attachment-store-r2-live";
+import {
+  InboundMimeAttachmentExtractorPostalMimeLive,
   InboundMimeParserConfigLive,
   InboundMimeParserPostalMimeLive,
 } from "../mailboxes/inbound-mime-parser-postal-live";
@@ -20,6 +32,29 @@ import {
   InboundRawMessageR2Client,
   InboundRawMessageReaderR2Live,
 } from "../mailboxes/inbound-raw-message-reader-r2-live";
+
+const encodedManifest = (manifest: ParsedInboundMessageV1Type) =>
+  JSON.stringify(Schema.encodeSync(ParsedInboundMessageV1)(manifest));
+
+const checksumHex = (value: ArrayBuffer) =>
+  [...new Uint8Array(value)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+
+const attachmentObject = (object: {
+  readonly checksums: { readonly sha256?: ArrayBuffer };
+  readonly customMetadata?: Record<string, string>;
+  readonly httpMetadata?: { readonly contentType?: string };
+  readonly size: number;
+}) => ({
+  contentType: object.httpMetadata?.contentType,
+  customMetadata: object.customMetadata ?? {},
+  sha256:
+    object.checksums.sha256 === undefined
+      ? undefined
+      : checksumHex(object.checksums.sha256),
+  size: object.size,
+});
 
 export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
   Effect.gen(function* () {
@@ -48,7 +83,7 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
       Effect.succeed(rawStored)
     );
 
-    yield* Cloudflare.Workflows.task(
+    const parsed = yield* Cloudflare.Workflows.task(
       "parse-raw-mime",
       Effect.gen(function* () {
         const reader = yield* InboundRawMessageReader;
@@ -63,11 +98,49 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
       }).pipe(Effect.orDie)
     );
 
+    yield* Cloudflare.Workflows.task(
+      "store-inbound-attachments",
+      Effect.gen(function* () {
+        const reader = yield* InboundRawMessageReader;
+        const extractor = yield* InboundMimeAttachmentExtractor;
+        const store = yield* InboundAttachmentStore;
+        const raw = yield* reader.read({
+          inboundIngestId: params.inboundIngestId,
+          mailboxId: params.mailboxId,
+          rawSize: params.envelope.rawSize,
+          receivedAt: params.receivedAt,
+        });
+        const extracted = yield* extractor.extract(raw);
+        if (encodedManifest(parsed) !== encodedManifest(extracted.manifest)) {
+          return yield* Effect.fail(
+            new InboundManifestMismatchError({
+              message: "Reparsed inbound MIME manifest does not match",
+            })
+          );
+        }
+        yield* store.store({
+          attachments: extracted.attachments,
+          inboundIngestId: params.inboundIngestId,
+          mailboxId: params.mailboxId,
+          receivedAt: params.receivedAt,
+        });
+        return yield* Schema.decodeUnknownEffect(
+          InboundAttachmentsStoredCheckpointV1
+        )({
+          attachmentCount: extracted.attachments.length,
+          formatVersion: 1,
+          inboundIngestId: params.inboundIngestId,
+          mailboxId: params.mailboxId,
+          status: "attachments_stored",
+        });
+      }).pipe(Effect.orDie)
+    );
+
     return yield* Schema.decodeUnknownEffect(InboundWorkflowResultV1)({
       formatVersion: 1,
       inboundIngestId: params.inboundIngestId,
       mailboxId: params.mailboxId,
-      status: "parsing",
+      status: "attachments_stored",
     }).pipe(Effect.orDie);
   })
 );
@@ -95,10 +168,43 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
   const rawMessageReaderLive = InboundRawMessageReaderR2Live.pipe(
     Layer.provide(rawMessageClientLive)
   );
+  const attachmentClientLive = Layer.succeed(
+    InboundAttachmentR2Client,
+    InboundAttachmentR2Client.of({
+      put: (key, content, options) =>
+        rawMessages.put(key, content, options).pipe(
+          Effect.provide(RuntimeContext.phantom),
+          Effect.map((object) =>
+            object === null ? null : attachmentObject(object)
+          )
+        ),
+      head: (key) =>
+        rawMessages.head(key).pipe(
+          Effect.provide(RuntimeContext.phantom),
+          Effect.map((object) =>
+            object === null ? null : attachmentObject(object)
+          )
+        ),
+    })
+  );
+  const attachmentStoreLive = InboundAttachmentStoreR2Live.pipe(
+    Layer.provide(
+      Layer.merge(attachmentClientLive, InboundAttachmentStoreRuntimeLive)
+    )
+  );
   const mimeParserLive = InboundMimeParserPostalMimeLive.pipe(
     Layer.provide(InboundMimeParserConfigLive)
   );
-  const processingLive = Layer.merge(rawMessageReaderLive, mimeParserLive);
+  const attachmentExtractorLive =
+    InboundMimeAttachmentExtractorPostalMimeLive.pipe(
+      Layer.provide(InboundMimeParserConfigLive)
+    );
+  const processingLive = Layer.mergeAll(
+    rawMessageReaderLive,
+    mimeParserLive,
+    attachmentExtractorLive,
+    attachmentStoreLive
+  );
   const program = yield* inboundWorkflowProgram;
 
   return (input: unknown) =>

@@ -2,9 +2,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
-import { InboundMimeParser } from "#/mailboxes/inbound";
+import {
+  InboundMimeAttachmentExtractor,
+  InboundMimeParser,
+} from "#/mailboxes/inbound";
 import type { InboundMimeParserConfig as InboundMimeParserConfigShape } from "#/mailboxes/inbound-mime-parser-postal-live";
 import {
+  InboundMimeAttachmentExtractorPostalMimeLive,
   InboundMimeParserConfig,
   InboundMimeParserPostalMimeLive,
 } from "#/mailboxes/inbound-mime-parser-postal-live";
@@ -30,6 +34,26 @@ const runParse = (
       Effect.flatMap((parser) => parser.parse(raw(source))),
       Effect.provide(
         InboundMimeParserPostalMimeLive.pipe(
+          Layer.provide(
+            Layer.succeed(
+              InboundMimeParserConfig,
+              InboundMimeParserConfig.of({ ...defaultConfig, ...overrides })
+            )
+          )
+        )
+      )
+    )
+  );
+
+const runExtract = (
+  source: string,
+  overrides: Partial<InboundMimeParserConfigShape> = {}
+) =>
+  Effect.runPromise(
+    InboundMimeAttachmentExtractor.pipe(
+      Effect.flatMap((extractor) => extractor.extract(raw(source))),
+      Effect.provide(
+        InboundMimeAttachmentExtractorPostalMimeLive.pipe(
           Layer.provide(
             Layer.succeed(
               InboundMimeParserConfig,
@@ -74,8 +98,7 @@ Hello=20world`
   });
 
   it("emits attachment metadata without binary content", async () => {
-    const result = await runParse(
-      `From: sender@example.test\r
+    const source = `From: sender@example.test\r
 To: owner@example.test\r
 Subject: Related\r
 Content-Type: multipart/related; boundary="boundary"\r
@@ -91,8 +114,11 @@ Content-Disposition: inline; filename="image.png"\r
 Content-Transfer-Encoding: base64\r
 \r
 AQID\r
---boundary--`
-    );
+--boundary--`;
+    const [result, extracted] = await Promise.all([
+      runParse(source),
+      runExtract(source),
+    ]);
 
     expect(result.attachments).toStrictEqual([
       {
@@ -106,6 +132,10 @@ AQID\r
     ]);
     expect(result.attachments[0]).not.toHaveProperty("content");
     expect(result.htmlBody).toContain("cid:image-1");
+    expect(extracted.manifest).toStrictEqual(result);
+    expect(extracted.attachments[0]?.content).toStrictEqual(
+      new Uint8Array([1, 2, 3])
+    );
   });
 
   it("rejects raw messages above the configured memory limit", async () => {

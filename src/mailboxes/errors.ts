@@ -122,6 +122,12 @@ export class MimeParseError extends Data.TaggedError("MimeParseError")<{
   readonly cause?: unknown;
 }> {}
 
+export class InboundManifestMismatchError extends Data.TaggedError(
+  "InboundManifestMismatchError"
+)<{
+  readonly message: string;
+}> {}
+
 export class RuleEvaluationError extends Data.TaggedError(
   "RuleEvaluationError"
 )<{

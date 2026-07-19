@@ -190,7 +190,7 @@ export const InboundWorkflowResultV1 = Schema.Struct({
   formatVersion: Schema.Literal(1),
   inboundIngestId: InboundIngestId,
   mailboxId: MailboxId,
-  status: Schema.Literal("parsing"),
+  status: Schema.Literals(["parsing", "attachments_stored"]),
 });
 export type InboundWorkflowResultV1 = Schema.Schema.Type<
   typeof InboundWorkflowResultV1
@@ -277,3 +277,82 @@ export interface InboundMimeParser {
 export const InboundMimeParser = Context.Service<InboundMimeParser>(
   "cloudflare-inbox/InboundMimeParser"
 );
+
+export const ExtractedInboundAttachmentV1 = Schema.Struct({
+  metadata: ParsedInboundAttachmentV1,
+  content: Schema.Uint8Array,
+}).check(
+  Schema.makeFilter((attachment) =>
+    attachment.content.byteLength === attachment.metadata.size
+      ? undefined
+      : "attachment content size must match its metadata"
+  )
+);
+export type ExtractedInboundAttachmentV1 = Schema.Schema.Type<
+  typeof ExtractedInboundAttachmentV1
+>;
+
+export const ExtractedInboundMessageV1 = Schema.Struct({
+  manifest: ParsedInboundMessageV1,
+  attachments: Schema.Array(ExtractedInboundAttachmentV1),
+}).check(
+  Schema.makeFilter((message) => {
+    if (message.attachments.length !== message.manifest.attachments.length) {
+      return "extracted attachment count must match the parsed manifest";
+    }
+    return message.attachments.every((attachment, index) => {
+      const expected = message.manifest.attachments[index];
+      return (
+        expected !== undefined &&
+        JSON.stringify(
+          Schema.encodeSync(ParsedInboundAttachmentV1)(attachment.metadata)
+        ) ===
+          JSON.stringify(Schema.encodeSync(ParsedInboundAttachmentV1)(expected))
+      );
+    })
+      ? undefined
+      : "extracted attachment metadata must match the parsed manifest";
+  })
+);
+export type ExtractedInboundMessageV1 = Schema.Schema.Type<
+  typeof ExtractedInboundMessageV1
+>;
+
+export interface InboundMimeAttachmentExtractor {
+  readonly extract: (
+    raw: ArrayBuffer
+  ) => Effect.Effect<ExtractedInboundMessageV1, MimeParseError>;
+}
+
+export const InboundMimeAttachmentExtractor =
+  Context.Service<InboundMimeAttachmentExtractor>(
+    "cloudflare-inbox/InboundMimeAttachmentExtractor"
+  );
+
+export const StoreInboundAttachmentsInput = Schema.Struct({
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  receivedAt: UnixMillis,
+  attachments: Schema.Array(ExtractedInboundAttachmentV1),
+});
+export type StoreInboundAttachmentsInput = Schema.Schema.Type<
+  typeof StoreInboundAttachmentsInput
+>;
+
+export interface InboundAttachmentStore {
+  readonly store: (
+    input: StoreInboundAttachmentsInput
+  ) => Effect.Effect<void, BlobStoreError>;
+}
+
+export const InboundAttachmentStore = Context.Service<InboundAttachmentStore>(
+  "cloudflare-inbox/InboundAttachmentStore"
+);
+
+export const InboundAttachmentsStoredCheckpointV1 = Schema.Struct({
+  formatVersion: Schema.Literal(1),
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  attachmentCount: AttachmentIndex,
+  status: Schema.Literal("attachments_stored"),
+});

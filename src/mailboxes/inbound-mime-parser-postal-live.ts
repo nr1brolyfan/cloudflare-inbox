@@ -19,8 +19,16 @@ import {
   UnixMillis,
 } from "./core";
 import { MimeParseError } from "./errors";
-import { InboundMimeParser, ParsedInboundMessageV1 } from "./inbound";
-import type { ParsedInboundMessageV1 as ParsedInboundMessageV1Type } from "./inbound";
+import {
+  ExtractedInboundMessageV1,
+  InboundMimeAttachmentExtractor,
+  InboundMimeParser,
+  ParsedInboundMessageV1,
+} from "./inbound";
+import type {
+  ExtractedInboundMessageV1 as ExtractedInboundMessageV1Type,
+  ParsedInboundMessageV1 as ParsedInboundMessageV1Type,
+} from "./inbound";
 
 export interface InboundMimeParserConfig {
   readonly maximumAddresses: number;
@@ -90,6 +98,20 @@ const attachmentSize = (content: PostalAttachment["content"]): number =>
     ? new TextEncoder().encode(content).byteLength
     : content.byteLength;
 
+const attachmentContent = (
+  content: PostalAttachment["content"]
+): Uint8Array => {
+  if (typeof content === "string") {
+    return new TextEncoder().encode(content);
+  }
+  if (content instanceof ArrayBuffer) {
+    return new Uint8Array(content);
+  }
+  const bytes = new Uint8Array(content.byteLength);
+  bytes.set(content);
+  return bytes;
+};
+
 const attachmentContentId = (contentId: string | undefined) => {
   if (contentId === undefined) {
     return;
@@ -130,105 +152,129 @@ const manifestSize = (manifest: ParsedInboundMessageV1Type) =>
     JSON.stringify(Schema.encodeSync(ParsedInboundMessageV1)(manifest))
   ).byteLength;
 
+const parseMime = (
+  raw: ArrayBuffer,
+  config: InboundMimeParserConfig
+): Effect.Effect<ExtractedInboundMessageV1Type, MimeParseError> =>
+  Effect.gen(function* () {
+    if (raw.byteLength > config.maximumRawBytes) {
+      return yield* Effect.fail(
+        parseError(
+          "message-too-large",
+          "Inbound message exceeds the MIME parser limit"
+        )
+      );
+    }
+
+    const parsed = yield* Effect.tryPromise({
+      try: () =>
+        new PostalMime({
+          attachmentEncoding: "arraybuffer",
+          forceRfc822Attachments: true,
+          maxHeadersSize: config.maximumHeadersBytes,
+          maxNestingDepth: config.maximumNestingDepth,
+        }).parse(raw),
+      catch: (cause) =>
+        parseError(
+          "malformed-message",
+          "Inbound MIME could not be parsed",
+          cause
+        ),
+    });
+    const to = decodeAddresses(parsed.to);
+    const cc = decodeAddresses(parsed.cc);
+    const bcc = decodeAddresses(parsed.bcc);
+    const [senderMailbox] = flattenAddresses(
+      parsed.from === undefined ? undefined : [parsed.from]
+    );
+    const references = messageIds(parsed.references);
+    const [rfcMessageId] = messageIds(parsed.messageId);
+    const [inReplyTo] = messageIds(parsed.inReplyTo);
+    const addressCount =
+      flattenAddresses(parsed.to).length +
+      flattenAddresses(parsed.cc).length +
+      flattenAddresses(parsed.bcc).length;
+
+    if (
+      addressCount > config.maximumAddresses ||
+      parsed.attachments.length > config.maximumAttachments ||
+      references.length > config.maximumReferences
+    ) {
+      return yield* Effect.fail(
+        parseError(
+          "unsupported-message",
+          "Inbound MIME exceeds supported structural limits"
+        )
+      );
+    }
+
+    const attachments = parsed.attachments.map((attachment, index) => ({
+      content: attachmentContent(attachment.content),
+      metadata: attachmentManifest(attachment, index),
+    }));
+    const manifest = yield* Schema.decodeUnknownEffect(ParsedInboundMessageV1)({
+      formatVersion: 1,
+      subject: parsed.subject ?? "",
+      sender:
+        senderMailbox === undefined ? undefined : decodeAddress(senderMailbox),
+      to,
+      cc,
+      bcc,
+      rfcMessageId,
+      inReplyTo,
+      references,
+      textBody: parsed.text,
+      htmlBody: parsed.html,
+      headerDate: headerDate(parsed.date),
+      attachments: attachments.map((attachment) => attachment.metadata),
+    }).pipe(
+      Effect.mapError((cause) =>
+        parseError("malformed-message", "Parsed MIME data is invalid", cause)
+      )
+    );
+
+    if (manifestSize(manifest) > config.maximumWorkflowResultBytes) {
+      return yield* Effect.fail(
+        parseError(
+          "message-too-large",
+          "Parsed MIME exceeds the durable result limit"
+        )
+      );
+    }
+
+    return yield* Schema.decodeUnknownEffect(ExtractedInboundMessageV1)({
+      attachments,
+      manifest,
+    }).pipe(
+      Effect.mapError((cause) =>
+        parseError(
+          "malformed-message",
+          "Extracted MIME attachment data is invalid",
+          cause
+        )
+      )
+    );
+  });
+
 /** PostalMime adapter that emits a bounded durable manifest without content bytes. */
 export const InboundMimeParserPostalMimeLive = Layer.effect(
   InboundMimeParser,
   Effect.gen(function* () {
     const config = yield* InboundMimeParserConfig;
-
     return InboundMimeParser.of({
       parse: (raw) =>
-        Effect.gen(function* () {
-          if (raw.byteLength > config.maximumRawBytes) {
-            return yield* Effect.fail(
-              parseError(
-                "message-too-large",
-                "Inbound message exceeds the MIME parser limit"
-              )
-            );
-          }
+        parseMime(raw, config).pipe(Effect.map((parsed) => parsed.manifest)),
+    });
+  })
+);
 
-          const parsed = yield* Effect.tryPromise({
-            try: () =>
-              new PostalMime({
-                attachmentEncoding: "arraybuffer",
-                forceRfc822Attachments: true,
-                maxHeadersSize: config.maximumHeadersBytes,
-                maxNestingDepth: config.maximumNestingDepth,
-              }).parse(raw),
-            catch: (cause) =>
-              parseError(
-                "malformed-message",
-                "Inbound MIME could not be parsed",
-                cause
-              ),
-          });
-          const to = decodeAddresses(parsed.to);
-          const cc = decodeAddresses(parsed.cc);
-          const bcc = decodeAddresses(parsed.bcc);
-          const [senderMailbox] = flattenAddresses(
-            parsed.from === undefined ? undefined : [parsed.from]
-          );
-          const references = messageIds(parsed.references);
-          const [rfcMessageId] = messageIds(parsed.messageId);
-          const [inReplyTo] = messageIds(parsed.inReplyTo);
-          const addressCount =
-            flattenAddresses(parsed.to).length +
-            flattenAddresses(parsed.cc).length +
-            flattenAddresses(parsed.bcc).length;
-
-          if (
-            addressCount > config.maximumAddresses ||
-            parsed.attachments.length > config.maximumAttachments ||
-            references.length > config.maximumReferences
-          ) {
-            return yield* Effect.fail(
-              parseError(
-                "unsupported-message",
-                "Inbound MIME exceeds supported structural limits"
-              )
-            );
-          }
-
-          const manifest = yield* Schema.decodeUnknownEffect(
-            ParsedInboundMessageV1
-          )({
-            formatVersion: 1,
-            subject: parsed.subject ?? "",
-            sender:
-              senderMailbox === undefined
-                ? undefined
-                : decodeAddress(senderMailbox),
-            to,
-            cc,
-            bcc,
-            rfcMessageId,
-            inReplyTo,
-            references,
-            textBody: parsed.text,
-            htmlBody: parsed.html,
-            headerDate: headerDate(parsed.date),
-            attachments: parsed.attachments.map(attachmentManifest),
-          }).pipe(
-            Effect.mapError((cause) =>
-              parseError(
-                "malformed-message",
-                "Parsed MIME data is invalid",
-                cause
-              )
-            )
-          );
-
-          if (manifestSize(manifest) > config.maximumWorkflowResultBytes) {
-            return yield* Effect.fail(
-              parseError(
-                "message-too-large",
-                "Parsed MIME exceeds the durable result limit"
-              )
-            );
-          }
-          return manifest;
-        }),
+/** PostalMime adapter for the attachment-storage step's bounded second parse. */
+export const InboundMimeAttachmentExtractorPostalMimeLive = Layer.effect(
+  InboundMimeAttachmentExtractor,
+  Effect.gen(function* () {
+    const config = yield* InboundMimeParserConfig;
+    return InboundMimeAttachmentExtractor.of({
+      extract: (raw) => parseMime(raw, config),
     });
   })
 );

@@ -6,10 +6,14 @@ import { describe, expect, it } from "vitest";
 
 import { BlobStoreError } from "#/mailboxes/errors";
 import type {
+  InboundAttachmentStore as InboundAttachmentStoreShape,
+  InboundMimeAttachmentExtractor as InboundMimeAttachmentExtractorShape,
   InboundMimeParser as InboundMimeParserShape,
   InboundRawMessageReader as InboundRawMessageReaderShape,
 } from "#/mailboxes/inbound";
 import {
+  InboundAttachmentStore,
+  InboundMimeAttachmentExtractor,
   InboundMimeParser,
   InboundRawMessageReader,
   ParsedInboundMessageV1,
@@ -52,7 +56,10 @@ const runWorkflow = (
   stepNames: string[] = [],
   read: InboundRawMessageReaderShape["read"] = () =>
     Effect.succeed(new Uint8Array([1, 2, 3]).buffer),
-  parse: InboundMimeParserShape["parse"] = () => Effect.succeed(parsedManifest)
+  parse: InboundMimeParserShape["parse"] = () => Effect.succeed(parsedManifest),
+  extract: InboundMimeAttachmentExtractorShape["extract"] = () =>
+    Effect.succeed({ attachments: [], manifest: parsedManifest }),
+  store: InboundAttachmentStoreShape["store"] = () => Effect.void
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -83,7 +90,15 @@ const runWorkflow = (
             InboundRawMessageReader,
             InboundRawMessageReader.of({ read })
           ),
-          Layer.succeed(InboundMimeParser, InboundMimeParser.of({ parse }))
+          Layer.succeed(InboundMimeParser, InboundMimeParser.of({ parse })),
+          Layer.succeed(
+            InboundMimeAttachmentExtractor,
+            InboundMimeAttachmentExtractor.of({ extract })
+          ),
+          Layer.succeed(
+            InboundAttachmentStore,
+            InboundAttachmentStore.of({ store })
+          )
         )
       )
     )
@@ -99,9 +114,13 @@ describe("inbound Workflow", () => {
       formatVersion: 1,
       inboundIngestId: "ingest-1",
       mailboxId: "primary",
-      status: "parsing",
+      status: "attachments_stored",
     });
-    expect(stepNames).toStrictEqual(["record-raw-stored", "parse-raw-mime"]);
+    expect(stepNames).toStrictEqual([
+      "record-raw-stored",
+      "parse-raw-mime",
+      "store-inbound-attachments",
+    ]);
   });
 
   it("passes trusted ingest metadata and the exact raw buffer to parsing", async () => {
@@ -120,7 +139,8 @@ describe("inbound Workflow", () => {
       (input) => {
         parsedRaw = input;
         return Effect.succeed(parsedManifest);
-      }
+      },
+      () => Effect.succeed({ attachments: [], manifest: parsedManifest })
     );
 
     expect({ parsedRawIsExact: parsedRaw === raw, readInput }).toStrictEqual({
@@ -160,6 +180,89 @@ describe("inbound Workflow", () => {
     ).rejects.toBeDefined();
 
     expect(parserCalls).toBe(0);
+  });
+
+  it("does not store attachments when reparsing changes the manifest", async () => {
+    let storeCalls = 0;
+    const changedManifest = Schema.decodeUnknownSync(ParsedInboundMessageV1)({
+      ...Schema.encodeSync(ParsedInboundMessageV1)(parsedManifest),
+      subject: "Changed",
+    });
+
+    await expect(
+      runWorkflow(
+        validInput,
+        "ingest-1",
+        [],
+        undefined,
+        undefined,
+        () =>
+          Effect.succeed({
+            attachments: [],
+            manifest: changedManifest,
+          }),
+        () =>
+          Effect.sync(() => {
+            storeCalls += 1;
+          })
+      )
+    ).rejects.toBeDefined();
+
+    expect(storeCalls).toBe(0);
+  });
+
+  it("passes extracted attachment bytes and CID to the store", async () => {
+    const manifest = Schema.decodeUnknownSync(ParsedInboundMessageV1)({
+      ...Schema.encodeSync(ParsedInboundMessageV1)(parsedManifest),
+      attachments: [
+        {
+          contentId: "image-1",
+          disposition: "inline",
+          fileName: "image.png",
+          index: 0,
+          mimeType: "image/png",
+          size: 3,
+        },
+      ],
+    });
+    const [metadata] = manifest.attachments;
+    if (metadata === undefined) {
+      throw new TypeError("Expected attachment metadata");
+    }
+    const attachment = {
+      content: new Uint8Array([1, 2, 3]),
+      metadata,
+    };
+    let storeInput: unknown;
+
+    await runWorkflow(
+      validInput,
+      "ingest-1",
+      [],
+      undefined,
+      () => Effect.succeed(manifest),
+      () =>
+        Effect.succeed({
+          attachments: [attachment],
+          manifest,
+        }),
+      (input) =>
+        Effect.sync(() => {
+          storeInput = input;
+        })
+    );
+
+    expect(storeInput).toMatchObject({
+      attachments: [
+        {
+          content: new Uint8Array([1, 2, 3]),
+          metadata: { contentId: "image-1", disposition: "inline", index: 0 },
+        },
+      ],
+      inboundIngestId: "ingest-1",
+      mailboxId: "primary",
+      receivedAt: 2000,
+    });
   });
 
   it("rejects an instance ID that differs from the ingest ID", async () => {
