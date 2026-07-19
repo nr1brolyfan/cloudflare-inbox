@@ -29,11 +29,7 @@ const sourceFiles = async (directory: string): Promise<readonly string[]> => {
 
 for (const absolutePath of await sourceFiles(sourceDirectory)) {
   const file = path.relative(root, absolutePath);
-  if (
-    file.endsWith(".test.ts") ||
-    file.startsWith("src/test/") ||
-    allowed.has(file)
-  ) {
+  if (allowed.has(file)) {
     continue;
   }
   const source = await readFile(absolutePath, "utf-8");

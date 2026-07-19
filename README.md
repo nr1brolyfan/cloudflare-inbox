@@ -83,4 +83,8 @@ src/mailboxes/              mail domain, Durable Object protocol, and SQLite sto
 src/observability/          health services, Effect logging, and local OTLP layers
 src/server/                 Website-side services and TanStack adapters
 src/workers/backend.ts      private Effect backend Worker
+tests/<area>/               tests mirroring production domains
+tests/support/              shared test-only helpers and Layers
 ```
+
+Production modules live exclusively under `src/`. Tests mirror their domain folders under top-level `tests/`, while reusable test-only database and Layer setup belongs in `tests/support/`.

@@ -33,6 +33,10 @@ src/control-plane/
   batch.ts                # contract and concrete D1 batch layer
   database.ts             # D1/Drizzle contract, layers, mailbox registry
   mailbox-administration-live.ts
+
+tests/mailboxes/          # mailbox tests mirroring the production domain
+tests/control-plane/      # control-plane tests mirroring the production domain
+tests/support/            # shared test-only database and Layer setup
 ```
 
 The final names may be adjusted where required by framework conventions, but the dependency direction must stay unchanged:
@@ -105,7 +109,7 @@ The refactor must preserve:
 4. Consolidate the Durable Object protocol, client, handlers, and error codec.
 5. Reduce `mailbox-do.ts` to initialization, layer composition, and delegation.
 6. Introduce the Website-side service/composition boundary.
-7. Remove superseded files and align tests with the new modules.
+7. Remove superseded files and align tests under the mirrored top-level `tests/` domains, with shared test-only helpers in `tests/support/`.
 8. Run formatting, generated-file checks, raw-SQL policy, lint, typecheck, tests, and production build.
 
 ## Verification

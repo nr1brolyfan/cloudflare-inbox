@@ -46,7 +46,7 @@ Inside each `MailboxDO`, `MailboxDatabaseLive` feeds `MailboxOperationStoreLive`
 - `src/mailboxes/resource-location.ts` is the schema-backed source for branded resource lookup hints and trusted locations. A claimed mailbox ID selects a lookup target but is never authorization evidence; scopes use only ancestry returned by the trusted repository.
 - `src/observability/health.ts` contains transport-neutral health schemas and the service contract. `src/observability/backend-health-live.ts` owns concrete probes. HTTP status annotations and the 200/503 response selection remain in `src/http`.
 - `src/http/mailbox-contract.ts` owns the shared public mailbox error codec used by the Backend API contract and Website response decoder.
-- `src/test/mailbox-sqlite.ts` provides scoped, migrated SQLite test Layers. Temporary databases are released with the Layer scope.
+- `tests/` mirrors production domains such as `auth`, `authorization`, `control-plane`, `http`, `mailboxes`, and `server`. Shared test-only setup lives in `tests/support/`; for example, `tests/support/mailbox-sqlite.ts` provides scoped, migrated SQLite test Layers whose temporary databases are released with the Layer scope.
 
 ## Auth Graph
 
