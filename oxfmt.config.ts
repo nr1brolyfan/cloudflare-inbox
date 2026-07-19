@@ -7,6 +7,7 @@ export default defineConfig({
     ...(ultracite.ignorePatterns ?? []),
     "cloudflare-inbox.md",
     "migrations/**",
+    "src/auth/schema/**",
   ],
   sortTailwindcss: {
     functions: ["clsx", "cn", "cva"],

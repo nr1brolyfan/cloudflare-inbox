@@ -1,5 +1,7 @@
 import * as Cloudflare from "alchemy/Cloudflare";
+import { sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
@@ -14,6 +16,9 @@ import type {
 } from "./directory-rpc";
 import type { MailboxDomainError } from "./errors/mailbox-domain-error";
 import { MailboxId } from "./identifiers";
+import { MailDataRpcRequest } from "./mail-data-rpc";
+import { MailboxDatabase } from "./mailbox-database";
+import { MailboxDatabaseLive } from "./mailbox-database-live";
 import {
   MailboxDirectoryRuntime,
   MailboxDirectoryRuntimeLive,
@@ -29,10 +34,8 @@ import {
   renameFolder,
   renameLabel,
 } from "./mailbox-directory-sqlite";
-import {
-  applyMailboxMigrations,
-  mailboxSchemaVersion,
-} from "./mailbox-migrations";
+import { executeMailDataRequest } from "./mailbox-mail-data-handler";
+import { mailboxSchemaVersion } from "./mailbox-migrations";
 import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
@@ -41,10 +44,7 @@ import {
   initializeMailboxRepository,
   resolveMailboxResource,
 } from "./mailbox-repository-sqlite";
-
-interface SchemaVersionRow extends Record<string, Cloudflare.SqlStorageValue> {
-  readonly version: number;
-}
+import { mailboxSchemaMigration } from "./mailbox-schema";
 
 const domainErrorDto = (error: MailboxDomainError): MailboxDomainErrorDtoType =>
   Schema.decodeUnknownSync(MailboxDomainErrorDto)({
@@ -61,8 +61,8 @@ const domainErrorDto = (error: MailboxDomainError): MailboxDomainErrorDtoType =>
 const mailboxDoImplementation = Effect.gen(function* () {
   const state = yield* Cloudflare.DurableObjectState;
   const runtime = yield* MailboxDirectoryRuntime;
+  const database = yield* MailboxDatabase;
 
-  yield* Effect.sync(() => applyMailboxMigrations(state.raw.storage));
   const mailboxName = yield* Effect.sync(() => {
     if (state.id.name === undefined) {
       throw new Error("MailboxDO must be addressed by canonical mailbox name");
@@ -72,32 +72,36 @@ const mailboxDoImplementation = Effect.gen(function* () {
   const mailboxId = yield* Schema.decodeUnknownEffect(MailboxId)(
     mailboxName
   ).pipe(Effect.orDie);
-  yield* Effect.sync(() =>
-    initializeMailboxRepository(state.raw.storage, mailboxId)
-  );
-  yield* Effect.sync(() =>
-    initializeMailboxDirectory(state.raw.storage, runtime)
+  yield* initializeMailboxRepository(mailboxId);
+  yield* initializeMailboxDirectory;
+  const mailboxServicesLive = Layer.merge(
+    Layer.succeed(MailboxDatabase, database),
+    Layer.succeed(MailboxDirectoryRuntime, runtime)
   );
 
   return {
+    executeMailData: (input: unknown) =>
+      Schema.decodeUnknownEffect(MailDataRpcRequest)(input).pipe(
+        Effect.flatMap((request) =>
+          executeMailDataRequest(mailboxId, runtime, request)
+        ),
+        Effect.provide(mailboxServicesLive),
+        Effect.orDie
+      ),
     executeDirectory: (input: unknown) =>
       Effect.gen(function* () {
         const request =
           yield* Schema.decodeUnknownEffect(DirectoryRpcRequest)(input);
         switch (request._tag) {
           case "ListFolders": {
-            const value = yield* Effect.sync(() =>
-              listFolders(state.storage.sql.raw, mailboxId)
-            );
+            const value = yield* listFolders(mailboxId);
             return yield* Schema.encodeEffect(DirectoryRpcResponse)({
               _tag: "FoldersListed",
               value,
             });
           }
           case "CreateFolder": {
-            const result = yield* Effect.sync(() =>
-              createFolder(state.raw.storage, mailboxId, request.input, runtime)
-            );
+            const result = yield* createFolder(mailboxId, request.input);
             return yield* Schema.encodeEffect(DirectoryRpcResponse)(
               Result.match(result, {
                 onFailure: domainErrorDto,
@@ -110,9 +114,7 @@ const mailboxDoImplementation = Effect.gen(function* () {
             );
           }
           case "RenameFolder": {
-            const result = yield* Effect.sync(() =>
-              renameFolder(state.raw.storage, mailboxId, request.input, runtime)
-            );
+            const result = yield* renameFolder(mailboxId, request.input);
             return yield* Schema.encodeEffect(DirectoryRpcResponse)(
               Result.match(result, {
                 onFailure: domainErrorDto,
@@ -125,9 +127,7 @@ const mailboxDoImplementation = Effect.gen(function* () {
             );
           }
           case "DeleteFolder": {
-            const result = yield* Effect.sync(() =>
-              deleteFolder(state.raw.storage, mailboxId, request.input, runtime)
-            );
+            const result = yield* deleteFolder(mailboxId, request.input);
             return yield* Schema.encodeEffect(DirectoryRpcResponse)(
               Result.match(result, {
                 onFailure: domainErrorDto,
@@ -140,18 +140,14 @@ const mailboxDoImplementation = Effect.gen(function* () {
             );
           }
           case "ListLabels": {
-            const value = yield* Effect.sync(() =>
-              listLabels(state.storage.sql.raw, mailboxId)
-            );
+            const value = yield* listLabels(mailboxId);
             return yield* Schema.encodeEffect(DirectoryRpcResponse)({
               _tag: "LabelsListed",
               value,
             });
           }
           case "CreateLabel": {
-            const result = yield* Effect.sync(() =>
-              createLabel(state.raw.storage, mailboxId, request.input, runtime)
-            );
+            const result = yield* createLabel(mailboxId, request.input);
             return yield* Schema.encodeEffect(DirectoryRpcResponse)(
               Result.match(result, {
                 onFailure: domainErrorDto,
@@ -164,9 +160,7 @@ const mailboxDoImplementation = Effect.gen(function* () {
             );
           }
           case "RenameLabel": {
-            const result = yield* Effect.sync(() =>
-              renameLabel(state.raw.storage, mailboxId, request.input, runtime)
-            );
+            const result = yield* renameLabel(mailboxId, request.input);
             return yield* Schema.encodeEffect(DirectoryRpcResponse)(
               Result.match(result, {
                 onFailure: domainErrorDto,
@@ -179,9 +173,7 @@ const mailboxDoImplementation = Effect.gen(function* () {
             );
           }
           case "DeleteLabel": {
-            const result = yield* Effect.sync(() =>
-              deleteLabel(state.raw.storage, mailboxId, request.input, runtime)
-            );
+            const result = yield* deleteLabel(mailboxId, request.input);
             return yield* Schema.encodeEffect(DirectoryRpcResponse)(
               Result.match(result, {
                 onFailure: domainErrorDto,
@@ -198,34 +190,37 @@ const mailboxDoImplementation = Effect.gen(function* () {
             return exhaustive;
           }
         }
-      }),
+      }).pipe(Effect.provide(mailboxServicesLive), Effect.orDie),
     resolveMailResource: (input: unknown) =>
       Effect.gen(function* () {
         const lookup = yield* Schema.decodeUnknownEffect(MailboxResourceLookup)(
           input
         );
-        const result = yield* Effect.sync(() =>
-          resolveMailboxResource(state.storage.sql.raw, lookup)
-        );
+        const result = yield* resolveMailboxResource(lookup);
         return yield* Schema.encodeEffect(MailboxResourceLookupResult)(result);
-      }),
+      }).pipe(Effect.provide(mailboxServicesLive), Effect.orDie),
     sqliteReady: () =>
       Effect.gen(function* () {
-        const cursor = yield* state.storage.sql.exec<SchemaVersionRow>(
-          "SELECT COALESCE(MAX(version), 0) AS version FROM mailbox_schema_migration"
-        );
-        const row = yield* cursor.one();
+        const [row] = yield* database
+          .select({
+            version: sql<number>`coalesce(max(${mailboxSchemaMigration.version}), 0)`,
+          })
+          .from(mailboxSchemaMigration);
 
-        if (row.version !== mailboxSchemaVersion) {
+        if (row?.version !== mailboxSchemaVersion) {
           return yield* Effect.die(
             new Error("MailboxDO SQLite schema is not current")
           );
         }
 
         return true;
-      }),
+      }).pipe(Effect.orDie),
   };
-}).pipe(Effect.provide(MailboxDirectoryRuntimeLive));
+}).pipe(
+  Effect.orDie,
+  Effect.provide(MailboxDatabaseLive),
+  Effect.provide(MailboxDirectoryRuntimeLive)
+);
 
 /** SQLite-backed data-plane object with migrations completed before RPC starts. */
 export class MailboxDO extends Cloudflare.DurableObject<MailboxDO>()(

@@ -1,9 +1,13 @@
-import { DatabaseSync } from "node:sqlite";
-
+/* oxlint-disable vitest/no-standalone-expect -- Effect tests are registered through @effect/vitest. */
+import { expect, layer } from "@effect/vitest";
+import { count, eq } from "drizzle-orm";
+import * as Cause from "effect/Cause";
+import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vitest";
 
+import { MailboxDatabaseTest } from "../test/mailbox-database";
 import {
   CreateFolderInput,
   CreateLabelInput,
@@ -14,6 +18,9 @@ import {
 } from "./directory-contract";
 import type { MailboxDomainError } from "./errors/mailbox-domain-error";
 import { MailboxId } from "./identifiers";
+import { MailboxDatabase } from "./mailbox-database";
+import { MailboxDirectoryRuntime } from "./mailbox-directory-runtime";
+import type { MailboxDirectoryRuntime as MailboxDirectoryRuntimeType } from "./mailbox-directory-runtime";
 import {
   createFolder,
   createLabel,
@@ -25,52 +32,32 @@ import {
   renameFolder,
   renameLabel,
 } from "./mailbox-directory-sqlite";
-import { applyMailboxMigrations } from "./mailbox-migrations";
 import { MailboxResourceLookup } from "./mailbox-repository";
 import {
   initializeMailboxRepository,
   resolveMailboxResource,
 } from "./mailbox-repository-sqlite";
+import {
+  attachment,
+  draft,
+  filterRule,
+  folder,
+  label,
+  mailboxMetadata,
+  mailboxOperation,
+  message,
+  messageLabel,
+  outboundDelivery,
+} from "./mailbox-schema";
 
-const makeStorage = (database: DatabaseSync) => ({
-  transactionSync: <A>(run: () => A) => {
-    database.exec("BEGIN");
-    try {
-      const result = run();
-      database.exec("COMMIT");
-      return result;
-    } catch (error) {
-      database.exec("ROLLBACK");
-      throw error;
-    }
-  },
-  sql: {
-    exec: (query: string, ...bindings: (string | number | null)[]) => {
-      const statement = database.prepare(query);
-      const rows = /^\s*(?:SELECT|WITH|PRAGMA)/iu.test(query)
-        ? statement.all(...bindings)
-        : (statement.run(...bindings), []);
-
-      return {
-        one: () => {
-          if (rows.length !== 1) {
-            throw new Error(`Expected one row, received ${rows.length}`);
-          }
-          return rows[0];
-        },
-        toArray: () => rows,
-      };
-    },
-  },
+const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
+const initializationRuntime = MailboxDirectoryRuntime.of({
+  now: () => 1000,
+  randomId: () => "unused",
 });
 
 const lookup = (input: unknown) =>
   Schema.decodeUnknownSync(MailboxResourceLookup)(input);
-
-const initializationRuntime = {
-  now: () => 1000,
-  randomId: () => "unused",
-};
 
 const resultSuccess = <A, E>(result: Result.Result<A, E>) => {
   if (Result.isFailure(result)) {
@@ -86,27 +73,43 @@ const domainReason = (result: Result.Result<unknown, MailboxDomainError>) => {
   return result.failure.reason;
 };
 
-describe("MailboxDO SQLite repository", () => {
-  it("resolves canonical ancestry for every supported resource", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
-    const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
+const resetDatabase = Effect.gen(function* () {
+  const db = yield* MailboxDatabase;
+  yield* db.$client.unsafe("DROP TRIGGER IF EXISTS reject_mailbox_operation")
+    .raw;
+  yield* db.delete(messageLabel);
+  yield* db.delete(outboundDelivery);
+  yield* db.delete(attachment);
+  yield* db.delete(message);
+  yield* db.delete(draft);
+  yield* db.delete(filterRule);
+  yield* db.delete(label);
+  yield* db.delete(mailboxOperation);
+  yield* db.delete(folder);
+  yield* db.delete(mailboxMetadata);
+});
 
-    try {
-      database.exec("PRAGMA foreign_keys = ON");
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, initializationRuntime);
-      database.exec(`
-        INSERT INTO message (id, folder_id) VALUES ('message-1', 'inbox');
-        INSERT INTO attachment (id, message_id) VALUES ('attachment-1', 'message-1');
-        INSERT INTO draft (id) VALUES ('draft-1');
-        INSERT INTO filter_rule (id) VALUES ('rule-1');
-      `);
+const initialize = (runtime: MailboxDirectoryRuntimeType) =>
+  Effect.gen(function* () {
+    yield* resetDatabase;
+    yield* initializeMailboxRepository(mailboxId);
+    yield* initializeMailboxDirectory;
+  }).pipe(Effect.provideService(MailboxDirectoryRuntime, runtime));
+
+layer(MailboxDatabaseTest)("MailboxDO SQLite repository", (it) => {
+  it.effect("resolves canonical ancestry for every supported resource", () =>
+    Effect.gen(function* () {
+      const db = yield* MailboxDatabase;
+      yield* initialize(initializationRuntime);
+      yield* db.insert(message).values({ id: "message-1", folderId: "inbox" });
+      yield* db
+        .insert(attachment)
+        .values({ id: "attachment-1", messageId: "message-1" });
+      yield* db.insert(draft).values({ id: "draft-1" });
+      yield* db.insert(filterRule).values({ id: "rule-1" });
 
       expect(
-        resolveMailboxResource(
-          storage.sql,
+        yield* resolveMailboxResource(
           lookup({ _tag: "Folder", mailboxId, folderId: "inbox" })
         )
       ).toStrictEqual({
@@ -115,8 +118,7 @@ describe("MailboxDO SQLite repository", () => {
         folderId: "inbox",
       });
       expect(
-        resolveMailboxResource(
-          storage.sql,
+        yield* resolveMailboxResource(
           lookup({ _tag: "Message", mailboxId, messageId: "message-1" })
         )
       ).toStrictEqual({
@@ -126,8 +128,7 @@ describe("MailboxDO SQLite repository", () => {
         messageId: "message-1",
       });
       expect(
-        resolveMailboxResource(
-          storage.sql,
+        yield* resolveMailboxResource(
           lookup({
             _tag: "Attachment",
             mailboxId,
@@ -142,8 +143,7 @@ describe("MailboxDO SQLite repository", () => {
         attachmentId: "attachment-1",
       });
       expect(
-        resolveMailboxResource(
-          storage.sql,
+        yield* resolveMailboxResource(
           lookup({ _tag: "Draft", mailboxId, draftId: "draft-1" })
         )
       ).toStrictEqual({
@@ -152,8 +152,7 @@ describe("MailboxDO SQLite repository", () => {
         draftId: "draft-1",
       });
       expect(
-        resolveMailboxResource(
-          storage.sql,
+        yield* resolveMailboxResource(
           lookup({ _tag: "Rule", mailboxId, ruleId: "rule-1" })
         )
       ).toStrictEqual({
@@ -161,374 +160,341 @@ describe("MailboxDO SQLite repository", () => {
         mailboxId: "mailbox-a",
         ruleId: "rule-1",
       });
-    } finally {
-      database.close();
-    }
-  });
+    })
+  );
 
-  it("fails closed for missing and soft-deleted ancestry", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
-    const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
-
-    try {
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, initializationRuntime);
-      database.exec(`
-        INSERT INTO message (id, folder_id) VALUES ('message-1', 'inbox');
-        UPDATE folder SET deleted_at = 1 WHERE id = 'inbox';
-      `);
+  it.effect("fails closed for missing and soft-deleted ancestry", () =>
+    Effect.gen(function* () {
+      const db = yield* MailboxDatabase;
+      yield* initialize(initializationRuntime);
+      yield* db.insert(message).values({ id: "message-1", folderId: "inbox" });
+      yield* db
+        .update(folder)
+        .set({ deletedAt: 1 })
+        .where(eq(folder.id, "inbox"));
 
       expect(
-        resolveMailboxResource(
-          storage.sql,
+        yield* resolveMailboxResource(
           lookup({ _tag: "Message", mailboxId, messageId: "message-1" })
         )
       ).toStrictEqual({ _tag: "NotFound" });
       expect(
-        resolveMailboxResource(
-          storage.sql,
+        yield* resolveMailboxResource(
           lookup({ _tag: "Draft", mailboxId, draftId: "missing" })
         )
       ).toStrictEqual({ _tag: "NotFound" });
-    } finally {
-      database.close();
-    }
-  });
+    })
+  );
 
-  it("rejects identity mismatches and dangling ancestry", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
+  it.effect("rejects identity mismatches and dangling ancestry", () =>
+    Effect.gen(function* () {
+      const db = yield* MailboxDatabase;
+      yield* initialize(initializationRuntime);
 
-    try {
-      database.exec("PRAGMA foreign_keys = ON");
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(
-        storage,
-        Schema.decodeUnknownSync(MailboxId)("mailbox-a")
-      );
-      initializeMailboxDirectory(storage, initializationRuntime);
-
-      expect(() =>
+      const mismatch = yield* Effect.exit(
         initializeMailboxRepository(
-          storage,
           Schema.decodeUnknownSync(MailboxId)("mailbox-b")
         )
-      ).toThrow("identity does not match");
-      expect(() =>
-        database
-          .prepare(
-            "INSERT INTO message (id, folder_id) VALUES ('message-1', 'missing')"
-          )
-          .run()
-      ).toThrow("FOREIGN KEY constraint failed");
-    } finally {
-      database.close();
-    }
-  });
+      );
+      expect(Exit.isFailure(mismatch)).toBeTruthy();
+      if (Exit.isFailure(mismatch)) {
+        expect(Cause.pretty(mismatch.cause)).toContain(
+          "identity does not match"
+        );
+      }
 
-  it("seeds the stable system folders exactly once", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
-    const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
+      const dangling = yield* Effect.exit(
+        db.insert(message).values({ id: "message-1", folderId: "missing" })
+      );
+      expect(Exit.isFailure(dangling)).toBeTruthy();
+      if (Exit.isFailure(dangling)) {
+        expect(Cause.pretty(dangling.cause)).toContain(
+          "FOREIGN KEY constraint failed"
+        );
+      }
+    })
+  );
 
-    try {
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, {
+  it.effect("seeds the stable system folders exactly once", () =>
+    Effect.gen(function* () {
+      const db = yield* MailboxDatabase;
+      const firstRuntime = MailboxDirectoryRuntime.of({
         now: () => 100,
         randomId: () => "unused",
       });
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, {
-        now: () => 200,
-        randomId: () => "unused",
-      });
+      yield* initialize(firstRuntime);
+      yield* initializeMailboxRepository(mailboxId);
+      yield* initializeMailboxDirectory.pipe(
+        Effect.provideService(
+          MailboxDirectoryRuntime,
+          MailboxDirectoryRuntime.of({
+            now: () => 200,
+            randomId: () => "unused",
+          })
+        )
+      );
 
       expect(
-        database
-          .prepare(
-            "SELECT id, name, kind, created_at, updated_at FROM folder ORDER BY rowid"
-          )
-          .all()
-          .map((row) => ({ ...row }))
+        yield* db
+          .select({
+            id: folder.id,
+            name: folder.name,
+            kind: folder.kind,
+            createdAt: folder.createdAt,
+            updatedAt: folder.updatedAt,
+          })
+          .from(folder)
       ).toStrictEqual([
         {
           id: "inbox",
           name: "Inbox",
           kind: "inbox",
-          created_at: 100,
-          updated_at: 100,
+          createdAt: 100,
+          updatedAt: 100,
         },
         {
           id: "sent",
           name: "Sent",
           kind: "sent",
-          created_at: 100,
-          updated_at: 100,
+          createdAt: 100,
+          updatedAt: 100,
         },
         {
           id: "drafts",
           name: "Drafts",
           kind: "drafts",
-          created_at: 100,
-          updated_at: 100,
+          createdAt: 100,
+          updatedAt: 100,
         },
         {
           id: "scheduled",
           name: "Scheduled",
           kind: "scheduled",
-          created_at: 100,
-          updated_at: 100,
+          createdAt: 100,
+          updatedAt: 100,
         },
         {
           id: "archive",
           name: "Archive",
           kind: "archive",
-          created_at: 100,
-          updated_at: 100,
+          createdAt: 100,
+          updatedAt: 100,
         },
         {
           id: "spam",
           name: "Spam",
           kind: "spam",
-          created_at: 100,
-          updated_at: 100,
+          createdAt: 100,
+          updatedAt: 100,
         },
         {
           id: "trash",
           name: "Trash",
           kind: "trash",
-          created_at: 100,
-          updated_at: 100,
+          createdAt: 100,
+          updatedAt: 100,
         },
       ]);
-    } finally {
-      database.close();
-    }
-  });
+    })
+  );
 
-  it("lists, creates, renames, and soft-deletes folders with active message counts", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
-    const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
-    const runtime = { now: () => 1000, randomId: () => "folder-projects" };
-
-    try {
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, runtime);
-      const created = resultSuccess(
-        createFolder(
-          storage,
-          mailboxId,
-          Schema.decodeUnknownSync(CreateFolderInput)({
-            mailboxId,
-            operationId: "folder-op",
-            name: " Projects ",
-          }),
-          runtime
-        )
-      );
-      database.exec(`
-        INSERT INTO message (id, folder_id, read) VALUES
-          ('unread', 'folder-projects', 0),
-          ('read', 'folder-projects', 1),
-          ('deleted', 'folder-projects', 0);
-        UPDATE message SET deleted_at = 1001 WHERE id = 'deleted';
-      `);
-
-      expect(created).toMatchObject({
-        id: "folder-projects",
-        mailboxId: "mailbox-a",
-        name: "Projects",
-        kind: "custom",
-        version: 1,
+  it.effect(
+    "lists, creates, renames, and soft-deletes folders with active message counts",
+    () => {
+      const runtime = MailboxDirectoryRuntime.of({
+        now: () => 1000,
+        randomId: () => "folder-projects",
       });
-      expect(
-        listFolders(storage.sql, mailboxId).items.find(
-          (folder) => folder.id === "folder-projects"
-        )
-      ).toMatchObject({ messageCount: 2, unreadCount: 1 });
-
-      const renamed = resultSuccess(
-        renameFolder(
-          storage,
-          mailboxId,
-          Schema.decodeUnknownSync(RenameFolderInput)({
+      return Effect.gen(function* () {
+        const db = yield* MailboxDatabase;
+        yield* initialize(runtime);
+        const created = resultSuccess(
+          yield* createFolder(
             mailboxId,
+            Schema.decodeUnknownSync(CreateFolderInput)({
+              mailboxId,
+              operationId: "folder-op",
+              name: " Projects ",
+            })
+          )
+        );
+        yield* db.insert(message).values([
+          { id: "unread", folderId: "folder-projects", read: 0 },
+          { id: "read", folderId: "folder-projects", read: 1 },
+          {
+            id: "deleted",
             folderId: "folder-projects",
-            expectedVersion: 1,
-            name: "Work",
-          }),
-          { ...runtime, now: () => 2000 }
-        )
-      );
-      expect(renamed).toMatchObject({
-        name: "Work",
-        updatedAt: 2000,
-        version: 2,
-      });
-      expect([
-        domainReason(
-          renameFolder(
-            storage,
+            read: 0,
+            deletedAt: 1001,
+          },
+        ]);
+
+        expect(created).toMatchObject({
+          id: "folder-projects",
+          mailboxId: "mailbox-a",
+          name: "Projects",
+          kind: "custom",
+          version: 1,
+        });
+        expect(
+          (yield* listFolders(mailboxId)).items.find(
+            (item) => item.id === "folder-projects"
+          )
+        ).toMatchObject({ messageCount: 2, unreadCount: 1 });
+
+        const renamed = resultSuccess(
+          yield* renameFolder(
             mailboxId,
             Schema.decodeUnknownSync(RenameFolderInput)({
               mailboxId,
               folderId: "folder-projects",
               expectedVersion: 1,
-              name: "Stale",
-            }),
-            runtime
+              name: "Work",
+            })
+          ).pipe(
+            Effect.provideService(
+              MailboxDirectoryRuntime,
+              MailboxDirectoryRuntime.of({ ...runtime, now: () => 2000 })
+            )
           )
-        ),
-        domainReason(
-          deleteFolder(
-            storage,
+        );
+        expect(renamed).toMatchObject({
+          name: "Work",
+          updatedAt: 2000,
+          version: 2,
+        });
+        expect([
+          domainReason(
+            yield* renameFolder(
+              mailboxId,
+              Schema.decodeUnknownSync(RenameFolderInput)({
+                mailboxId,
+                folderId: "folder-projects",
+                expectedVersion: 1,
+                name: "Stale",
+              })
+            )
+          ),
+          domainReason(
+            yield* deleteFolder(
+              mailboxId,
+              Schema.decodeUnknownSync(DeleteFolderInput)({
+                mailboxId,
+                folderId: "folder-projects",
+                expectedVersion: 2,
+              })
+            )
+          ),
+        ]).toStrictEqual(["version-conflict", "folder-not-empty"]);
+
+        yield* db
+          .update(message)
+          .set({ deletedAt: 2001 })
+          .where(eq(message.folderId, "folder-projects"));
+        const deleted = resultSuccess(
+          yield* deleteFolder(
             mailboxId,
             Schema.decodeUnknownSync(DeleteFolderInput)({
               mailboxId,
               folderId: "folder-projects",
               expectedVersion: 2,
-            }),
-            runtime
+            })
+          ).pipe(
+            Effect.provideService(
+              MailboxDirectoryRuntime,
+              MailboxDirectoryRuntime.of({ ...runtime, now: () => 3000 })
+            )
           )
-        ),
-      ]).toStrictEqual(["version-conflict", "folder-not-empty"]);
-
-      database.exec(
-        "UPDATE message SET deleted_at = 2001 WHERE folder_id = 'folder-projects'"
-      );
-      const deleted = resultSuccess(
-        deleteFolder(
-          storage,
-          mailboxId,
-          Schema.decodeUnknownSync(DeleteFolderInput)({
-            mailboxId,
-            folderId: "folder-projects",
-            expectedVersion: 2,
-          }),
-          { ...runtime, now: () => 3000 }
-        )
-      );
-      expect({
-        deleted,
-        folderCount: listFolders(storage.sql, mailboxId).items.length,
-        missingReason: domainReason(
-          deleteFolder(
-            storage,
-            mailboxId,
-            Schema.decodeUnknownSync(DeleteFolderInput)({
+        );
+        expect({
+          deleted,
+          folderCount: (yield* listFolders(mailboxId)).items.length,
+          missingReason: domainReason(
+            yield* deleteFolder(
               mailboxId,
-              folderId: "folder-projects",
-              expectedVersion: 3,
-            }),
-            runtime
-          )
-        ),
-      }).toMatchObject({
-        deleted: {
-          id: "folder-projects",
-          deletedAt: 3000,
-          version: 3,
-        },
-        folderCount: 7,
-        missingReason: "not-found",
-      });
-    } finally {
-      database.close();
+              Schema.decodeUnknownSync(DeleteFolderInput)({
+                mailboxId,
+                folderId: "folder-projects",
+                expectedVersion: 3,
+              })
+            )
+          ),
+        }).toMatchObject({
+          deleted: { id: "folder-projects", deletedAt: 3000, version: 3 },
+          folderCount: 7,
+          missingReason: "not-found",
+        });
+      }).pipe(Effect.provideService(MailboxDirectoryRuntime, runtime));
     }
-  });
+  );
 
-  it("blocks deletion of system folders", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
-    const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
-
-    try {
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, initializationRuntime);
+  it.effect("blocks deletion of system folders", () =>
+    Effect.gen(function* () {
+      yield* initialize(initializationRuntime);
       expect(
         domainReason(
-          deleteFolder(
-            storage,
+          yield* deleteFolder(
             mailboxId,
             Schema.decodeUnknownSync(DeleteFolderInput)({
               mailboxId,
               folderId: "inbox",
               expectedVersion: 1,
-            }),
-            initializationRuntime
+            })
           )
         )
       ).toBe("system-folder");
-    } finally {
-      database.close();
-    }
-  });
+    }).pipe(
+      Effect.provideService(MailboxDirectoryRuntime, initializationRuntime)
+    )
+  );
 
-  it("lists, creates, renames, and soft-deletes labels with CAS", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
-    const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
-    const runtime = { now: () => 1000, randomId: () => "label-important" };
-
-    try {
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, runtime);
-      const created = resultSuccess(
-        createLabel(
-          storage,
-          mailboxId,
-          Schema.decodeUnknownSync(CreateLabelInput)({
-            mailboxId,
-            operationId: "label-op",
-            name: " Important ",
-          }),
-          runtime
-        )
-      );
+  it.effect("lists, creates, renames, and soft-deletes labels with CAS", () => {
+    const runtime = MailboxDirectoryRuntime.of({
+      now: () => 1000,
+      randomId: () => "label-important",
+    });
+    return Effect.gen(function* () {
+      yield* initialize(runtime);
+      const request = Schema.decodeUnknownSync(CreateLabelInput)({
+        mailboxId,
+        operationId: "label-op",
+        name: " Important ",
+      });
+      const created = resultSuccess(yield* createLabel(mailboxId, request));
       const replay = resultSuccess(
-        createLabel(
-          storage,
+        yield* createLabel(
           mailboxId,
           Schema.decodeUnknownSync(CreateLabelInput)({
             mailboxId,
             operationId: "label-op",
             name: "Important",
-          }),
-          runtime
+          })
         )
       );
       expect({
         created,
         replay,
-        listed: listLabels(storage.sql, mailboxId).items,
+        listed: (yield* listLabels(mailboxId)).items,
       }).toMatchObject({
-        created: {
-          id: "label-important",
-          name: "Important",
-          version: 1,
-        },
+        created: { id: "label-important", name: "Important", version: 1 },
         replay: created,
         listed: [created],
       });
 
       const renamed = resultSuccess(
-        renameLabel(
-          storage,
+        yield* renameLabel(
           mailboxId,
           Schema.decodeUnknownSync(RenameLabelInput)({
             mailboxId,
             labelId: "label-important",
             expectedVersion: 1,
             name: "Priority",
-          }),
-          { ...runtime, now: () => 500 }
+          })
+        ).pipe(
+          Effect.provideService(
+            MailboxDirectoryRuntime,
+            MailboxDirectoryRuntime.of({ ...runtime, now: () => 500 })
+          )
         )
       );
       expect(renamed).toMatchObject({
@@ -538,172 +504,159 @@ describe("MailboxDO SQLite repository", () => {
       });
       expect(
         domainReason(
-          deleteLabel(
-            storage,
+          yield* deleteLabel(
             mailboxId,
             Schema.decodeUnknownSync(DeleteLabelInput)({
               mailboxId,
               labelId: "label-important",
               expectedVersion: 1,
-            }),
-            runtime
+            })
           )
         )
       ).toBe("version-conflict");
       const deleted = resultSuccess(
-        deleteLabel(
-          storage,
+        yield* deleteLabel(
           mailboxId,
           Schema.decodeUnknownSync(DeleteLabelInput)({
             mailboxId,
             labelId: "label-important",
             expectedVersion: 2,
-          }),
-          { ...runtime, now: () => 500 }
+          })
+        ).pipe(
+          Effect.provideService(
+            MailboxDirectoryRuntime,
+            MailboxDirectoryRuntime.of({ ...runtime, now: () => 500 })
+          )
         )
       );
       expect({
         deleted,
-        remaining: listLabels(storage.sql, mailboxId).items,
+        remaining: (yield* listLabels(mailboxId)).items,
       }).toMatchObject({
         deleted: { deletedAt: 1000, version: 3 },
         remaining: [],
       });
-    } finally {
-      database.close();
-    }
+    }).pipe(Effect.provideService(MailboxDirectoryRuntime, runtime));
   });
 
-  it("replays creates and rejects operation ID reuse with another request or kind", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
-    const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
-    let generated = 0;
-    const runtime = {
-      now: () => 1000,
-      randomId: () => {
-        generated += 1;
-        return `generated-${generated}`;
-      },
-    };
-
-    try {
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, runtime);
-      const request = Schema.decodeUnknownSync(CreateFolderInput)({
-        mailboxId,
-        operationId: "shared-op",
-        name: " Projects ",
+  it.effect(
+    "replays creates and rejects operation ID reuse with another request or kind",
+    () => {
+      let generated = 0;
+      const runtime = MailboxDirectoryRuntime.of({
+        now: () => 1000,
+        randomId: () => {
+          generated += 1;
+          return `generated-${generated}`;
+        },
       });
-      const first = resultSuccess(
-        createFolder(storage, mailboxId, request, runtime)
-      );
-      resultSuccess(
-        renameFolder(
-          storage,
+      return Effect.gen(function* () {
+        yield* initialize(runtime);
+        const first = resultSuccess(
+          yield* createFolder(
+            mailboxId,
+            Schema.decodeUnknownSync(CreateFolderInput)({
+              mailboxId,
+              operationId: "shared-op",
+              name: " Projects ",
+            })
+          )
+        );
+        yield* renameFolder(
           mailboxId,
           Schema.decodeUnknownSync(RenameFolderInput)({
             mailboxId,
             folderId: first.id,
             expectedVersion: 1,
             name: "Renamed",
-          }),
-          runtime
-        )
-      );
-      const replay = resultSuccess(
-        createFolder(
-          storage,
-          mailboxId,
-          Schema.decodeUnknownSync(CreateFolderInput)({
-            mailboxId,
-            operationId: "shared-op",
-            name: "Projects",
-          }),
-          runtime
-        )
-      );
-
-      expect(replay).toStrictEqual(first);
-      expect(generated).toBe(1);
-      expect(
-        domainReason(
-          createFolder(
-            storage,
+          })
+        );
+        const replay = resultSuccess(
+          yield* createFolder(
             mailboxId,
             Schema.decodeUnknownSync(CreateFolderInput)({
               mailboxId,
               operationId: "shared-op",
-              name: "Different",
-            }),
-            runtime
-          )
-        )
-      ).toBe("idempotency-conflict");
-      expect(
-        domainReason(
-          createLabel(
-            storage,
-            mailboxId,
-            Schema.decodeUnknownSync(CreateLabelInput)({
-              mailboxId,
-              operationId: "shared-op",
               name: "Projects",
-            }),
-            runtime
+            })
           )
-        )
-      ).toBe("idempotency-conflict");
-    } finally {
-      database.close();
+        );
+
+        expect(replay).toStrictEqual(first);
+        expect(generated).toBe(1);
+        expect(
+          domainReason(
+            yield* createFolder(
+              mailboxId,
+              Schema.decodeUnknownSync(CreateFolderInput)({
+                mailboxId,
+                operationId: "shared-op",
+                name: "Different",
+              })
+            )
+          )
+        ).toBe("idempotency-conflict");
+        expect(
+          domainReason(
+            yield* createLabel(
+              mailboxId,
+              Schema.decodeUnknownSync(CreateLabelInput)({
+                mailboxId,
+                operationId: "shared-op",
+                name: "Projects",
+              })
+            )
+          )
+        ).toBe("idempotency-conflict");
+      }).pipe(Effect.provideService(MailboxDirectoryRuntime, runtime));
     }
-  });
+  );
 
-  it("rolls back resource creation when the idempotency record cannot be stored", () => {
-    const database = new DatabaseSync(":memory:");
-    const storage = makeStorage(database);
-    const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
-    const runtime = { now: () => 1000, randomId: () => "rolled-back" };
+  it.effect(
+    "rolls back resource creation when the idempotency record cannot be stored",
+    () => {
+      const runtime = MailboxDirectoryRuntime.of({
+        now: () => 1000,
+        randomId: () => "rolled-back",
+      });
+      return Effect.gen(function* () {
+        const db = yield* MailboxDatabase;
+        yield* initialize(runtime);
+        yield* db.$client.unsafe(`CREATE TRIGGER reject_mailbox_operation
+          BEFORE INSERT ON mailbox_operation
+          BEGIN
+            SELECT RAISE(ABORT, 'operation ledger unavailable');
+          END`).raw;
 
-    try {
-      applyMailboxMigrations(storage);
-      initializeMailboxRepository(storage, mailboxId);
-      initializeMailboxDirectory(storage, runtime);
-      database.exec(`CREATE TRIGGER reject_mailbox_operation
-        BEFORE INSERT ON mailbox_operation
-        BEGIN
-          SELECT RAISE(ABORT, 'operation ledger unavailable');
-        END`);
-
-      expect(() =>
-        createFolder(
-          storage,
-          mailboxId,
-          Schema.decodeUnknownSync(CreateFolderInput)({
+        const exit = yield* Effect.exit(
+          createFolder(
             mailboxId,
-            operationId: "failed-op",
-            name: "Must Roll Back",
-          }),
-          runtime
-        )
-      ).toThrow("operation ledger unavailable");
-      expect(
-        database
-          .prepare(
-            "SELECT COUNT(*) AS count FROM folder WHERE id = 'rolled-back'"
+            Schema.decodeUnknownSync(CreateFolderInput)({
+              mailboxId,
+              operationId: "failed-op",
+              name: "Must Roll Back",
+            })
           )
-          .get()
-      ).toMatchObject({ count: 0 });
-      expect(
-        database
-          .prepare(
-            "SELECT COUNT(*) AS count FROM mailbox_operation WHERE operation_id = 'failed-op'"
-          )
-          .get()
-      ).toMatchObject({ count: 0 });
-    } finally {
-      database.close();
+        );
+        expect(Exit.isFailure(exit)).toBeTruthy();
+        if (Exit.isFailure(exit)) {
+          expect(Cause.pretty(exit.cause)).toContain(
+            "operation ledger unavailable"
+          );
+        }
+        const [resourceCount] = yield* db
+          .select({ count: count() })
+          .from(folder)
+          .where(eq(folder.id, "rolled-back"));
+        const [operationCount] = yield* db
+          .select({ count: count() })
+          .from(mailboxOperation)
+          .where(eq(mailboxOperation.operationId, "failed-op"));
+        expect({ resourceCount, operationCount }).toStrictEqual({
+          resourceCount: { count: 0 },
+          operationCount: { count: 0 },
+        });
+      }).pipe(Effect.provideService(MailboxDirectoryRuntime, runtime));
     }
-  });
+  );
 });

@@ -32,6 +32,9 @@ const resolverWith = (
           Layer.succeed(
             MailboxRepository,
             MailboxRepository.of({
+              addMessageLabel: unusedDirectory,
+              cancelOutboundDelivery: unusedDirectory,
+              createDraft: unusedDirectory,
               createFolder: unusedDirectory,
               createLabel: unusedDirectory,
               deleteFolder: unusedDirectory,
@@ -41,10 +44,22 @@ const resolverWith = (
               findFolderLocation: unused,
               findMessageLocation,
               findRuleLocation: unused,
+              getDraft: unusedDirectory,
+              getMessage: unusedDirectory,
+              getOutboundDelivery: unusedDirectory,
+              getThread: unusedDirectory,
               listFolders: unusedDirectory,
               listLabels: unusedDirectory,
+              listMessages: unusedDirectory,
+              moveMessage: unusedDirectory,
+              removeMessageLabel: unusedDirectory,
               renameFolder: unusedDirectory,
               renameLabel: unusedDirectory,
+              resendOutbound: unusedDirectory,
+              scheduleOutbound: unusedDirectory,
+              setMessageRead: unusedDirectory,
+              setMessageStarred: unusedDirectory,
+              updateDraft: unusedDirectory,
             })
           )
         )

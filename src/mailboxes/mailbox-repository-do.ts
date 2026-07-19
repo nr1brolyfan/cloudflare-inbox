@@ -13,6 +13,8 @@ import type {
 } from "./directory-rpc";
 import { MailboxDomainError } from "./errors/mailbox-domain-error";
 import { MailboxRepositoryError } from "./errors/mailbox-repository-error";
+import type { MailDataRpcResponse as MailDataRpcResponseType } from "./mail-data-rpc";
+import { executeMailDataRpc } from "./mail-data-rpc-client";
 import {
   MailboxRepository,
   MailboxResourceLookup,
@@ -29,6 +31,9 @@ export interface MailboxRepositoryDoConfig {
   ) => Effect.Effect<boolean, unknown>;
   readonly namespace: {
     readonly getByName: (name: string) => {
+      readonly executeMailData: (
+        input: unknown
+      ) => Effect.Effect<unknown, unknown, RuntimeContext>;
       readonly executeDirectory: (
         input: unknown
       ) => Effect.Effect<unknown, unknown, RuntimeContext>;
@@ -241,6 +246,18 @@ export const MailboxRepositoryDoLive = Layer.effect(
       response: MailboxDomainErrorDto
     ): Effect.Effect<never, MailboxDomainError | MailboxRepositoryError> =>
       Effect.fail(reconstructDomainError(response));
+    const mailDataProtocolError = (
+      response: MailDataRpcResponseType,
+      mutation: boolean
+    ): Effect.Effect<never, MailboxDomainError | MailboxRepositoryError> =>
+      Effect.fail(
+        repositoryError(
+          "Mail data RPC returned the wrong response type",
+          response,
+          mutation ? "write" : "read",
+          mutation ? "unknown" : "not-committed"
+        )
+      );
     const lookup = (request: MailboxResourceLookupType) =>
       Schema.encodeEffect(MailboxResourceLookup)(request).pipe(
         Effect.mapError((cause) =>
@@ -298,6 +315,39 @@ export const MailboxRepositoryDoLive = Layer.effect(
       );
 
     return MailboxRepository.of({
+      addMessageLabel: (input) =>
+        executeMailDataRpc(config, { _tag: "AddMessageLabel", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "MessageMutated"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
+      cancelOutboundDelivery: (input) =>
+        executeMailDataRpc(config, {
+          _tag: "CancelOutboundDelivery",
+          input,
+        }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "OutboundCancelled"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
+      createDraft: (input) =>
+        executeMailDataRpc(config, { _tag: "CreateDraft", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "DraftCreated"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
       createFolder: (input) =>
         executeDirectory({ _tag: "CreateFolder", input }).pipe(
           Effect.flatMap((response) => {
@@ -397,6 +447,46 @@ export const MailboxRepositoryDoLive = Layer.effect(
               : wrongResource(result);
           })
         ),
+      getDraft: (input) =>
+        executeMailDataRpc(config, { _tag: "GetDraft", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "DraftFound"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
+      getMessage: (input) =>
+        executeMailDataRpc(config, { _tag: "GetMessage", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "MessageFound"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
+      getOutboundDelivery: (input) =>
+        executeMailDataRpc(config, { _tag: "GetOutboundDelivery", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "OutboundFound"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
+      getThread: (input) =>
+        executeMailDataRpc(config, { _tag: "GetThread", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "ThreadFound"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
       listFolders: (input) =>
         executeDirectory({ _tag: "ListFolders", input }).pipe(
           Effect.flatMap((response) => {
@@ -419,6 +509,36 @@ export const MailboxRepositoryDoLive = Layer.effect(
               : protocolError(response, false);
           })
         ),
+      listMessages: (input) =>
+        executeMailDataRpc(config, { _tag: "ListMessages", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "MessagesListed"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
+      moveMessage: (input) =>
+        executeMailDataRpc(config, { _tag: "MoveMessage", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "MessageMutated"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
+      removeMessageLabel: (input) =>
+        executeMailDataRpc(config, { _tag: "RemoveMessageLabel", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "MessageMutated"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
       renameFolder: (input) =>
         executeDirectory({ _tag: "RenameFolder", input }).pipe(
           Effect.flatMap((response) => {
@@ -440,6 +560,56 @@ export const MailboxRepositoryDoLive = Layer.effect(
               ? Effect.succeed(response.value)
               : protocolError(response, true);
           })
+        ),
+      resendOutbound: (input) =>
+        executeMailDataRpc(config, { _tag: "ResendOutbound", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "OutboundResent"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
+      scheduleOutbound: (input) =>
+        executeMailDataRpc(config, { _tag: "ScheduleOutbound", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "OutboundScheduled"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
+      setMessageRead: (input) =>
+        executeMailDataRpc(config, { _tag: "SetMessageRead", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "MessageMutated"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
+      setMessageStarred: (input) =>
+        executeMailDataRpc(config, { _tag: "SetMessageStarred", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "MessageMutated"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
+      updateDraft: (input) =>
+        executeMailDataRpc(config, { _tag: "UpdateDraft", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "DraftUpdated"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
         ),
     });
   })

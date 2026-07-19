@@ -2,20 +2,21 @@ import {
   AuthOriginCheckMiddlewareLive,
   AuthSchemaErrorMiddlewareLive,
 } from "@effect-auth/core/HttpApi";
-import { RuntimeContext } from "alchemy";
+import { and, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { D1DevEmailStoreLive, DevEmailDatabase } from "../auth/dev-email-store";
+import { D1DevEmailStoreLive } from "../auth/dev-email-store";
 import { AuthLive, AuthRuntimeConfig } from "../auth/live";
 import { CurrentRequestAuthMiddlewareLive } from "../auth/session";
-import {
-  MailPermissionDatabase,
-  MailPermissionsLive,
-} from "../authorization/live";
+import { EffectAuthStorageLive } from "../auth/storage-live";
+import { MailPermissionsLive } from "../authorization/live";
 import { MailAuthorizationLive } from "../authorization/mail-authorization";
 import { MailResourceResolverLive } from "../authorization/mail-resource-resolver-live";
+import { ControlPlaneDatabase } from "../control-plane/database";
+import { ControlPlaneLive } from "../control-plane/database-live";
+import { appMailbox } from "../control-plane/schema";
 import {
   MailboxAdministrationConfig,
   MailboxAdministrationLive,
@@ -37,14 +38,10 @@ const BackendRoutesLive = Layer.unwrap(
   Effect.gen(function* () {
     const resources = yield* BackendResources;
     const backendConfig = yield* BackendConfig;
-    const devEmailDatabaseLive = Layer.succeed(
-      DevEmailDatabase,
-      resources.controlPlane
-    );
+    const controlPlane = yield* ControlPlaneDatabase;
     const authRuntimeConfigLive = Layer.succeed(
       AuthRuntimeConfig,
       AuthRuntimeConfig.of({
-        database: resources.database,
         emailFrom: backendConfig.emailFrom,
         emailSender: resources.emailSender,
         isDevelopment: backendConfig.isDevelopment,
@@ -60,16 +57,17 @@ const BackendRoutesLive = Layer.unwrap(
         allowedOrigins: [backendConfig.publicOrigin],
       })
     );
+    const authStorageLive = EffectAuthStorageLive;
     const authLive = AuthLive.pipe(
       Layer.provide(requestValidationLive),
       Layer.provide(authRuntimeConfigLive),
-      Layer.provide(devEmailDatabaseLive)
+      Layer.provide(authStorageLive)
     );
     const currentRequestAuthLive = CurrentRequestAuthMiddlewareLive.pipe(
       Layer.provide(authLive)
     );
     const permissionsLive = MailPermissionsLive.pipe(
-      Layer.provide(Layer.succeed(MailPermissionDatabase, resources.database))
+      Layer.provide(authStorageLive)
     );
     const mailboxRepositoryLive = MailboxRepositoryDoLive.pipe(
       Layer.provide(
@@ -77,16 +75,17 @@ const BackendRoutesLive = Layer.unwrap(
           MailboxRepositoryDoConfig,
           MailboxRepositoryDoConfig.of({
             mailboxExists: (mailboxId) =>
-              resources.controlPlane
-                .prepare(
-                  "SELECT 1 AS present FROM app_mailbox WHERE id = ? AND status = 'active'"
+              controlPlane
+                .select({ id: appMailbox.id })
+                .from(appMailbox)
+                .where(
+                  and(
+                    eq(appMailbox.id, mailboxId),
+                    eq(appMailbox.status, "active")
+                  )
                 )
-                .bind(mailboxId)
-                .first<{ readonly present: number }>()
-                .pipe(
-                  Effect.map((row) => row?.present === 1),
-                  Effect.provide(RuntimeContext.phantom)
-                ),
+                .limit(1)
+                .pipe(Effect.map((rows) => rows.length === 1)),
             namespace: resources.mailboxDataPlane,
           })
         )
@@ -104,7 +103,6 @@ const BackendRoutesLive = Layer.unwrap(
           Layer.succeed(
             MailboxAdministrationConfig,
             MailboxAdministrationConfig.of({
-              database: resources.database,
               ownerEmail: backendConfig.mailboxOwnerEmail,
             })
           )
@@ -122,7 +120,6 @@ const BackendRoutesLive = Layer.unwrap(
     );
     const devEmailGroupLive = DevEmailGroupLive.pipe(
       Layer.provide(D1DevEmailStoreLive),
-      Layer.provide(devEmailDatabaseLive),
       Layer.provide(
         Layer.succeed(BackendConfig, BackendConfig.of(backendConfig))
       )
@@ -143,5 +140,6 @@ const BackendRoutesLive = Layer.unwrap(
 
 /** Complete private Backend HTTP router, including platform response support. */
 export const BackendHttpLive = BackendRoutesLive.pipe(
+  Layer.provide(ControlPlaneLive),
   Layer.provide(HttpApiPlatformLive)
 );

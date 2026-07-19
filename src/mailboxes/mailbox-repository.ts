@@ -17,6 +17,12 @@ import type {
   RenameFolderInput,
   RenameLabelInput,
 } from "./directory-contract";
+import type {
+  CreateDraftInput,
+  DraftResult,
+  GetDraftInput,
+  UpdateDraftInput,
+} from "./draft-contract";
 import type { MailboxDomainError } from "./errors/mailbox-domain-error";
 import type { MailboxRepositoryError } from "./errors/mailbox-repository-error";
 import type { Folder } from "./folder";
@@ -29,6 +35,29 @@ import {
   RuleId,
 } from "./identifiers";
 import type { Label } from "./label";
+import type {
+  AddMessageLabelInput,
+  GetMessageInput,
+  GetMessageResult,
+  GetThreadInput,
+  GetThreadResult,
+  ListMessagesInput,
+  MessageMutationResult,
+  MessagePage,
+  MoveMessageInput,
+  RemoveMessageLabelInput,
+  SetMessageReadInput,
+  SetMessageStarredInput,
+} from "./message-contract";
+import type {
+  CancelOutboundDeliveryInput,
+  GetOutboundDeliveryInput,
+  OutboundDeliveryResult,
+  ResendOutboundInput,
+  ResendOutboundResult,
+  ScheduleOutboundInput,
+  ScheduleOutboundResult,
+} from "./outbound-contract";
 
 export const FolderLocation = Schema.Struct({
   _tag: Schema.Literal("Folder"),
@@ -112,12 +141,27 @@ export type MailboxResourceLookupResult = Schema.Schema.Type<
 >;
 
 export interface MailboxRepository {
+  readonly addMessageLabel: (
+    input: AddMessageLabelInput
+  ) => Effect.Effect<
+    MessageMutationResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly cancelOutboundDelivery: (
+    input: CancelOutboundDeliveryInput
+  ) => Effect.Effect<
+    OutboundDeliveryResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
   readonly createFolder: (
     input: CreateFolderInput
   ) => Effect.Effect<Folder, MailboxDomainError | MailboxRepositoryError>;
   readonly createLabel: (
     input: CreateLabelInput
   ) => Effect.Effect<Label, MailboxDomainError | MailboxRepositoryError>;
+  readonly createDraft: (
+    input: CreateDraftInput
+  ) => Effect.Effect<DraftResult, MailboxDomainError | MailboxRepositoryError>;
   readonly deleteFolder: (
     input: DeleteFolderInput
   ) => Effect.Effect<
@@ -153,18 +197,81 @@ export interface MailboxRepository {
     readonly mailboxId: MailboxId;
     readonly ruleId: RuleId;
   }) => Effect.Effect<Option.Option<RuleLocation>, MailboxRepositoryError>;
+  readonly getDraft: (
+    input: GetDraftInput
+  ) => Effect.Effect<DraftResult, MailboxDomainError | MailboxRepositoryError>;
+  readonly getMessage: (
+    input: GetMessageInput
+  ) => Effect.Effect<
+    GetMessageResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly getOutboundDelivery: (
+    input: GetOutboundDeliveryInput
+  ) => Effect.Effect<
+    OutboundDeliveryResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly getThread: (
+    input: GetThreadInput
+  ) => Effect.Effect<
+    GetThreadResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
   readonly listFolders: (
     input: ListFoldersInput
   ) => Effect.Effect<FolderList, MailboxDomainError | MailboxRepositoryError>;
   readonly listLabels: (
     input: ListLabelsInput
   ) => Effect.Effect<LabelList, MailboxDomainError | MailboxRepositoryError>;
+  readonly listMessages: (
+    input: ListMessagesInput
+  ) => Effect.Effect<MessagePage, MailboxDomainError | MailboxRepositoryError>;
+  readonly moveMessage: (
+    input: MoveMessageInput
+  ) => Effect.Effect<
+    MessageMutationResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly removeMessageLabel: (
+    input: RemoveMessageLabelInput
+  ) => Effect.Effect<
+    MessageMutationResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
   readonly renameFolder: (
     input: RenameFolderInput
   ) => Effect.Effect<Folder, MailboxDomainError | MailboxRepositoryError>;
   readonly renameLabel: (
     input: RenameLabelInput
   ) => Effect.Effect<Label, MailboxDomainError | MailboxRepositoryError>;
+  readonly resendOutbound: (
+    input: ResendOutboundInput
+  ) => Effect.Effect<
+    ResendOutboundResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly scheduleOutbound: (
+    input: ScheduleOutboundInput
+  ) => Effect.Effect<
+    ScheduleOutboundResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly setMessageRead: (
+    input: SetMessageReadInput
+  ) => Effect.Effect<
+    MessageMutationResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly setMessageStarred: (
+    input: SetMessageStarredInput
+  ) => Effect.Effect<
+    MessageMutationResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly updateDraft: (
+    input: UpdateDraftInput
+  ) => Effect.Effect<DraftResult, MailboxDomainError | MailboxRepositoryError>;
 }
 
 /** Trusted mailbox resource ancestry independent of its storage transport. */

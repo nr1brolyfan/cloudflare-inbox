@@ -1,7 +1,4 @@
-import type {
-  D1EffectQbDatabaseLike,
-  D1EffectQbResult,
-} from "@effect-auth/core/EffectQbSqliteStorage";
+import type { D1EffectQbResult } from "@effect-auth/core/EffectQbSqliteStorage";
 import * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -18,8 +15,12 @@ import {
 } from "../authorization/catalog";
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import { MailAuthorization } from "../authorization/mail-authorization";
-import { ControlPlaneBatchError } from "./control-plane-batch-error";
-import type { ControlPlaneCommitState } from "./control-plane-batch-error";
+import { ControlPlaneBatch } from "../control-plane/batch";
+import type { ControlPlaneStatement } from "../control-plane/batch";
+import type {
+  ControlPlaneBatchError,
+  ControlPlaneCommitState,
+} from "./control-plane-batch-error";
 import { MailboxRecordSchema } from "./model";
 import type { MailboxRecord } from "./model";
 
@@ -69,13 +70,7 @@ export const MailboxAdministration = Context.Service<MailboxAdministration>(
   "cloudflare-inbox/MailboxAdministration"
 );
 
-interface Statement {
-  readonly params?: readonly unknown[];
-  readonly sql: string;
-}
-
 export interface MailboxAdministrationConfigShape {
-  readonly database: D1EffectQbDatabaseLike;
   readonly now?: () => number;
   readonly ownerEmail: string;
   readonly randomId?: () => string;
@@ -175,76 +170,6 @@ const permissionPredicate = `(
        )
   )
 )`;
-
-const executeBatch = (
-  database: D1EffectQbDatabaseLike,
-  statements: readonly Statement[]
-) =>
-  Effect.tryPromise({
-    try: async () => {
-      let prepared;
-
-      try {
-        prepared = statements.map(({ params = [], sql }, statement) => {
-          try {
-            return database.prepare(sql).bind(...params);
-          } catch (error) {
-            throw new ControlPlaneBatchError({
-              cause: error,
-              commitState: "not-committed",
-              statement,
-            });
-          }
-        });
-      } catch (error) {
-        throw error instanceof ControlPlaneBatchError
-          ? error
-          : new ControlPlaneBatchError({
-              cause: error,
-              commitState: "not-committed",
-            });
-      }
-
-      let results: readonly D1EffectQbResult[];
-
-      try {
-        results = await database.batch(prepared);
-      } catch (error) {
-        throw new ControlPlaneBatchError({
-          cause: error,
-          commitState: "unknown",
-        });
-      }
-
-      const failed = results.findIndex(
-        (result) => result.success === false || result.error !== undefined
-      );
-      if (failed !== -1) {
-        throw new ControlPlaneBatchError({
-          cause: results[failed]?.error ?? "D1 batch statement failed",
-          commitState: "not-committed",
-          statement: failed,
-        });
-      }
-      if (results.length !== statements.length) {
-        throw new ControlPlaneBatchError({
-          cause: new Error(
-            `D1 batch returned ${results.length} results for ${statements.length} statements`
-          ),
-          commitState: "unknown",
-        });
-      }
-
-      return results;
-    },
-    catch: (error) =>
-      error instanceof ControlPlaneBatchError
-        ? error
-        : new ControlPlaneBatchError({
-            cause: error,
-            commitState: "unknown",
-          }),
-  });
 
 const sessionParams = (
   requestAuth: CurrentRequestAuthShape,
@@ -364,7 +289,8 @@ export const MailboxAdministrationLive = Layer.effect(
   MailboxAdministration,
   Effect.gen(function* () {
     const options = yield* MailboxAdministrationConfig;
-    const { database, ownerEmail: configuredOwnerEmail } = options;
+    const batch = yield* ControlPlaneBatch;
+    const { ownerEmail: configuredOwnerEmail } = options;
     const now = options.now ?? Date.now;
     const randomId = options.randomId ?? (() => crypto.randomUUID());
     const ownerEmail = yield* Effect.sync(() => {
@@ -396,7 +322,7 @@ export const MailboxAdministrationLive = Layer.effect(
           const mailboxId = "primary";
           const nonce = randomId();
           const trustedSessionParams = sessionParams(requestAuth, timestamp);
-          const statements: readonly Statement[] = [
+          const statements: readonly ControlPlaneStatement[] = [
             {
               sql: `insert into app_authorization_guard (nonce)
                     select ?
@@ -490,9 +416,11 @@ export const MailboxAdministrationLive = Layer.effect(
               params: [nonce],
             },
           ];
-          const results = yield* executeBatch(database, statements).pipe(
-            Effect.mapError((error) => storageError("bootstrap-owner", error))
-          );
+          const results = yield* batch
+            .execute(statements)
+            .pipe(
+              Effect.mapError((error) => storageError("bootstrap-owner", error))
+            );
           const [status] = resultRows<{
             readonly authorized: number;
             readonly catalog_valid: number;
@@ -567,7 +495,7 @@ export const MailboxAdministrationLive = Layer.effect(
             scope,
             timestamp
           );
-          const statements: readonly Statement[] = [
+          const statements: readonly ControlPlaneStatement[] = [
             {
               sql: `insert into app_authorization_guard (nonce)
                     select ?
@@ -608,9 +536,9 @@ export const MailboxAdministrationLive = Layer.effect(
               params: [nonce],
             },
           ];
-          const results = yield* executeBatch(database, statements).pipe(
-            Effect.mapError((error) => storageError("rename", error))
-          );
+          const results = yield* batch
+            .execute(statements)
+            .pipe(Effect.mapError((error) => storageError("rename", error)));
           const [status] = resultRows<{
             readonly authorized: number;
             readonly permission_valid: number;

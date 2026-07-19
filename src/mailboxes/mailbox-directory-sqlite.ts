@@ -1,3 +1,5 @@
+import { and, count, eq, isNull, sql } from "drizzle-orm";
+import * as Effect from "effect/Effect";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
@@ -14,13 +16,12 @@ import type {
 import { FolderList, LabelList } from "./directory-contract";
 import { MailboxDomainError } from "./errors/mailbox-domain-error";
 import { FolderSchema } from "./folder";
-import type { Folder } from "./folder";
 import { FolderSummarySchema } from "./folder-summary";
 import type { MailboxId } from "./identifiers";
 import { LabelSchema } from "./label";
-import type { Label } from "./label";
-import type { MailboxDirectoryRuntime } from "./mailbox-directory-runtime";
-import type { MailboxSql, MailboxSqlStorage } from "./mailbox-sqlite";
+import { MailboxDatabase } from "./mailbox-database";
+import { MailboxDirectoryRuntime } from "./mailbox-directory-runtime";
+import { folder, label, mailboxOperation, message } from "./mailbox-schema";
 
 const systemFolders = [
   { id: "inbox", kind: "inbox", name: "Inbox" },
@@ -30,526 +31,546 @@ const systemFolders = [
   { id: "archive", kind: "archive", name: "Archive" },
   { id: "spam", kind: "spam", name: "Spam" },
   { id: "trash", kind: "trash", name: "Trash" },
-];
+] as const;
 
-const oneOrNotFound = <A>(rows: readonly A[]) =>
-  rows.length === 0 ? undefined : rows[0];
+export const initializeMailboxDirectory = Effect.gen(function* () {
+  const db = yield* MailboxDatabase;
+  const runtime = yield* MailboxDirectoryRuntime;
 
-export const initializeMailboxDirectory = (
-  storage: MailboxSqlStorage,
-  runtime: MailboxDirectoryRuntime
-) =>
-  storage.transactionSync(() => {
-    const now = runtime.now();
-    for (const folder of systemFolders) {
-      storage.sql.exec(
-        `INSERT INTO folder
-          (id, name, kind, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO NOTHING`,
-        folder.id,
-        folder.name,
-        folder.kind,
-        now,
-        now
-      );
-      storage.sql.exec(
-        `UPDATE folder
-            SET name = ?, kind = ?, created_at = ?, updated_at = ?, deleted_at = NULL
-          WHERE id = ?
-            AND name = 'Migrated folder'
-            AND kind = 'custom'
-            AND created_at = 0
-            AND updated_at = 0`,
-        folder.name,
-        folder.kind,
-        now,
-        now,
-        folder.id
-      );
-    }
-  });
+  yield* db.transaction((tx) =>
+    Effect.gen(function* () {
+      const now = runtime.now();
+      for (const systemFolder of systemFolders) {
+        yield* tx
+          .insert(folder)
+          .values({
+            id: systemFolder.id,
+            name: systemFolder.name,
+            kind: systemFolder.kind,
+            createdAt: now,
+            updatedAt: now,
+          })
+          .onConflictDoNothing({ target: folder.id });
+        yield* tx
+          .update(folder)
+          .set({
+            name: systemFolder.name,
+            kind: systemFolder.kind,
+            createdAt: now,
+            updatedAt: now,
+            deletedAt: null,
+          })
+          .where(
+            and(
+              eq(folder.id, systemFolder.id),
+              eq(folder.name, "Migrated folder"),
+              eq(folder.kind, "custom"),
+              eq(folder.createdAt, 0),
+              eq(folder.updatedAt, 0)
+            )
+          );
+      }
+    })
+  );
+});
 
 const mailboxDomainError = (
   operation: MailboxDomainError["operation"],
   reason: MailboxDomainError["reason"],
-  message: string,
+  messageText: string,
   details: Pick<
     MailboxDomainError,
     "resourceType" | "resourceId" | "expectedVersion" | "actualVersion"
   > = {}
-) => new MailboxDomainError({ operation, reason, message, ...details });
-
-const folderFromRow = (
-  row: Readonly<Record<string, unknown>>,
-  mailboxId: MailboxId
 ) =>
+  new MailboxDomainError({
+    operation,
+    reason,
+    message: messageText,
+    ...details,
+  });
+
+const folderFromRow = (row: typeof folder.$inferSelect, mailboxId: MailboxId) =>
   Schema.decodeUnknownSync(FolderSchema)({
     id: row.id,
     mailboxId,
     name: row.name,
     kind: row.kind,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
     version: row.version,
   });
 
-const labelFromRow = (
-  row: Readonly<Record<string, unknown>>,
-  mailboxId: MailboxId
-) =>
+const labelFromRow = (row: typeof label.$inferSelect, mailboxId: MailboxId) =>
   Schema.decodeUnknownSync(LabelSchema)({
     id: row.id,
     mailboxId,
     name: row.name,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
     version: row.version,
   });
 
 const operationResult = <A>(
-  storage: MailboxSqlStorage,
   operationId: string,
   operationKind: "create-folder" | "create-label",
   requestKey: string,
   schema: Schema.Decoder<A>
-): Result.Result<A, MailboxDomainError> | undefined => {
-  const row = oneOrNotFound(
-    storage.sql
-      .exec(
-        `SELECT operation_kind, request_key, result_payload
-           FROM mailbox_operation
-          WHERE operation_id = ?`,
-        operationId
-      )
-      .toArray()
-  );
-  if (row === undefined) {
-    return;
-  }
-  if (row.operation_kind !== operationKind || row.request_key !== requestKey) {
-    return Result.fail(
-      mailboxDomainError(
-        operationKind,
-        "idempotency-conflict",
-        "Operation ID was already used for a different request",
-        { resourceId: operationId }
-      )
-    );
-  }
-  if (typeof row.result_payload !== "string") {
-    throw new TypeError("Stored mailbox operation result is invalid");
-  }
-  return Result.succeed(
-    Schema.decodeUnknownSync(schema)(JSON.parse(row.result_payload))
-  );
-};
-
-export const listFolders = (sql: MailboxSql, mailboxId: MailboxId) => {
-  const items = sql
-    .exec(
-      `SELECT folder.id,
-              folder.name,
-              folder.kind,
-              folder.created_at,
-              folder.updated_at,
-              folder.version,
-              COUNT(message.id) AS message_count,
-              COALESCE(SUM(CASE WHEN message.read = 0 THEN 1 ELSE 0 END), 0) AS unread_count
-         FROM folder
-         LEFT JOIN message
-           ON message.folder_id = folder.id
-          AND message.deleted_at IS NULL
-        WHERE folder.deleted_at IS NULL
-        GROUP BY folder.id
-        ORDER BY CASE folder.kind
-          WHEN 'inbox' THEN 0
-          WHEN 'sent' THEN 1
-          WHEN 'drafts' THEN 2
-          WHEN 'scheduled' THEN 3
-          WHEN 'archive' THEN 4
-          WHEN 'spam' THEN 5
-          WHEN 'trash' THEN 6
-          ELSE 7
-        END, folder.name COLLATE NOCASE, folder.id`
-    )
-    .toArray()
-    .map((row) =>
-      Schema.decodeUnknownSync(FolderSummarySchema)({
-        ...folderFromRow(row, mailboxId),
-        messageCount: row.message_count,
-        unreadCount: row.unread_count,
+) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const [row] = yield* db
+      .select({
+        operationKind: mailboxOperation.operationKind,
+        requestKey: mailboxOperation.requestKey,
+        resultPayload: mailboxOperation.resultPayload,
       })
-    );
-  return Schema.decodeUnknownSync(FolderList)({ items });
-};
+      .from(mailboxOperation)
+      .where(eq(mailboxOperation.operationId, operationId));
 
-export const createFolder = (
-  storage: MailboxSqlStorage,
-  mailboxId: MailboxId,
-  input: CreateFolderInput,
-  runtime: MailboxDirectoryRuntime
-): Result.Result<Folder, MailboxDomainError> =>
-  storage.transactionSync(() => {
-    const requestKey = JSON.stringify({ name: input.name });
-    const previous = operationResult(
-      storage,
-      input.operationId,
-      "create-folder",
-      requestKey,
-      FolderSchema
-    );
-    if (previous !== undefined) {
-      return previous;
+    if (row === undefined) {
+      return;
     }
-
-    const now = runtime.now();
-    const id = runtime.randomId();
-    storage.sql.exec(
-      `INSERT INTO folder (id, name, kind, created_at, updated_at)
-       VALUES (?, ?, 'custom', ?, ?)`,
-      id,
-      input.name,
-      now,
-      now
+    if (row.operationKind !== operationKind || row.requestKey !== requestKey) {
+      return Result.fail(
+        mailboxDomainError(
+          operationKind,
+          "idempotency-conflict",
+          "Operation ID was already used for a different request",
+          { resourceId: operationId }
+        )
+      );
+    }
+    return Result.succeed(
+      Schema.decodeUnknownSync(schema)(JSON.parse(row.resultPayload))
     );
-    const result = folderFromRow(
-      storage.sql.exec("SELECT * FROM folder WHERE id = ?", id).toArray()[0] ??
-        {},
-      mailboxId
-    );
-    storage.sql.exec(
-      `INSERT INTO mailbox_operation
-        (operation_id, operation_kind, request_key, resource_id, result_payload, created_at)
-       VALUES (?, 'create-folder', ?, ?, ?, ?)`,
-      input.operationId,
-      requestKey,
-      id,
-      JSON.stringify(Schema.encodeSync(FolderSchema)(result)),
-      now
-    );
-    return Result.succeed(result);
   });
 
-export const renameFolder = (
-  storage: MailboxSqlStorage,
-  mailboxId: MailboxId,
-  input: RenameFolderInput,
-  runtime: MailboxDirectoryRuntime
-): Result.Result<Folder, MailboxDomainError> =>
-  storage.transactionSync(() => {
-    const row = oneOrNotFound(
-      storage.sql
-        .exec(
-          "SELECT * FROM folder WHERE id = ? AND deleted_at IS NULL",
-          input.folderId
-        )
-        .toArray()
-    );
-    if (row === undefined) {
-      return Result.fail(
-        mailboxDomainError(
-          "rename-folder",
-          "not-found",
-          "Folder was not found",
-          { resourceType: "folder", resourceId: input.folderId }
-        )
-      );
-    }
-    const current = folderFromRow(row, mailboxId);
-    if (current.version !== input.expectedVersion) {
-      return Result.fail(
-        mailboxDomainError(
-          "rename-folder",
-          "version-conflict",
-          "Folder version does not match",
-          {
-            resourceType: "folder",
-            resourceId: input.folderId,
-            expectedVersion: input.expectedVersion,
-            actualVersion: current.version,
-          }
-        )
-      );
-    }
-    const updatedAt = Math.max(runtime.now(), current.updatedAt);
-    storage.sql.exec(
-      `UPDATE folder
-          SET name = ?, updated_at = ?, version = version + 1
-        WHERE id = ? AND version = ? AND deleted_at IS NULL`,
-      input.name,
-      updatedAt,
-      input.folderId,
-      input.expectedVersion
-    );
-    return Result.succeed(
-      folderFromRow(
-        storage.sql
-          .exec("SELECT * FROM folder WHERE id = ?", input.folderId)
-          .toArray()[0] ?? {},
-        mailboxId
+export const listFolders = (mailboxId: MailboxId) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const rows = yield* db
+      .select({
+        id: folder.id,
+        name: folder.name,
+        kind: folder.kind,
+        createdAt: folder.createdAt,
+        updatedAt: folder.updatedAt,
+        version: folder.version,
+        deletedAt: folder.deletedAt,
+        messageCount: count(message.id),
+        unreadCount: sql<number>`coalesce(sum(case when ${message.read} = 0 then 1 else 0 end), 0)`,
+      })
+      .from(folder)
+      .leftJoin(
+        message,
+        and(eq(message.folderId, folder.id), isNull(message.deletedAt))
       )
-    );
+      .where(isNull(folder.deletedAt))
+      .groupBy(folder.id)
+      .orderBy(
+        sql`case ${folder.kind}
+          when 'inbox' then 0
+          when 'sent' then 1
+          when 'drafts' then 2
+          when 'scheduled' then 3
+          when 'archive' then 4
+          when 'spam' then 5
+          when 'trash' then 6
+          else 7
+        end`,
+        sql`${folder.name} collate nocase`,
+        folder.id
+      );
+
+    return Schema.decodeUnknownSync(FolderList)({
+      items: rows.map((row) =>
+        Schema.decodeUnknownSync(FolderSummarySchema)({
+          ...folderFromRow(row, mailboxId),
+          messageCount: row.messageCount,
+          unreadCount: row.unreadCount,
+        })
+      ),
+    });
   });
 
-export const deleteFolder = (
-  storage: MailboxSqlStorage,
-  mailboxId: MailboxId,
-  input: DeleteFolderInput,
-  runtime: MailboxDirectoryRuntime
-): Result.Result<DeletedFolder, MailboxDomainError> =>
-  storage.transactionSync(() => {
-    const row = oneOrNotFound(
-      storage.sql
-        .exec(
-          "SELECT * FROM folder WHERE id = ? AND deleted_at IS NULL",
-          input.folderId
-        )
-        .toArray()
-    );
-    if (row === undefined) {
-      return Result.fail(
-        mailboxDomainError(
-          "delete-folder",
-          "not-found",
-          "Folder was not found",
-          { resourceType: "folder", resourceId: input.folderId }
-        )
-      );
-    }
-    const current = folderFromRow(row, mailboxId);
-    if (current.version !== input.expectedVersion) {
-      return Result.fail(
-        mailboxDomainError(
-          "delete-folder",
-          "version-conflict",
-          "Folder version does not match",
-          {
-            resourceType: "folder",
-            resourceId: input.folderId,
-            expectedVersion: input.expectedVersion,
-            actualVersion: current.version,
-          }
-        )
-      );
-    }
-    if (current.kind !== "custom") {
-      return Result.fail(
-        mailboxDomainError(
-          "delete-folder",
-          "system-folder",
-          "System folders cannot be deleted",
-          { resourceType: "folder", resourceId: input.folderId }
-        )
-      );
-    }
-    const activeMessage = oneOrNotFound(
-      storage.sql
-        .exec(
-          "SELECT 1 AS present FROM message WHERE folder_id = ? AND deleted_at IS NULL LIMIT 1",
-          input.folderId
-        )
-        .toArray()
-    );
-    if (activeMessage !== undefined) {
-      return Result.fail(
-        mailboxDomainError(
-          "delete-folder",
-          "folder-not-empty",
-          "Folder contains active messages",
-          { resourceType: "folder", resourceId: input.folderId }
-        )
-      );
-    }
-    const deletedAt = Math.max(runtime.now(), current.updatedAt);
-    storage.sql.exec(
-      `UPDATE folder
-          SET deleted_at = ?, updated_at = ?, version = version + 1
-        WHERE id = ? AND version = ? AND deleted_at IS NULL`,
-      deletedAt,
-      deletedAt,
-      input.folderId,
-      input.expectedVersion
-    );
-    return Result.succeed(
-      Schema.decodeUnknownSync(DeletedFolder)({
-        id: input.folderId,
-        deletedAt,
-        version: input.expectedVersion + 1,
+export const createFolder = (mailboxId: MailboxId, input: CreateFolderInput) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const runtime = yield* MailboxDirectoryRuntime;
+
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const requestKey = JSON.stringify({ name: input.name });
+        const previous = yield* operationResult(
+          input.operationId,
+          "create-folder",
+          requestKey,
+          FolderSchema
+        );
+        if (previous !== undefined) {
+          return previous;
+        }
+
+        const now = runtime.now();
+        const id = runtime.randomId();
+        const [row] = yield* tx
+          .insert(folder)
+          .values({
+            id,
+            name: input.name,
+            kind: "custom",
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+        if (row === undefined) {
+          return yield* Effect.die(
+            new Error("Created folder was not returned")
+          );
+        }
+        const result = folderFromRow(row, mailboxId);
+        yield* tx.insert(mailboxOperation).values({
+          operationId: input.operationId,
+          operationKind: "create-folder",
+          requestKey,
+          resourceId: id,
+          resultPayload: JSON.stringify(
+            Schema.encodeSync(FolderSchema)(result)
+          ),
+          createdAt: now,
+        });
+        return Result.succeed(result);
       })
     );
   });
 
-export const listLabels = (sql: MailboxSql, mailboxId: MailboxId) =>
-  Schema.decodeUnknownSync(LabelList)({
-    items: sql
-      .exec(
-        `SELECT * FROM label
-          WHERE deleted_at IS NULL
-          ORDER BY name COLLATE NOCASE, id`
-      )
-      .toArray()
-      .map((row) => labelFromRow(row, mailboxId)),
-  });
+export const renameFolder = (mailboxId: MailboxId, input: RenameFolderInput) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const runtime = yield* MailboxDirectoryRuntime;
 
-export const createLabel = (
-  storage: MailboxSqlStorage,
-  mailboxId: MailboxId,
-  input: CreateLabelInput,
-  runtime: MailboxDirectoryRuntime
-): Result.Result<Label, MailboxDomainError> =>
-  storage.transactionSync(() => {
-    const requestKey = JSON.stringify({ name: input.name });
-    const previous = operationResult(
-      storage,
-      input.operationId,
-      "create-label",
-      requestKey,
-      LabelSchema
-    );
-    if (previous !== undefined) {
-      return previous;
-    }
-    const now = runtime.now();
-    const id = runtime.randomId();
-    storage.sql.exec(
-      `INSERT INTO label (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
-      id,
-      input.name,
-      now,
-      now
-    );
-    const result = labelFromRow(
-      storage.sql.exec("SELECT * FROM label WHERE id = ?", id).toArray()[0] ??
-        {},
-      mailboxId
-    );
-    storage.sql.exec(
-      `INSERT INTO mailbox_operation
-        (operation_id, operation_kind, request_key, resource_id, result_payload, created_at)
-       VALUES (?, 'create-label', ?, ?, ?, ?)`,
-      input.operationId,
-      requestKey,
-      id,
-      JSON.stringify(Schema.encodeSync(LabelSchema)(result)),
-      now
-    );
-    return Result.succeed(result);
-  });
-
-export const renameLabel = (
-  storage: MailboxSqlStorage,
-  mailboxId: MailboxId,
-  input: RenameLabelInput,
-  runtime: MailboxDirectoryRuntime
-): Result.Result<Label, MailboxDomainError> =>
-  storage.transactionSync(() => {
-    const row = oneOrNotFound(
-      storage.sql
-        .exec(
-          "SELECT * FROM label WHERE id = ? AND deleted_at IS NULL",
-          input.labelId
-        )
-        .toArray()
-    );
-    if (row === undefined) {
-      return Result.fail(
-        mailboxDomainError("rename-label", "not-found", "Label was not found", {
-          resourceType: "label",
-          resourceId: input.labelId,
-        })
-      );
-    }
-    const current = labelFromRow(row, mailboxId);
-    if (current.version !== input.expectedVersion) {
-      return Result.fail(
-        mailboxDomainError(
-          "rename-label",
-          "version-conflict",
-          "Label version does not match",
-          {
-            resourceType: "label",
-            resourceId: input.labelId,
-            expectedVersion: input.expectedVersion,
-            actualVersion: current.version,
-          }
-        )
-      );
-    }
-    const updatedAt = Math.max(runtime.now(), current.updatedAt);
-    storage.sql.exec(
-      `UPDATE label
-          SET name = ?, updated_at = ?, version = version + 1
-        WHERE id = ? AND version = ? AND deleted_at IS NULL`,
-      input.name,
-      updatedAt,
-      input.labelId,
-      input.expectedVersion
-    );
-    return Result.succeed(
-      labelFromRow(
-        storage.sql
-          .exec("SELECT * FROM label WHERE id = ?", input.labelId)
-          .toArray()[0] ?? {},
-        mailboxId
-      )
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const [row] = yield* tx
+          .select()
+          .from(folder)
+          .where(and(eq(folder.id, input.folderId), isNull(folder.deletedAt)));
+        if (row === undefined) {
+          return Result.fail(
+            mailboxDomainError(
+              "rename-folder",
+              "not-found",
+              "Folder was not found",
+              { resourceType: "folder", resourceId: input.folderId }
+            )
+          );
+        }
+        const current = folderFromRow(row, mailboxId);
+        if (current.version !== input.expectedVersion) {
+          return Result.fail(
+            mailboxDomainError(
+              "rename-folder",
+              "version-conflict",
+              "Folder version does not match",
+              {
+                resourceType: "folder",
+                resourceId: input.folderId,
+                expectedVersion: input.expectedVersion,
+                actualVersion: current.version,
+              }
+            )
+          );
+        }
+        const updatedAt = Math.max(runtime.now(), current.updatedAt);
+        const [updated] = yield* tx
+          .update(folder)
+          .set({
+            name: input.name,
+            updatedAt,
+            version: sql`${folder.version} + 1`,
+          })
+          .where(
+            and(
+              eq(folder.id, input.folderId),
+              eq(folder.version, input.expectedVersion),
+              isNull(folder.deletedAt)
+            )
+          )
+          .returning();
+        if (updated === undefined) {
+          return yield* Effect.die(
+            new Error("Renamed folder was not returned")
+          );
+        }
+        return Result.succeed(folderFromRow(updated, mailboxId));
+      })
     );
   });
 
-export const deleteLabel = (
-  storage: MailboxSqlStorage,
-  mailboxId: MailboxId,
-  input: DeleteLabelInput,
-  runtime: MailboxDirectoryRuntime
-): Result.Result<DeletedLabel, MailboxDomainError> =>
-  storage.transactionSync(() => {
-    const row = oneOrNotFound(
-      storage.sql
-        .exec(
-          "SELECT * FROM label WHERE id = ? AND deleted_at IS NULL",
-          input.labelId
-        )
-        .toArray()
+export const deleteFolder = (mailboxId: MailboxId, input: DeleteFolderInput) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const runtime = yield* MailboxDirectoryRuntime;
+
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const [row] = yield* tx
+          .select()
+          .from(folder)
+          .where(and(eq(folder.id, input.folderId), isNull(folder.deletedAt)));
+        if (row === undefined) {
+          return Result.fail(
+            mailboxDomainError(
+              "delete-folder",
+              "not-found",
+              "Folder was not found",
+              { resourceType: "folder", resourceId: input.folderId }
+            )
+          );
+        }
+        const current = folderFromRow(row, mailboxId);
+        if (current.version !== input.expectedVersion) {
+          return Result.fail(
+            mailboxDomainError(
+              "delete-folder",
+              "version-conflict",
+              "Folder version does not match",
+              {
+                resourceType: "folder",
+                resourceId: input.folderId,
+                expectedVersion: input.expectedVersion,
+                actualVersion: current.version,
+              }
+            )
+          );
+        }
+        if (current.kind !== "custom") {
+          return Result.fail(
+            mailboxDomainError(
+              "delete-folder",
+              "system-folder",
+              "System folders cannot be deleted",
+              { resourceType: "folder", resourceId: input.folderId }
+            )
+          );
+        }
+        const [activeMessage] = yield* tx
+          .select({ id: message.id })
+          .from(message)
+          .where(
+            and(eq(message.folderId, input.folderId), isNull(message.deletedAt))
+          )
+          .limit(1);
+        if (activeMessage !== undefined) {
+          return Result.fail(
+            mailboxDomainError(
+              "delete-folder",
+              "folder-not-empty",
+              "Folder contains active messages",
+              { resourceType: "folder", resourceId: input.folderId }
+            )
+          );
+        }
+        const deletedAt = Math.max(runtime.now(), current.updatedAt);
+        yield* tx
+          .update(folder)
+          .set({
+            deletedAt,
+            updatedAt: deletedAt,
+            version: sql`${folder.version} + 1`,
+          })
+          .where(
+            and(
+              eq(folder.id, input.folderId),
+              eq(folder.version, input.expectedVersion),
+              isNull(folder.deletedAt)
+            )
+          );
+        return Result.succeed(
+          Schema.decodeUnknownSync(DeletedFolder)({
+            id: input.folderId,
+            deletedAt,
+            version: input.expectedVersion + 1,
+          })
+        );
+      })
     );
-    if (row === undefined) {
-      return Result.fail(
-        mailboxDomainError("delete-label", "not-found", "Label was not found", {
-          resourceType: "label",
-          resourceId: input.labelId,
-        })
-      );
-    }
-    const current = labelFromRow(row, mailboxId);
-    if (current.version !== input.expectedVersion) {
-      return Result.fail(
-        mailboxDomainError(
-          "delete-label",
-          "version-conflict",
-          "Label version does not match",
-          {
-            resourceType: "label",
-            resourceId: input.labelId,
-            expectedVersion: input.expectedVersion,
-            actualVersion: current.version,
-          }
-        )
-      );
-    }
-    const deletedAt = Math.max(runtime.now(), current.updatedAt);
-    storage.sql.exec(
-      `UPDATE label
-          SET deleted_at = ?, updated_at = ?, version = version + 1
-        WHERE id = ? AND version = ? AND deleted_at IS NULL`,
-      deletedAt,
-      deletedAt,
-      input.labelId,
-      input.expectedVersion
+  });
+
+export const listLabels = (mailboxId: MailboxId) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const rows = yield* db
+      .select()
+      .from(label)
+      .where(isNull(label.deletedAt))
+      .orderBy(sql`${label.name} collate nocase`, label.id);
+    return Schema.decodeUnknownSync(LabelList)({
+      items: rows.map((row) => labelFromRow(row, mailboxId)),
+    });
+  });
+
+export const createLabel = (mailboxId: MailboxId, input: CreateLabelInput) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const runtime = yield* MailboxDirectoryRuntime;
+
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const requestKey = JSON.stringify({ name: input.name });
+        const previous = yield* operationResult(
+          input.operationId,
+          "create-label",
+          requestKey,
+          LabelSchema
+        );
+        if (previous !== undefined) {
+          return previous;
+        }
+        const now = runtime.now();
+        const id = runtime.randomId();
+        const [row] = yield* tx
+          .insert(label)
+          .values({ id, name: input.name, createdAt: now, updatedAt: now })
+          .returning();
+        if (row === undefined) {
+          return yield* Effect.die(new Error("Created label was not returned"));
+        }
+        const result = labelFromRow(row, mailboxId);
+        yield* tx.insert(mailboxOperation).values({
+          operationId: input.operationId,
+          operationKind: "create-label",
+          requestKey,
+          resourceId: id,
+          resultPayload: JSON.stringify(Schema.encodeSync(LabelSchema)(result)),
+          createdAt: now,
+        });
+        return Result.succeed(result);
+      })
     );
-    return Result.succeed(
-      Schema.decodeUnknownSync(DeletedLabel)({
-        id: input.labelId,
-        deletedAt,
-        version: input.expectedVersion + 1,
+  });
+
+export const renameLabel = (mailboxId: MailboxId, input: RenameLabelInput) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const runtime = yield* MailboxDirectoryRuntime;
+
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const [row] = yield* tx
+          .select()
+          .from(label)
+          .where(and(eq(label.id, input.labelId), isNull(label.deletedAt)));
+        if (row === undefined) {
+          return Result.fail(
+            mailboxDomainError(
+              "rename-label",
+              "not-found",
+              "Label was not found",
+              { resourceType: "label", resourceId: input.labelId }
+            )
+          );
+        }
+        const current = labelFromRow(row, mailboxId);
+        if (current.version !== input.expectedVersion) {
+          return Result.fail(
+            mailboxDomainError(
+              "rename-label",
+              "version-conflict",
+              "Label version does not match",
+              {
+                resourceType: "label",
+                resourceId: input.labelId,
+                expectedVersion: input.expectedVersion,
+                actualVersion: current.version,
+              }
+            )
+          );
+        }
+        const updatedAt = Math.max(runtime.now(), current.updatedAt);
+        const [updated] = yield* tx
+          .update(label)
+          .set({
+            name: input.name,
+            updatedAt,
+            version: sql`${label.version} + 1`,
+          })
+          .where(
+            and(
+              eq(label.id, input.labelId),
+              eq(label.version, input.expectedVersion),
+              isNull(label.deletedAt)
+            )
+          )
+          .returning();
+        if (updated === undefined) {
+          return yield* Effect.die(new Error("Renamed label was not returned"));
+        }
+        return Result.succeed(labelFromRow(updated, mailboxId));
+      })
+    );
+  });
+
+export const deleteLabel = (mailboxId: MailboxId, input: DeleteLabelInput) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const runtime = yield* MailboxDirectoryRuntime;
+
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const [row] = yield* tx
+          .select()
+          .from(label)
+          .where(and(eq(label.id, input.labelId), isNull(label.deletedAt)));
+        if (row === undefined) {
+          return Result.fail(
+            mailboxDomainError(
+              "delete-label",
+              "not-found",
+              "Label was not found",
+              { resourceType: "label", resourceId: input.labelId }
+            )
+          );
+        }
+        const current = labelFromRow(row, mailboxId);
+        if (current.version !== input.expectedVersion) {
+          return Result.fail(
+            mailboxDomainError(
+              "delete-label",
+              "version-conflict",
+              "Label version does not match",
+              {
+                resourceType: "label",
+                resourceId: input.labelId,
+                expectedVersion: input.expectedVersion,
+                actualVersion: current.version,
+              }
+            )
+          );
+        }
+        const deletedAt = Math.max(runtime.now(), current.updatedAt);
+        yield* tx
+          .update(label)
+          .set({
+            deletedAt,
+            updatedAt: deletedAt,
+            version: sql`${label.version} + 1`,
+          })
+          .where(
+            and(
+              eq(label.id, input.labelId),
+              eq(label.version, input.expectedVersion),
+              isNull(label.deletedAt)
+            )
+          );
+        return Result.succeed(
+          Schema.decodeUnknownSync(DeletedLabel)({
+            id: input.labelId,
+            deletedAt,
+            version: input.expectedVersion + 1,
+          })
+        );
       })
     );
   });

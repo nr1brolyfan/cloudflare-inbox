@@ -4,60 +4,13 @@ import type {
   DevEmailMessage,
   DevEmailStoreOperation,
 } from "@effect-auth/core/DevEmail";
-import { RuntimeContext } from "alchemy";
-import type * as Cloudflare from "alchemy/Cloudflare";
-import * as Context from "effect/Context";
+import { and, desc, eq, notInArray } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-export type D1DevEmailDatabase = Effect.Success<
-  ReturnType<typeof Cloudflare.D1.QueryDatabase>
->;
-
-/** D1 client used only by the development mail adapter. */
-export const DevEmailDatabase = Context.Service<D1DevEmailDatabase>(
-  "cloudflare-inbox/DevEmailDatabase"
-);
-
-interface DevEmailRow {
-  readonly message_json: string;
-}
-
-const upsertMessage = `
-  insert into app_dev_email_message (
-    id,
-    kind,
-    recipient,
-    message_json,
-    created_at,
-    expires_at
-  ) values (?, ?, ?, ?, ?, ?)
-  on conflict (id) do update set
-    kind = excluded.kind,
-    recipient = excluded.recipient,
-    message_json = excluded.message_json,
-    created_at = excluded.created_at,
-    expires_at = excluded.expires_at
-`;
-
-const trimMessages = `
-  delete from app_dev_email_message
-  where id not in (
-    select id
-    from app_dev_email_message
-    order by created_at desc
-    limit 100
-  )
-`;
-
-const listMessages = `
-  select message_json
-  from app_dev_email_message
-  order by created_at desc
-  limit 100
-`;
-
-const clearMessages = "delete from app_dev_email_message";
+import { ControlPlaneBatch } from "../control-plane/batch";
+import { ControlPlaneDatabase } from "../control-plane/database";
+import { appDevEmailMessage } from "../control-plane/schema";
 
 const storeError = (
   operation: DevEmailStoreOperation,
@@ -69,28 +22,26 @@ const storeError = (
     cause,
   });
 
-const storeOperation = <A>(
+const storeOperation = <A, E>(
   operation: DevEmailStoreOperation,
-  effect: Effect.Effect<A, never, RuntimeContext>
+  effect: Effect.Effect<A, E>
 ): Effect.Effect<A, DevEmailStoreError> =>
-  effect.pipe(
-    Effect.provide(RuntimeContext.phantom),
-    Effect.catchCause((cause) => Effect.fail(storeError(operation, cause)))
-  );
+  effect.pipe(Effect.mapError((cause) => storeError(operation, cause)));
 
 const decodeMessage = (
-  row: DevEmailRow
+  messageJson: string
 ): Effect.Effect<DevEmailMessage, DevEmailStoreError> =>
   Effect.try({
-    try: () => JSON.parse(row.message_json) as DevEmailMessage,
+    try: () => JSON.parse(messageJson) as DevEmailMessage,
     catch: (cause) => storeError("list", cause),
   });
 
-/** Adapts the app D1 table to effect-auth's environment-free DevEmailStore. */
+/** App-owned development mailbox backed by the shared Effect Drizzle client. */
 export const D1DevEmailStoreLive = Layer.effect(
   DevEmailStore,
   Effect.gen(function* () {
-    const database = yield* DevEmailDatabase;
+    const database = yield* ControlPlaneDatabase;
+    const batch = yield* ControlPlaneBatch;
 
     return DevEmailStore.of({
       save: (message) =>
@@ -99,43 +50,70 @@ export const D1DevEmailStoreLive = Layer.effect(
             try: () => JSON.stringify(message),
             catch: (cause) => storeError("save", cause),
           });
+          const upsert = database
+            .insert(appDevEmailMessage)
+            .values({
+              id: message.id,
+              kind: message.kind,
+              recipient: message.recipient,
+              messageJson,
+              createdAt: Number(message.createdAt),
+              expiresAt: Number(message.expiresAt),
+            })
+            .onConflictDoUpdate({
+              target: appDevEmailMessage.id,
+              set: {
+                kind: message.kind,
+                recipient: message.recipient,
+                messageJson,
+                createdAt: Number(message.createdAt),
+                expiresAt: Number(message.expiresAt),
+              },
+            });
+          const retainedMessages = database
+            .select({ id: appDevEmailMessage.id })
+            .from(appDevEmailMessage)
+            .orderBy(desc(appDevEmailMessage.createdAt))
+            .limit(100);
+          const trim = database
+            .delete(appDevEmailMessage)
+            .where(notInArray(appDevEmailMessage.id, retainedMessages));
+
           yield* storeOperation(
             "save",
-            database.batch([
-              database
-                .prepare(upsertMessage)
-                .bind(
-                  message.id,
-                  message.kind,
-                  message.recipient,
-                  messageJson,
-                  Number(message.createdAt),
-                  Number(message.expiresAt)
-                ),
-              database.prepare(trimMessages),
-            ])
+            batch.execute([upsert.toSQL(), trim.toSQL()])
           );
         }),
-      list: (options: DevEmailListOptions = {}) =>
-        Effect.gen(function* () {
-          const result = yield* storeOperation(
-            "list",
-            database.prepare(listMessages).all<DevEmailRow>()
-          );
-          const messages = yield* Effect.all(result.results.map(decodeMessage));
-          const limit = Math.max(0, Math.floor(options.limit ?? 50));
-
-          return messages
-            .filter(
-              (message) =>
-                (options.recipient === undefined ||
-                  message.recipient === options.recipient) &&
-                (options.kind === undefined || message.kind === options.kind)
+      list: (options: DevEmailListOptions = {}) => {
+        const limit = Math.min(
+          100,
+          Math.max(0, Math.floor(options.limit ?? 50))
+        );
+        const query = database
+          .select({ messageJson: appDevEmailMessage.messageJson })
+          .from(appDevEmailMessage)
+          .where(
+            and(
+              options.recipient === undefined
+                ? undefined
+                : eq(appDevEmailMessage.recipient, options.recipient),
+              options.kind === undefined
+                ? undefined
+                : eq(appDevEmailMessage.kind, options.kind)
             )
-            .slice(0, limit);
-        }),
+          )
+          .orderBy(desc(appDevEmailMessage.createdAt))
+          .limit(limit);
+
+        return Effect.gen(function* () {
+          const rows = yield* storeOperation("list", query);
+          return yield* Effect.all(
+            rows.map(({ messageJson }) => decodeMessage(messageJson))
+          );
+        });
+      },
       clear: () =>
-        storeOperation("clear", database.prepare(clearMessages).run()).pipe(
+        storeOperation("clear", database.delete(appDevEmailMessage)).pipe(
           Effect.asVoid
         ),
     });

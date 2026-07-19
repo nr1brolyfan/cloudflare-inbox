@@ -29,6 +29,17 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "list-labels",
     "rename-label",
     "delete-label",
+    "list-messages",
+    "get-message",
+    "get-thread",
+    "mutate-message",
+    "create-draft",
+    "get-draft",
+    "update-draft",
+    "schedule-outbound",
+    "get-outbound",
+    "cancel-outbound",
+    "resend-outbound",
   ]),
   reason: Schema.Literals([
     "validation",
@@ -41,7 +52,15 @@ export const MailboxDomainErrorDto = Schema.Struct({
   ]),
   message: Schema.String,
   resourceType: Schema.optional(
-    Schema.Literals(["mailbox", "folder", "label"])
+    Schema.Literals([
+      "mailbox",
+      "folder",
+      "label",
+      "message",
+      "thread",
+      "draft",
+      "outbound",
+    ])
   ),
   resourceId: Schema.optional(Schema.String),
   expectedVersion: Schema.optional(Version),

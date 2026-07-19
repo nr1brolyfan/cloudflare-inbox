@@ -1,6 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 
 import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
+import { D1EffectQbSqliteAuthStorageLive } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   SessionId,
   SessionToken,
@@ -20,13 +21,12 @@ import {
   MailRole,
   mailboxScope,
 } from "../authorization/catalog";
-import {
-  MailPermissionDatabase,
-  MailPermissionsLive,
-} from "../authorization/live";
+import { MailPermissionsLive } from "../authorization/live";
 import type { MailAuthorization } from "../authorization/mail-authorization";
 import { MailAuthorizationLive } from "../authorization/mail-authorization";
 import * as Resources from "../authorization/resources";
+import { ControlPlaneBatchLive } from "../control-plane/batch-live";
+import { ControlPlaneD1Binding } from "../control-plane/database";
 import { applyControlPlaneMigrations, makeTestD1Database } from "../test/d1";
 import {
   MailboxAdministration,
@@ -203,11 +203,20 @@ const bootstrap = (
             Layer.succeed(
               MailboxAdministrationConfig,
               MailboxAdministrationConfig.of({
-                database,
                 now: () => now,
                 ownerEmail: "user-a@example.test",
                 randomId: () => nonce,
               })
+            )
+          ),
+          Layer.provide(
+            ControlPlaneBatchLive.pipe(
+              Layer.provide(
+                Layer.succeed(
+                  ControlPlaneD1Binding,
+                  ControlPlaneD1Binding.of({ database })
+                )
+              )
             )
           )
         )
@@ -234,11 +243,20 @@ const rename = (
             Layer.succeed(
               MailboxAdministrationConfig,
               MailboxAdministrationConfig.of({
-                database,
                 now: () => now + 1000,
                 ownerEmail: "user-a@example.test",
                 randomId: () => "rename-guard",
               })
+            )
+          ),
+          Layer.provide(
+            ControlPlaneBatchLive.pipe(
+              Layer.provide(
+                Layer.succeed(
+                  ControlPlaneD1Binding,
+                  ControlPlaneD1Binding.of({ database })
+                )
+              )
             )
           )
         )
@@ -281,7 +299,7 @@ describe("mailbox administration", () => {
         }).pipe(
           Effect.provide(
             MailPermissionsLive.pipe(
-              Layer.provide(Layer.succeed(MailPermissionDatabase, d1))
+              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
             )
           )
         )
@@ -496,7 +514,7 @@ describe("mailbox administration", () => {
         Layer.provide(
           Layer.merge(
             MailPermissionsLive.pipe(
-              Layer.provide(Layer.succeed(MailPermissionDatabase, d1))
+              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
             ),
             makeResolverLive()
           )

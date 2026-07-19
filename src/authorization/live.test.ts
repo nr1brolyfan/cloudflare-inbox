@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
+import { D1EffectQbSqliteAuthStorageLive } from "@effect-auth/core/EffectQbSqliteStorage";
 import { UnixMillis } from "@effect-auth/core/Identifiers";
 import {
   PermissionAdministration,
@@ -19,7 +20,7 @@ import {
   mailPermissionDefinitions,
   mailRolePermissions,
 } from "./catalog";
-import { MailPermissionDatabase, MailPermissionsLive } from "./live";
+import { MailPermissionsLive } from "./live";
 
 describe("D1 mail authorization", () => {
   it("applies mailbox registry constraints and seeds the typed catalog", async () => {
@@ -201,10 +202,7 @@ describe("D1 mail authorization", () => {
         Effect.provide(
           MailPermissionsLive.pipe(
             Layer.provide(
-              Layer.succeed(
-                MailPermissionDatabase,
-                makeTestD1Database(database)
-              )
+              D1EffectQbSqliteAuthStorageLive(makeTestD1Database(database))
             )
           )
         )

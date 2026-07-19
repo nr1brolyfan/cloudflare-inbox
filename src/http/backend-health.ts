@@ -4,12 +4,14 @@ import {
   PermissionSubject,
 } from "@effect-auth/core/Permission";
 import { RuntimeContext } from "alchemy";
+import { sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
 import { MailPermission, mailboxScope } from "../authorization/catalog";
+import { ControlPlaneDatabase } from "../control-plane/database";
 import { BackendResources } from "./backend-context";
 import * as Health from "./health";
 
@@ -18,6 +20,7 @@ export const BackendHealthLive = Layer.effect(
   Health.BackendHealth,
   Effect.gen(function* () {
     const resources = yield* BackendResources;
+    const controlPlane = yield* ControlPlaneDatabase;
     const administration = yield* PermissionAdministration;
     const permissions = yield* Permissions;
     const probeAuthorization = Effect.gen(function* () {
@@ -46,10 +49,9 @@ export const BackendHealthLive = Layer.effect(
         tokens: 0,
       })
       .pipe(Effect.provide(RuntimeContext.phantom));
-    const probeControlPlane = resources.controlPlane
-      .prepare("select 1 as ready")
-      .first()
-      .pipe(Effect.provide(RuntimeContext.phantom));
+    const probeControlPlane = controlPlane.get<{ readonly ready: number }>(
+      sql`select 1 as ready`
+    );
     const healthMailbox = resources.mailboxDataPlane.getByName("__health__");
     const probeMailboxDataPlane = Effect.all({
       ready: healthMailbox.sqliteReady(),

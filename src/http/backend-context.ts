@@ -16,7 +16,7 @@ type RawMessagesClient = Effect.Success<
 export interface BackendResources {
   readonly authRateLimit: AlchemyRateLimitDurableObjectNamespace;
   readonly controlPlane: ControlPlaneClient;
-  readonly database: AuthRuntimeConfigShape["database"];
+  readonly database: D1Database;
   readonly emailSender: AuthRuntimeConfigShape["emailSender"];
   readonly mailboxDataPlane: MailboxDONamespace;
   readonly rawMessages: RawMessagesClient;

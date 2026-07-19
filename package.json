@@ -12,6 +12,9 @@
     "destroy": "alchemy destroy",
     "generate:auth-migrations": "bun scripts/write-auth-migrations.ts",
     "check:auth-migrations": "bun scripts/write-auth-migrations.ts --check",
+    "generate:auth-schema": "bun scripts/write-auth-schema.ts",
+    "check:auth-schema": "bun scripts/write-auth-schema.ts --check",
+    "check:no-raw-sql": "bun scripts/check-no-raw-sql.ts",
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
@@ -20,12 +23,14 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "check": "bun run check:auth-migrations && bun run format:check && bun run lint"
+    "check": "bun run check:auth-migrations && bun run check:auth-schema && bun run check:no-raw-sql && bun run format:check && bun run lint"
   },
   "dependencies": {
     "@effect-auth/core": "0.1.0-alpha.19",
     "@effect/platform-bun": "4.0.0-beta.98",
     "@effect/platform-node": "4.0.0-beta.98",
+    "@effect/sql-d1": "4.0.0-beta.98",
+    "@effect/sql-sqlite-do": "4.0.0-beta.98",
     "@tailwindcss/vite": "^4.1.18",
     "@tanstack/react-devtools": "latest",
     "@tanstack/react-query": "latest",
@@ -38,6 +43,7 @@
     "alchemy": "2.0.0-beta.62",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "drizzle-orm": "1.0.0-rc.4",
     "effect": "4.0.0-beta.98",
     "effect-qb": "4.0.0-beta.98",
     "lucide-react": "^0.577.0",
@@ -49,6 +55,7 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20260717.1",
+    "@effect/sql-sqlite-node": "4.0.0-beta.98",
     "@effect/vitest": "4.0.0-beta.98",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/typography": "^0.5.16",

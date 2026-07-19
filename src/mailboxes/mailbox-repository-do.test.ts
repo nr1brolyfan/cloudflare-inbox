@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { CreateFolderInput } from "./directory-contract";
+import { CreateDraftInput } from "./draft-contract";
 import { MailboxDomainError } from "./errors/mailbox-domain-error";
 import { MailboxRepositoryError } from "./errors/mailbox-repository-error";
 import { FolderId, MailboxId } from "./identifiers";
@@ -33,6 +34,7 @@ const findFolder = (
             getByName: (name) => {
               addressedNames.push(name);
               return {
+                executeMailData: unusedRpc,
                 executeDirectory: unusedRpc,
                 resolveMailResource,
               };
@@ -69,6 +71,7 @@ const createFolderThroughRpc = (
             getByName: (name) => {
               addressedNames.push(name);
               return {
+                executeMailData: unusedRpc,
                 executeDirectory: (input) => {
                   requests.push(input);
                   return response(input);
@@ -88,6 +91,55 @@ const createFolderThroughRpc = (
         mailboxId: "mailbox-a",
         operationId: "create-projects",
         name: " Projects ",
+      })
+    );
+  }).pipe(Effect.provide(live));
+
+  return { addressedNames, effect, requests };
+};
+
+const createDraftThroughRpc = (
+  response: (input: unknown) => Effect.Effect<unknown>,
+  mailboxExists = true
+) => {
+  const requests: unknown[] = [];
+  const addressedNames: string[] = [];
+  const live = MailboxRepositoryDoLive.pipe(
+    Layer.provide(
+      Layer.succeed(
+        MailboxRepositoryDoConfig,
+        MailboxRepositoryDoConfig.of({
+          mailboxExists: () => Effect.succeed(mailboxExists),
+          namespace: {
+            getByName: (name) => {
+              addressedNames.push(name);
+              return {
+                executeDirectory: unusedRpc,
+                executeMailData: (input) => {
+                  requests.push(input);
+                  return response(input);
+                },
+                resolveMailResource: unusedRpc,
+              };
+            },
+          },
+        })
+      )
+    )
+  );
+  const effect = Effect.gen(function* () {
+    const repository = yield* MailboxRepository;
+    return yield* repository.createDraft(
+      Schema.decodeUnknownSync(CreateDraftInput)({
+        mailboxId: "mailbox-a",
+        operationId: "draft-op",
+        content: {
+          to: [{ address: "to@example.com" }],
+          cc: [],
+          bcc: [],
+          subject: "Draft",
+          attachmentIds: [],
+        },
       })
     );
   }).pipe(Effect.provide(live));
@@ -223,6 +275,76 @@ describe("MailboxDO repository RPC adapter", () => {
       operation: "create-folder",
       reason: "not-found",
       resourceType: "mailbox",
+    });
+    expect(fixture.addressedNames).toStrictEqual([]);
+  });
+
+  it("maps unified mail data success and domain DTOs", async () => {
+    const value = {
+      id: "draft-1",
+      mailboxId: "mailbox-a",
+      to: [{ address: "to@example.com" }],
+      cc: [],
+      bcc: [],
+      subject: "Draft",
+      attachmentIds: [],
+      createdAt: 1000,
+      updatedAt: 1000,
+      version: 1,
+    };
+    const successful = createDraftThroughRpc(() =>
+      Effect.succeed({ _tag: "DraftCreated", value })
+    );
+    const failed = createDraftThroughRpc(() =>
+      Effect.succeed({
+        _tag: "DomainError",
+        operation: "create-draft",
+        reason: "idempotency-conflict",
+        message: "Conflict",
+      })
+    );
+
+    await expect(Effect.runPromise(successful.effect)).resolves.toMatchObject({
+      id: "draft-1",
+    });
+    await expect(
+      Effect.runPromise(failed.effect.pipe(Effect.flip))
+    ).resolves.toBeInstanceOf(MailboxDomainError);
+    expect(successful.requests[0]).toMatchObject({ _tag: "CreateDraft" });
+  });
+
+  it("rejects mail data protocol mismatch and preserves interruption", async () => {
+    const mismatch = createDraftThroughRpc(() =>
+      Effect.succeed({ _tag: "MessagesListed", value: { items: [] } })
+    );
+    const interrupted = createDraftThroughRpc(() => Effect.interrupt);
+    const mismatchError = await Effect.runPromise(
+      mismatch.effect.pipe(Effect.flip)
+    );
+    const interruptedExit = await Effect.runPromiseExit(interrupted.effect);
+
+    expect(mismatchError).toMatchObject({
+      _tag: "MailboxRepositoryError",
+      operation: "write",
+      commitState: "unknown",
+    });
+    expect(
+      Exit.isFailure(interruptedExit) &&
+        Cause.hasInterruptsOnly(interruptedExit.cause)
+    ).toBeTruthy();
+  });
+
+  it("checks mailbox existence before unified mail data RPC", async () => {
+    const fixture = createDraftThroughRpc(
+      () => Effect.die(new Error("RPC should not be called")),
+      false
+    );
+    const error = await Effect.runPromise(fixture.effect.pipe(Effect.flip));
+
+    expect(error).toMatchObject({
+      _tag: "MailboxDomainError",
+      operation: "create-draft",
+      reason: "not-found",
     });
     expect(fixture.addressedNames).toStrictEqual([]);
   });

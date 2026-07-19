@@ -12,8 +12,6 @@ import { AuthKernelLive } from "@effect-auth/core/AuthKernel";
 import { AuthRateLimitStandardLive } from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import { AuthMailerFromDevEmailStoreLive } from "@effect-auth/core/DevEmail";
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
-import { D1EffectQbSqliteAuthStorageLive } from "@effect-auth/core/EffectQbSqliteStorage";
 import { EmailOtpDefaultLive } from "@effect-auth/core/EmailOtp";
 import {
   EmailDeliveryFromAuthMailerLive,
@@ -53,7 +51,6 @@ export type AuthEmailSendClient = Effect.Success<
 >;
 
 export interface AuthRuntimeConfigShape {
-  readonly database: D1EffectQbDatabaseLike;
   readonly emailFrom: Email;
   readonly emailSender?: AuthEmailSendClient;
   readonly isDevelopment: boolean;
@@ -94,8 +91,7 @@ const MinimumPasswordRiskPolicyLive = Layer.succeed(
 export const AuthLive = Layer.unwrap(
   Effect.gen(function* () {
     const options = yield* AuthRuntimeConfig;
-    const { database, emailSender } = options;
-    const storageLive = D1EffectQbSqliteAuthStorageLive(database);
+    const { emailSender } = options;
     const productionTransportLive =
       emailSender === undefined
         ? Layer.effect(
@@ -148,7 +144,6 @@ export const AuthLive = Layer.unwrap(
           Layer.provide(productionTransportLive)
         );
     const sessionLive = AuthKernelLive.pipe(
-      Layer.provideMerge(storageLive),
       Layer.provideMerge(WebCryptoLive()),
       Layer.provideMerge(AuthSecretsLive(options.secrets))
     );
