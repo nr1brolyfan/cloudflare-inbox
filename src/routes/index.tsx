@@ -338,8 +338,8 @@ function SignedIn({
         You are signed in.
       </h2>
       <p className="mt-4 text-sm leading-6 text-[var(--sea-ink-soft)]">
-        Your mailbox workspace is the next stage of the build. Session
-        principal: <code>{userId.slice(0, 12)}...</code>
+        Your private mailbox workspace is ready. Session principal:{" "}
+        <code>{userId.slice(0, 12)}...</code>
       </p>
       <div className="mt-6">
         {bootstrapResult?.ok ? (
@@ -348,8 +348,7 @@ function SignedIn({
               Primary inbox ready: {bootstrapResult.mailbox.displayName}
             </Notice>
             <p className="text-sm leading-6 text-[var(--sea-ink-soft)]">
-              Mailbox navigation and message views arrive with the next
-              MailboxDO and inbox UI stages.
+              Open the responsive workspace to continue to your mailbox.
             </p>
           </div>
         ) : bootstrapResult ? (
@@ -373,6 +372,14 @@ function SignedIn({
           Create primary inbox
         </button>
       )}
+      {bootstrapResult?.ok ? (
+        <Link
+          to="/inbox"
+          className="mt-8 flex w-fit items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white no-underline shadow-lg hover:-translate-y-0.5 hover:text-white"
+        >
+          <Mail size={17} /> Open inbox
+        </Link>
+      ) : null}
       <button
         type="button"
         onClick={onLogout}

@@ -9,6 +9,7 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as DevEmailInboxRouteImport } from './routes/dev-email-inbox'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
@@ -17,6 +18,11 @@ import { Route as AuthCompleteMagicLinkRouteImport } from './routes/auth-complet
 import { Route as AuthCompleteEmailVerificationRouteImport } from './routes/auth-complete/email-verification'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 
+const InboxRoute = InboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const DevEmailInboxRoute = DevEmailInboxRouteImport.update({
   id: '/dev-email-inbox',
   path: '/dev-email-inbox',
@@ -58,6 +64,7 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dev-email-inbox': typeof DevEmailInboxRoute
+  '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
@@ -67,6 +74,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/dev-email-inbox': typeof DevEmailInboxRoute
+  '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
@@ -77,6 +85,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/dev-email-inbox': typeof DevEmailInboxRoute
+  '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
@@ -88,6 +97,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/dev-email-inbox'
+    | '/inbox'
     | '/api/health'
     | '/auth-complete/email-verification'
     | '/auth-complete/magic-link'
@@ -97,6 +107,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/dev-email-inbox'
+    | '/inbox'
     | '/api/health'
     | '/auth-complete/email-verification'
     | '/auth-complete/magic-link'
@@ -106,6 +117,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/dev-email-inbox'
+    | '/inbox'
     | '/api/health'
     | '/auth-complete/email-verification'
     | '/auth-complete/magic-link'
@@ -116,6 +128,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DevEmailInboxRoute: typeof DevEmailInboxRoute
+  InboxRoute: typeof InboxRoute
   ApiHealthRoute: typeof ApiHealthRoute
   AuthCompleteEmailVerificationRoute: typeof AuthCompleteEmailVerificationRoute
   AuthCompleteMagicLinkRoute: typeof AuthCompleteMagicLinkRoute
@@ -125,6 +138,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/inbox': {
+      id: '/inbox'
+      path: '/inbox'
+      fullPath: '/inbox'
+      preLoaderRoute: typeof InboxRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/dev-email-inbox': {
       id: '/dev-email-inbox'
       path: '/dev-email-inbox'
@@ -180,6 +200,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DevEmailInboxRoute: DevEmailInboxRoute,
+  InboxRoute: InboxRoute,
   ApiHealthRoute: ApiHealthRoute,
   AuthCompleteEmailVerificationRoute: AuthCompleteEmailVerificationRoute,
   AuthCompleteMagicLinkRoute: AuthCompleteMagicLinkRoute,
