@@ -88,6 +88,13 @@ const executeMailDataRequest = (
         (value) => ({ _tag: "MessagesListed", value })
       );
     }
+    case "SearchMessages": {
+      return encodeMailDataResult(
+        request,
+        stores.searchMessages(request.input),
+        (value) => ({ _tag: "MessagesSearched", value })
+      );
+    }
     case "GetMessage": {
       return encodeMailDataResult(
         request,

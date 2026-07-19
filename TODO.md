@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-19
-- Postęp zadań: **50/109 (46%)**
+- Postęp zadań: **51/109 (47%)**
 - Ukończone etapy: **2/11**
 - Aktualny etap: **5. MailboxDO i domena pocztowa**
-- Aktualne zadanie: **Indeksy FTS5 i spójne aktualizacje indeksu**
+- Aktualne zadanie: **Atomowe, wersjonowane i idempotentne mutacje**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -16,7 +16,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 11/13  |
 | 3   | Effect-auth i sesje                   | IN PROGRESS | 15/20  |
 | 4   | Permissions i control plane           | DONE        | 10/10  |
-| 5   | MailboxDO i domena pocztowa           | CURRENT     | 7/9    |
+| 5   | MailboxDO i domena pocztowa           | CURRENT     | 8/9    |
 | 6   | Inbound email                         | TODO        | 0/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | TODO        | 0/9    |
 | 8   | Reguły automatyczne                   | TODO        | 0/6    |
@@ -103,8 +103,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Zdefiniować port repozytorium i adapter Durable Object SQLite.
 - [x] Zaimplementować folders i labels.
 - [x] Zaimplementować messages, threads, drafts i outbound deliveries.
-- [ ] CURRENT Dodać indeksy FTS5 i spójne aktualizacje indeksu.
-- [ ] Zapewnić atomowe, wersjonowane i idempotentne mutacje.
+- [x] Dodać indeksy FTS5 i spójne aktualizacje indeksu.
+- [ ] CURRENT Zapewnić atomowe, wersjonowane i idempotentne mutacje.
 
 ## 6. Inbound email
 

@@ -52,6 +52,7 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "rename-label"
     | "delete-label"
     | "list-messages"
+    | "search-messages"
     | "get-message"
     | "get-thread"
     | "mutate-message"

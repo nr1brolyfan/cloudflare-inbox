@@ -59,6 +59,7 @@ describe("MailboxDO migrations", () => {
         { version: 2, applied_at: expect.any(String) },
         { version: 3, applied_at: expect.any(String) },
         { version: 4, applied_at: expect.any(String) },
+        { version: 5, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -91,6 +92,49 @@ describe("MailboxDO migrations", () => {
           )
           .run()
       ).toThrow("CHECK constraint failed");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps the message FTS index current on insert, update, and soft delete", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+      const searchIds = (query: string) =>
+        database
+          .prepare(
+            `SELECT id FROM message
+            WHERE rowid IN (
+              SELECT rowid FROM message_search WHERE message_search MATCH ?
+            )`
+          )
+          .all(query)
+          .map((row) => row.id);
+      database
+        .prepare(
+          "INSERT INTO folder (id, name, kind, created_at, updated_at) VALUES ('inbox', 'Inbox', 'inbox', 0, 0)"
+        )
+        .run();
+      database
+        .prepare(
+          "INSERT INTO message (id, folder_id, subject, snippet, text_body) VALUES ('message-search', 'inbox', 'Alpha', 'Alpha snippet', 'Alpha body')"
+        )
+        .run();
+      expect(searchIds("Alpha")).toStrictEqual(["message-search"]);
+      database
+        .prepare(
+          "UPDATE message SET subject = 'Beta', snippet = 'Beta snippet', text_body = 'Beta body' WHERE id = 'message-search'"
+        )
+        .run();
+      expect(searchIds("Alpha")).toStrictEqual([]);
+      database
+        .prepare(
+          "UPDATE message SET deleted_at = 1000 WHERE id = 'message-search'"
+        )
+        .run();
+      expect(searchIds("Beta")).toStrictEqual([]);
     } finally {
       database.close();
     }
@@ -133,7 +177,7 @@ describe("MailboxDO migrations", () => {
           .prepare(
             `SELECT name FROM sqlite_schema
               WHERE type = 'table'
-                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule', 'label', 'mailbox_operation', 'message_label', 'outbound_delivery')
+                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule', 'label', 'mailbox_operation', 'message_label', 'message_search', 'outbound_delivery')
               ORDER BY name`
           )
           .all()
@@ -148,6 +192,7 @@ describe("MailboxDO migrations", () => {
         "mailbox_operation",
         "message",
         "message_label",
+        "message_search",
         "outbound_delivery",
       ]);
     } finally {

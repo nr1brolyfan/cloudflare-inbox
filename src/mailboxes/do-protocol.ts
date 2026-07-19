@@ -35,6 +35,7 @@ import {
   MessagePage,
   MoveMessageInput,
   RemoveMessageLabelInput,
+  SearchMessagesInput,
   SetMessageReadInput,
   SetMessageStarredInput,
 } from "./messages";
@@ -60,6 +61,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "rename-label",
     "delete-label",
     "list-messages",
+    "search-messages",
     "get-message",
     "get-thread",
     "mutate-message",
@@ -186,6 +188,10 @@ export const MailDataRpcRequest = Schema.Union([
     _tag: Schema.Literal("ListMessages"),
     input: ListMessagesInput,
   }),
+  Schema.Struct({
+    _tag: Schema.Literal("SearchMessages"),
+    input: SearchMessagesInput,
+  }),
   Schema.Struct({ _tag: Schema.Literal("GetMessage"), input: GetMessageInput }),
   Schema.Struct({ _tag: Schema.Literal("GetThread"), input: GetThreadInput }),
   Schema.Struct({
@@ -238,6 +244,10 @@ export type MailDataRpcRequest = Schema.Schema.Type<typeof MailDataRpcRequest>;
 
 export const MailDataRpcResponse = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("MessagesListed"), value: MessagePage }),
+  Schema.Struct({
+    _tag: Schema.Literal("MessagesSearched"),
+    value: MessagePage,
+  }),
   Schema.Struct({
     _tag: Schema.Literal("MessageFound"),
     value: GetMessageResult,
@@ -332,6 +342,11 @@ export const mailDataRequestMetadataByTag = {
     operation: "list-messages",
     kind: "read",
     responseTag: "MessagesListed",
+  },
+  SearchMessages: {
+    operation: "search-messages",
+    kind: "read",
+    responseTag: "MessagesSearched",
   },
   GetMessage: {
     operation: "get-message",

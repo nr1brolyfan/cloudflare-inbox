@@ -573,6 +573,16 @@ export const MailboxRepositoryDoLive = Layer.effect(
                 : mailDataProtocolError(response, false)
           )
         ),
+      searchMessages: (input) =>
+        executeMailData({ _tag: "SearchMessages", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "MessagesSearched"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
       moveMessage: (input) =>
         executeMailData({ _tag: "MoveMessage", input }).pipe(
           Effect.flatMap((response) =>

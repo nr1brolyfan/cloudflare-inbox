@@ -53,6 +53,7 @@ import type {
   MessageFilters,
   MoveMessageInput,
   RemoveMessageLabelInput,
+  SearchMessagesInput,
   SetMessageReadInput,
   SetMessageStarredInput,
 } from "./messages";
@@ -1214,6 +1215,27 @@ const filterFingerprint = (filters: MessageFilters | undefined) =>
     )
   );
 
+const searchFingerprint = (
+  ftsQuery: string,
+  filters: MessageFilters | undefined
+) =>
+  fingerprint(
+    JSON.stringify({
+      query: ftsQuery,
+      filters:
+        filters === undefined
+          ? {}
+          : Schema.encodeSync(MessageFiltersSchema)(filters),
+    })
+  );
+
+const toMessageFtsQuery = (query: string) => {
+  const terms = query.match(/[\p{L}\p{N}_]+(?:[.@+-][\p{L}\p{N}_]+)*/gu) ?? [];
+  return terms.length === 0
+    ? undefined
+    : terms.map((term) => `"${term.replaceAll('"', '""')}"`).join(" ");
+};
+
 const encodeCursor = (payload: Schema.Schema.Type<typeof CursorPayload>) =>
   Schema.decodeUnknownSync(Cursor)(
     btoa(encodeURIComponent(JSON.stringify(payload)))
@@ -1359,6 +1381,96 @@ const listMessages = (mailboxId: MailboxId, input: ListMessagesInput) =>
           ? encodeCursor({
               mailboxId,
               scope: "messages-desc",
+              filterFingerprint: key,
+              activityAt: last.activityAt,
+              id: last.id,
+            })
+          : undefined,
+    });
+  });
+
+const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const ftsQuery = toMessageFtsQuery(input.query);
+    if (ftsQuery === undefined) {
+      return yield* messageDomainError(
+        "search-messages",
+        "validation",
+        "Search query has no searchable terms"
+      );
+    }
+    const key = searchFingerprint(ftsQuery, input.filters);
+    const decodedCursor =
+      input.page?.cursor === undefined
+        ? Result.void
+        : decodeCursor(
+            input.page.cursor,
+            mailboxId,
+            "messages-search",
+            key,
+            "search-messages"
+          );
+    if (Result.isFailure(decodedCursor)) {
+      return yield* decodedCursor.failure;
+    }
+    const rank = sql<number>`(
+      SELECT bm25(message_search)
+      FROM message_search
+      WHERE message_search.rowid = "message".rowid
+        AND message_search MATCH ${ftsQuery}
+    )`;
+    const rows = yield* db
+      .select()
+      .from(message)
+      .where(
+        and(
+          isNull(message.deletedAt),
+          sql`"message".rowid IN (
+            SELECT rowid FROM message_search WHERE message_search MATCH ${ftsQuery}
+          )`
+        )
+      )
+      .orderBy(rank, desc(message.activityAt), desc(message.id));
+    const hydrated = yield* Effect.all(
+      rows.map((row) =>
+        Effect.map(readMessageDetailRow(db, row, mailboxId), (detail) => ({
+          row,
+          detail,
+          summary: readMessageSummaryRow(detail),
+        }))
+      )
+    );
+    const filtered = hydrated.filter(({ detail, row, summary }) =>
+      matchesFilters(summary, detail, row, input.filters)
+    );
+    const cursor = decodedCursor.success;
+    const startIndex =
+      cursor === undefined
+        ? 0
+        : filtered.findIndex(
+            ({ summary }) =>
+              summary.id === cursor.id &&
+              summary.activityAt === cursor.activityAt
+          ) + 1;
+    if (startIndex === 0 && cursor !== undefined) {
+      return yield* messageDomainError(
+        "search-messages",
+        "validation",
+        "Message cursor does not match this query"
+      );
+    }
+    const limit = input.page?.limit ?? 50;
+    const remaining = filtered.slice(startIndex);
+    const items = remaining.slice(0, limit).map(({ summary }) => summary);
+    const last = items.at(-1);
+    return Schema.decodeUnknownSync(MessagePage)({
+      items,
+      nextCursor:
+        remaining.length > limit && last !== undefined
+          ? encodeCursor({
+              mailboxId,
+              scope: "messages-search",
               filterFingerprint: key,
               activityAt: last.activityAt,
               id: last.id,
@@ -1684,6 +1796,8 @@ const makeMailboxMessageStore = (
   return {
     listMessages: (input: ListMessagesInput) =>
       provideDatabase(listMessages(mailboxId, input)),
+    searchMessages: (input: SearchMessagesInput) =>
+      provideDatabase(searchMessages(mailboxId, input)),
     getMessage: (input: GetMessageInput) =>
       provideDatabase(getMessage(mailboxId, input)),
     getThread: (input: GetThreadInput) =>

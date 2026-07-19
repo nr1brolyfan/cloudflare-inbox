@@ -73,6 +73,11 @@ const expectedMailDataMetadata = {
     kind: "read",
     responseTag: "MessagesListed",
   },
+  SearchMessages: {
+    operation: "search-messages",
+    kind: "read",
+    responseTag: "MessagesSearched",
+  },
   GetMessage: {
     operation: "get-message",
     kind: "read",

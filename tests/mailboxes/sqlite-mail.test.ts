@@ -24,6 +24,7 @@ import {
   GetThreadInput,
   ListMessagesInput,
   MoveMessageInput,
+  SearchMessagesInput,
   SetMessageReadInput,
 } from "#/mailboxes/messages";
 import {
@@ -80,6 +81,10 @@ const mailboxSqliteTestLive = (runtime = makeRuntime()) =>
 const listMessages = (input: ListMessagesInput) =>
   MailboxMessageStore.pipe(
     Effect.flatMap((store) => store.listMessages(input))
+  );
+const searchMessages = (input: SearchMessagesInput) =>
+  MailboxMessageStore.pipe(
+    Effect.flatMap((store) => store.searchMessages(input))
   );
 const getMessage = (input: GetMessageInput) =>
   MailboxMessageStore.pipe(Effect.flatMap((store) => store.getMessage(input)));
@@ -434,6 +439,114 @@ describe("Mailbox mail data SQLite", () => {
         expect(first.nextCursor.length).toBeLessThanOrEqual(2048);
         expect(next.items.map((item) => item.id)).toStrictEqual(["m1"]);
         expect(wrongQuery.reason).toBe("validation");
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("searches messages through FTS with query-bound cursors", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+
+        const first = yield* searchMessages(
+          Schema.decodeUnknownSync(SearchMessagesInput)({
+            mailboxId,
+            query: "body",
+            page: { limit: 1 },
+          })
+        );
+        if (first.nextCursor === undefined) {
+          return yield* Effect.die("Expected a next cursor");
+        }
+        const next = yield* searchMessages(
+          Schema.decodeUnknownSync(SearchMessagesInput)({
+            mailboxId,
+            query: "body",
+            page: { limit: 1, cursor: first.nextCursor },
+          })
+        );
+        const wrongQuery = failure(
+          yield* Effect.result(
+            searchMessages(
+              Schema.decodeUnknownSync(SearchMessagesInput)({
+                mailboxId,
+                query: "First",
+                page: { limit: 1, cursor: first.nextCursor },
+              })
+            )
+          )
+        );
+
+        expect({
+          first: first.items.map((item) => item.id),
+          next: next.items.map((item) => item.id),
+          wrongQuery: wrongQuery.reason,
+        }).toStrictEqual({
+          first: ["m2"],
+          next: ["m1"],
+          wrongQuery: "validation",
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("keeps the FTS index consistent across message updates and soft deletes", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+
+        const before = yield* searchMessages(
+          Schema.decodeUnknownSync(SearchMessagesInput)({
+            mailboxId,
+            query: "First",
+          })
+        );
+        yield* db
+          .update(message)
+          .set({
+            subject: "Updated",
+            snippet: "Alpha",
+            textBody: "Alpha body",
+            updatedAt: 300,
+          })
+          .where(eq(message.id, "m1"));
+        const oldTerm = yield* searchMessages(
+          Schema.decodeUnknownSync(SearchMessagesInput)({
+            mailboxId,
+            query: "First",
+          })
+        );
+        const newTerm = yield* searchMessages(
+          Schema.decodeUnknownSync(SearchMessagesInput)({
+            mailboxId,
+            query: "Alpha",
+          })
+        );
+        yield* db
+          .update(message)
+          .set({ deletedAt: 400, updatedAt: 400 })
+          .where(eq(message.id, "m1"));
+        const deleted = yield* searchMessages(
+          Schema.decodeUnknownSync(SearchMessagesInput)({
+            mailboxId,
+            query: "Alpha",
+          })
+        );
+
+        expect({
+          before: before.items.map((item) => item.id),
+          oldTerm: oldTerm.items.map((item) => item.id),
+          newTerm: newTerm.items.map((item) => item.id),
+          deleted: deleted.items.map((item) => item.id),
+        }).toStrictEqual({
+          before: ["m1"],
+          oldTerm: [],
+          newTerm: ["m1"],
+          deleted: [],
+        });
       }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });

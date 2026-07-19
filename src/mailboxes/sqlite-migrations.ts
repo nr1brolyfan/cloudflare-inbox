@@ -201,6 +201,161 @@ const migrations = [
       `CREATE INDEX outbound_delivery_status_send_idx ON outbound_delivery(status, send_at, id) WHERE deleted_at IS NULL`,
     ],
   },
+  {
+    version: 5,
+    statements: [
+      `CREATE VIRTUAL TABLE message_search USING fts5(
+        subject,
+        sender_json,
+        recipients_json,
+        snippet,
+        text_body,
+        html_body,
+        to_json,
+        cc_json,
+        bcc_json,
+        content='message',
+        content_rowid='rowid',
+        tokenize='unicode61'
+      )`,
+      `INSERT INTO message_search(
+        rowid,
+        subject,
+        sender_json,
+        recipients_json,
+        snippet,
+        text_body,
+        html_body,
+        to_json,
+        cc_json,
+        bcc_json
+      )
+      SELECT
+        rowid,
+        subject,
+        coalesce(sender_json, ''),
+        recipients_json,
+        snippet,
+        coalesce(text_body, ''),
+        coalesce(html_body, ''),
+        to_json,
+        cc_json,
+        bcc_json
+      FROM message
+      WHERE deleted_at IS NULL`,
+      `CREATE TRIGGER message_search_ai AFTER INSERT ON message
+      WHEN new.deleted_at IS NULL
+      BEGIN
+        INSERT INTO message_search(
+          rowid,
+          subject,
+          sender_json,
+          recipients_json,
+          snippet,
+          text_body,
+          html_body,
+          to_json,
+          cc_json,
+          bcc_json
+        ) VALUES (
+          new.rowid,
+          new.subject,
+          coalesce(new.sender_json, ''),
+          new.recipients_json,
+          new.snippet,
+          coalesce(new.text_body, ''),
+          coalesce(new.html_body, ''),
+          new.to_json,
+          new.cc_json,
+          new.bcc_json
+        );
+      END`,
+      `CREATE TRIGGER message_search_ad AFTER DELETE ON message
+      WHEN old.deleted_at IS NULL
+      BEGIN
+        INSERT INTO message_search(
+          message_search,
+          rowid,
+          subject,
+          sender_json,
+          recipients_json,
+          snippet,
+          text_body,
+          html_body,
+          to_json,
+          cc_json,
+          bcc_json
+        ) VALUES (
+          'delete',
+          old.rowid,
+          old.subject,
+          coalesce(old.sender_json, ''),
+          old.recipients_json,
+          old.snippet,
+          coalesce(old.text_body, ''),
+          coalesce(old.html_body, ''),
+          old.to_json,
+          old.cc_json,
+          old.bcc_json
+        );
+      END`,
+      `CREATE TRIGGER message_search_au AFTER UPDATE ON message
+      WHEN old.deleted_at IS NULL OR new.deleted_at IS NULL
+      BEGIN
+        INSERT INTO message_search(
+          message_search,
+          rowid,
+          subject,
+          sender_json,
+          recipients_json,
+          snippet,
+          text_body,
+          html_body,
+          to_json,
+          cc_json,
+          bcc_json
+        )
+        SELECT
+          'delete',
+          old.rowid,
+          old.subject,
+          coalesce(old.sender_json, ''),
+          old.recipients_json,
+          old.snippet,
+          coalesce(old.text_body, ''),
+          coalesce(old.html_body, ''),
+          old.to_json,
+          old.cc_json,
+          old.bcc_json
+        WHERE old.deleted_at IS NULL;
+
+        INSERT INTO message_search(
+          rowid,
+          subject,
+          sender_json,
+          recipients_json,
+          snippet,
+          text_body,
+          html_body,
+          to_json,
+          cc_json,
+          bcc_json
+        )
+        SELECT
+          new.rowid,
+          new.subject,
+          coalesce(new.sender_json, ''),
+          new.recipients_json,
+          new.snippet,
+          coalesce(new.text_body, ''),
+          coalesce(new.html_body, ''),
+          new.to_json,
+          new.cc_json,
+          new.bcc_json
+        WHERE new.deleted_at IS NULL;
+      END`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

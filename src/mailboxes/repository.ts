@@ -44,6 +44,7 @@ import type {
   MessagePage,
   MoveMessageInput,
   RemoveMessageLabelInput,
+  SearchMessagesInput,
   SetMessageReadInput,
   SetMessageStarredInput,
 } from "./messages";
@@ -175,6 +176,9 @@ export interface MailboxRepository {
     ResendOutboundResult,
     MailboxDomainError | MailboxRepositoryError
   >;
+  readonly searchMessages: (
+    input: SearchMessagesInput
+  ) => Effect.Effect<MessagePage, MailboxDomainError | MailboxRepositoryError>;
   readonly scheduleOutbound: (
     input: ScheduleOutboundInput
   ) => Effect.Effect<

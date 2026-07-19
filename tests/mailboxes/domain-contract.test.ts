@@ -26,6 +26,7 @@ import {
   MessageDetail,
   MessageDetailSchema,
   MessageFilters,
+  SearchMessagesInput,
   SetMessageReadInput,
   ThreadDetailSchema,
 } from "#/mailboxes/messages";
@@ -320,6 +321,16 @@ describe("mail domain contracts", () => {
     expect(
       decodeSucceeds(MessageFilters, { after: 2000, before: 1000 })
     ).toBeFalsy();
+  });
+
+  it("defines the public search query contract", () => {
+    expect(
+      Schema.decodeUnknownSync(SearchMessagesInput)({
+        mailboxId: "primary",
+        query: " invoice status ",
+        filters: { folderId: "inbox" },
+      })
+    ).toMatchObject({ query: "invoice status" });
   });
 
   it("reuses the mailbox name invariant at the HTTP boundary", () => {

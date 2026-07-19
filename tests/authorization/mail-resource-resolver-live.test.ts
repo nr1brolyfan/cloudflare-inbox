@@ -51,6 +51,7 @@ const resolverWith = (
               listFolders: unusedDirectory,
               listLabels: unusedDirectory,
               listMessages: unusedDirectory,
+              searchMessages: unusedDirectory,
               moveMessage: unusedDirectory,
               removeMessageLabel: unusedDirectory,
               renameFolder: unusedDirectory,
