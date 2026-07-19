@@ -12,21 +12,7 @@ import type {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
 } from "./mailbox-repository";
-
-type SqlBinding = string | number | null;
-
-interface MailboxSqlCursor {
-  readonly toArray: () => readonly Readonly<Record<string, unknown>>[];
-}
-
-interface MailboxSql {
-  readonly exec: (query: string, ...bindings: SqlBinding[]) => MailboxSqlCursor;
-}
-
-interface MailboxSqlStorage {
-  readonly sql: MailboxSql;
-  readonly transactionSync: <A>(run: () => A) => A;
-}
+import type { MailboxSql, MailboxSqlStorage } from "./mailbox-sqlite";
 
 const oneOrNotFound = <A>(rows: readonly A[]) =>
   rows.length === 0 ? undefined : rows[0];
@@ -46,10 +32,7 @@ export const initializeMailboxRepository = (
         "INSERT INTO mailbox_metadata (singleton, mailbox_id) VALUES (1, ?)",
         mailboxId
       );
-      return;
-    }
-
-    if (rows.length !== 1 || rows[0]?.mailbox_id !== mailboxId) {
+    } else if (rows.length !== 1 || rows[0]?.mailbox_id !== mailboxId) {
       throw new Error(
         "Mailbox database identity does not match its Durable Object"
       );

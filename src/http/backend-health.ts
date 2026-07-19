@@ -53,17 +53,29 @@ export const BackendHealthLive = Layer.effect(
     const healthMailbox = resources.mailboxDataPlane.getByName("__health__");
     const probeMailboxDataPlane = Effect.all({
       ready: healthMailbox.sqliteReady(),
+      folders: healthMailbox.executeDirectory({
+        _tag: "ListFolders",
+        input: { mailboxId: "__health__" },
+      }),
       missing: healthMailbox.resolveMailResource({
         _tag: "Folder",
         mailboxId: "__health__",
         folderId: "__health__",
       }),
     }).pipe(
-      Effect.tap(({ missing }) =>
-        missing._tag === "NotFound"
+      Effect.tap(({ folders, missing }) => {
+        if (missing._tag !== "NotFound") {
+          return Effect.die(
+            new Error("MailboxDO repository probe found test data")
+          );
+        }
+        return folders._tag === "FoldersListed" &&
+          folders.value.items.length === 7
           ? Effect.void
-          : Effect.die(new Error("MailboxDO repository probe found test data"))
-      ),
+          : Effect.die(
+              new Error("MailboxDO system folders are not initialized")
+            );
+      }),
       Effect.provide(RuntimeContext.phantom)
     );
     const probeRawMessages = resources.rawMessages

@@ -13,6 +13,7 @@ import { MailResourceResolverLive } from "./mail-resource-resolver-live";
 import { MailResourceResolver } from "./resources";
 
 const unused = () => Effect.succeed(Option.none());
+const unusedDirectory = () => Effect.die(new Error("Directory RPC is unused"));
 
 const resolverWith = (
   findMessageLocation: MailboxRepository["findMessageLocation"]
@@ -31,11 +32,19 @@ const resolverWith = (
           Layer.succeed(
             MailboxRepository,
             MailboxRepository.of({
+              createFolder: unusedDirectory,
+              createLabel: unusedDirectory,
+              deleteFolder: unusedDirectory,
+              deleteLabel: unusedDirectory,
               findAttachmentLocation: unused,
               findDraftLocation: unused,
               findFolderLocation: unused,
               findMessageLocation,
               findRuleLocation: unused,
+              listFolders: unusedDirectory,
+              listLabels: unusedDirectory,
+              renameFolder: unusedDirectory,
+              renameLabel: unusedDirectory,
             })
           )
         )

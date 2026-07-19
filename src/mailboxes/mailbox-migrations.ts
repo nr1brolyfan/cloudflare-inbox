@@ -80,6 +80,54 @@ const migrations = [
       ) STRICT`,
     ],
   },
+  {
+    version: 3,
+    statements: [
+      `ALTER TABLE folder ADD COLUMN name TEXT NOT NULL DEFAULT 'Migrated folder' CHECK (
+        length(name) BETWEEN 1 AND 200 AND name = trim(name)
+      )`,
+      `ALTER TABLE folder ADD COLUMN kind TEXT NOT NULL DEFAULT 'custom' CHECK (
+        kind IN ('inbox', 'sent', 'drafts', 'scheduled', 'archive', 'spam', 'trash', 'custom')
+      )`,
+      `ALTER TABLE folder ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0 CHECK (created_at >= 0)`,
+      `ALTER TABLE folder ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0 CHECK (
+        updated_at >= created_at
+      )`,
+      `ALTER TABLE message ADD COLUMN read INTEGER NOT NULL DEFAULT 0 CHECK (read IN (0, 1))`,
+      `CREATE TABLE label (
+        id TEXT PRIMARY KEY NOT NULL CHECK (
+          length(id) BETWEEN 1 AND 128 AND id = trim(id)
+        ),
+        name TEXT NOT NULL CHECK (
+          length(name) BETWEEN 1 AND 200 AND name = trim(name)
+        ),
+        created_at INTEGER NOT NULL CHECK (created_at >= 0),
+        updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+        deleted_at INTEGER CHECK (deleted_at IS NULL OR deleted_at >= 0)
+      ) STRICT`,
+      `CREATE TABLE mailbox_operation (
+        operation_id TEXT PRIMARY KEY NOT NULL CHECK (
+          length(operation_id) BETWEEN 1 AND 128 AND operation_id = trim(operation_id)
+        ),
+        operation_kind TEXT NOT NULL CHECK (length(operation_kind) BETWEEN 1 AND 128),
+        request_key TEXT NOT NULL,
+        resource_id TEXT NOT NULL CHECK (
+          length(resource_id) BETWEEN 1 AND 128 AND resource_id = trim(resource_id)
+        ),
+        result_payload TEXT NOT NULL,
+        created_at INTEGER NOT NULL CHECK (created_at >= 0)
+      ) STRICT`,
+      `CREATE INDEX folder_active_list_idx
+        ON folder(kind, name COLLATE NOCASE, id) WHERE deleted_at IS NULL`,
+      `CREATE INDEX folder_active_name_idx
+        ON folder(name COLLATE NOCASE, id) WHERE deleted_at IS NULL`,
+      `CREATE INDEX label_active_name_idx
+        ON label(name COLLATE NOCASE, id) WHERE deleted_at IS NULL`,
+      `CREATE INDEX message_folder_active_read_idx
+        ON message(folder_id, read, id) WHERE deleted_at IS NULL`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

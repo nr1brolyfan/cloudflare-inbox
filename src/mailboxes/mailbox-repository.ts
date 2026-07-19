@@ -3,7 +3,23 @@ import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type {
+  CreateFolderInput,
+  CreateLabelInput,
+  DeleteFolderInput,
+  DeleteFolderResult,
+  DeleteLabelInput,
+  DeleteLabelResult,
+  FolderList,
+  ListFoldersInput,
+  ListLabelsInput,
+  LabelList,
+  RenameFolderInput,
+  RenameLabelInput,
+} from "./directory-contract";
+import type { MailboxDomainError } from "./errors/mailbox-domain-error";
 import type { MailboxRepositoryError } from "./errors/mailbox-repository-error";
+import type { Folder } from "./folder";
 import {
   AttachmentId,
   DraftId,
@@ -12,6 +28,7 @@ import {
   MessageId,
   RuleId,
 } from "./identifiers";
+import type { Label } from "./label";
 
 export const FolderLocation = Schema.Struct({
   _tag: Schema.Literal("Folder"),
@@ -95,6 +112,24 @@ export type MailboxResourceLookupResult = Schema.Schema.Type<
 >;
 
 export interface MailboxRepository {
+  readonly createFolder: (
+    input: CreateFolderInput
+  ) => Effect.Effect<Folder, MailboxDomainError | MailboxRepositoryError>;
+  readonly createLabel: (
+    input: CreateLabelInput
+  ) => Effect.Effect<Label, MailboxDomainError | MailboxRepositoryError>;
+  readonly deleteFolder: (
+    input: DeleteFolderInput
+  ) => Effect.Effect<
+    DeleteFolderResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly deleteLabel: (
+    input: DeleteLabelInput
+  ) => Effect.Effect<
+    DeleteLabelResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
   readonly findAttachmentLocation: (input: {
     readonly mailboxId: MailboxId;
     readonly attachmentId: AttachmentId;
@@ -118,6 +153,18 @@ export interface MailboxRepository {
     readonly mailboxId: MailboxId;
     readonly ruleId: RuleId;
   }) => Effect.Effect<Option.Option<RuleLocation>, MailboxRepositoryError>;
+  readonly listFolders: (
+    input: ListFoldersInput
+  ) => Effect.Effect<FolderList, MailboxDomainError | MailboxRepositoryError>;
+  readonly listLabels: (
+    input: ListLabelsInput
+  ) => Effect.Effect<LabelList, MailboxDomainError | MailboxRepositoryError>;
+  readonly renameFolder: (
+    input: RenameFolderInput
+  ) => Effect.Effect<Folder, MailboxDomainError | MailboxRepositoryError>;
+  readonly renameLabel: (
+    input: RenameLabelInput
+  ) => Effect.Effect<Label, MailboxDomainError | MailboxRepositoryError>;
 }
 
 /** Trusted mailbox resource ancestry independent of its storage transport. */

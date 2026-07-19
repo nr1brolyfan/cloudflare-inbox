@@ -57,7 +57,39 @@ describe("MailboxDO migrations", () => {
       ).toStrictEqual([
         { version: 1, applied_at: expect.any(String) },
         { version: 2, applied_at: expect.any(String) },
+        { version: 3, applied_at: expect.any(String) },
       ]);
+      expect(
+        database
+          .prepare("PRAGMA table_info(folder)")
+          .all()
+          .map((row) => row.name)
+      ).toStrictEqual([
+        "id",
+        "version",
+        "deleted_at",
+        "name",
+        "kind",
+        "created_at",
+        "updated_at",
+      ]);
+      expect(
+        database
+          .prepare(
+            `SELECT name FROM sqlite_schema
+              WHERE type = 'table' AND name IN ('label', 'mailbox_operation')
+              ORDER BY name`
+          )
+          .all()
+          .map((row) => row.name)
+      ).toStrictEqual(["label", "mailbox_operation"]);
+      expect(() =>
+        database
+          .prepare(
+            "INSERT INTO label (id, name, created_at, updated_at) VALUES ('bad', '', 0, 0)"
+          )
+          .run()
+      ).toThrow("CHECK constraint failed");
     } finally {
       database.close();
     }
@@ -75,7 +107,7 @@ describe("MailboxDO migrations", () => {
         ...database
           .prepare("SELECT COUNT(*) AS count FROM mailbox_schema_migration")
           .get(),
-      }).toStrictEqual({ count: 2 });
+      }).toStrictEqual({ count: 3 });
     } finally {
       database.close();
     }
@@ -94,13 +126,13 @@ describe("MailboxDO migrations", () => {
         .prepare("INSERT INTO mailbox_schema_migration (version) VALUES (1)")
         .run();
 
-      expect(applyMailboxMigrations(storage)).toBe(2);
+      expect(applyMailboxMigrations(storage)).toBe(3);
       expect(
         database
           .prepare(
             `SELECT name FROM sqlite_schema
               WHERE type = 'table'
-                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule')
+                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule', 'label', 'mailbox_operation')
               ORDER BY name`
           )
           .all()
@@ -110,7 +142,9 @@ describe("MailboxDO migrations", () => {
         "draft",
         "filter_rule",
         "folder",
+        "label",
         "mailbox_metadata",
+        "mailbox_operation",
         "message",
       ]);
     } finally {
@@ -125,12 +159,83 @@ describe("MailboxDO migrations", () => {
     try {
       applyMailboxMigrations(storage);
       database
-        .prepare("INSERT INTO mailbox_schema_migration (version) VALUES (3)")
+        .prepare("INSERT INTO mailbox_schema_migration (version) VALUES (4)")
         .run();
 
       expect(() => applyMailboxMigrations(storage)).toThrow(
-        "unknown migration version 3"
+        "unknown migration version 4"
       );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("upgrades populated version-two skeleton tables without rebuilding them", () => {
+    const database = new DatabaseSync(":memory:");
+    const storage = makeStorage(database);
+
+    try {
+      database.exec(`
+        CREATE TABLE mailbox_schema_migration (
+          version INTEGER PRIMARY KEY NOT NULL,
+          applied_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+        ) STRICT;
+        INSERT INTO mailbox_schema_migration (version) VALUES (1), (2);
+        CREATE TABLE mailbox_metadata (
+          singleton INTEGER PRIMARY KEY NOT NULL CHECK (singleton = 1),
+          mailbox_id TEXT NOT NULL UNIQUE
+        ) STRICT;
+        CREATE TABLE folder (
+          id TEXT PRIMARY KEY NOT NULL,
+          version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+          deleted_at INTEGER
+        ) STRICT;
+        CREATE TABLE message (
+          id TEXT PRIMARY KEY NOT NULL,
+          folder_id TEXT NOT NULL REFERENCES folder(id),
+          version INTEGER NOT NULL DEFAULT 1,
+          deleted_at INTEGER
+        ) STRICT;
+        CREATE INDEX message_folder_id_idx ON message(folder_id, id);
+        CREATE TABLE attachment (
+          id TEXT PRIMARY KEY NOT NULL,
+          message_id TEXT NOT NULL REFERENCES message(id),
+          version INTEGER NOT NULL DEFAULT 1,
+          deleted_at INTEGER
+        ) STRICT;
+        CREATE INDEX attachment_message_id_idx ON attachment(message_id, id);
+        CREATE TABLE draft (
+          id TEXT PRIMARY KEY NOT NULL,
+          version INTEGER NOT NULL DEFAULT 1,
+          deleted_at INTEGER
+        ) STRICT;
+        CREATE TABLE filter_rule (
+          id TEXT PRIMARY KEY NOT NULL,
+          version INTEGER NOT NULL DEFAULT 1,
+          deleted_at INTEGER
+        ) STRICT;
+        INSERT INTO folder (id) VALUES ('legacy');
+        INSERT INTO message (id, folder_id) VALUES ('message-1', 'legacy');
+      `);
+
+      expect(applyMailboxMigrations(storage)).toBe(3);
+      expect({
+        ...database
+          .prepare(
+            "SELECT name, kind, created_at, updated_at FROM folder WHERE id = 'legacy'"
+          )
+          .get(),
+      }).toStrictEqual({
+        name: "Migrated folder",
+        kind: "custom",
+        created_at: 0,
+        updated_at: 0,
+      });
+      expect({
+        ...database
+          .prepare("SELECT read FROM message WHERE id = 'message-1'")
+          .get(),
+      }).toStrictEqual({ read: 0 });
     } finally {
       database.close();
     }
