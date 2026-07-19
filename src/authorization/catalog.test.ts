@@ -40,10 +40,13 @@ describe("mail authorization catalog", () => {
       id: "mailbox-a",
       type: MAILBOX_SCOPE_TYPE,
     });
-    expect(folderScope("folder-a")).toStrictEqual({
-      id: "folder-a",
+    expect(folderScope("mailbox-a", "folder-a")).toStrictEqual({
+      id: '["mailbox-a","folder-a"]',
       type: FOLDER_SCOPE_TYPE,
     });
+    expect(folderScope("mailbox-b", "folder-a")).not.toStrictEqual(
+      folderScope("mailbox-a", "folder-a")
+    );
   });
 
   it("keeps role mappings aligned with permission scope types", () => {

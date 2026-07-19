@@ -51,8 +51,11 @@ const permissionKey = (
 const mailboxPermission = (permission: string) =>
   permissionKey(permission, "mailbox", "mailbox-a");
 
-const folderPermission = (permission: string, folderId = "folder-a") =>
-  permissionKey(permission, "folder", folderId);
+const folderPermission = (
+  permission: string,
+  folderId = "folder-a",
+  mailboxId = "mailbox-a"
+) => permissionKey(permission, "folder", JSON.stringify([mailboxId, folderId]));
 
 const makeResolver = (
   overrides: Partial<Resources.MailResourceResolver> = {}
@@ -276,11 +279,39 @@ describe("mail authorization policies", () => {
     expect(location.folderId).toBe("trusted-folder");
     expect(fixture.checks.map(({ scope }) => scope?.id)).toStrictEqual([
       "mailbox-a",
-      "trusted-folder",
+      '["mailbox-a","trusted-folder"]',
     ]);
     expect(
-      fixture.checks.some(({ scope }) => scope?.id === "attacker-folder")
+      fixture.checks.some(
+        ({ scope }) => scope?.id === '["mailbox-a","attacker-folder"]'
+      )
     ).toBeFalsy();
+  });
+
+  it("does not reuse a folder grant across mailboxes with the same folder id", async () => {
+    const fixture = makePermissions([
+      folderPermission(MailPermission.folderRead, "folder-a", "mailbox-a"),
+    ]);
+    const error = await runAuthorization(
+      makeResolver(),
+      fixture.service,
+      (authorization) =>
+        authorization
+          .requireMessage({
+            action: "read",
+            resource: {
+              ...messageRef,
+              route: { mailboxId: "mailbox-b" },
+            },
+          })
+          .pipe(Effect.flip)
+    );
+
+    expect(error).toBeInstanceOf(AuthPolicy.AuthorizationError);
+    expect(fixture.checks.map(({ scope }) => scope?.id)).toStrictEqual([
+      "mailbox-b",
+      '["mailbox-b","folder-a"]',
+    ]);
   });
 
   it("returns typed denial when no hierarchical branch allows access", async () => {
@@ -407,7 +438,7 @@ describe("mail authorization policies", () => {
       fallbackLocation.attachmentId,
     ]).toStrictEqual(["attachment-a", "attachment-a"]);
     expect(fallback.checks.at(-1)?.scope).toStrictEqual({
-      id: "folder-a",
+      id: '["mailbox-a","folder-a"]',
       type: "folder",
     });
   });

@@ -11,6 +11,7 @@ export const StorageHealthSchema = Schema.Struct({
   authRateLimit: CheckStatus,
   authorization: CheckStatus,
   controlPlane: CheckStatus,
+  mailboxDataPlane: CheckStatus,
   rawMessages: CheckStatus,
 });
 

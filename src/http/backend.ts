@@ -2,6 +2,7 @@ import {
   AuthOriginCheckMiddlewareLive,
   AuthSchemaErrorMiddlewareLive,
 } from "@effect-auth/core/HttpApi";
+import { RuntimeContext } from "alchemy";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
@@ -14,11 +15,15 @@ import {
   MailPermissionsLive,
 } from "../authorization/live";
 import { MailAuthorizationLive } from "../authorization/mail-authorization";
-import * as MailResources from "../authorization/resources";
+import { MailResourceResolverLive } from "../authorization/mail-resource-resolver-live";
 import {
   MailboxAdministrationConfig,
   MailboxAdministrationLive,
 } from "../mailboxes/administration";
+import {
+  MailboxRepositoryDoConfig,
+  MailboxRepositoryDoLive,
+} from "../mailboxes/mailbox-repository-do";
 import { BackendHttpApi } from "./api";
 import { BackendConfig, BackendResources } from "./backend-context";
 import { BackendHealthLive } from "./backend-health";
@@ -26,53 +31,6 @@ import { DevEmailGroupLive } from "./dev-emails";
 import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
 import { HttpApiPlatformLive } from "./platform";
-
-/** Temporary fail-closed resolver until mailbox storage is backed by MailboxDO. */
-const MailResourceResolverUnavailableLive = Layer.succeed(
-  MailResources.MailResourceResolver,
-  MailResources.MailResourceResolver.of({
-    resolveAttachment: (resource) =>
-      Effect.fail(
-        new MailResources.MailResourceResolveError({
-          message: "Mail resource storage is not available",
-          reason: "storage",
-          resource,
-        })
-      ),
-    resolveDraft: (resource) =>
-      Effect.fail(
-        new MailResources.MailResourceResolveError({
-          message: "Mail resource storage is not available",
-          reason: "storage",
-          resource,
-        })
-      ),
-    resolveFolder: (resource) =>
-      Effect.fail(
-        new MailResources.MailResourceResolveError({
-          message: "Mail resource storage is not available",
-          reason: "storage",
-          resource,
-        })
-      ),
-    resolveMessage: (resource) =>
-      Effect.fail(
-        new MailResources.MailResourceResolveError({
-          message: "Mail resource storage is not available",
-          reason: "storage",
-          resource,
-        })
-      ),
-    resolveRule: (resource) =>
-      Effect.fail(
-        new MailResources.MailResourceResolveError({
-          message: "Mail resource storage is not available",
-          reason: "storage",
-          resource,
-        })
-      ),
-  })
-);
 
 /** Builds all BackendHttpApi groups from Worker resources and deployment config. */
 const BackendRoutesLive = Layer.unwrap(
@@ -113,10 +71,32 @@ const BackendRoutesLive = Layer.unwrap(
     const permissionsLive = MailPermissionsLive.pipe(
       Layer.provide(Layer.succeed(MailPermissionDatabase, resources.database))
     );
-    const mailAuthorizationLive = MailAuthorizationLive.pipe(
+    const mailboxRepositoryLive = MailboxRepositoryDoLive.pipe(
       Layer.provide(
-        Layer.merge(permissionsLive, MailResourceResolverUnavailableLive)
+        Layer.succeed(
+          MailboxRepositoryDoConfig,
+          MailboxRepositoryDoConfig.of({
+            mailboxExists: (mailboxId) =>
+              resources.controlPlane
+                .prepare(
+                  "SELECT 1 AS present FROM app_mailbox WHERE id = ? AND status = 'active'"
+                )
+                .bind(mailboxId)
+                .first<{ readonly present: number }>()
+                .pipe(
+                  Effect.map((row) => row?.present === 1),
+                  Effect.provide(RuntimeContext.phantom)
+                ),
+            namespace: resources.mailboxDataPlane,
+          })
+        )
       )
+    );
+    const resourceResolverLive = MailResourceResolverLive.pipe(
+      Layer.provide(mailboxRepositoryLive)
+    );
+    const mailAuthorizationLive = MailAuthorizationLive.pipe(
+      Layer.provide(Layer.merge(permissionsLive, resourceResolverLive))
     );
     const mailboxDependenciesLive = Layer.mergeAll(
       MailboxAdministrationLive.pipe(

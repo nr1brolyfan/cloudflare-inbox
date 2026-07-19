@@ -179,5 +179,11 @@ export const mailboxScope = (
 ): AuthPermission.PermissionScope =>
   AuthPermission.PermissionScope.make(MAILBOX_SCOPE_TYPE, mailboxId);
 
-export const folderScope = (folderId: string): AuthPermission.PermissionScope =>
-  AuthPermission.PermissionScope.make(FOLDER_SCOPE_TYPE, folderId);
+export const folderScope = (
+  mailboxId: string,
+  folderId: string
+): AuthPermission.PermissionScope =>
+  AuthPermission.PermissionScope.make(
+    FOLDER_SCOPE_TYPE,
+    JSON.stringify([mailboxId, folderId])
+  );

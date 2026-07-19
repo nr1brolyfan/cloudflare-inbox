@@ -17,6 +17,7 @@ const healthyReport: Health.BackendHealthReport = {
     authRateLimit: "ok",
     authorization: "ok",
     controlPlane: "ok",
+    mailboxDataPlane: "ok",
     rawMessages: "ok",
   },
 };
@@ -54,6 +55,7 @@ describe("backend health API", () => {
           authRateLimit: "ok",
           authorization: "ok",
           controlPlane: "ok",
+          mailboxDataPlane: "ok",
           rawMessages: "ok",
         },
       });
@@ -85,6 +87,7 @@ describe("backend health API", () => {
           authRateLimit: "ok",
           authorization: "ok",
           controlPlane: "ok",
+          mailboxDataPlane: "ok",
           rawMessages: "error",
         },
       });

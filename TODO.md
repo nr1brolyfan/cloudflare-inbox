@@ -5,18 +5,18 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-19
-- Postęp zadań: **44/109 (40%)**
+- Postęp zadań: **48/109 (44%)**
 - Ukończone etapy: **2/11**
 - Aktualny etap: **5. MailboxDO i domena pocztowa**
-- Aktualne zadanie: **SQLite-backed Durable Object per logiczny mailbox**
+- Aktualne zadanie: **Folders i labels**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
 | 1   | Toolchain i zależności                | DONE        | 7/7    |
-| 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 10/13  |
+| 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 11/13  |
 | 3   | Effect-auth i sesje                   | IN PROGRESS | 15/20  |
 | 4   | Permissions i control plane           | DONE        | 10/10  |
-| 5   | MailboxDO i domena pocztowa           | CURRENT     | 2/9    |
+| 5   | MailboxDO i domena pocztowa           | CURRENT     | 5/9    |
 | 6   | Inbound email                         | TODO        | 0/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | TODO        | 0/9    |
 | 8   | Reguły automatyczne                   | TODO        | 0/6    |
@@ -54,7 +54,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Dodać konfigurację originu, nadawcy i sekretów auth per environment.
 - [x] Zapewnić stabilne porty i lokalny graf zasobów z local Alchemy state.
 - [x] Włączyć bazowe Workers Logs, native traces i lokalny OTLP do Motel.
-- [ ] Utworzyć i podłączyć `MailboxDO`.
+- [x] Utworzyć i podłączyć `MailboxDO`.
 - [ ] Utworzyć zasoby Cloudflare Workflows dla inbound/outbound.
 - [ ] Dodać Email Routing handler i mailbox sending bindings.
 
@@ -98,10 +98,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 - [x] Zdefiniować Effect schemas i publiczne kontrakty domenowe.
 - [x] Zdefiniować typed errors oraz statusy inbound/outbound.
-- [ ] CURRENT Utworzyć SQLite-backed Durable Object per logiczny mailbox.
-- [ ] Dodać wersjonowane migracje SQLite MailboxDO.
-- [ ] Zdefiniować port repozytorium i adapter Durable Object SQLite.
-- [ ] Zaimplementować folders i labels.
+- [x] Utworzyć SQLite-backed Durable Object per logiczny mailbox.
+- [x] Dodać wersjonowane migracje SQLite MailboxDO.
+- [x] Zdefiniować port repozytorium i adapter Durable Object SQLite.
+- [ ] CURRENT Zaimplementować folders i labels.
 - [ ] Zaimplementować messages, threads, drafts i outbound deliveries.
 - [ ] Dodać indeksy FTS5 i spójne aktualizacje indeksu.
 - [ ] Zapewnić atomowe, wersjonowane i idempotentne mutacje.

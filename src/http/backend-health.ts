@@ -50,6 +50,22 @@ export const BackendHealthLive = Layer.effect(
       .prepare("select 1 as ready")
       .first()
       .pipe(Effect.provide(RuntimeContext.phantom));
+    const healthMailbox = resources.mailboxDataPlane.getByName("__health__");
+    const probeMailboxDataPlane = Effect.all({
+      ready: healthMailbox.sqliteReady(),
+      missing: healthMailbox.resolveMailResource({
+        _tag: "Folder",
+        mailboxId: "__health__",
+        folderId: "__health__",
+      }),
+    }).pipe(
+      Effect.tap(({ missing }) =>
+        missing._tag === "NotFound"
+          ? Effect.void
+          : Effect.die(new Error("MailboxDO repository probe found test data"))
+      ),
+      Effect.provide(RuntimeContext.phantom)
+    );
     const probeRawMessages = resources.rawMessages
       .head("__health__")
       .pipe(Effect.provide(RuntimeContext.phantom));
@@ -58,6 +74,7 @@ export const BackendHealthLive = Layer.effect(
         authRateLimit: probeAuthRateLimit.pipe(Effect.exit),
         authorization: probeAuthorization.pipe(Effect.exit),
         controlPlane: probeControlPlane.pipe(Effect.exit),
+        mailboxDataPlane: probeMailboxDataPlane.pipe(Effect.exit),
         rawMessages: probeRawMessages.pipe(Effect.exit),
       },
       { concurrency: "unbounded" }
@@ -67,6 +84,9 @@ export const BackendHealthLive = Layer.effect(
           authRateLimit: Exit.isSuccess(results.authRateLimit) ? "ok" : "error",
           authorization: Exit.isSuccess(results.authorization) ? "ok" : "error",
           controlPlane: Exit.isSuccess(results.controlPlane) ? "ok" : "error",
+          mailboxDataPlane: Exit.isSuccess(results.mailboxDataPlane)
+            ? "ok"
+            : "error",
           rawMessages: Exit.isSuccess(results.rawMessages) ? "ok" : "error",
         };
 

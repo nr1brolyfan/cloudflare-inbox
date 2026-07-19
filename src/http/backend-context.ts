@@ -4,6 +4,7 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
 import type { AuthRuntimeConfigShape } from "../auth/live";
+import type { MailboxDONamespace } from "../mailboxes/mailbox-do";
 
 type ControlPlaneClient = Effect.Success<
   ReturnType<typeof Cloudflare.D1.QueryDatabase>
@@ -17,6 +18,7 @@ export interface BackendResources {
   readonly controlPlane: ControlPlaneClient;
   readonly database: AuthRuntimeConfigShape["database"];
   readonly emailSender: AuthRuntimeConfigShape["emailSender"];
+  readonly mailboxDataPlane: MailboxDONamespace;
   readonly rawMessages: RawMessagesClient;
 }
 

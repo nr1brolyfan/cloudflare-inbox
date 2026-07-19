@@ -164,18 +164,18 @@ describe("D1 mail authorization", () => {
 
         yield* administration.grantRole({
           role: MailRole.viewer,
-          scope: folderScope("folder-a"),
+          scope: folderScope("mailbox-a", "folder-a"),
           subject,
         });
         const folderChecks = {
           anotherFolder: yield* permissions.hasPermission({
             permission: MailPermission.folderRead,
-            scope: folderScope("folder-b"),
+            scope: folderScope("mailbox-a", "folder-b"),
             subject,
           }),
           canRead: yield* permissions.hasPermission({
             permission: MailPermission.folderRead,
-            scope: folderScope("folder-a"),
+            scope: folderScope("mailbox-a", "folder-a"),
             subject,
           }),
         };

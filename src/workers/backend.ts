@@ -17,6 +17,7 @@ import {
   ControlPlaneDatabase,
   RawMessagesBucket,
 } from "../infra/resources";
+import { MailboxDO } from "../mailboxes/mailbox-do";
 import {
   BackendObservabilityConfig,
   BackendObservabilityLive,
@@ -55,6 +56,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       yield* Cloudflare.D1.QueryDatabase(ControlPlaneDatabase);
     const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
     const authRateLimit = yield* RateLimitDurableObject;
+    const mailboxDataPlane = yield* MailboxDO;
     const isDevelopment = yield* ALCHEMY_DEV;
     const otlpBaseUrl = isDevelopment
       ? Option.getOrUndefined(
@@ -110,6 +112,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
                   controlPlane,
                   database: controlPlaneDatabase,
                   emailSender,
+                  mailboxDataPlane,
                   rawMessages,
                 })
               )

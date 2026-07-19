@@ -194,7 +194,7 @@ export const MailAuthorizationLive = Layer.effect(
               ),
               requirePermission(
                 MailPermission.folderRead,
-                folderScope(location.folderId)
+                folderScope(location.mailboxId, location.folderId)
               )
             ).pipe(Effect.as(location))
           )
@@ -251,7 +251,7 @@ export const MailAuthorizationLive = Layer.effect(
                 action === "read"
                   ? MailPermission.folderRead
                   : MailPermission.folderModify,
-                folderScope(location.folderId)
+                folderScope(location.mailboxId, location.folderId)
               ),
               requirePermission(
                 action === "read"
@@ -283,7 +283,7 @@ export const MailAuthorizationLive = Layer.effect(
                 action === "read"
                   ? MailPermission.folderRead
                   : MailPermission.folderModify,
-                folderScope(location.folderId)
+                folderScope(location.mailboxId, location.folderId)
               )
             ).pipe(Effect.as(location))
           )
