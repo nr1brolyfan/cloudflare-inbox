@@ -70,6 +70,7 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "get-outbound"
     | "cancel-outbound"
     | "resend-outbound"
+    | "commit-inbound"
     | "replay-inbound";
   readonly reason:
     | "validation"

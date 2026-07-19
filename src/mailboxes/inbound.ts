@@ -23,6 +23,8 @@ import {
 } from "./core";
 import type {
   BlobStoreError,
+  MailboxDomainError,
+  MailboxRepositoryError,
   MimeParseError,
   WorkflowStartError,
 } from "./errors";
@@ -190,8 +192,15 @@ export const InboundWorkflowResultV1 = Schema.Struct({
   formatVersion: Schema.Literal(1),
   inboundIngestId: InboundIngestId,
   mailboxId: MailboxId,
-  status: Schema.Literals(["parsing", "attachments_stored"]),
-});
+  messageId: Schema.optional(MessageId),
+  status: Schema.Literals(["parsing", "attachments_stored", "ready"]),
+}).check(
+  Schema.makeFilter((result) =>
+    (result.status === "ready") === (result.messageId !== undefined)
+      ? undefined
+      : "messageId must be present exactly when the workflow result is ready"
+  )
+);
 export type InboundWorkflowResultV1 = Schema.Schema.Type<
   typeof InboundWorkflowResultV1
 >;
@@ -356,3 +365,37 @@ export const InboundAttachmentsStoredCheckpointV1 = Schema.Struct({
   attachmentCount: AttachmentIndex,
   status: Schema.Literal("attachments_stored"),
 });
+
+export const CommitInboundMessageV1 = Schema.Struct({
+  formatVersion: Schema.Literal(1),
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  envelope: ReceiveInboundEmailInput,
+  receivedAt: UnixMillis,
+  message: ParsedInboundMessageV1,
+});
+export type CommitInboundMessageV1 = Schema.Schema.Type<
+  typeof CommitInboundMessageV1
+>;
+
+export const InboundCommittedCheckpointV1 = Schema.Struct({
+  formatVersion: Schema.Literal(1),
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  messageId: MessageId,
+  status: Schema.Literal("ready"),
+});
+
+export interface InboundMessageCommitter {
+  readonly commit: (
+    input: CommitInboundMessageV1
+  ) => Effect.Effect<
+    InboundProcessingResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+}
+
+/** Trusted final commit boundary from the Workflow to one MailboxDO. */
+export const InboundMessageCommitter = Context.Service<InboundMessageCommitter>(
+  "cloudflare-inbox/InboundMessageCommitter"
+);

@@ -6,6 +6,7 @@ import {
   primaryKey,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import type { AnySQLiteColumn } from "drizzle-orm/sqlite-core";
 
@@ -195,6 +196,76 @@ export const message = sqliteTable(
     index("message_active_thread_idx")
       .on(t.threadId, t.activityAt, t.id)
       .where(sql`deleted_at is null`),
+    index("message_rfc_message_id_idx")
+      .on(t.rfcMessageId, t.id)
+      .where(sql`rfc_message_id is not null`),
+  ]
+);
+
+export const inboundProcessing = sqliteTable(
+  "inbound_processing",
+  {
+    id: text("id").primaryKey(),
+    status: text("status", {
+      enum: [
+        "received",
+        "raw_stored",
+        "parsing",
+        "attachments_stored",
+        "ready",
+        "failed",
+      ],
+    }).notNull(),
+    messageId: text("message_id")
+      .unique()
+      .references(() => message.id, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    requestKey: text("request_key").notNull(),
+    failureCode: text("failure_code"),
+    failureAt: integer("failure_at"),
+    failureReplayable: integer("failure_replayable"),
+    attemptCount: integer("attempt_count").notNull().default(0),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    check(
+      "inbound_processing_id_check",
+      sql`length(${t.id}) between 1 and 128 and ${t.id} = trim(${t.id})`
+    ),
+    check(
+      "inbound_processing_status_check",
+      sql`${t.status} in ('received', 'raw_stored', 'parsing', 'attachments_stored', 'ready', 'failed')`
+    ),
+    check(
+      "inbound_processing_message_check",
+      sql`(${t.status} = 'ready' and ${t.messageId} is not null) or (${t.status} <> 'ready' and ${t.messageId} is null)`
+    ),
+    check(
+      "inbound_processing_failure_check",
+      sql`(${t.status} = 'failed' and ${t.failureCode} is not null and ${t.failureAt} is not null and ${t.failureReplayable} is not null and ${t.failureReplayable} in (0, 1)) or (${t.status} <> 'failed' and ${t.failureCode} is null and ${t.failureAt} is null and ${t.failureReplayable} is null)`
+    ),
+    check(
+      "inbound_processing_failure_code_check",
+      sql`${t.failureCode} is null or ${t.failureCode} in ('malformed_message', 'message_too_large', 'unsupported_message', 'processing_failed')`
+    ),
+    check(
+      "inbound_processing_failure_at_check",
+      sql`${t.failureAt} is null or ${t.failureAt} >= 0`
+    ),
+    check(
+      "inbound_processing_attempt_count_check",
+      sql`${t.attemptCount} >= 0`
+    ),
+    check("inbound_processing_created_at_check", sql`${t.createdAt} >= 0`),
+    check(
+      "inbound_processing_updated_at_check",
+      sql`${t.updatedAt} >= ${t.createdAt}`
+    ),
+    check("inbound_processing_version_check", sql`${t.version} >= 1`),
   ]
 );
 
@@ -214,6 +285,11 @@ export const attachment = sqliteTable(
     mimeType: text("mime_type").notNull().default("application/octet-stream"),
     size: integer("size").notNull().default(0),
     contentId: text("content_id"),
+    inboundIngestId: text("inbound_ingest_id").references(
+      () => inboundProcessing.id,
+      { onUpdate: "cascade", onDelete: "restrict" }
+    ),
+    sourceIndex: integer("source_index"),
     disposition: text("disposition", { enum: ["attachment", "inline"] })
       .notNull()
       .default("attachment"),
@@ -238,10 +314,17 @@ export const attachment = sqliteTable(
     ),
     check("attachment_size_check", sql`${t.size} >= 0`),
     check(
+      "attachment_inbound_source_check",
+      sql`(${t.inboundIngestId} is null and ${t.sourceIndex} is null) or (${t.inboundIngestId} is not null and ${t.sourceIndex} is not null and ${t.sourceIndex} >= 0)`
+    ),
+    check(
       "attachment_disposition_check",
       sql`${t.disposition} in ('attachment', 'inline')`
     ),
     index("attachment_message_id_idx").on(t.messageId, t.id),
+    uniqueIndex("attachment_inbound_source_uidx")
+      .on(t.inboundIngestId, t.sourceIndex)
+      .where(sql`inbound_ingest_id is not null`),
   ]
 );
 
@@ -479,6 +562,7 @@ export const mailboxSchema = {
   mailboxMetadata,
   folder,
   message,
+  inboundProcessing,
   attachment,
   draft,
   filterRule,
@@ -505,6 +589,10 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
       from: r.message.id,
       to: r.attachment.messageId,
     }),
+    inboundProcessing: r.one.inboundProcessing({
+      from: r.message.id,
+      to: r.inboundProcessing.messageId,
+    }),
     messageLabels: r.many.messageLabel({
       from: r.message.id,
       to: r.messageLabel.messageId,
@@ -518,11 +606,25 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
       to: r.outboundDelivery.messageId,
     }),
   },
+  inboundProcessing: {
+    message: r.one.message({
+      from: r.inboundProcessing.messageId,
+      to: r.message.id,
+    }),
+    attachments: r.many.attachment({
+      from: r.inboundProcessing.id,
+      to: r.attachment.inboundIngestId,
+    }),
+  },
   attachment: {
     message: r.one.message({
       from: r.attachment.messageId,
       to: r.message.id,
       optional: false,
+    }),
+    inboundProcessing: r.one.inboundProcessing({
+      from: r.attachment.inboundIngestId,
+      to: r.inboundProcessing.id,
     }),
   },
   label: {

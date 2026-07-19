@@ -1,6 +1,6 @@
 import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
 import * as Cloudflare from "alchemy/Cloudflare";
-import { and, asc, count, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import * as DrizzleDo from "drizzle-orm/effect-sqlite-do";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -16,6 +16,7 @@ import {
   UnixMillis,
   Version,
 } from "./core";
+import type { RfcMessageId } from "./core";
 import type { CreateFolderInput, CreateLabelInput } from "./directory";
 import {
   DeletedFolder,
@@ -33,6 +34,8 @@ import {
 import { CreateDraftInput, DraftSchema, UpdateDraftInput } from "./drafts";
 import type { GetDraftInput } from "./drafts";
 import { MailboxDomainError } from "./errors";
+import { CommitInboundMessageV1, InboundProcessingSchema } from "./inbound";
+import type { CommitInboundMessageV1 as CommitInboundMessageV1Type } from "./inbound";
 import {
   AddMessageLabelInput,
   AttachmentMetadata,
@@ -84,6 +87,7 @@ import {
   draft,
   filterRule,
   folder,
+  inboundProcessing,
   label,
   mailboxMetadata,
   mailboxOperation,
@@ -2106,6 +2110,221 @@ export const MailboxMessageStoreLive = Layer.effect(
     const operations = yield* MailboxOperationStore;
     return MailboxMessageStore.of(
       makeMailboxMessageStore(db, runtime, mailboxId, operations)
+    );
+  })
+);
+
+const readInboundProcessingRow = (
+  row: typeof inboundProcessing.$inferSelect,
+  mailboxId: MailboxId
+) =>
+  Schema.decodeUnknownSync(InboundProcessingSchema)({
+    id: row.id,
+    mailboxId,
+    status: row.status,
+    messageId: row.messageId ?? undefined,
+    failure:
+      row.failureCode === null
+        ? undefined
+        : {
+            code: row.failureCode,
+            failedAt: row.failureAt,
+            replayable: row.failureReplayable === 1,
+          },
+    attemptCount: row.attemptCount,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    version: row.version,
+  });
+
+const inboundSnippet = (textBody: string | undefined) =>
+  (textBody ?? "").replaceAll(/\s+/gu, " ").trim().slice(0, 500);
+
+const commitInboundMessage = (
+  mailboxId: MailboxId,
+  input: CommitInboundMessageV1Type,
+  runtime: MailboxRuntime
+) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const requestKey = JSON.stringify(
+          Schema.encodeSync(CommitInboundMessageV1)(input)
+        );
+        const [existing] = yield* tx
+          .select()
+          .from(inboundProcessing)
+          .where(eq(inboundProcessing.id, input.inboundIngestId))
+          .limit(1);
+        if (existing !== undefined) {
+          if (existing.requestKey !== requestKey) {
+            return yield* messageDomainError(
+              "commit-inbound",
+              "idempotency-conflict",
+              "Inbound ingest ID was already committed with different data",
+              {
+                resourceType: "inbound",
+                resourceId: input.inboundIngestId,
+              }
+            );
+          }
+          if (existing.status !== "ready") {
+            return yield* messageDomainError(
+              "commit-inbound",
+              "invalid-state",
+              "Inbound processing is not ready for an idempotent commit",
+              {
+                resourceType: "inbound",
+                resourceId: input.inboundIngestId,
+              }
+            );
+          }
+          return readInboundProcessingRow(existing, mailboxId);
+        }
+
+        const nearestReferences: RfcMessageId[] = [];
+        for (
+          let index = input.message.references.length - 1;
+          index >= 0;
+          index -= 1
+        ) {
+          const reference = input.message.references[index];
+          if (reference !== undefined) {
+            nearestReferences.push(reference);
+          }
+        }
+        const referenceIds = [
+          ...(input.message.inReplyTo === undefined
+            ? []
+            : [input.message.inReplyTo]),
+          ...nearestReferences,
+        ].filter((value, index, values) => values.indexOf(value) === index);
+        const referencedMessages =
+          referenceIds.length === 0
+            ? []
+            : yield* tx
+                .select({
+                  rfcMessageId: message.rfcMessageId,
+                  threadId: message.threadId,
+                })
+                .from(message)
+                .where(inArray(message.rfcMessageId, referenceIds));
+        const referencedThreadId = referenceIds
+          .map((referenceId) =>
+            referencedMessages
+              .filter(({ rfcMessageId }) => rfcMessageId === referenceId)
+              .map(({ threadId }) => threadId)
+              .filter((value, index, values) => values.indexOf(value) === index)
+          )
+          .find((threadIds) => threadIds.length === 1)?.[0];
+        const threadId = referencedThreadId ?? runtime.randomId();
+        const messageId = runtime.randomId();
+        const now = Math.max(runtime.now(), input.receivedAt);
+        const recipients = [
+          ...input.message.to,
+          ...input.message.cc,
+          ...input.message.bcc,
+        ];
+
+        yield* tx.insert(message).values({
+          id: messageId,
+          folderId: "inbox",
+          version: 1,
+          read: 0,
+          threadId,
+          direction: "inbound",
+          subject: input.message.subject,
+          senderJson:
+            input.message.sender === undefined
+              ? null
+              : encodeJson(MailAddress, input.message.sender),
+          recipientsJson: encodeJson(AddressList, recipients),
+          snippet: inboundSnippet(input.message.textBody),
+          activityAt: input.receivedAt,
+          starred: 0,
+          needsReply: 0,
+          size: input.envelope.rawSize,
+          rfcMessageId: input.message.rfcMessageId ?? null,
+          inReplyTo: input.message.inReplyTo ?? null,
+          referencesJson: encodeJson(StringList, input.message.references),
+          toJson: encodeJson(AddressList, input.message.to),
+          ccJson: encodeJson(AddressList, input.message.cc),
+          bccJson: encodeJson(AddressList, input.message.bcc),
+          textBody: input.message.textBody ?? null,
+          htmlBody: input.message.htmlBody ?? null,
+          headerDate: input.message.headerDate ?? null,
+          receivedAt: input.receivedAt,
+          createdAt: now,
+          updatedAt: now,
+        });
+
+        const result = Schema.decodeUnknownSync(InboundProcessingSchema)({
+          id: input.inboundIngestId,
+          mailboxId,
+          status: "ready",
+          messageId,
+          attemptCount: 1,
+          createdAt: input.receivedAt,
+          updatedAt: now,
+          version: 1,
+        });
+        yield* tx.insert(inboundProcessing).values({
+          id: result.id,
+          status: result.status,
+          messageId: result.messageId,
+          requestKey,
+          attemptCount: result.attemptCount,
+          createdAt: result.createdAt,
+          updatedAt: result.updatedAt,
+          version: result.version,
+        });
+
+        for (const metadata of input.message.attachments) {
+          yield* tx.insert(attachment).values({
+            id: runtime.randomId(),
+            messageId,
+            version: 1,
+            fileName: metadata.fileName ?? "attachment",
+            mimeType: metadata.mimeType,
+            size: metadata.size,
+            contentId: metadata.contentId ?? null,
+            inboundIngestId: input.inboundIngestId,
+            sourceIndex: metadata.index,
+            disposition: metadata.disposition,
+          });
+        }
+
+        return result;
+      })
+    );
+  });
+
+const makeMailboxInboundStore = (
+  db: MailboxDatabase,
+  runtime: MailboxRuntime,
+  mailboxId: MailboxId
+) => ({
+  commit: (input: CommitInboundMessageV1Type) =>
+    commitInboundMessage(mailboxId, input, runtime).pipe(
+      Effect.provideService(MailboxDatabase, db)
+    ),
+});
+
+export type MailboxInboundStore = ReturnType<typeof makeMailboxInboundStore>;
+
+export const MailboxInboundStore = Context.Service<MailboxInboundStore>(
+  "cloudflare-inbox/MailboxInboundStore"
+);
+
+export const MailboxInboundStoreLive = Layer.effect(
+  MailboxInboundStore,
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const runtime = yield* MailboxRuntime;
+    const { mailboxId } = yield* MailboxIdentity;
+    return MailboxInboundStore.of(
+      makeMailboxInboundStore(db, runtime, mailboxId)
     );
   })
 );

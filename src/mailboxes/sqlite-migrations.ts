@@ -356,6 +356,34 @@ const migrations = [
       END`,
     ],
   },
+  {
+    version: 6,
+    statements: [
+      `CREATE TABLE inbound_processing (
+        id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128 AND id = trim(id)),
+        status TEXT NOT NULL CHECK (status IN ('received', 'raw_stored', 'parsing', 'attachments_stored', 'ready', 'failed')),
+        message_id TEXT UNIQUE REFERENCES message(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        request_key TEXT NOT NULL,
+        failure_code TEXT CHECK (failure_code IS NULL OR failure_code IN ('malformed_message', 'message_too_large', 'unsupported_message', 'processing_failed')),
+        failure_at INTEGER CHECK (failure_at IS NULL OR failure_at >= 0),
+        failure_replayable INTEGER CHECK (failure_replayable IS NULL OR failure_replayable IN (0, 1)),
+        attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+        created_at INTEGER NOT NULL CHECK (created_at >= 0),
+        updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1),
+        CHECK ((status = 'ready' AND message_id IS NOT NULL) OR (status <> 'ready' AND message_id IS NULL)),
+        CHECK ((status = 'failed' AND failure_code IS NOT NULL AND failure_at IS NOT NULL AND failure_replayable IS NOT NULL AND failure_replayable IN (0, 1)) OR (status <> 'failed' AND failure_code IS NULL AND failure_at IS NULL AND failure_replayable IS NULL))
+      ) STRICT`,
+      `ALTER TABLE attachment ADD COLUMN inbound_ingest_id TEXT REFERENCES inbound_processing(id) ON UPDATE CASCADE ON DELETE RESTRICT`,
+      `ALTER TABLE attachment ADD COLUMN source_index INTEGER CHECK ((inbound_ingest_id IS NULL AND source_index IS NULL) OR (inbound_ingest_id IS NOT NULL AND source_index IS NOT NULL AND source_index >= 0))`,
+      `CREATE UNIQUE INDEX attachment_inbound_source_uidx
+        ON attachment(inbound_ingest_id, source_index)
+        WHERE inbound_ingest_id IS NOT NULL`,
+      `CREATE INDEX message_rfc_message_id_idx
+        ON message(rfc_message_id, id)
+        WHERE rfc_message_id IS NOT NULL`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

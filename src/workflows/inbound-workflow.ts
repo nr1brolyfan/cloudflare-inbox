@@ -5,11 +5,14 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { RawMessagesBucket } from "../infra/resources";
+import { MailboxDoNamespace } from "../mailboxes/do-client";
 import { InboundManifestMismatchError } from "../mailboxes/errors";
 import type { ParsedInboundMessageV1 as ParsedInboundMessageV1Type } from "../mailboxes/inbound";
 import {
   InboundAttachmentStore,
   InboundAttachmentsStoredCheckpointV1,
+  InboundCommittedCheckpointV1,
+  InboundMessageCommitter,
   InboundMimeAttachmentExtractor,
   InboundMimeParser,
   InboundRawMessageReader,
@@ -23,6 +26,7 @@ import {
   InboundAttachmentStoreR2Live,
   InboundAttachmentStoreRuntimeLive,
 } from "../mailboxes/inbound-attachment-store-r2-live";
+import { InboundMessageCommitterDoLive } from "../mailboxes/inbound-message-committer-do-live";
 import {
   InboundMimeAttachmentExtractorPostalMimeLive,
   InboundMimeParserConfigLive,
@@ -32,6 +36,7 @@ import {
   InboundRawMessageR2Client,
   InboundRawMessageReaderR2Live,
 } from "../mailboxes/inbound-raw-message-reader-r2-live";
+import { MailboxDO } from "../mailboxes/mailbox-do";
 
 const encodedManifest = (manifest: ParsedInboundMessageV1Type) =>
   JSON.stringify(Schema.encodeSync(ParsedInboundMessageV1)(manifest));
@@ -136,17 +141,41 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
       }).pipe(Effect.orDie)
     );
 
+    const committed = yield* Cloudflare.Workflows.task(
+      "commit-inbound-message",
+      Effect.gen(function* () {
+        const committer = yield* InboundMessageCommitter;
+        const processing = yield* committer.commit({
+          envelope: params.envelope,
+          formatVersion: 1,
+          inboundIngestId: params.inboundIngestId,
+          mailboxId: params.mailboxId,
+          message: parsed,
+          receivedAt: params.receivedAt,
+        });
+        return yield* Schema.decodeUnknownEffect(InboundCommittedCheckpointV1)({
+          formatVersion: 1,
+          inboundIngestId: processing.id,
+          mailboxId: processing.mailboxId,
+          messageId: processing.messageId,
+          status: processing.status,
+        });
+      }).pipe(Effect.orDie)
+    );
+
     return yield* Schema.decodeUnknownEffect(InboundWorkflowResultV1)({
       formatVersion: 1,
       inboundIngestId: params.inboundIngestId,
       mailboxId: params.mailboxId,
-      status: "attachments_stored",
+      messageId: committed.messageId,
+      status: "ready",
     }).pipe(Effect.orDie);
   })
 );
 
 export const inboundWorkflowImplementation = Effect.gen(function* () {
   const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
+  const mailboxDataPlane = yield* MailboxDO;
   const rawMessageClientLive = Layer.succeed(
     InboundRawMessageR2Client,
     InboundRawMessageR2Client.of({
@@ -192,6 +221,11 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
       Layer.merge(attachmentClientLive, InboundAttachmentStoreRuntimeLive)
     )
   );
+  const inboundCommitterLive = InboundMessageCommitterDoLive.pipe(
+    Layer.provide(
+      Layer.succeed(MailboxDoNamespace, MailboxDoNamespace.of(mailboxDataPlane))
+    )
+  );
   const mimeParserLive = InboundMimeParserPostalMimeLive.pipe(
     Layer.provide(InboundMimeParserConfigLive)
   );
@@ -203,7 +237,8 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
     rawMessageReaderLive,
     mimeParserLive,
     attachmentExtractorLive,
-    attachmentStoreLive
+    attachmentStoreLive,
+    inboundCommitterLive
   );
   const program = yield* inboundWorkflowProgram;
 

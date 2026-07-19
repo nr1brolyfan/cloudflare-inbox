@@ -60,6 +60,7 @@ describe("MailboxDO migrations", () => {
         { version: 3, applied_at: expect.any(String) },
         { version: 4, applied_at: expect.any(String) },
         { version: 5, applied_at: expect.any(String) },
+        { version: 6, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -79,12 +80,12 @@ describe("MailboxDO migrations", () => {
         database
           .prepare(
             `SELECT name FROM sqlite_schema
-              WHERE type = 'table' AND name IN ('label', 'mailbox_operation')
+              WHERE type = 'table' AND name IN ('inbound_processing', 'label', 'mailbox_operation')
               ORDER BY name`
           )
           .all()
           .map((row) => row.name)
-      ).toStrictEqual(["label", "mailbox_operation"]);
+      ).toStrictEqual(["inbound_processing", "label", "mailbox_operation"]);
       expect(() =>
         database
           .prepare(
@@ -140,6 +141,57 @@ describe("MailboxDO migrations", () => {
     }
   });
 
+  it("enforces inbound source pairs and creates lookup indexes", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+      database
+        .prepare(
+          "INSERT INTO folder (id, name, kind, created_at, updated_at) VALUES ('inbox', 'Inbox', 'inbox', 0, 0)"
+        )
+        .run();
+      database
+        .prepare(
+          "INSERT INTO message (id, folder_id) VALUES ('message-1', 'inbox')"
+        )
+        .run();
+      database
+        .prepare(
+          "INSERT INTO inbound_processing (id, status, message_id, request_key, attempt_count, created_at, updated_at, version) VALUES ('ingest-1', 'ready', 'message-1', '{}', 1, 0, 0, 1)"
+        )
+        .run();
+
+      expect(() =>
+        database
+          .prepare(
+            "INSERT INTO attachment (id, message_id, inbound_ingest_id) VALUES ('attachment-1', 'message-1', 'ingest-1')"
+          )
+          .run()
+      ).toThrow("CHECK constraint failed");
+      expect(() =>
+        database
+          .prepare(
+            "INSERT INTO inbound_processing (id, status, request_key, failure_code, failure_at, attempt_count, created_at, updated_at, version) VALUES ('failed-1', 'failed', '{}', 'processing_failed', 0, 1, 0, 0, 1)"
+          )
+          .run()
+      ).toThrow("CHECK constraint failed");
+      expect(
+        database
+          .prepare(
+            "SELECT name FROM sqlite_schema WHERE type = 'index' AND name IN ('attachment_inbound_source_uidx', 'message_rfc_message_id_idx') ORDER BY name"
+          )
+          .all()
+          .map((row) => row.name)
+      ).toStrictEqual([
+        "attachment_inbound_source_uidx",
+        "message_rfc_message_id_idx",
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
   it("is idempotent when the database is already current", () => {
     const database = new DatabaseSync(":memory:");
     const storage = makeStorage(database);
@@ -177,7 +229,7 @@ describe("MailboxDO migrations", () => {
           .prepare(
             `SELECT name FROM sqlite_schema
               WHERE type = 'table'
-                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule', 'label', 'mailbox_operation', 'message_label', 'message_search', 'outbound_delivery')
+                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule', 'inbound_processing', 'label', 'mailbox_operation', 'message_label', 'message_search', 'outbound_delivery')
               ORDER BY name`
           )
           .all()
@@ -187,6 +239,7 @@ describe("MailboxDO migrations", () => {
         "draft",
         "filter_rule",
         "folder",
+        "inbound_processing",
         "label",
         "mailbox_metadata",
         "mailbox_operation",

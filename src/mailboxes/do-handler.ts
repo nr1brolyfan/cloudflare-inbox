@@ -29,6 +29,7 @@ import {
   MailboxDirectoryStore,
   MailboxDraftStore,
   MailboxIdentity,
+  MailboxInboundStore,
   MailboxMessageStore,
   MailboxOutboundStore,
   MailboxResourceIndex,
@@ -78,7 +79,10 @@ const encodeMailDataResult = <A, E extends { readonly _tag: string }>(
 
 const executeMailDataRequest = (
   request: MailDataRpcRequestType,
-  stores: MailboxMessageStore & MailboxDraftStore & MailboxOutboundStore
+  stores: MailboxMessageStore &
+    MailboxDraftStore &
+    MailboxOutboundStore &
+    MailboxInboundStore
 ) => {
   switch (request._tag) {
     case "ListMessages": {
@@ -191,6 +195,13 @@ const executeMailDataRequest = (
         request,
         stores.resendOutbound(request.input),
         (value) => ({ _tag: "OutboundResent", value })
+      );
+    }
+    case "CommitInbound": {
+      return encodeMailDataResult(
+        request,
+        stores.commit(request.input),
+        (value) => ({ _tag: "InboundCommitted", value })
       );
     }
     default: {
@@ -333,11 +344,13 @@ export const MailboxDoHandlerLive = Layer.effect(
     const messageStore = yield* MailboxMessageStore;
     const draftStore = yield* MailboxDraftStore;
     const outboundStore = yield* MailboxOutboundStore;
+    const inboundStore = yield* MailboxInboundStore;
     const { mailboxId } = yield* MailboxIdentity;
     const mailDataStores = {
       ...messageStore,
       ...draftStore,
       ...outboundStore,
+      ...inboundStore,
     };
 
     return MailboxDoHandler.of({

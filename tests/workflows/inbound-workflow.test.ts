@@ -7,16 +7,19 @@ import { describe, expect, it } from "vitest";
 import { BlobStoreError } from "#/mailboxes/errors";
 import type {
   InboundAttachmentStore as InboundAttachmentStoreShape,
+  InboundMessageCommitter as InboundMessageCommitterShape,
   InboundMimeAttachmentExtractor as InboundMimeAttachmentExtractorShape,
   InboundMimeParser as InboundMimeParserShape,
   InboundRawMessageReader as InboundRawMessageReaderShape,
 } from "#/mailboxes/inbound";
 import {
   InboundAttachmentStore,
+  InboundMessageCommitter,
   InboundMimeAttachmentExtractor,
   InboundMimeParser,
   InboundRawMessageReader,
   ParsedInboundMessageV1,
+  InboundProcessingSchema,
 } from "#/mailboxes/inbound";
 import { inboundWorkflowProgram } from "#/workflows/inbound-workflow";
 
@@ -40,6 +43,16 @@ const parsedManifest = Schema.decodeUnknownSync(ParsedInboundMessageV1)({
   subject: "Hello",
   to: [{ address: "owner@example.test" }],
 });
+const committedProcessing = Schema.decodeUnknownSync(InboundProcessingSchema)({
+  attemptCount: 1,
+  createdAt: 2000,
+  id: "ingest-1",
+  mailboxId: "primary",
+  messageId: "message-1",
+  status: "ready",
+  updatedAt: 2000,
+  version: 1,
+});
 
 const runStep = <T>(
   options: Cloudflare.Workflows.WorkflowTaskOptions<T, unknown, unknown>,
@@ -59,7 +72,9 @@ const runWorkflow = (
   parse: InboundMimeParserShape["parse"] = () => Effect.succeed(parsedManifest),
   extract: InboundMimeAttachmentExtractorShape["extract"] = () =>
     Effect.succeed({ attachments: [], manifest: parsedManifest }),
-  store: InboundAttachmentStoreShape["store"] = () => Effect.void
+  store: InboundAttachmentStoreShape["store"] = () => Effect.void,
+  commit: InboundMessageCommitterShape["commit"] = () =>
+    Effect.succeed(committedProcessing)
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -98,6 +113,10 @@ const runWorkflow = (
           Layer.succeed(
             InboundAttachmentStore,
             InboundAttachmentStore.of({ store })
+          ),
+          Layer.succeed(
+            InboundMessageCommitter,
+            InboundMessageCommitter.of({ commit })
           )
         )
       )
@@ -114,12 +133,14 @@ describe("inbound Workflow", () => {
       formatVersion: 1,
       inboundIngestId: "ingest-1",
       mailboxId: "primary",
-      status: "attachments_stored",
+      messageId: "message-1",
+      status: "ready",
     });
     expect(stepNames).toStrictEqual([
       "record-raw-stored",
       "parse-raw-mime",
       "store-inbound-attachments",
+      "commit-inbound-message",
     ]);
   });
 
@@ -234,6 +255,7 @@ describe("inbound Workflow", () => {
       metadata,
     };
     let storeInput: unknown;
+    let commitInput: unknown;
 
     await runWorkflow(
       validInput,
@@ -249,20 +271,70 @@ describe("inbound Workflow", () => {
       (input) =>
         Effect.sync(() => {
           storeInput = input;
+        }),
+      (input) =>
+        Effect.sync(() => {
+          commitInput = input;
+          return committedProcessing;
         })
     );
 
-    expect(storeInput).toMatchObject({
-      attachments: [
-        {
-          content: new Uint8Array([1, 2, 3]),
-          metadata: { contentId: "image-1", disposition: "inline", index: 0 },
-        },
-      ],
-      inboundIngestId: "ingest-1",
-      mailboxId: "primary",
-      receivedAt: 2000,
+    expect({ commitInput, storeInput }).toMatchObject({
+      commitInput: {
+        envelope: validInput.envelope,
+        formatVersion: 1,
+        inboundIngestId: "ingest-1",
+        mailboxId: "primary",
+        message: manifest,
+        receivedAt: 2000,
+      },
+      storeInput: {
+        attachments: [
+          {
+            content: new Uint8Array([1, 2, 3]),
+            metadata: {
+              contentId: "image-1",
+              disposition: "inline",
+              index: 0,
+            },
+          },
+        ],
+        inboundIngestId: "ingest-1",
+        mailboxId: "primary",
+        receivedAt: 2000,
+      },
     });
+  });
+
+  it("does not commit when attachment storage fails", async () => {
+    let commitCalls = 0;
+
+    await expect(
+      runWorkflow(
+        validInput,
+        "ingest-1",
+        [],
+        undefined,
+        undefined,
+        undefined,
+        () =>
+          Effect.fail(
+            new BlobStoreError({
+              cause: new Error("R2 unavailable"),
+              message: "Failed to store inbound attachment",
+              objectType: "attachment",
+              operation: "write",
+            })
+          ),
+        () =>
+          Effect.sync(() => {
+            commitCalls += 1;
+            return committedProcessing;
+          })
+      )
+    ).rejects.toBeDefined();
+
+    expect(commitCalls).toBe(0);
   });
 
   it("rejects an instance ID that differs from the ingest ID", async () => {

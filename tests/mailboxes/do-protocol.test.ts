@@ -148,6 +148,11 @@ const expectedMailDataMetadata = {
     kind: "write",
     responseTag: "OutboundResent",
   },
+  CommitInbound: {
+    operation: "commit-inbound",
+    kind: "write",
+    responseTag: "InboundCommitted",
+  },
 } as const satisfies Record<MailDataRpcRequest["_tag"], MailDataMetadata>;
 
 describe("MailboxDO protocol metadata", () => {
