@@ -210,6 +210,12 @@ export const MimeType = Schema.Trimmed.pipe(
 );
 export type MimeType = Schema.Schema.Type<typeof MimeType>;
 
+export const ContentId = Schema.Trimmed.pipe(
+  Schema.check(Schema.isLengthBetween(1, 998)),
+  Schema.brand("cloudflare-inbox/ContentId")
+);
+export type ContentId = Schema.Schema.Type<typeof ContentId>;
+
 export const MessageSubject = Schema.String.pipe(
   Schema.check(Schema.isMaxLength(998)),
   Schema.brand("cloudflare-inbox/MessageSubject")

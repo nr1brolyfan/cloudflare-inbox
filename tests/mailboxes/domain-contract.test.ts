@@ -22,6 +22,7 @@ import {
 } from "#/mailboxes/core";
 import { CreateFolderInput, Folder, FolderSchema } from "#/mailboxes/directory";
 import { CreateDraftInput } from "#/mailboxes/drafts";
+import { ParsedInboundMessageV1 } from "#/mailboxes/inbound";
 import {
   AttachmentMetadata,
   ListMessagesInput,
@@ -210,6 +211,43 @@ describe("mail domain contracts", () => {
           ],
         })
       )
+    ).toBeFalsy();
+  });
+
+  it("keeps parsed MIME manifests transport-neutral and attachment-ordered", () => {
+    const parsed = Schema.decodeUnknownSync(ParsedInboundMessageV1)({
+      attachments: [
+        {
+          attachmentObjectKey: "must-not-leak",
+          content: new Uint8Array([1, 2, 3]),
+          disposition: "attachment",
+          index: 0,
+          mimeType: "application/pdf",
+          size: 3,
+        },
+      ],
+      bcc: [],
+      cc: [],
+      formatVersion: 1,
+      references: [],
+      subject: "Manifest",
+      to: [],
+    });
+    const encoded = Schema.encodeSync(ParsedInboundMessageV1)(parsed);
+
+    expect(encoded.attachments).toStrictEqual([
+      {
+        disposition: "attachment",
+        index: 0,
+        mimeType: "application/pdf",
+        size: 3,
+      },
+    ]);
+    expect(
+      decodeSucceeds(ParsedInboundMessageV1, {
+        ...encoded,
+        attachments: [{ ...encoded.attachments[0], index: 1 }],
+      })
     ).toBeFalsy();
   });
 
