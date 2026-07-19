@@ -4,9 +4,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import type { MailboxId } from "./core";
 import { ByteSize, EmailAddress } from "./core";
 import type { ReceiveInboundEmailInput as ReceiveInboundEmailInputType } from "./inbound";
-import { InboundEmailRejected, ReceiveInboundEmailInput } from "./inbound";
+import {
+  InboundEmailRejected,
+  InboundMailboxResolver,
+  ReceiveInboundEmailInput,
+} from "./inbound";
 
 type ForwardableEmailMessage = CloudflareWorkers.ForwardableEmailMessage;
 const emptyEnvelope: Partial<ReceiveInboundEmailInputType> = {};
@@ -14,6 +19,7 @@ const emptyEnvelope: Partial<ReceiveInboundEmailInputType> = {};
 export interface InboundEmailRoutingMessage {
   readonly envelope: ReceiveInboundEmailInputType;
   readonly headers: ForwardableEmailMessage["headers"];
+  readonly mailboxId: MailboxId;
   readonly raw: ForwardableEmailMessage["raw"];
 }
 
@@ -122,12 +128,15 @@ export const handleCloudflareEmailRoutingMessage = (
   message: ForwardableEmailMessage
 ) =>
   Effect.gen(function* () {
-    const ingress = yield* InboundEmailIngress;
     const envelope = yield* decodeEnvelope(message);
+    const resolver = yield* InboundMailboxResolver;
+    const mailboxId = yield* resolver.resolve(envelope.envelopeTo);
+    const ingress = yield* InboundEmailIngress;
 
     yield* ingress.receive({
       envelope,
       headers: message.headers,
+      mailboxId,
       raw: message.raw,
     });
   }).pipe(Effect.catchTag("InboundEmailRejected", rejectInboundEmail(message)));

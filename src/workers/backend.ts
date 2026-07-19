@@ -11,7 +11,11 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
 import { AuthRuntimeConfig, AuthRuntimeConfigSchema } from "../auth/live";
-import { ControlPlaneD1Binding } from "../control-plane/database";
+import {
+  ControlPlaneD1Binding,
+  ControlPlaneDatabaseLive,
+} from "../control-plane/database";
+import { InboundMailboxResolverLive } from "../control-plane/inbound-mailbox-resolver-live";
 import { MailboxAdministrationConfig } from "../control-plane/mailbox-administration-live";
 import { BackendHttpLive } from "../http/backend";
 import { DevEmailConfig } from "../http/dev-emails";
@@ -139,16 +143,34 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       )
     );
     yield* emailRouting.listen((message) =>
-      handleCloudflareEmailRoutingMessage(message).pipe(
-        Effect.withSpan("backend.email", {
-          attributes: {
-            "email.raw_size": message.rawSize,
-          },
-          kind: "server",
-          root: true,
-        }),
-        Effect.provide(InboundEmailIngressUnavailableLive)
-      )
+      Effect.gen(function* () {
+        const controlPlaneDatabase = yield* controlPlane.raw;
+        const controlPlaneDatabaseLive = ControlPlaneDatabaseLive.pipe(
+          Layer.provide(
+            Layer.succeed(
+              ControlPlaneD1Binding,
+              ControlPlaneD1Binding.of({ database: controlPlaneDatabase })
+            )
+          )
+        );
+        const inboundServicesLive = Layer.merge(
+          InboundMailboxResolverLive.pipe(
+            Layer.provide(controlPlaneDatabaseLive)
+          ),
+          InboundEmailIngressUnavailableLive
+        );
+
+        return yield* handleCloudflareEmailRoutingMessage(message).pipe(
+          Effect.withSpan("backend.email", {
+            attributes: {
+              "email.raw_size": message.rawSize,
+            },
+            kind: "server",
+            root: true,
+          }),
+          Effect.provide(inboundServicesLive)
+        );
+      })
     );
     return {
       fetch: Effect.gen(function* () {

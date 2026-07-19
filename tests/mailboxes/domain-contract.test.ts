@@ -15,8 +15,10 @@ import {
   EmailAddress,
   MailboxDisplayName,
   MailboxId,
+  NormalizedEmailAddress,
   PageSize,
   Version,
+  normalizeEmailAddressDomain,
 } from "#/mailboxes/core";
 import { CreateFolderInput, Folder, FolderSchema } from "#/mailboxes/directory";
 import { CreateDraftInput } from "#/mailboxes/drafts";
@@ -128,6 +130,20 @@ describe("mail domain contracts", () => {
     );
     expect(decodeSucceeds(MailboxDisplayName, "😀".repeat(200))).toBeTruthy();
     expect(decodeSucceeds(MailboxDisplayName, "😀".repeat(201))).toBeFalsy();
+  });
+
+  it("normalizes email domains without folding SMTP local parts", () => {
+    expect(
+      normalizeEmailAddressDomain(
+        Schema.decodeUnknownSync(EmailAddress)("Owner@EXAMPLE.COM")
+      )
+    ).toBe("Owner@example.com");
+    expect(
+      decodeSucceeds(NormalizedEmailAddress, "Owner@EXAMPLE.COM")
+    ).toBeFalsy();
+    expect(
+      decodeSucceeds(NormalizedEmailAddress, "Owner@example.com")
+    ).toBeTruthy();
   });
 
   it("constructs and encodes schema-backed directory entities", () => {

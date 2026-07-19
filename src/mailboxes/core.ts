@@ -169,6 +169,32 @@ export const EmailAddress = Schema.Trimmed.pipe(
 );
 export type EmailAddress = Schema.Schema.Type<typeof EmailAddress>;
 
+export const NormalizedEmailAddress = EmailAddress.pipe(
+  Schema.check(
+    Schema.makeFilter<EmailAddress>((value) => {
+      const separator = value.lastIndexOf("@");
+      const domain = value.slice(separator + 1);
+      return domain === domain.toLowerCase()
+        ? undefined
+        : "must contain a lowercase domain";
+    })
+  ),
+  Schema.brand("cloudflare-inbox/NormalizedEmailAddress")
+);
+export type NormalizedEmailAddress = Schema.Schema.Type<
+  typeof NormalizedEmailAddress
+>;
+
+/** DNS domains are case-insensitive; SMTP local parts remain case-sensitive. */
+export const normalizeEmailAddressDomain = (
+  address: EmailAddress
+): NormalizedEmailAddress => {
+  const separator = address.lastIndexOf("@");
+  return Schema.decodeUnknownSync(NormalizedEmailAddress)(
+    `${address.slice(0, separator)}@${address.slice(separator + 1).toLowerCase()}`
+  );
+};
+
 export const FileName = Schema.Trim.pipe(
   Schema.check(Schema.isLengthBetween(1, 255)),
   Schema.brand("cloudflare-inbox/FileName")

@@ -1,9 +1,15 @@
 import type * as CloudflareWorkers from "@cloudflare/workers-types";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { InboundEmailRejected } from "#/mailboxes/inbound";
+import { MailboxId } from "#/mailboxes/core";
+import type { InboundMailboxResolver as InboundMailboxResolverShape } from "#/mailboxes/inbound";
+import {
+  InboundEmailRejected,
+  InboundMailboxResolver,
+} from "#/mailboxes/inbound";
 import type { InboundEmailRoutingMessage } from "#/mailboxes/inbound-email-routing";
 import {
   handleCloudflareEmailRoutingMessage,
@@ -12,6 +18,7 @@ import {
 } from "#/mailboxes/inbound-email-routing";
 
 type ForwardableEmailMessage = CloudflareWorkers.ForwardableEmailMessage;
+const primaryMailboxId = Schema.decodeUnknownSync(MailboxId)("primary");
 
 const rawStream = () =>
   new ReadableStream<Uint8Array>({
@@ -61,12 +68,23 @@ const runWithIngress = (
   message: ForwardableEmailMessage,
   receive: (
     message: InboundEmailRoutingMessage
-  ) => Effect.Effect<void, InboundEmailRejected>
+  ) => Effect.Effect<void, InboundEmailRejected>,
+  resolve: InboundMailboxResolverShape["resolve"] = () =>
+    Effect.succeed(primaryMailboxId)
 ) =>
   Effect.runPromise(
     handleCloudflareEmailRoutingMessage(message).pipe(
       Effect.provide(
-        Layer.succeed(InboundEmailIngress, InboundEmailIngress.of({ receive }))
+        Layer.merge(
+          Layer.succeed(
+            InboundEmailIngress,
+            InboundEmailIngress.of({ receive })
+          ),
+          Layer.succeed(
+            InboundMailboxResolver,
+            InboundMailboxResolver.of({ resolve })
+          )
+        )
       )
     )
   );
@@ -75,34 +93,58 @@ describe("Cloudflare Email Routing inbound adapter", () => {
   it("passes the SMTP envelope recipient instead of the To header", async () => {
     const { message, rejected } = makeMessage();
     let delivered: InboundEmailRoutingMessage | undefined;
+    let resolvedRecipient: string | undefined;
 
-    await runWithIngress(message, (input) =>
-      Effect.sync(() => {
-        delivered = input;
-      })
+    await runWithIngress(
+      message,
+      (input) =>
+        Effect.sync(() => {
+          delivered = input;
+        }),
+      (recipient) =>
+        Effect.sync(() => {
+          resolvedRecipient = recipient;
+          return primaryMailboxId;
+        })
     );
 
     expect(rejected).toStrictEqual([]);
+    expect(resolvedRecipient).toBe("owner@example.com");
+    expect(delivered?.mailboxId).toBe("primary");
     expect(delivered?.envelope).toStrictEqual({
       envelopeFrom: "sender@example.com",
       envelopeTo: "owner@example.com",
       rawSize: 3,
     });
-    expect(delivered?.headers.get("to")).toBe("header-recipient@example.com");
-    expect(delivered?.raw).toBe(message.raw);
+    expect({
+      headerRecipient: delivered?.headers.get("to"),
+      rawIsPreserved: delivered?.raw === message.raw,
+    }).toStrictEqual({
+      headerRecipient: "header-recipient@example.com",
+      rawIsPreserved: true,
+    });
   });
 
   it("rejects malformed envelope recipients before ingress", async () => {
     const { message, rejected } = makeMessage({ to: "bad recipient" });
     let received = 0;
+    let resolved = 0;
 
-    await runWithIngress(message, () =>
-      Effect.sync(() => {
-        received += 1;
-      })
+    await runWithIngress(
+      message,
+      () =>
+        Effect.sync(() => {
+          received += 1;
+        }),
+      () =>
+        Effect.sync(() => {
+          resolved += 1;
+          return primaryMailboxId;
+        })
     );
 
     expect(received).toBe(0);
+    expect(resolved).toBe(0);
     expect(rejected).toStrictEqual(["Invalid envelope recipient"]);
   });
 
@@ -124,18 +166,26 @@ describe("Cloudflare Email Routing inbound adapter", () => {
     });
   });
 
-  it("maps ingress rejections to SMTP rejects", async () => {
+  it("rejects unknown envelope recipients before ingress", async () => {
     const { message, rejected } = makeMessage();
+    let received = 0;
 
-    await runWithIngress(message, () =>
-      Effect.fail(
-        new InboundEmailRejected({
-          message: "Mailbox recipient is not configured",
-          reason: "unknown-recipient",
-        })
-      )
+    await runWithIngress(
+      message,
+      () =>
+        Effect.sync(() => {
+          received += 1;
+        }),
+      () =>
+        Effect.fail(
+          new InboundEmailRejected({
+            message: "Mailbox recipient is not configured",
+            reason: "unknown-recipient",
+          })
+        )
     );
 
+    expect(received).toBe(0);
     expect(rejected).toStrictEqual(["Mailbox recipient is not configured"]);
   });
 
@@ -144,7 +194,17 @@ describe("Cloudflare Email Routing inbound adapter", () => {
 
     await Effect.runPromise(
       handleCloudflareEmailRoutingMessage(message).pipe(
-        Effect.provide(InboundEmailIngressUnavailableLive)
+        Effect.provide(
+          Layer.merge(
+            InboundEmailIngressUnavailableLive,
+            Layer.succeed(
+              InboundMailboxResolver,
+              InboundMailboxResolver.of({
+                resolve: () => Effect.succeed(primaryMailboxId),
+              })
+            )
+          )
+        )
       )
     );
 

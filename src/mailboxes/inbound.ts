@@ -1,5 +1,7 @@
+import * as Context from "effect/Context";
 /* oxlint-disable max-classes-per-file -- Inbound domain schemas are intentionally consolidated. */
 import * as Data from "effect/Data";
+import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
@@ -143,3 +145,14 @@ export class InboundEmailRejected extends Data.TaggedError(
   readonly message: string;
   readonly cause?: unknown;
 }> {}
+
+export interface InboundMailboxResolver {
+  readonly resolve: (
+    recipient: EmailAddress
+  ) => Effect.Effect<MailboxId, InboundEmailRejected>;
+}
+
+/** Resolves a validated SMTP envelope recipient before selecting a MailboxDO. */
+export const InboundMailboxResolver = Context.Service<InboundMailboxResolver>(
+  "cloudflare-inbox/InboundMailboxResolver"
+);

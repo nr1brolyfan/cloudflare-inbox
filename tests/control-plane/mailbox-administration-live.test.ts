@@ -238,7 +238,8 @@ const provideRequestAuth = <A, E, R>(
 const bootstrap = (
   database: D1EffectQbDatabaseLike,
   validated: ValidatedSession,
-  nonce: string
+  nonce: string,
+  ownerEmail = "user-a@example.test"
 ) =>
   provideRequestAuth(
     Effect.gen(function* () {
@@ -257,7 +258,7 @@ const bootstrap = (
                 MailboxAdministrationConfig.of({
                   ownerEmail: Schema.decodeUnknownSync(
                     MailboxAdministrationOwnerEmail
-                  )("user-a@example.test"),
+                  )(ownerEmail),
                 })
               ),
               Layer.succeed(
@@ -368,10 +369,30 @@ describe("mailbox administration", () => {
       });
       expect(canManage).toBeTruthy();
       expect({
+        addresses: countRows(database, "app_mailbox_address"),
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
-      }).toStrictEqual({ guards: 0, mailboxes: 1, members: 1 });
+      }).toStrictEqual({ addresses: 1, guards: 0, mailboxes: 1, members: 1 });
+      expect(
+        database
+          .prepare(
+            `select mailbox_id, id, address, normalized_address, is_primary,
+                    enabled, created_at, updated_at, version
+               from app_mailbox_address`
+          )
+          .get()
+      ).toMatchObject({
+        address: "user-a@example.test",
+        created_at: now,
+        enabled: 1,
+        id: "primary",
+        is_primary: 1,
+        mailbox_id: "primary",
+        normalized_address: "user-a@example.test",
+        updated_at: now,
+        version: 1,
+      });
       expect(
         database
           .prepare(
@@ -384,6 +405,36 @@ describe("mailbox administration", () => {
         role_id: MailRole.owner,
         scope_id: "primary",
         scope_type: "mailbox",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("normalizes only the primary address domain during bootstrap", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      await Effect.runPromise(
+        bootstrap(d1, validated, "bootstrap-guard", "user-a@EXAMPLE.TEST")
+      );
+
+      expect(
+        database
+          .prepare(
+            `select address, normalized_address
+               from app_mailbox_address
+              where mailbox_id = 'primary'`
+          )
+          .get()
+      ).toMatchObject({
+        address: "user-a@EXAMPLE.TEST",
+        normalized_address: "user-a@example.test",
       });
     } finally {
       database.close();
@@ -414,11 +465,18 @@ describe("mailbox administration", () => {
         reason: "storage",
       });
       expect({
+        addresses: countRows(database, "app_mailbox_address"),
         grants: countRows(database, "auth_role_grant"),
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
-      }).toStrictEqual({ grants: 0, guards: 0, mailboxes: 0, members: 0 });
+      }).toStrictEqual({
+        addresses: 0,
+        grants: 0,
+        guards: 0,
+        mailboxes: 0,
+        members: 0,
+      });
     } finally {
       database.close();
     }
@@ -790,11 +848,18 @@ describe("mailbox administration", () => {
       });
       expect(batches).toBe(1);
       expect({
+        addresses: countRows(database, "app_mailbox_address"),
         grants: countRows(database, "auth_role_grant"),
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
-      }).toStrictEqual({ grants: 1, guards: 0, mailboxes: 1, members: 1 });
+      }).toStrictEqual({
+        addresses: 1,
+        grants: 1,
+        guards: 0,
+        mailboxes: 1,
+        members: 1,
+      });
     } finally {
       database.close();
     }
@@ -812,7 +877,7 @@ describe("mailbox administration", () => {
         batch: async (statements) => {
           const results = await baseD1.batch(statements);
           return results.map((result, index) =>
-            index === 4 ? { ...result, results: undefined } : result
+            index === 5 ? { ...result, results: undefined } : result
           );
         },
         prepare: baseD1.prepare,
@@ -830,10 +895,11 @@ describe("mailbox administration", () => {
         reason: "storage",
       });
       expect({
+        addresses: countRows(database, "app_mailbox_address"),
         grants: countRows(database, "auth_role_grant"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
-      }).toStrictEqual({ grants: 1, mailboxes: 1, members: 1 });
+      }).toStrictEqual({ addresses: 1, grants: 1, mailboxes: 1, members: 1 });
     } finally {
       database.close();
     }

@@ -20,6 +20,7 @@ import {
   EmailAddress,
   MailboxDisplayName,
   MailboxRecordSchema,
+  normalizeEmailAddressDomain,
 } from "../mailboxes/core";
 import * as ControlPlane from "./batch";
 
@@ -308,8 +309,7 @@ export const MailboxAdministrationLive = Layer.effect(
     const authorization = yield* MailAuthorization;
     const { ownerEmail: configuredOwnerEmail } = options;
     const { now, randomId } = runtime;
-    const separator = configuredOwnerEmail.lastIndexOf("@");
-    const ownerEmail = `${configuredOwnerEmail.slice(0, separator)}${configuredOwnerEmail.slice(separator).toLowerCase()}`;
+    const ownerEmail = normalizeEmailAddressDomain(configuredOwnerEmail);
 
     return MailboxAdministration.of({
       bootstrapOwner: (input) =>
@@ -354,6 +354,29 @@ export const MailboxAdministrationLive = Layer.effect(
                 displayName,
                 validated.actor.userId,
                 timestamp,
+                timestamp,
+                nonce,
+              ],
+            },
+            {
+              sql: `insert into app_mailbox_address
+                      (mailbox_id, id, address, normalized_address, is_primary,
+                       enabled, created_at, updated_at)
+                     select ?, 'primary', ?, ?, 1, 1, ?, ?
+                       from app_authorization_guard as authorization_guard
+                       join app_mailbox as mailbox
+                         on mailbox.id = ?
+                        and mailbox.created_by_user_id = ?
+                        and mailbox.created_at = ?
+                      where authorization_guard.nonce = ?`,
+              params: [
+                mailboxId,
+                configuredOwnerEmail,
+                ownerEmail,
+                timestamp,
+                timestamp,
+                mailboxId,
+                validated.actor.userId,
                 timestamp,
                 nonce,
               ],
@@ -428,7 +451,7 @@ export const MailboxAdministrationLive = Layer.effect(
           const [status] = yield* decodeResultRows(
             BootstrapStatusRow,
             results,
-            4,
+            5,
             "bootstrap-owner"
           );
           const created = yield* decodeResultRows(
