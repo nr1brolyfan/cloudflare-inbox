@@ -1,6 +1,4 @@
-import type { D1EffectQbResult } from "@effect-auth/core/EffectQbSqliteStorage";
 import * as AuthPermission from "@effect-auth/core/Permission";
-import { and, eq } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -18,22 +16,14 @@ import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "../mailboxes/administration";
-import { MailboxDisplayName, MailboxRecordSchema } from "../mailboxes/core";
-import { MailboxRegistry } from "../mailboxes/do-client";
+import {
+  EmailAddress,
+  MailboxDisplayName,
+  MailboxRecordSchema,
+} from "../mailboxes/core";
 import * as ControlPlane from "./batch";
-import { ControlPlaneDatabase } from "./database";
-import { appMailbox } from "./schema";
 
-export const MailboxAdministrationOwnerEmail = Schema.Trim.pipe(
-  Schema.check(
-    Schema.makeFilter<string>((value) =>
-      /^[^\s@]+@[^\s@.]+(?:\.[^\s@.]+)+$/u.test(value)
-        ? undefined
-        : "must be a valid mailbox owner email"
-    )
-  ),
-  Schema.brand("cloudflare-inbox/MailboxAdministrationOwnerEmail")
-);
+export const MailboxAdministrationOwnerEmail = EmailAddress;
 export type MailboxAdministrationOwnerEmail = Schema.Schema.Type<
   typeof MailboxAdministrationOwnerEmail
 >;
@@ -64,26 +54,6 @@ export const MailboxAdministrationRuntimeLive = Layer.succeed(
   MailboxAdministrationRuntime.of({
     now: Date.now,
     randomId: () => crypto.randomUUID(),
-  })
-);
-
-/** Active mailbox existence lookup backed by the control-plane database. */
-export const MailboxRegistryLive = Layer.effect(
-  MailboxRegistry,
-  Effect.gen(function* () {
-    const controlPlane = yield* ControlPlaneDatabase;
-
-    return MailboxRegistry.of({
-      exists: (mailboxId) =>
-        controlPlane
-          .select({ id: appMailbox.id })
-          .from(appMailbox)
-          .where(
-            and(eq(appMailbox.id, mailboxId), eq(appMailbox.status, "active"))
-          )
-          .limit(1)
-          .pipe(Effect.map((rows) => rows.length === 1)),
-    });
   })
 );
 
@@ -283,10 +253,50 @@ const storageError = (
     reason: "storage",
   });
 
-const resultRows = <Row extends Readonly<Record<string, unknown>>>(
-  results: readonly D1EffectQbResult[],
-  statement: number
-) => (results[statement]?.results ?? []) as readonly Row[];
+const decodeResultRows = <Row>(
+  schema: Schema.Decoder<Row>,
+  results: readonly ControlPlane.ControlPlaneBatchResult[],
+  statement: number,
+  operation: "bootstrap-owner" | "rename"
+) =>
+  Schema.decodeUnknownEffect(Schema.Array(schema))(
+    results[statement]?.results
+  ).pipe(
+    Effect.mapError(
+      (cause) =>
+        new MailboxAdministrationError({
+          cause,
+          commitState: "unknown",
+          message: "Control-plane returned invalid mutation data",
+          operation,
+          reason: "storage",
+        })
+    )
+  );
+
+const BootstrapStatusRow = Schema.Struct({
+  authorized: Schema.Number,
+  catalog_valid: Schema.Number,
+  owner_eligible: Schema.Number,
+  session_valid: Schema.Number,
+});
+
+const RenameStatusRow = Schema.Struct({
+  authorized: Schema.Number,
+  permission_valid: Schema.Number,
+  session_valid: Schema.Number,
+});
+
+const RenamedMailboxRow = Schema.Struct({
+  created_at: Schema.Number,
+  created_by_user_id: Schema.String,
+  display_name: Schema.String,
+  id: Schema.String,
+  updated_at: Schema.Number,
+  version: Schema.Number,
+});
+
+const CreatedMailboxRow = Schema.Struct({ id: Schema.String });
 
 /** Transactional mailbox service built from explicit Effect configuration. */
 export const MailboxAdministrationLive = Layer.effect(
@@ -295,6 +305,7 @@ export const MailboxAdministrationLive = Layer.effect(
     const options = yield* MailboxAdministrationConfig;
     const runtime = yield* MailboxAdministrationRuntime;
     const batch = yield* ControlPlane.ControlPlaneBatch;
+    const authorization = yield* MailAuthorization;
     const { ownerEmail: configuredOwnerEmail } = options;
     const { now, randomId } = runtime;
     const separator = configuredOwnerEmail.lastIndexOf("@");
@@ -414,12 +425,18 @@ export const MailboxAdministrationLive = Layer.effect(
             .pipe(
               Effect.mapError((error) => storageError("bootstrap-owner", error))
             );
-          const [status] = resultRows<{
-            readonly authorized: number;
-            readonly catalog_valid: number;
-            readonly owner_eligible: number;
-            readonly session_valid: number;
-          }>(results, 4);
+          const [status] = yield* decodeResultRows(
+            BootstrapStatusRow,
+            results,
+            4,
+            "bootstrap-owner"
+          );
+          const created = yield* decodeResultRows(
+            CreatedMailboxRow,
+            results,
+            1,
+            "bootstrap-owner"
+          );
 
           if (status?.session_valid !== 1) {
             return yield* new MailboxAdministrationError({
@@ -445,7 +462,7 @@ export const MailboxAdministrationLive = Layer.effect(
               new Error("Owner bootstrap authorization guard is inconsistent")
             );
           }
-          if (resultRows(results, 1).length !== 1) {
+          if (created.length !== 1) {
             return yield* new MailboxAdministrationError({
               message: "Primary mailbox already exists",
               operation: "bootstrap-owner",
@@ -453,7 +470,7 @@ export const MailboxAdministrationLive = Layer.effect(
             });
           }
 
-          return Schema.decodeUnknownSync(MailboxRecordSchema)({
+          return yield* Schema.decodeUnknownEffect(MailboxRecordSchema)({
             createdAt: timestamp,
             createdByUserId: validated.actor.userId,
             displayName,
@@ -461,7 +478,18 @@ export const MailboxAdministrationLive = Layer.effect(
             status: "active",
             updatedAt: timestamp,
             version: 1,
-          });
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new MailboxAdministrationError({
+                  cause,
+                  commitState: "committed",
+                  message: "Created mailbox data was invalid",
+                  operation: "bootstrap-owner",
+                  reason: "storage",
+                })
+            )
+          );
         }),
       rename: (input) =>
         Effect.gen(function* () {
@@ -473,7 +501,6 @@ export const MailboxAdministrationLive = Layer.effect(
             input.displayName,
             "rename"
           );
-          const authorization = yield* MailAuthorization;
           const location = yield* authorization.requireMailbox({
             action: "manage-settings",
             resource: { _tag: "Mailbox", mailboxId: input.mailboxId },
@@ -532,11 +559,12 @@ export const MailboxAdministrationLive = Layer.effect(
           const results = yield* batch
             .execute(statements)
             .pipe(Effect.mapError((error) => storageError("rename", error)));
-          const [status] = resultRows<{
-            readonly authorized: number;
-            readonly permission_valid: number;
-            readonly session_valid: number;
-          }>(results, 2);
+          const [status] = yield* decodeResultRows(
+            RenameStatusRow,
+            results,
+            2,
+            "rename"
+          );
 
           if (status?.session_valid !== 1) {
             return yield* new MailboxAdministrationError({
@@ -555,14 +583,12 @@ export const MailboxAdministrationLive = Layer.effect(
             });
           }
 
-          const [row] = resultRows<{
-            readonly created_at: number;
-            readonly created_by_user_id: string;
-            readonly display_name: string;
-            readonly id: string;
-            readonly updated_at: number;
-            readonly version: number;
-          }>(results, 1);
+          const [row] = yield* decodeResultRows(
+            RenamedMailboxRow,
+            results,
+            1,
+            "rename"
+          );
           if (row === undefined) {
             return yield* new MailboxAdministrationError({
               message: "Mailbox not found",
@@ -571,7 +597,7 @@ export const MailboxAdministrationLive = Layer.effect(
             });
           }
 
-          return Schema.decodeUnknownSync(MailboxRecordSchema)({
+          return yield* Schema.decodeUnknownEffect(MailboxRecordSchema)({
             createdAt: row.created_at,
             createdByUserId: row.created_by_user_id,
             displayName: row.display_name,
@@ -579,7 +605,18 @@ export const MailboxAdministrationLive = Layer.effect(
             status: "active",
             updatedAt: row.updated_at,
             version: row.version,
-          });
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new MailboxAdministrationError({
+                  cause,
+                  commitState: "committed",
+                  message: "Renamed mailbox data was invalid",
+                  operation: "rename",
+                  reason: "storage",
+                })
+            )
+          );
         }),
     });
   })

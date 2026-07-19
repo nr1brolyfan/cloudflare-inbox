@@ -4,43 +4,63 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import {
+  AttachmentLookup,
+  AttachmentLocation,
+  DraftLookup,
+  DraftLocation,
+  FolderLookup,
+  FolderLocation,
+  MailboxLocation,
+  MessageLookup,
+  MessageLocation,
+  RuleLookup,
+  RuleLocation,
+} from "../mailboxes/resource-location";
 import { MailPermission } from "./catalog";
 import type { MailboxAction } from "./mail-authorization";
 import { MailAuthorization, MailAuthorizationLive } from "./mail-authorization";
 import * as Resources from "./resources";
 
 const principal = AuthPermission.PermissionSubject.make("user", "user-a");
-const mailboxRef: Resources.MailboxRef = {
+const mailboxRef: Resources.MailboxRef = Schema.decodeUnknownSync(
+  MailboxLocation
+)({
   _tag: "Mailbox",
   mailboxId: "mailbox-a",
-};
-const folderRef: Resources.FolderRef = {
+});
+const folderRef: Resources.FolderRef = Schema.decodeUnknownSync(FolderLookup)({
   _tag: "Folder",
   folderId: "folder-a",
-  route: { mailboxId: "mailbox-a" },
-};
-const messageRef: Resources.MessageRef = {
+  mailboxId: "mailbox-a",
+});
+const messageRef: Resources.MessageRef = Schema.decodeUnknownSync(
+  MessageLookup
+)({
   _tag: "Message",
   messageId: "message-a",
-  route: { mailboxId: "mailbox-a" },
-};
-const draftRef: Resources.DraftRef = {
+  mailboxId: "mailbox-a",
+});
+const draftRef: Resources.DraftRef = Schema.decodeUnknownSync(DraftLookup)({
   _tag: "Draft",
   draftId: "draft-a",
-  route: { mailboxId: "mailbox-a" },
-};
-const ruleRef: Resources.RuleRef = {
+  mailboxId: "mailbox-a",
+});
+const ruleRef: Resources.RuleRef = Schema.decodeUnknownSync(RuleLookup)({
   _tag: "Rule",
-  route: { mailboxId: "mailbox-a" },
+  mailboxId: "mailbox-a",
   ruleId: "rule-a",
-};
-const attachmentRef: Resources.AttachmentRef = {
+});
+const attachmentRef: Resources.AttachmentRef = Schema.decodeUnknownSync(
+  AttachmentLookup
+)({
   _tag: "Attachment",
   attachmentId: "attachment-a",
-  route: { mailboxId: "mailbox-a" },
-};
+  mailboxId: "mailbox-a",
+});
 
 const permissionKey = (
   permission: string,
@@ -62,33 +82,48 @@ const makeResolver = (
 ) =>
   Resources.MailResourceResolver.of({
     resolveAttachment: (resource) =>
-      Effect.succeed({
-        attachmentId: resource.attachmentId,
-        folderId: "folder-a",
-        mailboxId: resource.route.mailboxId,
-        messageId: "message-a",
-      }),
+      Effect.succeed(
+        Schema.decodeUnknownSync(AttachmentLocation)({
+          _tag: "Attachment",
+          attachmentId: resource.attachmentId,
+          folderId: "folder-a",
+          mailboxId: resource.mailboxId,
+          messageId: "message-a",
+        })
+      ),
     resolveDraft: (resource) =>
-      Effect.succeed({
-        draftId: resource.draftId,
-        mailboxId: resource.route.mailboxId,
-      }),
+      Effect.succeed(
+        Schema.decodeUnknownSync(DraftLocation)({
+          _tag: "Draft",
+          draftId: resource.draftId,
+          mailboxId: resource.mailboxId,
+        })
+      ),
     resolveFolder: (resource) =>
-      Effect.succeed({
-        folderId: resource.folderId,
-        mailboxId: resource.route.mailboxId,
-      }),
+      Effect.succeed(
+        Schema.decodeUnknownSync(FolderLocation)({
+          _tag: "Folder",
+          folderId: resource.folderId,
+          mailboxId: resource.mailboxId,
+        })
+      ),
     resolveMessage: (resource) =>
-      Effect.succeed({
-        folderId: "folder-a",
-        mailboxId: resource.route.mailboxId,
-        messageId: resource.messageId,
-      }),
+      Effect.succeed(
+        Schema.decodeUnknownSync(MessageLocation)({
+          _tag: "Message",
+          folderId: "folder-a",
+          mailboxId: resource.mailboxId,
+          messageId: resource.messageId,
+        })
+      ),
     resolveRule: (resource) =>
-      Effect.succeed({
-        mailboxId: resource.route.mailboxId,
-        ruleId: resource.ruleId,
-      }),
+      Effect.succeed(
+        Schema.decodeUnknownSync(RuleLocation)({
+          _tag: "Rule",
+          mailboxId: resource.mailboxId,
+          ruleId: resource.ruleId,
+        })
+      ),
     ...overrides,
   });
 
@@ -178,7 +213,10 @@ describe("mail authorization policies", () => {
           authorization.requireMailbox({ action, resource: mailboxRef })
       );
 
-      expect(location).toStrictEqual({ mailboxId: "mailbox-a" });
+      expect(location).toStrictEqual({
+        _tag: "Mailbox",
+        mailboxId: "mailbox-a",
+      });
       expect(fixture.checks).toMatchObject([
         {
           permission,
@@ -201,6 +239,7 @@ describe("mail authorization policies", () => {
     );
 
     expect(location).toStrictEqual({
+      _tag: "Folder",
       folderId: "folder-a",
       mailboxId: "mailbox-a",
     });
@@ -265,11 +304,14 @@ describe("mail authorization policies", () => {
     const location = await runAuthorization(
       makeResolver({
         resolveMessage: (input) =>
-          Effect.succeed({
-            folderId: "trusted-folder",
-            mailboxId: input.route.mailboxId,
-            messageId: input.messageId,
-          }),
+          Effect.succeed(
+            Schema.decodeUnknownSync(MessageLocation)({
+              _tag: "Message",
+              folderId: "trusted-folder",
+              mailboxId: input.mailboxId,
+              messageId: input.messageId,
+            })
+          ),
       }),
       fixture.service,
       (authorization) =>
@@ -301,7 +343,10 @@ describe("mail authorization policies", () => {
             action: "read",
             resource: {
               ...messageRef,
-              route: { mailboxId: "mailbox-b" },
+              mailboxId: Schema.decodeUnknownSync(MailboxLocation)({
+                _tag: "Mailbox",
+                mailboxId: "mailbox-b",
+              }).mailboxId,
             },
           })
           .pipe(Effect.flip)
@@ -374,11 +419,14 @@ describe("mail authorization policies", () => {
       authorizationEffect(
         makeResolver({
           resolveMessage: () =>
-            Effect.succeed({
-              folderId: "folder-a",
-              mailboxId: "another-mailbox",
-              messageId: "message-a",
-            }),
+            Effect.succeed(
+              Schema.decodeUnknownSync(MessageLocation)({
+                _tag: "Message",
+                folderId: "folder-a",
+                mailboxId: "another-mailbox",
+                messageId: "message-a",
+              })
+            ),
         }),
         fixture.service,
         (authorization) =>

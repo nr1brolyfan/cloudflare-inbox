@@ -1,27 +1,33 @@
 import { RateLimitDurableObject } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
-import { Email } from "@effect-auth/core/Identifiers";
 import { ALCHEMY_DEV } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
+import { AuthRuntimeConfig, AuthRuntimeConfigSchema } from "../auth/live";
+import { ControlPlaneD1Binding } from "../control-plane/database";
+import { MailboxAdministrationConfig } from "../control-plane/mailbox-administration-live";
 import { BackendHttpLive } from "../http/backend";
-import { BackendConfig, BackendResources } from "../http/backend-context";
+import { DevEmailConfig } from "../http/dev-emails";
 import {
   AuthEmailSender,
-  ControlPlaneDatabase,
+  ControlPlaneDatabase as ControlPlaneDatabaseResource,
   RawMessagesBucket,
 } from "../infra/resources";
+import { EmailAddress } from "../mailboxes/core";
+import { MailboxDoNamespace } from "../mailboxes/do-client";
 import { MailboxDO } from "../mailboxes/mailbox-do";
 import {
   BackendObservabilityConfig,
   BackendObservabilityLive,
 } from "../observability/backend";
+import { BackendHealthBindings } from "../observability/backend-health-live";
 
 export default class Backend extends Cloudflare.Worker<Backend>()(
   "Backend",
@@ -52,8 +58,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     url: false,
   },
   Effect.gen(function* () {
-    const controlPlane =
-      yield* Cloudflare.D1.QueryDatabase(ControlPlaneDatabase);
+    const controlPlane = yield* Cloudflare.D1.QueryDatabase(
+      ControlPlaneDatabaseResource
+    );
     const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
     const authRateLimit = yield* RateLimitDurableObject;
     const mailboxDataPlane = yield* MailboxDO;
@@ -63,28 +70,56 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           yield* Config.option(Config.string("OTEL_EXPORTER_OTLP_ENDPOINT"))
         )
       : undefined;
-    const emailSender = isDevelopment
-      ? undefined
-      : yield* Cloudflare.Email.Send(AuthEmailSender);
     const publicOrigin = yield* Config.string("PUBLIC_ORIGIN");
-    const emailFrom = Email(yield* Config.string("AUTH_EMAIL_FROM"));
-    const mailboxOwnerEmail = yield* Config.string("MAILBOX_OWNER_EMAIL");
+    const emailFrom = yield* Config.string("AUTH_EMAIL_FROM");
+    const mailboxOwnerEmail = yield* Schema.decodeUnknownEffect(EmailAddress)(
+      yield* Config.string("MAILBOX_OWNER_EMAIL")
+    ).pipe(Effect.orDie);
     const sessionSecret = yield* Config.redacted("AUTH_SESSION_SECRET");
     const challengeSecret = yield* Config.redacted("AUTH_CHALLENGE_SECRET");
     const privacySecret = yield* Config.redacted("AUTH_PRIVACY_SECRET");
-    const backendConfigLive = Layer.succeed(
-      BackendConfig,
-      BackendConfig.of({
-        emailFrom,
-        isDevelopment,
-        mailboxOwnerEmail,
-        publicOrigin,
-        secrets: {
-          challenge: challengeSecret,
-          privacy: privacySecret,
-          session: sessionSecret,
-        },
-      })
+    const delivery = isDevelopment
+      ? ({ _tag: "development" } as const)
+      : ({
+          _tag: "production",
+          emailSender: yield* Cloudflare.Email.Send(AuthEmailSender),
+        } as const);
+    const authRuntimeConfig = yield* Schema.decodeUnknownEffect(
+      AuthRuntimeConfigSchema
+    )({
+      delivery,
+      emailFrom,
+      publicOrigin,
+      rateLimitNamespace: authRateLimit,
+      secrets: {
+        challenge: challengeSecret,
+        privacy: privacySecret,
+        session: sessionSecret,
+      },
+    }).pipe(Effect.orDie);
+    const authRuntimeConfigLive = Layer.succeed(
+      AuthRuntimeConfig,
+      AuthRuntimeConfig.of(authRuntimeConfig)
+    );
+    const workerServicesLive = Layer.mergeAll(
+      authRuntimeConfigLive,
+      Layer.succeed(
+        MailboxAdministrationConfig,
+        MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })
+      ),
+      Layer.succeed(
+        MailboxDoNamespace,
+        MailboxDoNamespace.of(mailboxDataPlane)
+      ),
+      Layer.succeed(
+        BackendHealthBindings,
+        BackendHealthBindings.of({
+          authRateLimit,
+          mailboxDataPlane,
+          rawMessages,
+        })
+      ),
+      Layer.succeed(DevEmailConfig, DevEmailConfig.of({ isDevelopment }))
     );
     const observabilityLive = BackendObservabilityLive.pipe(
       Layer.provide(
@@ -99,25 +134,20 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         // Building in Alchemy's request scope flushes OTLP finalizers through waitUntil.
         const observabilityContext = yield* Layer.build(observabilityLive);
         const request = yield* HttpServerRequest.HttpServerRequest;
-        const requestUrl = new URL(request.url, publicOrigin);
+        const requestUrl = new URL(request.url, authRuntimeConfig.publicOrigin);
 
         return yield* Effect.gen(function* () {
           const controlPlaneDatabase = yield* controlPlane.raw;
           const routesLive = BackendHttpLive.pipe(
             Layer.provide(
               Layer.succeed(
-                BackendResources,
-                BackendResources.of({
-                  authRateLimit,
-                  controlPlane,
+                ControlPlaneD1Binding,
+                ControlPlaneD1Binding.of({
                   database: controlPlaneDatabase,
-                  emailSender,
-                  mailboxDataPlane,
-                  rawMessages,
                 })
               )
             ),
-            Layer.provide(backendConfigLive)
+            Layer.provide(workerServicesLive)
           );
           const handler = yield* HttpRouter.toHttpEffect(routesLive);
 

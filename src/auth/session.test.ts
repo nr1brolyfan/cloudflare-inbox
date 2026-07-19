@@ -1,5 +1,10 @@
 import { AuthSecretsLive } from "@effect-auth/core/AuthConfig";
-import { WebCryptoLive } from "@effect-auth/core/Crypto";
+import {
+  Crypto,
+  CryptoError,
+  makeWebCrypto,
+  WebCryptoLive,
+} from "@effect-auth/core/Crypto";
 import {
   AuthInternalError,
   AuthUnauthenticatedError,
@@ -10,14 +15,11 @@ import {
   UnixMillis,
   UserId,
 } from "@effect-auth/core/Identifiers";
-import { CurrentPrincipal } from "@effect-auth/core/Permission";
 import type {
   SessionsService,
   ValidatedSession,
 } from "@effect-auth/core/Sessions";
 import {
-  CurrentActor,
-  CurrentSession,
   makeSessionCookie,
   SessionCookie,
   Sessions,
@@ -29,10 +31,8 @@ import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 
 import {
-  CurrentRequestAuth,
-  CurrentValidatedSession,
-  currentRequestAuthContext,
-  validateRequestSession,
+  RequestSessionAuthenticator,
+  RequestSessionAuthenticatorLive,
 } from "./session";
 
 const userId = UserId("trusted-user");
@@ -59,11 +59,14 @@ const validatedSession = {
   },
 } satisfies ValidatedSession;
 
-const makeSessionServicesLive = (validate: SessionsService["validate"]) =>
+const makeSessionServicesLive = (
+  validate: SessionsService["validate"],
+  cryptoLive = WebCryptoLive()
+) =>
   Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
     Layer.succeed(Sessions, Sessions.of({ validate } as SessionsService)),
-    WebCryptoLive(),
+    cryptoLive,
     AuthSecretsLive({
       challenge: Redacted.make("challenge-secret"),
       privacy: Redacted.make("privacy-secret"),
@@ -79,57 +82,67 @@ const requestWithSession = (url = "https://inbox.test/private") =>
     },
   });
 
-const readCurrentContexts = Effect.all({
-  actor: CurrentActor,
-  principal: CurrentPrincipal,
-  requestAuth: CurrentRequestAuth,
-  session: CurrentSession,
-  validated: CurrentValidatedSession,
-});
+const authenticate = (
+  request: Request,
+  validate: SessionsService["validate"],
+  cryptoLive = WebCryptoLive()
+) =>
+  RequestSessionAuthenticator.pipe(
+    Effect.flatMap((authenticator) => authenticator.authenticate(request)),
+    Effect.provide(
+      RequestSessionAuthenticatorLive.pipe(
+        Layer.provide(makeSessionServicesLive(validate, cryptoLive))
+      )
+    )
+  );
 
-describe("current request auth", () => {
-  it("derives all contexts once from the validated session", async () => {
+describe("request session authenticator", () => {
+  it("derives every trusted value from exactly one validation and HMAC", async () => {
     let validations = 0;
-    const servicesLive = makeSessionServicesLive(() =>
-      Effect.sync(() => {
-        validations += 1;
-        return validatedSession;
+    let hmacData: string | Uint8Array | undefined;
+    const webCrypto = makeWebCrypto();
+    const cryptoLive = Layer.succeed(
+      Crypto,
+      Crypto.of({
+        ...webCrypto,
+        hmacSha256: (input) => {
+          hmacData = input.data;
+          return webCrypto.hmacSha256(input);
+        },
       })
     );
-    const request = requestWithSession(
-      "https://inbox.test/private?userId=attacker-controlled-user"
-    );
-    const contexts = await Effect.runPromise(
-      currentRequestAuthContext(request).pipe(
-        Effect.flatMap((context) =>
-          Effect.provideContext(readCurrentContexts, context)
+    const authenticated = await Effect.runPromise(
+      authenticate(
+        requestWithSession(
+          "https://inbox.test/private?userId=attacker-controlled-user"
         ),
-        Effect.provide(servicesLive)
+        () =>
+          Effect.sync(() => {
+            validations += 1;
+            return validatedSession;
+          }),
+        cryptoLive
       )
     );
 
-    expect(contexts).toMatchObject({
+    expect(authenticated).toMatchObject({
       actor,
       principal: { id: userId, type: "user" },
       requestAuth: { validated: validatedSession },
       session: currentSession,
-      validated: validatedSession,
     });
-    expect(contexts.requestAuth.sessionSecretHash).toHaveLength(43);
+    expect(authenticated.requestAuth.sessionSecretHash).toHaveLength(43);
+    expect(hmacData).toBe("secret");
     expect(validations).toBe(1);
   });
 
   it("rejects a request without a session cookie before validation", async () => {
     let validations = 0;
-    const servicesLive = makeSessionServicesLive(() => {
-      validations += 1;
-      return Effect.succeed(validatedSession);
-    });
     const error = await Effect.runPromise(
-      validateRequestSession(new Request("https://inbox.test/private")).pipe(
-        Effect.flip,
-        Effect.provide(servicesLive)
-      )
+      authenticate(new Request("https://inbox.test/private"), () => {
+        validations += 1;
+        return Effect.succeed(validatedSession);
+      }).pipe(Effect.flip)
     );
 
     expect(error).toBeInstanceOf(AuthUnauthenticatedError);
@@ -137,14 +150,10 @@ describe("current request auth", () => {
   });
 
   it("maps invalid sessions to a generic unauthenticated error", async () => {
-    const servicesLive = makeSessionServicesLive(() =>
-      Effect.fail(new SessionValidateError({ message: "Session expired" }))
-    );
     const error = await Effect.runPromise(
-      validateRequestSession(requestWithSession()).pipe(
-        Effect.flip,
-        Effect.provide(servicesLive)
-      )
+      authenticate(requestWithSession(), () =>
+        Effect.fail(new SessionValidateError({ message: "Session expired" }))
+      ).pipe(Effect.flip)
     );
 
     expect(error).toBeInstanceOf(AuthUnauthenticatedError);
@@ -155,19 +164,15 @@ describe("current request auth", () => {
   });
 
   it("keeps session infrastructure failures internal", async () => {
-    const servicesLive = makeSessionServicesLive(() =>
-      Effect.fail(
-        new SessionValidateError({
-          cause: new Error("D1 unavailable"),
-          message: "Failed to load session",
-        })
-      )
-    );
     const error = await Effect.runPromise(
-      validateRequestSession(requestWithSession()).pipe(
-        Effect.flip,
-        Effect.provide(servicesLive)
-      )
+      authenticate(requestWithSession(), () =>
+        Effect.fail(
+          new SessionValidateError({
+            cause: new Error("D1 unavailable"),
+            message: "Failed to load session",
+          })
+        )
+      ).pipe(Effect.flip)
     );
 
     expect(error).toBeInstanceOf(AuthInternalError);
@@ -176,5 +181,53 @@ describe("current request auth", () => {
       message: "Failed to validate session",
     });
     expect(error).not.toHaveProperty("cause");
+  });
+
+  it("returns a typed internal error for a malformed validated token", async () => {
+    const malformed = {
+      ...validatedSession,
+      issued: { ...validatedSession.issued, token: SessionToken("malformed") },
+    };
+    const error = await Effect.runPromise(
+      authenticate(requestWithSession(), () => Effect.succeed(malformed)).pipe(
+        Effect.flip
+      )
+    );
+
+    expect(error).toBeInstanceOf(AuthInternalError);
+    expect(error).toMatchObject({
+      code: "internal_error",
+      message: "Failed to bind validated session",
+    });
+  });
+
+  it("maps HMAC failures to a typed internal error", async () => {
+    const webCrypto = makeWebCrypto();
+    const cryptoLive = Layer.succeed(
+      Crypto,
+      Crypto.of({
+        ...webCrypto,
+        hmacSha256: () =>
+          Effect.fail(
+            new CryptoError({
+              message: "HMAC unavailable",
+              operation: "hmac-sha256",
+            })
+          ),
+      })
+    );
+    const error = await Effect.runPromise(
+      authenticate(
+        requestWithSession(),
+        () => Effect.succeed(validatedSession),
+        cryptoLive
+      ).pipe(Effect.flip)
+    );
+
+    expect(error).toBeInstanceOf(AuthInternalError);
+    expect(error).toMatchObject({
+      code: "internal_error",
+      message: "Failed to bind validated session",
+    });
   });
 });

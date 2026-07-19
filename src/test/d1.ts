@@ -37,10 +37,14 @@ const errorMessage = (error: unknown) =>
 export const makeTestD1Database = (
   database: DatabaseSync
 ): D1EffectQbDatabaseLike => {
+  type TestPreparedStatement = D1EffectQbPreparedStatementLike & {
+    readonly raw: () => Promise<readonly (readonly unknown[])[]>;
+  };
+
   const makeStatement = (
     sql: string,
     values: readonly unknown[] = []
-  ): D1EffectQbPreparedStatementLike => ({
+  ): TestPreparedStatement => ({
     all: <Row extends Readonly<Record<string, unknown>>>() => {
       try {
         return Promise.resolve({
@@ -57,6 +61,18 @@ export const makeTestD1Database = (
       }
     },
     bind: (...boundValues) => makeStatement(sql, boundValues),
+    raw: () => {
+      try {
+        const rows = database
+          .prepare(sql)
+          .all(...(values as readonly SQLInputValue[])) as readonly Readonly<
+          Record<string, unknown>
+        >[];
+        return Promise.resolve(rows.map((row) => Object.values(row)));
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    },
   });
   return {
     batch: (statements) => {

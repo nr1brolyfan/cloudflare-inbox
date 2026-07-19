@@ -20,8 +20,10 @@ import {
   currentSessionForQuery,
   emailIdentity,
 } from "../auth/client";
-import { getDevEmailInboxStatus } from "../server/dev-email-functions";
-import { bootstrapMailboxOwner } from "../server/mailbox-functions";
+import {
+  bootstrapMailboxOwner,
+  getDevEmailInboxStatus,
+} from "../server/tanstack-functions";
 
 export const Route = createFileRoute("/")({
   loader: () => getDevEmailInboxStatus(),

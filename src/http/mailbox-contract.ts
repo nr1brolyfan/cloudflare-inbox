@@ -5,6 +5,7 @@ import {
   AuthNotFoundError,
   AuthOriginCheckMiddleware,
   AuthPolicyDeniedError,
+  AuthRequestRejectedError,
   AuthSchemaErrorMiddleware,
   AuthUnauthenticatedError,
 } from "@effect-auth/core/HttpApi";
@@ -17,36 +18,33 @@ import {
 
 import { CurrentRequestAuthMiddleware } from "../auth/session";
 import {
-  MailboxDisplayName,
-  MailboxId,
-  MailboxRecordSchema,
-} from "../mailboxes/core";
-
-export const MailboxDisplayNamePayloadSchema = Schema.Struct({
-  displayName: MailboxDisplayName,
-});
-
-export const RenameMailboxInputSchema = Schema.Struct({
-  displayName: MailboxDisplayName,
-  mailboxId: MailboxId,
-});
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "../mailboxes/administration";
+import { MailboxId, MailboxRecordSchema } from "../mailboxes/core";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
 const MailboxErrors = [
   AuthBadRequestError,
   AuthUnauthenticatedError,
   AuthPolicyDeniedError,
+  AuthRequestRejectedError,
   AuthNotFoundError,
   AuthConflictError,
   AuthInternalError,
 ] as const;
+
+export const MailboxPublicErrorSchema = Schema.Union(MailboxErrors);
+export type MailboxPublicError = Schema.Codec.Encoded<
+  typeof MailboxPublicErrorSchema
+>;
 
 export const BootstrapOwnerEndpoint = HttpApiEndpoint.post(
   "bootstrapOwner",
   "/api/mailboxes/bootstrap-owner",
   {
     error: MailboxErrors,
-    payload: MailboxDisplayNamePayloadSchema,
+    payload: BootstrapOwnerMailboxCommand,
     success: MailboxRecordSchema.pipe(HttpApiSchema.status(201)),
   }
 );
@@ -57,7 +55,9 @@ export const RenameMailboxEndpoint = HttpApiEndpoint.patch(
   {
     error: MailboxErrors,
     params: MailboxParams,
-    payload: MailboxDisplayNamePayloadSchema,
+    payload: Schema.Struct({
+      displayName: RenameMailboxCommand.fields.displayName,
+    }),
     success: MailboxRecordSchema,
   }
 );

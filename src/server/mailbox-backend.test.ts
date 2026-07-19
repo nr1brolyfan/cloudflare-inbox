@@ -3,18 +3,14 @@ import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
 import type {
-  DevEmailOperationsShape,
   MailboxBackendOperationsShape,
   MailboxServerResult,
-} from "./backend";
+} from "./mailbox-backend";
 import {
-  BackendClient,
-  DevEmailOperations,
-  DevEmailOperationsLive,
   MailboxBackendOperations,
   MailboxBackendOperationsLive,
-  WebsiteConfig,
-} from "./backend";
+} from "./mailbox-backend";
+import { BackendClient } from "./website-platform";
 
 const mailbox = {
   createdAt: 1000,
@@ -50,36 +46,7 @@ const runForward = (
     )
   );
 
-const runDevEmail = <A>(
-  enabled: boolean,
-  fetch: (request: Request) => Promise<Response>,
-  operation: (operations: DevEmailOperationsShape) => Effect.Effect<A>
-) =>
-  Effect.runPromise(
-    DevEmailOperations.pipe(
-      Effect.flatMap(operation),
-      Effect.provide(
-        DevEmailOperationsLive.pipe(
-          Layer.provide(
-            Layer.merge(
-              Layer.succeed(
-                BackendClient,
-                BackendClient.of({
-                  fetch: (_, request) => Effect.promise(() => fetch(request)),
-                })
-              ),
-              Layer.succeed(
-                WebsiteConfig,
-                WebsiteConfig.of({ devEmailInboxEnabled: enabled })
-              )
-            )
-          )
-        )
-      )
-    )
-  );
-
-describe("Website Backend forwarding", () => {
+describe("Website mailbox Backend forwarding", () => {
   it("forwards only trusted request metadata and the mailbox payload", async () => {
     let forwarded: Request | undefined;
     const incoming = new Request("https://inbox.test/_server", {
@@ -110,6 +77,8 @@ describe("Website Backend forwarding", () => {
       path:
         forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
       proxy: forwarded?.headers.get("x-forwarded-for"),
+      referer: forwarded?.headers.get("referer"),
+      userAgent: forwarded?.headers.get("user-agent"),
     }).toStrictEqual({
       body: { displayName: "Inbox" },
       cookie: "__Host-session=session-a.secret",
@@ -117,7 +86,29 @@ describe("Website Backend forwarding", () => {
       origin: "https://inbox.test",
       path: "/api/mailboxes/bootstrap-owner",
       proxy: null,
+      referer: "https://inbox.test/",
+      userAgent: "test-browser",
     });
+  });
+
+  it("encodes mailbox IDs as one rename path segment", async () => {
+    let path: string | undefined;
+    const incoming = new Request("https://inbox.test/_server");
+
+    await runForward(
+      (request) => {
+        path = new URL(request.url).pathname;
+        return Promise.resolve(Response.json(mailbox));
+      },
+      (operations) =>
+        operations.rename({
+          displayName: "Recruiting",
+          incoming,
+          mailboxId: "team/primary ?",
+        })
+    );
+
+    expect(path).toBe("/api/mailboxes/team%2Fprimary%20%3F");
   });
 
   it("preserves Backend denial status without retries", async () => {
@@ -177,77 +168,5 @@ describe("Website Backend forwarding", () => {
       ok: false,
       status: 502,
     });
-  });
-});
-
-describe("Website development email operations", () => {
-  it("does not contact the Backend when the inbox is disabled", async () => {
-    let requests = 0;
-    const incoming = new Request("https://inbox.test/_server");
-    const result = await runDevEmail(
-      false,
-      () => {
-        requests += 1;
-        return Promise.resolve(new Response());
-      },
-      (operations) =>
-        Effect.all({
-          clear: operations.clear(incoming),
-          list: operations.list(incoming),
-          status: operations.status,
-        })
-    );
-
-    expect(result).toStrictEqual({
-      clear: { enabled: false },
-      list: { enabled: false },
-      status: { enabled: false },
-    });
-    expect(requests).toBe(0);
-  });
-
-  it("uses the Backend once per enabled inbox operation", async () => {
-    const requests: Request[] = [];
-    const incoming = new Request("https://inbox.test/_server");
-    const message = {
-      createdAt: 1000,
-      expiresAt: 2000,
-      id: "message-a",
-      kind: "MagicLink",
-      recipient: "person@example.com",
-      subject: "Sign in",
-      text: "Open the link",
-    } as const;
-    const result = await runDevEmail(
-      true,
-      (request) => {
-        requests.push(request);
-        return Promise.resolve(
-          request.method === "GET"
-            ? Response.json({ messages: [message] })
-            : Response.json({ cleared: true })
-        );
-      },
-      (operations) =>
-        Effect.gen(function* () {
-          const list = yield* operations.list(incoming);
-          const clear = yield* operations.clear(incoming);
-          return { clear, list };
-        })
-    );
-
-    expect(result).toStrictEqual({
-      clear: { enabled: true },
-      list: { enabled: true, messages: [message] },
-    });
-    expect(
-      requests.map((request) => ({
-        method: request.method,
-        path: new URL(request.url).pathname,
-      }))
-    ).toStrictEqual([
-      { method: "GET", path: "/api/dev-emails" },
-      { method: "DELETE", path: "/api/dev-emails" },
-    ]);
   });
 });

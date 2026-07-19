@@ -11,7 +11,7 @@ import {
 import { startTransition, useState } from "react";
 
 import type { DevEmailRecord } from "../http/dev-email-contract";
-import { clearDevEmails, listDevEmails } from "../server/dev-email-functions";
+import { clearDevEmails, listDevEmails } from "../server/tanstack-functions";
 
 const kindLabel = (kind: DevEmailRecord["kind"]) =>
   kind.split(/(?=[A-Z])/u).join(" ");

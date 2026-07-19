@@ -1,34 +1,35 @@
+import { BotProtectionNoopLive } from "@effect-auth/core/AbuseProtection";
 import {
+  AuthHttpApiConfigLive,
   AuthOriginCheckMiddlewareLive,
   AuthSchemaErrorMiddlewareLive,
 } from "@effect-auth/core/HttpApi";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { D1DevEmailStoreLive } from "../auth/dev-email-store";
-import { AuthLive, AuthRuntimeConfig } from "../auth/live";
-import { CurrentRequestAuthMiddlewareLive } from "../auth/session";
-import { EffectAuthStorageLive } from "../auth/storage-live";
-import { MailPermissionsLive } from "../authorization/live";
+import { CoreAuthGroupHandlersLive } from "../auth/http-api";
+import { AuthRuntimeConfig, AuthServicesLive } from "../auth/live";
+import {
+  CurrentRequestAuthMiddlewareLive,
+  RequestSessionAuthenticatorLive,
+} from "../auth/session";
+import {
+  D1DevEmailStoreLive,
+  EffectAuthStorageLive,
+} from "../auth/storage-live";
 import { MailAuthorizationLive } from "../authorization/mail-authorization";
 import { MailResourceResolverLive } from "../authorization/mail-resource-resolver-live";
-import { ControlPlaneLive } from "../control-plane/database-live";
+import { MailPermissionsLive } from "../authorization/permissions-live";
+import { ControlPlaneLive } from "../control-plane/batch";
+import { MailboxRegistryLive } from "../control-plane/database";
 import {
-  MailboxAdministrationConfig,
   MailboxAdministrationLive,
-  MailboxAdministrationOwnerEmail,
   MailboxAdministrationRuntimeLive,
-  MailboxRegistryLive,
 } from "../control-plane/mailbox-administration-live";
-import {
-  MailboxDoNamespace,
-  MailboxRepositoryDoLive,
-} from "../mailboxes/do-client";
+import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
+import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendHttpApi } from "./api";
-import { BackendConfig, BackendResources } from "./backend-context";
-import { BackendHealthLive } from "./backend-health";
 import { DevEmailGroupLive } from "./dev-emails";
 import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
@@ -37,48 +38,48 @@ import { HttpApiPlatformLive } from "./platform";
 /** Builds all BackendHttpApi groups from Worker resources and deployment config. */
 const BackendRoutesLive = Layer.unwrap(
   Effect.gen(function* () {
-    const resources = yield* BackendResources;
-    const backendConfig = yield* BackendConfig;
+    const authRuntimeConfig = yield* AuthRuntimeConfig;
     const authRuntimeConfigLive = Layer.succeed(
       AuthRuntimeConfig,
-      AuthRuntimeConfig.of({
-        emailFrom: backendConfig.emailFrom,
-        emailSender: resources.emailSender,
-        isDevelopment: backendConfig.isDevelopment,
-        publicOrigin: backendConfig.publicOrigin,
-        rateLimitNamespace: resources.authRateLimit,
-        secrets: backendConfig.secrets,
-      })
+      AuthRuntimeConfig.of(authRuntimeConfig)
     );
+    const originPolicy = {
+      allowMissingOrigin: false,
+      allowedOrigins: [authRuntimeConfig.publicOrigin.origin],
+    } as const;
     const requestValidationLive = Layer.merge(
       AuthSchemaErrorMiddlewareLive,
-      AuthOriginCheckMiddlewareLive({
-        allowMissingOrigin: false,
-        allowedOrigins: [backendConfig.publicOrigin],
-      })
+      AuthOriginCheckMiddlewareLive(originPolicy)
     );
     const authStorageLive = EffectAuthStorageLive;
-    const authLive = AuthLive.pipe(
-      Layer.provide(requestValidationLive),
+    const devEmailStoreLive = D1DevEmailStoreLive;
+    const authServicesLive = AuthServicesLive.pipe(
       Layer.provide(authRuntimeConfigLive),
-      Layer.provide(authStorageLive)
+      Layer.provide(authStorageLive),
+      Layer.provide(devEmailStoreLive)
     );
+    const authGroupHandlersLive = CoreAuthGroupHandlersLive.pipe(
+      Layer.provide(
+        AuthHttpApiConfigLive({
+          originCheck: originPolicy,
+          requestMetadata: { trustProxyHeaders: true },
+        })
+      ),
+      Layer.provide(requestValidationLive),
+      Layer.provide(authServicesLive),
+      Layer.provide(authStorageLive),
+      Layer.provide(BotProtectionNoopLive)
+    );
+    const requestSessionAuthenticatorLive =
+      RequestSessionAuthenticatorLive.pipe(Layer.provide(authServicesLive));
     const currentRequestAuthLive = CurrentRequestAuthMiddlewareLive.pipe(
-      Layer.provide(authLive)
+      Layer.provide(requestSessionAuthenticatorLive)
     );
     const permissionsLive = MailPermissionsLive.pipe(
       Layer.provide(authStorageLive)
     );
     const mailboxRepositoryLive = MailboxRepositoryDoLive.pipe(
-      Layer.provide(
-        Layer.merge(
-          MailboxRegistryLive,
-          Layer.succeed(
-            MailboxDoNamespace,
-            MailboxDoNamespace.of(resources.mailboxDataPlane)
-          )
-        )
-      )
+      Layer.provide(MailboxRegistryLive)
     );
     const resourceResolverLive = MailResourceResolverLive.pipe(
       Layer.provide(mailboxRepositoryLive)
@@ -86,26 +87,13 @@ const BackendRoutesLive = Layer.unwrap(
     const mailAuthorizationLive = MailAuthorizationLive.pipe(
       Layer.provide(Layer.merge(permissionsLive, resourceResolverLive))
     );
-    const mailboxDependenciesLive = Layer.mergeAll(
-      MailboxAdministrationLive.pipe(
-        Layer.provide(
-          Layer.merge(
-            Layer.succeed(
-              MailboxAdministrationConfig,
-              MailboxAdministrationConfig.of({
-                ownerEmail: Schema.decodeUnknownSync(
-                  MailboxAdministrationOwnerEmail
-                )(backendConfig.mailboxOwnerEmail),
-              })
-            ),
-            MailboxAdministrationRuntimeLive
-          )
-        )
-      ),
-      mailAuthorizationLive
+    const mailboxAdministrationLive = MailboxAdministrationLive.pipe(
+      Layer.provide(
+        Layer.merge(MailboxAdministrationRuntimeLive, mailAuthorizationLive)
+      )
     );
     const mailboxGroupLive = MailboxGroupLive.pipe(
-      Layer.provide(mailboxDependenciesLive),
+      Layer.provide(mailboxAdministrationLive),
       Layer.provide(currentRequestAuthLive),
       Layer.provide(requestValidationLive)
     );
@@ -113,16 +101,13 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(BackendHealthLive.pipe(Layer.provide(permissionsLive)))
     );
     const devEmailGroupLive = DevEmailGroupLive.pipe(
-      Layer.provide(D1DevEmailStoreLive),
-      Layer.provide(
-        Layer.succeed(BackendConfig, BackendConfig.of(backendConfig))
-      )
+      Layer.provide(devEmailStoreLive)
     );
 
     return HttpApiBuilder.layer(BackendHttpApi).pipe(
       Layer.provide(
         Layer.mergeAll(
-          authLive,
+          authGroupHandlersLive,
           healthGroupLive,
           mailboxGroupLive,
           devEmailGroupLive

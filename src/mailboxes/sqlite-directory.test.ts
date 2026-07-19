@@ -9,9 +9,9 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import {
-  mailboxStoresTestLayer,
-  MailboxDatabaseTest,
-} from "../test/mailbox-database";
+  MailboxDatabaseTestLive,
+  MailboxStoresTestLive,
+} from "../test/mailbox-sqlite";
 import { MailboxId } from "./core";
 import {
   CreateFolderInput,
@@ -22,7 +22,7 @@ import {
   RenameLabelInput,
 } from "./directory";
 import type { MailboxDomainError } from "./errors";
-import { MailboxResourceLookup } from "./repository";
+import { MailboxResourceLookup } from "./resource-location";
 import {
   attachment,
   draft,
@@ -38,6 +38,7 @@ import {
 import {
   MailboxDatabase,
   MailboxDirectoryStore,
+  MailboxIdentity,
   MailboxResourceIndex,
   MailboxRuntime,
 } from "./sqlite-services";
@@ -134,8 +135,14 @@ const deleteLabel = (input: DeleteLabelInput) =>
     Effect.flatMap((store) => store.deleteLabel(input))
   );
 
-const MailboxSqliteTest = mailboxStoresTestLayer(mailboxId, runtimeProxy).pipe(
-  Layer.provideMerge(MailboxDatabaseTest)
+const MailboxSqliteTest = MailboxStoresTestLive.pipe(
+  Layer.provide(
+    Layer.merge(
+      Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
+      Layer.succeed(MailboxRuntime, runtimeProxy)
+    )
+  ),
+  Layer.provideMerge(MailboxDatabaseTestLive)
 );
 
 layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {

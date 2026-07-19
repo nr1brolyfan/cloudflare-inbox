@@ -1,4 +1,7 @@
-import { AuthNotFoundError } from "@effect-auth/core/HttpApi";
+import {
+  AuthInternalError,
+  AuthNotFoundError,
+} from "@effect-auth/core/HttpApi";
 import * as Schema from "effect/Schema";
 import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
 
@@ -38,7 +41,7 @@ export const DevEmailListSchema = Schema.Struct({
   messages: Schema.Array(DevEmailRecordSchema),
 });
 
-const DevEmailClearedSchema = Schema.Struct({
+export const DevEmailClearedSchema = Schema.Struct({
   cleared: Schema.Literal(true),
 });
 
@@ -46,7 +49,7 @@ export const ListDevEmailsEndpoint = HttpApiEndpoint.get(
   "list",
   "/api/dev-emails",
   {
-    error: AuthNotFoundError,
+    error: [AuthNotFoundError, AuthInternalError],
     success: DevEmailListSchema,
   }
 );
@@ -55,7 +58,7 @@ export const ClearDevEmailsEndpoint = HttpApiEndpoint.delete(
   "clear",
   "/api/dev-emails",
   {
-    error: AuthNotFoundError,
+    error: [AuthNotFoundError, AuthInternalError],
     success: DevEmailClearedSchema,
   }
 );

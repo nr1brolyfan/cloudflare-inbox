@@ -14,6 +14,7 @@ import {
   MailboxDraftStoreLive,
   MailboxIdentityLive,
   MailboxMessageStoreLive,
+  MailboxOperationStoreLive,
   MailboxOutboundStoreLive,
   MailboxResourceIndex,
   MailboxResourceIndexLive,
@@ -64,7 +65,10 @@ const MailboxStoresLive = Layer.mergeAll(
   MailboxMessageStoreLive,
   MailboxDraftStoreLive,
   MailboxOutboundStoreLive
-).pipe(Layer.provide(MailboxInfrastructureLive));
+).pipe(
+  Layer.provide(MailboxOperationStoreLive),
+  Layer.provide(MailboxInfrastructureLive)
+);
 
 const MailboxSqliteLive = Layer.merge(
   MailboxInfrastructureLive,

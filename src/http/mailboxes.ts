@@ -1,20 +1,21 @@
 import {
+  AuthInternalError,
+  AuthUnauthenticatedError,
   AuthBadRequestError,
   AuthConflictError,
-  AuthInternalError,
   AuthNotFoundError,
   AuthPolicyDeniedError,
-  AuthUnauthenticatedError,
   mapAuthGuardErrors,
 } from "@effect-auth/core/HttpApi";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { MailAuthorization } from "../authorization/mail-authorization";
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailboxAdministrationError } from "../mailboxes/administration";
 import { MailboxAdministration } from "../mailboxes/administration";
 import { BackendHttpApi } from "./api";
+import { MailboxPublicErrorSchema } from "./mailbox-contract";
 
 const internalError = () =>
   new AuthInternalError({
@@ -32,10 +33,16 @@ type MailboxPublicError =
 const mapAdministrationError = (
   error: MailboxAdministrationError
 ): Effect.Effect<never, MailboxPublicError> => {
-  const fail = <E>(publicError: E) =>
-    Effect.logWarning(
-      `Mailbox ${error.operation} rejected: ${error.reason}`
-    ).pipe(Effect.flatMap(() => Effect.fail(publicError)));
+  const fail = <E extends MailboxPublicError>(publicError: E) =>
+    Schema.encodeEffect(MailboxPublicErrorSchema)(publicError).pipe(
+      Effect.orDie,
+      Effect.andThen(
+        Effect.logWarning(
+          `Mailbox ${error.operation} rejected: ${error.reason}`
+        )
+      ),
+      Effect.flatMap(() => Effect.fail(publicError))
+    );
 
   switch (error.reason) {
     case "invalid-input": {
@@ -126,7 +133,6 @@ export const MailboxGroupLive = HttpApiBuilder.group(
   "mailboxes",
   Effect.fn("backend.http.mailbox_group")(function* (handlers) {
     const administration = yield* MailboxAdministration;
-    const mailAuthorization = yield* MailAuthorization;
 
     return handlers
       .handle("bootstrapOwner", ({ payload }) =>
@@ -140,10 +146,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
             displayName: payload.displayName,
             mailboxId: params.mailboxId,
           })
-          .pipe(
-            Effect.provideService(MailAuthorization, mailAuthorization),
-            mapHttpErrors
-          )
+          .pipe(mapHttpErrors)
       );
   })
 );

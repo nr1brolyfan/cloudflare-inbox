@@ -24,7 +24,7 @@ import type { MailboxDomainError } from "./errors";
 import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
-} from "./repository";
+} from "./resource-location";
 import {
   MailboxDirectoryStore,
   MailboxDraftStore,

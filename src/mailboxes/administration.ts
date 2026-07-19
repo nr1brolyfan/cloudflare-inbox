@@ -5,10 +5,7 @@ import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuthShape } from "../auth/session";
-import type {
-  MailAuthorization,
-  MailAuthorizationError,
-} from "../authorization/mail-authorization";
+import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import { MailboxDisplayName, MailboxId } from "./core";
 import type { MailboxRecord } from "./core";
 
@@ -67,9 +64,7 @@ export interface MailboxAdministration {
   ) => Effect.Effect<
     MailboxRecord,
     MailAuthorizationError | MailboxAdministrationError,
-    | AuthPermission.CurrentPrincipal
-    | CurrentRequestAuthShape
-    | MailAuthorization
+    AuthPermission.CurrentPrincipal | CurrentRequestAuthShape
   >;
 }
 

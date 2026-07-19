@@ -2,76 +2,34 @@ import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 
-export interface MailboxRouteHint {
-  /** Selects a MailboxDO but is never authorization evidence. */
-  readonly mailboxId: string;
-}
+import type {
+  AttachmentLocation,
+  AttachmentLookup,
+  DraftLocation,
+  DraftLookup,
+  FolderLocation,
+  FolderLookup,
+  MailboxLocation,
+  MessageLocation,
+  MessageLookup,
+  ResolvableMailResourceLookup,
+  RuleLocation,
+  RuleLookup,
+} from "../mailboxes/resource-location";
 
-export interface MailboxRef {
-  readonly _tag: "Mailbox";
-  readonly mailboxId: string;
-}
-
-export interface FolderRef {
-  readonly _tag: "Folder";
-  readonly folderId: string;
-  readonly route: MailboxRouteHint;
-}
-
-export interface MessageRef {
-  readonly _tag: "Message";
-  readonly messageId: string;
-  readonly route: MailboxRouteHint;
-}
-
-export interface DraftRef {
-  readonly _tag: "Draft";
-  readonly draftId: string;
-  readonly route: MailboxRouteHint;
-}
-
-export interface RuleRef {
-  readonly _tag: "Rule";
-  readonly route: MailboxRouteHint;
-  readonly ruleId: string;
-}
-
-export interface AttachmentRef {
-  readonly _tag: "Attachment";
-  readonly attachmentId: string;
-  readonly route: MailboxRouteHint;
-}
-
-export type ResolvableMailResourceRef =
-  | FolderRef
-  | MessageRef
-  | DraftRef
-  | RuleRef
-  | AttachmentRef;
-
-export interface TrustedMailboxLocation {
-  readonly mailboxId: string;
-}
-
-export interface TrustedFolderLocation extends TrustedMailboxLocation {
-  readonly folderId: string;
-}
-
-export interface TrustedMessageLocation extends TrustedFolderLocation {
-  readonly messageId: string;
-}
-
-export interface TrustedDraftLocation extends TrustedMailboxLocation {
-  readonly draftId: string;
-}
-
-export interface TrustedRuleLocation extends TrustedMailboxLocation {
-  readonly ruleId: string;
-}
-
-export interface TrustedAttachmentLocation extends TrustedMessageLocation {
-  readonly attachmentId: string;
-}
+export type MailboxRef = MailboxLocation;
+export type FolderRef = FolderLookup;
+export type MessageRef = MessageLookup;
+export type DraftRef = DraftLookup;
+export type RuleRef = RuleLookup;
+export type AttachmentRef = AttachmentLookup;
+export type ResolvableMailResourceRef = ResolvableMailResourceLookup;
+export type TrustedMailboxLocation = MailboxLocation;
+export type TrustedFolderLocation = FolderLocation;
+export type TrustedMessageLocation = MessageLocation;
+export type TrustedDraftLocation = DraftLocation;
+export type TrustedRuleLocation = RuleLocation;
+export type TrustedAttachmentLocation = AttachmentLocation;
 
 export class MailResourceResolveError extends Data.TaggedError(
   "MailResourceResolveError"

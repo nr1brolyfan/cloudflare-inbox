@@ -6,8 +6,10 @@ import {
   authErrorMessage,
   authSessionQueryKey,
 } from "../../auth/client";
-import { CompletionShell } from "../../auth/completion-shell";
-import { useCompletionCredentials } from "../../auth/use-completion-credentials";
+import {
+  CompletionShell,
+  useCompletionCredentials,
+} from "../../auth/completion";
 
 export const Route = createFileRoute("/auth-complete/magic-link")({
   component: MagicLinkCompletion,

@@ -30,8 +30,8 @@ src/mailboxes/
   mailbox-do.ts            # thin Durable Object composition root
 
 src/control-plane/
-  batch.ts
-  batch-live.ts
+  batch.ts                # contract and concrete D1 batch layer
+  database.ts             # D1/Drizzle contract, layers, mailbox registry
   mailbox-administration-live.ts
 ```
 
@@ -52,12 +52,13 @@ Loose groups of SQLite functions become internal services:
 - `MailboxDraftStore`
 - `MailboxOutboundStore`
 - `MailboxResourceIndex`
+- `MailboxOperationStore`
 - `MailboxRuntime`
 - `MailboxIdentity`
 
 Their implementations and named `XLive` layers may share the larger `sqlite-services.ts` module. Database access, time, ID generation, and canonical mailbox identity must be acquired from Effect context rather than passed manually.
 
-`MailboxOperationStore` should only become a service if it is independently reused by several layers. Otherwise its implementation remains private to the SQLite adapter.
+`MailboxOperationStoreLive` captures `MailboxDatabase` once and exposes environment-free replay and persistence methods. Directory, draft, and outbound store layers acquire this shared service explicitly; operation-ID behavior is not hidden in standalone database helpers.
 
 The Worker-side Durable Object adapter should depend on focused services such as a mailbox registry and Durable Object namespace instead of a configuration object containing dependency callbacks.
 

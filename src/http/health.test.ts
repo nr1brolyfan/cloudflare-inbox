@@ -5,7 +5,8 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import * as Health from "./health";
+import * as Health from "../observability/health";
+import { HealthGroupLive } from "./health";
 import { HealthGroup } from "./health-contract";
 import { HttpApiPlatformLive } from "./platform";
 
@@ -25,7 +26,7 @@ const healthyReport: Health.BackendHealthReport = {
 const makeHealthHandler = (report: Health.BackendHealthReport) =>
   HttpRouter.toWebHandler(
     HttpApiBuilder.layer(HealthTestApi).pipe(
-      Layer.provide(Health.HealthGroupLive),
+      Layer.provide(HealthGroupLive),
       Layer.provide(
         Layer.succeed(
           Health.BackendHealth,

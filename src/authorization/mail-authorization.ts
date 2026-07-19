@@ -3,19 +3,25 @@ import * as AuthPolicy from "@effect-auth/core/Policy";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 
 import { MailPermission, folderScope, mailboxScope } from "./catalog";
 import * as Resources from "./resources";
 
-export type MailboxAction =
-  | "read"
-  | "modify"
-  | "send"
-  | "manage-settings"
-  | "manage-members";
-export type FolderAction = "read" | "modify";
-export type MessageAction = "read" | "modify";
-export type DraftAction = "edit" | "send";
+export const MailboxAction = Schema.Literals([
+  "read",
+  "modify",
+  "send",
+  "manage-settings",
+  "manage-members",
+]);
+export type MailboxAction = Schema.Schema.Type<typeof MailboxAction>;
+export const FolderAction = Schema.Literals(["read", "modify"]);
+export type FolderAction = Schema.Schema.Type<typeof FolderAction>;
+export const MessageAction = Schema.Literals(["read", "modify"]);
+export type MessageAction = Schema.Schema.Type<typeof MessageAction>;
+export const DraftAction = Schema.Literals(["edit", "send"]);
+export type DraftAction = Schema.Schema.Type<typeof DraftAction>;
 
 export type MailAuthorizationError =
   | AuthPolicy.AuthorizationError
@@ -122,7 +128,7 @@ export const MailAuthorizationLive = Layer.effect(
         .pipe(
           Effect.tap((location) =>
             ensureResolverInvariant(
-              location.mailboxId === resource.route.mailboxId &&
+              location.mailboxId === resource.mailboxId &&
                 location.folderId === resource.folderId,
               resource
             )
@@ -134,7 +140,7 @@ export const MailAuthorizationLive = Layer.effect(
         .pipe(
           Effect.tap((location) =>
             ensureResolverInvariant(
-              location.mailboxId === resource.route.mailboxId &&
+              location.mailboxId === resource.mailboxId &&
                 location.messageId === resource.messageId,
               resource
             )
@@ -146,7 +152,7 @@ export const MailAuthorizationLive = Layer.effect(
         .pipe(
           Effect.tap((location) =>
             ensureResolverInvariant(
-              location.mailboxId === resource.route.mailboxId &&
+              location.mailboxId === resource.mailboxId &&
                 location.draftId === resource.draftId,
               resource
             )
@@ -158,7 +164,7 @@ export const MailAuthorizationLive = Layer.effect(
         .pipe(
           Effect.tap((location) =>
             ensureResolverInvariant(
-              location.mailboxId === resource.route.mailboxId &&
+              location.mailboxId === resource.mailboxId &&
                 location.ruleId === resource.ruleId,
               resource
             )
@@ -170,7 +176,7 @@ export const MailAuthorizationLive = Layer.effect(
         .pipe(
           Effect.tap((location) =>
             ensureResolverInvariant(
-              location.mailboxId === resource.route.mailboxId &&
+              location.mailboxId === resource.mailboxId &&
                 location.attachmentId === resource.attachmentId,
               resource
             )
@@ -230,14 +236,14 @@ export const MailAuthorizationLive = Layer.effect(
           })
         ),
       requireDraftCreate: ({ resource }) => {
-        const location = { mailboxId: resource.mailboxId };
+        const location = resource;
         return requirePermission(
           MailPermission.draftCreate,
           mailboxScope(location.mailboxId)
         ).pipe(Effect.as(location));
       },
       requireExport: ({ resource }) => {
-        const location = { mailboxId: resource.mailboxId };
+        const location = resource;
         return requirePermission(
           MailPermission.mailboxExport,
           mailboxScope(location.mailboxId)
@@ -263,7 +269,7 @@ export const MailAuthorizationLive = Layer.effect(
           )
         ),
       requireMailbox: ({ action, resource }) => {
-        const location = { mailboxId: resource.mailboxId };
+        const location = resource;
         return requirePermission(
           mailboxPermissionByAction[action],
           mailboxScope(location.mailboxId)

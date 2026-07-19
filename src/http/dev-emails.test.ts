@@ -6,9 +6,8 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { BackendConfig } from "./backend-context";
 import { DevEmailGroup } from "./dev-email-contract";
-import { DevEmailGroupLive } from "./dev-emails";
+import { DevEmailConfig, DevEmailGroupLive } from "./dev-emails";
 import { HttpApiPlatformLive } from "./platform";
 
 const DevEmailTestApi = HttpApi.make("AuthApi").add(DevEmailGroup);
@@ -28,8 +27,8 @@ describe("development email API", () => {
       Layer.provide(Layer.succeed(DevEmailStore, store)),
       Layer.provide(
         Layer.succeed(
-          BackendConfig,
-          BackendConfig.of({ isDevelopment: false } as BackendConfig)
+          DevEmailConfig,
+          DevEmailConfig.of({ isDevelopment: false })
         )
       )
     );

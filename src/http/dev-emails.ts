@@ -1,12 +1,30 @@
 import { DevEmailStore } from "@effect-auth/core/DevEmail";
 import type { DevEmailMessage } from "@effect-auth/core/DevEmail";
-import { AuthNotFoundError } from "@effect-auth/core/HttpApi";
+import {
+  AuthInternalError,
+  AuthNotFoundError,
+} from "@effect-auth/core/HttpApi";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { BackendHttpApi } from "./api";
-import { BackendConfig } from "./backend-context";
 import type { DevEmailRecord } from "./dev-email-contract";
+
+export interface DevEmailConfigShape {
+  readonly isDevelopment: boolean;
+}
+
+/** Deployment mode required only by the development inbox adapter. */
+export const DevEmailConfig = Context.Service<DevEmailConfigShape>(
+  "cloudflare-inbox/DevEmailConfig"
+);
+
+const storeUnavailable = () =>
+  new AuthInternalError({
+    code: "internal_error",
+    message: "Development email inbox is unavailable",
+  });
 
 const toRecord = (message: DevEmailMessage): DevEmailRecord => ({
   id: message.id,
@@ -25,7 +43,7 @@ export const DevEmailGroupLive = HttpApiBuilder.group(
   BackendHttpApi,
   "devEmails",
   Effect.fn("backend.http.dev_email_group")(function* (handlers) {
-    const config = yield* BackendConfig;
+    const config = yield* DevEmailConfig;
     const store = yield* DevEmailStore;
     const requireDevelopment = config.isDevelopment
       ? Effect.void
@@ -40,7 +58,9 @@ export const DevEmailGroupLive = HttpApiBuilder.group(
       .handle("list", () =>
         requireDevelopment.pipe(
           Effect.andThen(
-            Effect.suspend(() => store.list({ limit: 50 }).pipe(Effect.orDie))
+            Effect.suspend(() =>
+              store.list({ limit: 50 }).pipe(Effect.mapError(storeUnavailable))
+            )
           ),
           Effect.map((messages) => ({ messages: messages.map(toRecord) }))
         )
@@ -48,7 +68,9 @@ export const DevEmailGroupLive = HttpApiBuilder.group(
       .handle("clear", () =>
         requireDevelopment.pipe(
           Effect.andThen(
-            Effect.suspend(() => store.clear().pipe(Effect.orDie))
+            Effect.suspend(() =>
+              store.clear().pipe(Effect.mapError(storeUnavailable))
+            )
           ),
           Effect.as({ cleared: true as const })
         )

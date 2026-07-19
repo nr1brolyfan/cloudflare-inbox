@@ -8,6 +8,7 @@ import {
   CurrentPrincipal,
   PermissionSubject,
 } from "@effect-auth/core/Permission";
+import type { PermissionSubject as PermissionSubjectShape } from "@effect-auth/core/Permission";
 import {
   CurrentActor,
   CurrentSession,
@@ -15,6 +16,8 @@ import {
   Sessions,
 } from "@effect-auth/core/Sessions";
 import type {
+  CurrentActorShape,
+  CurrentSessionShape,
   SessionValidateError,
   ValidatedSession,
 } from "@effect-auth/core/Sessions";
@@ -39,10 +42,6 @@ const validationError = (error: SessionValidateError) =>
         message: "Failed to validate session",
       });
 
-export const CurrentValidatedSession = Context.Service<ValidatedSession>(
-  "cloudflare-inbox/CurrentValidatedSession"
-);
-
 export interface CurrentRequestAuthShape {
   readonly sessionSecretHash: string;
   readonly validated: ValidatedSession;
@@ -52,12 +51,33 @@ export const CurrentRequestAuth = Context.Service<CurrentRequestAuthShape>(
   "cloudflare-inbox/CurrentRequestAuth"
 );
 
+interface AuthenticatedRequest {
+  readonly actor: CurrentActorShape;
+  readonly principal: PermissionSubjectShape;
+  readonly requestAuth: CurrentRequestAuthShape;
+  readonly session: CurrentSessionShape;
+}
+
+export interface RequestSessionAuthenticatorShape {
+  readonly authenticate: (
+    request: Request
+  ) => Effect.Effect<
+    AuthenticatedRequest,
+    AuthUnauthenticatedError | AuthInternalError
+  >;
+}
+
+/** Validates and binds one request to trusted auth values. */
+export const RequestSessionAuthenticator =
+  Context.Service<RequestSessionAuthenticatorShape>(
+    "cloudflare-inbox/RequestSessionAuthenticator"
+  );
+
 export class CurrentRequestAuthMiddleware extends HttpApiMiddleware.Service<
   CurrentRequestAuthMiddleware,
   {
     provides:
       | CurrentRequestAuthShape
-      | ValidatedSession
       | CurrentSession
       | CurrentActor
       | CurrentPrincipal;
@@ -66,78 +86,75 @@ export class CurrentRequestAuthMiddleware extends HttpApiMiddleware.Service<
   error: [AuthUnauthenticatedError, AuthInternalError],
 }) {}
 
-export const validateRequestSession = (request: Request) =>
+/** Concrete request authenticator with stable auth dependencies captured once. */
+export const RequestSessionAuthenticatorLive = Layer.effect(
+  RequestSessionAuthenticator,
   Effect.gen(function* () {
     const sessionCookie = yield* SessionCookie;
     const sessions = yield* Sessions;
-    const token = yield* sessionCookie
-      .read(request)
-      .pipe(Effect.mapError(validationError));
-
-    if (Option.isNone(token)) {
-      return yield* unauthenticated();
-    }
-
-    return yield* sessions
-      .validate(token.value)
-      .pipe(Effect.mapError(validationError));
-  });
-
-export const currentRequestAuthContext = (request: Request) =>
-  Effect.gen(function* () {
-    const validated = yield* validateRequestSession(request);
     const crypto = yield* Crypto;
     const secrets = yield* AuthSecrets;
-    const token = String(validated.issued.token);
-    const separator = token.indexOf(".");
 
-    if (separator <= 0 || separator === token.length - 1) {
-      return yield* Effect.die(
-        new Error("Validated session contains an invalid token")
-      );
-    }
+    return RequestSessionAuthenticator.of({
+      authenticate: (request) =>
+        Effect.gen(function* () {
+          const tokenOption = yield* sessionCookie
+            .read(request)
+            .pipe(Effect.mapError(validationError));
 
-    const sessionSecretHash = yield* crypto
-      .hmacSha256({
-        data: token.slice(separator + 1),
-        key: secrets.session,
-      })
-      .pipe(
-        Effect.mapError(
-          () =>
-            new AuthInternalError({
+          if (Option.isNone(tokenOption)) {
+            return yield* unauthenticated();
+          }
+
+          const validated = yield* sessions
+            .validate(tokenOption.value)
+            .pipe(Effect.mapError(validationError));
+          const token = String(validated.issued.token);
+          const separator = token.indexOf(".");
+
+          if (separator <= 0 || separator === token.length - 1) {
+            return yield* new AuthInternalError({
               code: "internal_error",
               message: "Failed to bind validated session",
-            })
-        )
-      );
+            });
+          }
 
-    return Context.make(
-      CurrentRequestAuth,
-      CurrentRequestAuth.of({ sessionSecretHash, validated })
-    ).pipe(
-      Context.add(
-        CurrentValidatedSession,
-        CurrentValidatedSession.of(validated)
-      ),
-      Context.add(CurrentSession, CurrentSession.of(validated.currentSession)),
-      Context.add(CurrentActor, CurrentActor.of(validated.actor)),
-      Context.add(
-        CurrentPrincipal,
-        CurrentPrincipal.of(PermissionSubject.user(validated.actor.userId))
-      )
-    );
-  });
+          const sessionSecretHash = yield* crypto
+            .hmacSha256({
+              data: token.slice(separator + 1),
+              key: secrets.session,
+            })
+            .pipe(
+              Effect.mapError(
+                () =>
+                  new AuthInternalError({
+                    code: "internal_error",
+                    message: "Failed to bind validated session",
+                  })
+              )
+            );
+
+          return {
+            actor: CurrentActor.of(validated.actor),
+            principal: CurrentPrincipal.of(
+              PermissionSubject.user(validated.actor.userId)
+            ),
+            requestAuth: CurrentRequestAuth.of({
+              sessionSecretHash,
+              validated,
+            }),
+            session: CurrentSession.of(validated.currentSession),
+          };
+        }),
+    });
+  })
+);
 
 /** Validates one request and provides the trusted auth services to its handlers. */
 export const CurrentRequestAuthMiddlewareLive = Layer.effect(
   CurrentRequestAuthMiddleware,
   Effect.gen(function* () {
-    const dependencies = Context.make(AuthSecrets, yield* AuthSecrets).pipe(
-      Context.add(Crypto, yield* Crypto),
-      Context.add(SessionCookie, yield* SessionCookie),
-      Context.add(Sessions, yield* Sessions)
-    );
+    const authenticator = yield* RequestSessionAuthenticator;
 
     return (httpEffect) =>
       Effect.gen(function* () {
@@ -151,11 +168,14 @@ export const CurrentRequestAuthMiddlewareLive = Layer.effect(
               })
           )
         );
-        const authContext = yield* currentRequestAuthContext(webRequest).pipe(
-          Effect.provideContext(dependencies)
-        );
+        const authenticated = yield* authenticator.authenticate(webRequest);
 
-        return yield* Effect.provideContext(httpEffect, authContext);
+        return yield* httpEffect.pipe(
+          Effect.provideService(CurrentRequestAuth, authenticated.requestAuth),
+          Effect.provideService(CurrentSession, authenticated.session),
+          Effect.provideService(CurrentActor, authenticated.actor),
+          Effect.provideService(CurrentPrincipal, authenticated.principal)
+        );
       });
   })
 );

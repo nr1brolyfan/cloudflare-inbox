@@ -3,8 +3,14 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
 import { authClient, authErrorMessage } from "../../auth/client";
-import { CompletionShell } from "../../auth/completion-shell";
-import { useCompletionCredentials } from "../../auth/use-completion-credentials";
+import {
+  CompletionShell,
+  useCompletionCredentials,
+} from "../../auth/completion";
+import {
+  meetsPasswordPolicy,
+  minimumPasswordCodePoints,
+} from "../../auth/password-policy";
 
 export const Route = createFileRoute("/auth-complete/password-reset")({
   component: PasswordResetCompletion,
@@ -19,7 +25,7 @@ function PasswordResetCompletion() {
   const isReady = Boolean(
     credentials.challengeId &&
     credentials.secret &&
-    password.length >= 12 &&
+    meetsPasswordPolicy(password) &&
     passwordsMatch
   );
 
@@ -55,7 +61,7 @@ function PasswordResetCompletion() {
         <input
           type="password"
           autoComplete="new-password"
-          minLength={12}
+          minLength={minimumPasswordCodePoints}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
           className="w-full rounded-xl border border-[var(--line)] bg-white/75 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
@@ -66,7 +72,7 @@ function PasswordResetCompletion() {
         <input
           type="password"
           autoComplete="new-password"
-          minLength={12}
+          minLength={minimumPasswordCodePoints}
           value={confirmation}
           onChange={(event) => setConfirmation(event.target.value)}
           className="w-full rounded-xl border border-[var(--line)] bg-white/75 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"

@@ -10,7 +10,6 @@ export default defineConfig({
     "src/auth/schema/**",
   ],
   sortTailwindcss: {
-    functions: ["clsx", "cn", "cva"],
     stylesheet: "./src/styles.css",
   },
 });

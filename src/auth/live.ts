@@ -1,4 +1,3 @@
-import { BotProtectionNoopLive } from "@effect-auth/core/AbuseProtection";
 import { AlchemyCloudflareMailer } from "@effect-auth/core/AlchemyCloudflareEmail";
 import type { AlchemyRateLimitDurableObjectNamespace } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
 import { RateLimitStoreDurableObject } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
@@ -17,8 +16,7 @@ import {
   EmailDeliveryFromAuthMailerLive,
   EmailVerificationDefaultLive,
 } from "@effect-auth/core/EmailVerification";
-import { AuthHttpApiConfigLive } from "@effect-auth/core/HttpApi";
-import type { Email } from "@effect-auth/core/Identifiers";
+import { EmailSchema } from "@effect-auth/core/Identifiers";
 import { IdentityKindRegistryDefaultLive } from "@effect-auth/core/Identity";
 import { LoginApprovalLive } from "@effect-auth/core/LoginApproval";
 import { MagicLinkLoginLive } from "@effect-auth/core/MagicLink";
@@ -40,26 +38,67 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
+import * as SchemaGetter from "effect/SchemaGetter";
 import { RateLimiter as PersistenceRateLimiter } from "effect/unstable/persistence";
 
 import { completionUrl } from "./completion-url";
-import { D1DevEmailStoreLive } from "./dev-email-store";
-import { CoreAuthGroupHandlersLive } from "./http-api";
+import { meetsPasswordPolicy } from "./password-policy";
 
 export type AuthEmailSendClient = Effect.Success<
   ReturnType<typeof Cloudflare.Email.Send>
 >;
 
-export interface AuthRuntimeConfigShape {
-  readonly emailFrom: Email;
-  readonly emailSender?: AuthEmailSendClient;
-  readonly isDevelopment: boolean;
-  readonly publicOrigin: string;
-  readonly rateLimitNamespace: AlchemyRateLimitDurableObjectNamespace;
-  readonly secrets: AuthSecretsShape;
-}
+const PublicOriginSchema = Schema.URLFromString.pipe(
+  Schema.refine(
+    (url): url is URL => url.protocol === "https:" || url.protocol === "http:",
+    { message: "Public origin must be an absolute HTTP(S) URL" }
+  ),
+  Schema.decode({
+    decode: SchemaGetter.transform((url) => new URL(url.origin)),
+    encode: SchemaGetter.transform((url) => new URL(url.origin)),
+  })
+);
 
-/** Configuration and Cloudflare handles required to assemble the auth runtime. */
+const AuthEmailSendClientSchema = Schema.declare<AuthEmailSendClient>(
+  (value): value is AuthEmailSendClient =>
+    typeof value === "object" && value !== null && "send" in value
+);
+
+const RateLimitNamespaceSchema =
+  Schema.declare<AlchemyRateLimitDurableObjectNamespace>(
+    (value): value is AlchemyRateLimitDurableObjectNamespace =>
+      typeof value === "object" && value !== null
+  );
+
+const AuthSecretsSchema = Schema.declare<AuthSecretsShape>(
+  (value): value is AuthSecretsShape =>
+    typeof value === "object" &&
+    value !== null &&
+    "challenge" in value &&
+    "privacy" in value &&
+    "session" in value
+);
+
+export const AuthRuntimeConfigSchema = Schema.Struct({
+  emailFrom: EmailSchema,
+  delivery: Schema.Union([
+    Schema.Struct({ _tag: Schema.Literal("development") }),
+    Schema.Struct({
+      _tag: Schema.Literal("production"),
+      emailSender: AuthEmailSendClientSchema,
+    }),
+  ]),
+  publicOrigin: PublicOriginSchema,
+  rateLimitNamespace: RateLimitNamespaceSchema,
+  secrets: AuthSecretsSchema,
+});
+
+export type AuthRuntimeConfigShape = Schema.Schema.Type<
+  typeof AuthRuntimeConfigSchema
+>;
+
+/** Validated deployment config and Cloudflare handles required by auth. */
 export const AuthRuntimeConfig = Context.Service<AuthRuntimeConfigShape>(
   "cloudflare-inbox/AuthRuntimeConfig"
 );
@@ -80,37 +119,18 @@ const MinimumPasswordRiskPolicyLive = Layer.succeed(
   PasswordRiskPolicy.of({
     decide: ({ password }) =>
       Effect.succeed(
-        [...Redacted.value(password)].length >= 12
+        meetsPasswordPolicy(Redacted.value(password))
           ? { type: "Allow" as const }
           : { type: "Deny" as const }
       ),
   })
 );
 
-/** Core auth services and handlers consumed by the shared BackendHttpApi. */
-export const AuthLive = Layer.unwrap(
+/** Auth domain and feature services; HTTP policy is owned by the Backend root. */
+export const AuthServicesLive = Layer.unwrap(
   Effect.gen(function* () {
     const options = yield* AuthRuntimeConfig;
-    const { emailSender } = options;
-    const productionTransportLive =
-      emailSender === undefined
-        ? Layer.effect(
-            Mailer,
-            Effect.die("Auth email sender is not configured")
-          )
-        : Layer.succeed(
-            Mailer,
-            AlchemyCloudflareMailer.make({
-              email: {
-                send: (message) =>
-                  emailSender
-                    .send(message)
-                    .pipe(Effect.provide(RuntimeContext.phantom)),
-              },
-              from: options.emailFrom,
-              provider: "cloudflare-email-routing",
-            })
-          );
+    const publicOrigin = options.publicOrigin.origin;
     const defaultTemplates = makeDefaultAuthEmailTemplates();
     const emailTemplatesLive = Layer.succeed(
       AuthEmailTemplates,
@@ -121,7 +141,7 @@ export const AuthLive = Layer.unwrap(
           }
 
           const url = flowUrl(
-            options.publicOrigin,
+            publicOrigin,
             "/auth-complete/email-verification",
             input.challengeId,
             input.secret
@@ -134,15 +154,33 @@ export const AuthLive = Layer.unwrap(
         },
       })
     );
-    const authMailerLive = options.isDevelopment
-      ? AuthMailerFromDevEmailStoreLive({ from: options.emailFrom }).pipe(
-          Layer.provide(emailTemplatesLive),
-          Layer.provide(D1DevEmailStoreLive)
+    const authMailerLive = (() => {
+      if (options.delivery._tag === "development") {
+        return AuthMailerFromDevEmailStoreLive({
+          from: options.emailFrom,
+        }).pipe(Layer.provide(emailTemplatesLive));
+      }
+
+      const { emailSender } = options.delivery;
+      return AuthMailerLive({ from: options.emailFrom }).pipe(
+        Layer.provide(emailTemplatesLive),
+        Layer.provide(
+          Layer.succeed(
+            Mailer,
+            AlchemyCloudflareMailer.make({
+              email: {
+                send: (message) =>
+                  emailSender
+                    .send(message)
+                    .pipe(Effect.provide(RuntimeContext.phantom)),
+              },
+              from: options.emailFrom,
+              provider: "cloudflare-email-routing",
+            })
+          )
         )
-      : AuthMailerLive({ from: options.emailFrom }).pipe(
-          Layer.provide(emailTemplatesLive),
-          Layer.provide(productionTransportLive)
-        );
+      );
+    })();
     const sessionLive = AuthKernelLive.pipe(
       Layer.provideMerge(WebCryptoLive()),
       Layer.provideMerge(AuthSecretsLive(options.secrets))
@@ -163,7 +201,7 @@ export const AuthLive = Layer.unwrap(
     const passwordLive = PasswordResetLive({
       makeUrl: ({ challengeId, secret }) =>
         flowUrl(
-          options.publicOrigin,
+          publicOrigin,
           "/auth-complete/password-reset",
           challengeId,
           secret
@@ -180,12 +218,7 @@ export const AuthLive = Layer.unwrap(
     );
     const magicLinkLive = MagicLinkLoginLive({
       makeUrl: ({ challengeId, secret }) =>
-        flowUrl(
-          options.publicOrigin,
-          "/auth-complete/magic-link",
-          challengeId,
-          secret
-        ),
+        flowUrl(publicOrigin, "/auth-complete/magic-link", challengeId, secret),
     }).pipe(Layer.provideMerge(baseLive));
     const loginApprovalLive = LoginApprovalLive().pipe(
       Layer.provideMerge(baseLive)
@@ -215,20 +248,6 @@ export const AuthLive = Layer.unwrap(
       authRateLimitLive
     );
 
-    const groupHandlersLive = CoreAuthGroupHandlersLive.pipe(
-      Layer.provide(
-        AuthHttpApiConfigLive({
-          originCheck: {
-            allowMissingOrigin: false,
-            allowedOrigins: [options.publicOrigin],
-          },
-          requestMetadata: { trustProxyHeaders: true },
-        })
-      ),
-      Layer.provide(requirementsLive),
-      Layer.provide(BotProtectionNoopLive)
-    );
-
-    return Layer.merge(sessionLive, groupHandlersLive);
+    return Layer.merge(sessionLive, requirementsLive);
   })
 );

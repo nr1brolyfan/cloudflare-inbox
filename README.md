@@ -74,18 +74,13 @@ Production deployment uses Alchemy's Cloudflare state store. Local development s
 ```text
 alchemy.run.ts              Cloudflare resource graph
 src/routes/                 TanStack Start routes
-src/auth/                   effect-auth layers and development mail transport
+src/auth/                   effect-auth services, session handling, and storage
 src/authorization/          mail permission catalog and D1-backed layers
-src/http/                   declarative Effect HTTP APIs and router composition
+src/control-plane/          D1 adapters and transactional mailbox administration
+src/http/                   declarative Effect HTTP APIs and Backend composition
 src/infra/                  Cloudflare resource declarations
-src/mailboxes/              mail domain contracts and control-plane services
-src/observability/          Effect logging and local OTLP composition
-src/server/                 server-only frontend Worker code
+src/mailboxes/              mail domain, Durable Object protocol, and SQLite stores
+src/observability/          health services, Effect logging, and local OTLP layers
+src/server/                 Website-side services and TanStack adapters
 src/workers/backend.ts      private Effect backend Worker
-```
-
-Add Shadcn components with Bun:
-
-```bash
-bunx shadcn@latest add button
 ```

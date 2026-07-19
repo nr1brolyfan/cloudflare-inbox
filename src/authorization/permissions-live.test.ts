@@ -20,7 +20,7 @@ import {
   mailPermissionDefinitions,
   mailRolePermissions,
 } from "./catalog";
-import { MailPermissionsLive } from "./live";
+import { MailPermissionsLive } from "./permissions-live";
 
 describe("D1 mail authorization", () => {
   it("applies mailbox registry constraints and seeds the typed catalog", async () => {

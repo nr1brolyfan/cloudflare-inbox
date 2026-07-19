@@ -6,6 +6,10 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { startTransition, useEffect, useState } from "react";
+
+import { parseCompletionHash } from "./completion-url";
+import type { CompletionCredentials } from "./completion-url";
 
 interface CompletionShellProps {
   readonly action: string;
@@ -80,3 +84,21 @@ export function CompletionShell({
     </main>
   );
 }
+
+export const useCompletionCredentials = () => {
+  const [credentials, setCredentials] = useState<CompletionCredentials>(() => ({
+    challengeId: "",
+  }));
+
+  useEffect(() => {
+    const parsed = parseCompletionHash(window.location.hash);
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${window.location.search}`
+    );
+    startTransition(() => setCredentials(parsed));
+  }, []);
+
+  return credentials;
+};

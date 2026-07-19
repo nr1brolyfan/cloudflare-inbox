@@ -22,17 +22,26 @@ import {
   MailRole,
   mailboxScope,
 } from "../authorization/catalog";
-import { MailPermissionsLive } from "../authorization/live";
-import type { MailAuthorization } from "../authorization/mail-authorization";
-import { MailAuthorizationLive } from "../authorization/mail-authorization";
+import {
+  MailAuthorization,
+  MailAuthorizationLive,
+} from "../authorization/mail-authorization";
+import { MailPermissionsLive } from "../authorization/permissions-live";
 import * as Resources from "../authorization/resources";
-import { ControlPlaneBatchLive } from "../control-plane/batch-live";
+import { ControlPlaneBatchLive } from "../control-plane/batch";
 import { ControlPlaneD1Binding } from "../control-plane/database";
 import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "../mailboxes/administration";
 import { MailboxDisplayName, MailboxId } from "../mailboxes/core";
+import {
+  AttachmentLocation,
+  DraftLocation,
+  FolderLocation,
+  MessageLocation,
+  RuleLocation,
+} from "../mailboxes/resource-location";
 import { applyControlPlaneMigrations, makeTestD1Database } from "../test/d1";
 import {
   MailboxAdministrationConfig,
@@ -122,33 +131,48 @@ const makeResolverLive = () =>
     Resources.MailResourceResolver,
     Resources.MailResourceResolver.of({
       resolveAttachment: (resource) =>
-        Effect.succeed({
-          attachmentId: resource.attachmentId,
-          folderId: "folder-a",
-          mailboxId: resource.route.mailboxId,
-          messageId: "message-a",
-        }),
+        Effect.succeed(
+          Schema.decodeUnknownSync(AttachmentLocation)({
+            _tag: "Attachment",
+            attachmentId: resource.attachmentId,
+            folderId: "folder-a",
+            mailboxId: resource.mailboxId,
+            messageId: "message-a",
+          })
+        ),
       resolveDraft: (resource) =>
-        Effect.succeed({
-          draftId: resource.draftId,
-          mailboxId: resource.route.mailboxId,
-        }),
+        Effect.succeed(
+          Schema.decodeUnknownSync(DraftLocation)({
+            _tag: "Draft",
+            draftId: resource.draftId,
+            mailboxId: resource.mailboxId,
+          })
+        ),
       resolveFolder: (resource) =>
-        Effect.succeed({
-          folderId: resource.folderId,
-          mailboxId: resource.route.mailboxId,
-        }),
+        Effect.succeed(
+          Schema.decodeUnknownSync(FolderLocation)({
+            _tag: "Folder",
+            folderId: resource.folderId,
+            mailboxId: resource.mailboxId,
+          })
+        ),
       resolveMessage: (resource) =>
-        Effect.succeed({
-          folderId: "folder-a",
-          mailboxId: resource.route.mailboxId,
-          messageId: resource.messageId,
-        }),
+        Effect.succeed(
+          Schema.decodeUnknownSync(MessageLocation)({
+            _tag: "Message",
+            folderId: "folder-a",
+            mailboxId: resource.mailboxId,
+            messageId: resource.messageId,
+          })
+        ),
       resolveRule: (resource) =>
-        Effect.succeed({
-          mailboxId: resource.route.mailboxId,
-          ruleId: resource.ruleId,
-        }),
+        Effect.succeed(
+          Schema.decodeUnknownSync(RuleLocation)({
+            _tag: "Rule",
+            mailboxId: resource.mailboxId,
+            ruleId: resource.ruleId,
+          })
+        ),
     })
   );
 
@@ -168,6 +192,23 @@ const makePermissionRaceLive = (mutation: () => void) =>
           })
         ),
         makeResolverLive()
+      )
+    )
+  );
+
+const unavailableMailAuthorizationLive = Layer.succeed(
+  MailAuthorization,
+  MailAuthorization.of({} as MailAuthorization)
+);
+
+const controlPlaneBatchLive = (database: D1EffectQbDatabaseLike) =>
+  ControlPlaneBatchLive.pipe(
+    Layer.provide(
+      Layer.succeed(
+        ControlPlaneD1Binding,
+        ControlPlaneD1Binding.of({
+          database: database as unknown as D1Database,
+        })
       )
     )
   );
@@ -207,6 +248,7 @@ const bootstrap = (
     }).pipe(
       Effect.provide(
         MailboxAdministrationLive.pipe(
+          Layer.provide(unavailableMailAuthorizationLive),
           Layer.provide(
             Layer.merge(
               Layer.succeed(
@@ -226,16 +268,7 @@ const bootstrap = (
               )
             )
           ),
-          Layer.provide(
-            ControlPlaneBatchLive.pipe(
-              Layer.provide(
-                Layer.succeed(
-                  ControlPlaneD1Binding,
-                  ControlPlaneD1Binding.of({ database })
-                )
-              )
-            )
-          )
+          Layer.provide(controlPlaneBatchLive(database))
         )
       )
     ),
@@ -278,16 +311,7 @@ const rename = (
               )
             )
           ),
-          Layer.provide(
-            ControlPlaneBatchLive.pipe(
-              Layer.provide(
-                Layer.succeed(
-                  ControlPlaneD1Binding,
-                  ControlPlaneD1Binding.of({ database })
-                )
-              )
-            )
-          )
+          Layer.provide(controlPlaneBatchLive(database))
         )
       ),
       Effect.provide(mailAuthorizationLive)
@@ -770,6 +794,45 @@ describe("mailbox administration", () => {
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
       }).toStrictEqual({ grants: 1, guards: 0, mailboxes: 1, members: 1 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("reports missing required batch rows as storage failure after commit", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const baseD1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      const missingStatusD1: D1EffectQbDatabaseLike = {
+        batch: async (statements) => {
+          const results = await baseD1.batch(statements);
+          return results.map((result, index) =>
+            index === 4 ? { ...result, results: undefined } : result
+          );
+        },
+        prepare: baseD1.prepare,
+      };
+
+      const error = await Effect.runPromise(
+        bootstrap(missingStatusD1, validated, "bootstrap-guard").pipe(
+          Effect.flip
+        )
+      );
+
+      expect(error).toMatchObject({
+        commitState: "unknown",
+        operation: "bootstrap-owner",
+        reason: "storage",
+      });
+      expect({
+        grants: countRows(database, "auth_role_grant"),
+        mailboxes: countRows(database, "app_mailbox"),
+        members: countRows(database, "app_mailbox_member"),
+      }).toStrictEqual({ grants: 1, mailboxes: 1, members: 1 });
     } finally {
       database.close();
     }

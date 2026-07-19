@@ -73,11 +73,13 @@ import {
   AttachmentLocation,
   DraftLocation,
   FolderLocation,
-  MailboxResourceLookupResult,
   MessageLocation,
   RuleLocation,
-} from "./repository";
-import type { MailboxResourceLookup } from "./repository";
+} from "./resource-location";
+import type {
+  MailboxResourceLookup,
+  MailboxResourceLookupResult as MailboxResourceLookupResultType,
+} from "./resource-location";
 import { applyMailboxMigrations } from "./sqlite-migrations";
 import {
   attachment,
@@ -165,62 +167,82 @@ export const MailboxIdentityLive = Layer.effect(
   })
 );
 
-const replayMailboxOperation = <A>(
-  operationId: string,
-  operation: MailboxDomainError["operation"],
-  operationKind: string,
-  requestKey: string,
-  schema: Schema.Decoder<A>
-) =>
-  Effect.gen(function* () {
-    const db = yield* MailboxDatabase;
-    const [row] = yield* db
-      .select({
-        operationKind: mailboxOperation.operationKind,
-        requestKey: mailboxOperation.requestKey,
-        resultPayload: mailboxOperation.resultPayload,
-      })
-      .from(mailboxOperation)
-      .where(eq(mailboxOperation.operationId, operationId))
-      .limit(1);
-
-    if (row === undefined) {
-      return;
-    }
-    if (row.operationKind !== operationKind || row.requestKey !== requestKey) {
-      return Result.fail(
-        new MailboxDomainError({
-          operation,
-          reason: "idempotency-conflict",
-          message: "Operation ID was already used for a different request",
-          resourceId: operationId,
+const makeMailboxOperationStore = (db: MailboxDatabase) => ({
+  replay: <A>(
+    operationId: string,
+    operation: MailboxDomainError["operation"],
+    operationKind: string,
+    requestKey: string,
+    schema: Schema.Decoder<A>
+  ) =>
+    Effect.gen(function* () {
+      const [row] = yield* db
+        .select({
+          operationKind: mailboxOperation.operationKind,
+          requestKey: mailboxOperation.requestKey,
+          resultPayload: mailboxOperation.resultPayload,
         })
-      );
-    }
-    return Result.succeed(
-      Schema.decodeUnknownSync(schema)(JSON.parse(row.resultPayload))
-    );
-  });
+        .from(mailboxOperation)
+        .where(eq(mailboxOperation.operationId, operationId))
+        .limit(1);
 
-const storeMailboxOperation = (
-  operationId: string,
-  operationKind: string,
-  requestKey: string,
-  resourceId: string,
-  resultPayload: string,
-  createdAt: number
-) =>
+      if (row === undefined) {
+        return;
+      }
+      if (
+        row.operationKind !== operationKind ||
+        row.requestKey !== requestKey
+      ) {
+        return Result.fail(
+          new MailboxDomainError({
+            operation,
+            reason: "idempotency-conflict",
+            message: "Operation ID was already used for a different request",
+            resourceId: operationId,
+          })
+        );
+      }
+      return Result.succeed(
+        Schema.decodeUnknownSync(schema)(JSON.parse(row.resultPayload))
+      );
+    }),
+  store: (
+    operationId: string,
+    operationKind: string,
+    requestKey: string,
+    resourceId: string,
+    resultPayload: string,
+    createdAt: number
+  ) =>
+    db
+      .insert(mailboxOperation)
+      .values({
+        operationId,
+        operationKind,
+        requestKey,
+        resourceId,
+        resultPayload,
+        createdAt,
+      })
+      .pipe(Effect.asVoid),
+});
+
+export type MailboxOperationStore = ReturnType<
+  typeof makeMailboxOperationStore
+>;
+
+/** Durable operation replay shared by idempotent SQLite mutation stores. */
+export const MailboxOperationStore = Context.Service<MailboxOperationStore>(
+  "cloudflare-inbox/MailboxOperationStore"
+);
+
+export const MailboxOperationStoreLive = Layer.effect(
+  MailboxOperationStore,
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
-    yield* db.insert(mailboxOperation).values({
-      operationId,
-      operationKind,
-      requestKey,
-      resourceId,
-      resultPayload,
-      createdAt,
-    });
-  });
+    return MailboxOperationStore.of(makeMailboxOperationStore(db));
+  })
+);
 
 const systemFolders = [
   { id: "inbox", kind: "inbox", name: "Inbox" },
@@ -358,7 +380,11 @@ const listFolders = (mailboxId: MailboxId) =>
     });
   });
 
-const createFolder = (mailboxId: MailboxId, input: CreateFolderInput) =>
+const createFolder = (
+  mailboxId: MailboxId,
+  input: CreateFolderInput,
+  operations: MailboxOperationStore
+) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
@@ -366,7 +392,7 @@ const createFolder = (mailboxId: MailboxId, input: CreateFolderInput) =>
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
         const requestKey = JSON.stringify({ name: input.name });
-        const previous = yield* replayMailboxOperation(
+        const previous = yield* operations.replay(
           input.operationId,
           "create-folder",
           "create-folder",
@@ -395,7 +421,7 @@ const createFolder = (mailboxId: MailboxId, input: CreateFolderInput) =>
           );
         }
         const result = folderFromRow(row, mailboxId);
-        yield* storeMailboxOperation(
+        yield* operations.store(
           input.operationId,
           "create-folder",
           requestKey,
@@ -574,7 +600,11 @@ const listLabels = (mailboxId: MailboxId) =>
     });
   });
 
-const createLabel = (mailboxId: MailboxId, input: CreateLabelInput) =>
+const createLabel = (
+  mailboxId: MailboxId,
+  input: CreateLabelInput,
+  operations: MailboxOperationStore
+) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
@@ -582,7 +612,7 @@ const createLabel = (mailboxId: MailboxId, input: CreateLabelInput) =>
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
         const requestKey = JSON.stringify({ name: input.name });
-        const previous = yield* replayMailboxOperation(
+        const previous = yield* operations.replay(
           input.operationId,
           "create-label",
           "create-label",
@@ -602,7 +632,7 @@ const createLabel = (mailboxId: MailboxId, input: CreateLabelInput) =>
           return yield* Effect.die(new Error("Created label was not returned"));
         }
         const result = labelFromRow(row, mailboxId);
-        yield* storeMailboxOperation(
+        yield* operations.store(
           input.operationId,
           "create-label",
           requestKey,
@@ -752,7 +782,8 @@ const provideDirectoryDependencies = <A, E>(
 const makeMailboxDirectoryStore = (
   db: MailboxDatabase,
   runtime: MailboxRuntime,
-  mailboxId: MailboxId
+  mailboxId: MailboxId,
+  operations: MailboxOperationStore
 ) => ({
   initialize: provideDirectoryDependencies(
     initializeMailboxDirectory,
@@ -762,7 +793,11 @@ const makeMailboxDirectoryStore = (
   listFolders: () =>
     provideDirectoryDependencies(listFolders(mailboxId), db, runtime),
   createFolder: (input: CreateFolderInput) =>
-    provideDirectoryDependencies(createFolder(mailboxId, input), db, runtime),
+    provideDirectoryDependencies(
+      createFolder(mailboxId, input, operations),
+      db,
+      runtime
+    ),
   renameFolder: (input: RenameFolderInput) =>
     provideDirectoryDependencies(renameFolder(mailboxId, input), db, runtime),
   deleteFolder: (input: DeleteFolderInput) =>
@@ -770,7 +805,11 @@ const makeMailboxDirectoryStore = (
   listLabels: () =>
     provideDirectoryDependencies(listLabels(mailboxId), db, runtime),
   createLabel: (input: CreateLabelInput) =>
-    provideDirectoryDependencies(createLabel(mailboxId, input), db, runtime),
+    provideDirectoryDependencies(
+      createLabel(mailboxId, input, operations),
+      db,
+      runtime
+    ),
   renameLabel: (input: RenameLabelInput) =>
     provideDirectoryDependencies(renameLabel(mailboxId, input), db, runtime),
   deleteLabel: (input: DeleteLabelInput) =>
@@ -791,15 +830,16 @@ export const MailboxDirectoryStoreLive = Layer.effect(
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
     const { mailboxId } = yield* MailboxIdentity;
+    const operations = yield* MailboxOperationStore;
     return MailboxDirectoryStore.of(
-      makeMailboxDirectoryStore(db, runtime, mailboxId)
+      makeMailboxDirectoryStore(db, runtime, mailboxId, operations)
     );
   })
 );
 
-const resourceNotFound = Schema.decodeUnknownSync(MailboxResourceLookupResult)({
+const resourceNotFound = {
   _tag: "NotFound",
-});
+} as const satisfies MailboxResourceLookupResultType;
 
 const initializeMailboxResourceIndex = (mailboxId: MailboxId) =>
   Effect.gen(function* () {
@@ -847,7 +887,7 @@ const resolveMailboxResource = (lookup: MailboxResourceLookup) =>
           );
         return row === undefined
           ? resourceNotFound
-          : Schema.decodeUnknownSync(FolderLocation)({
+          : yield* Schema.decodeUnknownEffect(FolderLocation)({
               _tag: "Folder",
               ...row,
             });
@@ -872,7 +912,7 @@ const resolveMailboxResource = (lookup: MailboxResourceLookup) =>
           );
         return row === undefined
           ? resourceNotFound
-          : Schema.decodeUnknownSync(MessageLocation)({
+          : yield* Schema.decodeUnknownEffect(MessageLocation)({
               _tag: "Message",
               ...row,
             });
@@ -894,7 +934,10 @@ const resolveMailboxResource = (lookup: MailboxResourceLookup) =>
           );
         return row === undefined
           ? resourceNotFound
-          : Schema.decodeUnknownSync(DraftLocation)({ _tag: "Draft", ...row });
+          : yield* Schema.decodeUnknownEffect(DraftLocation)({
+              _tag: "Draft",
+              ...row,
+            });
       }
       case "Rule": {
         const [row] = yield* db
@@ -913,7 +956,10 @@ const resolveMailboxResource = (lookup: MailboxResourceLookup) =>
           );
         return row === undefined
           ? resourceNotFound
-          : Schema.decodeUnknownSync(RuleLocation)({ _tag: "Rule", ...row });
+          : yield* Schema.decodeUnknownEffect(RuleLocation)({
+              _tag: "Rule",
+              ...row,
+            });
       }
       case "Attachment": {
         const [row] = yield* db
@@ -938,7 +984,7 @@ const resolveMailboxResource = (lookup: MailboxResourceLookup) =>
           );
         return row === undefined
           ? resourceNotFound
-          : Schema.decodeUnknownSync(AttachmentLocation)({
+          : yield* Schema.decodeUnknownEffect(AttachmentLocation)({
               _tag: "Attachment",
               ...row,
             });
@@ -1698,7 +1744,8 @@ const draftNotFound = (
 const createDraft = (
   mailboxId: MailboxId,
   input: CreateDraftInput,
-  runtime: MailboxRuntime
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
 ) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
@@ -1707,7 +1754,7 @@ const createDraft = (
         const requestKey = JSON.stringify(
           Schema.encodeSync(CreateDraftInput)(input)
         );
-        const previous = yield* replayMailboxOperation(
+        const previous = yield* operations.replay(
           input.operationId,
           "create-draft",
           "create-draft",
@@ -1746,7 +1793,7 @@ const createDraft = (
           return yield* Effect.die("Draft insert returned no row");
         }
         const created = readDraftRow(row, mailboxId);
-        yield* storeMailboxOperation(
+        yield* operations.store(
           input.operationId,
           "create-draft",
           requestKey,
@@ -1846,7 +1893,8 @@ const updateDraft = (
 const makeMailboxDraftStore = (
   db: MailboxDatabase,
   runtime: MailboxRuntime,
-  mailboxId: MailboxId
+  mailboxId: MailboxId,
+  operations: MailboxOperationStore
 ) => {
   const provideDatabase = <A, E>(
     effect: Effect.Effect<A, E, MailboxDatabase>
@@ -1854,7 +1902,7 @@ const makeMailboxDraftStore = (
 
   return {
     createDraft: (input: CreateDraftInput) =>
-      provideDatabase(createDraft(mailboxId, input, runtime)),
+      provideDatabase(createDraft(mailboxId, input, runtime, operations)),
     getDraft: (input: GetDraftInput) =>
       provideDatabase(getDraft(mailboxId, input)),
     updateDraft: (input: UpdateDraftInput) =>
@@ -1874,7 +1922,10 @@ export const MailboxDraftStoreLive = Layer.effect(
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
     const { mailboxId } = yield* MailboxIdentity;
-    return MailboxDraftStore.of(makeMailboxDraftStore(db, runtime, mailboxId));
+    const operations = yield* MailboxOperationStore;
+    return MailboxDraftStore.of(
+      makeMailboxDraftStore(db, runtime, mailboxId, operations)
+    );
   })
 );
 
@@ -1931,7 +1982,8 @@ const getOutboundDelivery = (
 const scheduleOutbound = (
   mailboxId: MailboxId,
   input: ScheduleOutboundInput,
-  runtime: MailboxRuntime
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
 ) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
@@ -1940,7 +1992,7 @@ const scheduleOutbound = (
         const requestKey = JSON.stringify(
           Schema.encodeSync(ScheduleOutboundInput)(input)
         );
-        const previous = yield* replayMailboxOperation(
+        const previous = yield* operations.replay(
           input.operationId,
           "schedule-outbound",
           "schedule-outbound",
@@ -2116,7 +2168,7 @@ const scheduleOutbound = (
           delivery: readOutboundDeliveryRow(deliveryRow, mailboxId),
           serverNow: now,
         });
-        yield* storeMailboxOperation(
+        yield* operations.store(
           input.operationId,
           "schedule-outbound",
           requestKey,
@@ -2203,7 +2255,8 @@ const cancelOutboundDelivery = (
 const resendOutbound = (
   mailboxId: MailboxId,
   input: ResendOutboundInput,
-  runtime: MailboxRuntime
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
 ) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
@@ -2212,7 +2265,7 @@ const resendOutbound = (
         const requestKey = JSON.stringify(
           Schema.encodeSync(ResendOutboundInput)(input)
         );
-        const previous = yield* replayMailboxOperation(
+        const previous = yield* operations.replay(
           input.operationId,
           "resend-outbound",
           "resend-outbound",
@@ -2343,7 +2396,7 @@ const resendOutbound = (
           sourceDeliveryId: input.outboundDeliveryId,
           delivery: readOutboundDeliveryRow(deliveryRow, mailboxId),
         });
-        yield* storeMailboxOperation(
+        yield* operations.store(
           input.operationId,
           "resend-outbound",
           requestKey,
@@ -2359,7 +2412,8 @@ const resendOutbound = (
 const makeMailboxOutboundStore = (
   db: MailboxDatabase,
   runtime: MailboxRuntime,
-  mailboxId: MailboxId
+  mailboxId: MailboxId,
+  operations: MailboxOperationStore
 ) => {
   const provideDatabase = <A, E>(
     effect: Effect.Effect<A, E, MailboxDatabase>
@@ -2369,11 +2423,11 @@ const makeMailboxOutboundStore = (
     getOutboundDelivery: (input: GetOutboundDeliveryInput) =>
       provideDatabase(getOutboundDelivery(mailboxId, input)),
     scheduleOutbound: (input: ScheduleOutboundInput) =>
-      provideDatabase(scheduleOutbound(mailboxId, input, runtime)),
+      provideDatabase(scheduleOutbound(mailboxId, input, runtime, operations)),
     cancelOutboundDelivery: (input: CancelOutboundDeliveryInput) =>
       provideDatabase(cancelOutboundDelivery(mailboxId, input, runtime)),
     resendOutbound: (input: ResendOutboundInput) =>
-      provideDatabase(resendOutbound(mailboxId, input, runtime)),
+      provideDatabase(resendOutbound(mailboxId, input, runtime, operations)),
   };
 };
 
@@ -2389,8 +2443,9 @@ export const MailboxOutboundStoreLive = Layer.effect(
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
     const { mailboxId } = yield* MailboxIdentity;
+    const operations = yield* MailboxOperationStore;
     return MailboxOutboundStore.of(
-      makeMailboxOutboundStore(db, runtime, mailboxId)
+      makeMailboxOutboundStore(db, runtime, mailboxId, operations)
     );
   })
 );

@@ -2,7 +2,6 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxDisplayNamePayloadSchema } from "../http/mailbox-contract";
 import {
   CreateMailboxAddressInput,
   MailboxAddressList,
@@ -325,12 +324,12 @@ describe("mail domain contracts", () => {
 
   it("reuses the mailbox name invariant at the HTTP boundary", () => {
     expect(
-      Schema.decodeUnknownSync(MailboxDisplayNamePayloadSchema)({
+      Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
         displayName: "  Team inbox  ",
       })
     ).toStrictEqual({ displayName: "Team inbox" });
     expect(
-      decodeSucceeds(MailboxDisplayNamePayloadSchema, {
+      decodeSucceeds(BootstrapOwnerMailboxCommand, {
         displayName: "x".repeat(201),
       })
     ).toBeFalsy();

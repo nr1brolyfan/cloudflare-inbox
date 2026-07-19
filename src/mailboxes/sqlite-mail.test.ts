@@ -5,7 +5,10 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { makeMailDataTestDatabase } from "../test/mail-data-test-database";
+import {
+  MailboxDatabaseTestLive,
+  MailboxDoHandlerTestLive,
+} from "../test/mailbox-sqlite";
 import { MailboxId } from "./core";
 import {
   MailboxDoNamespace,
@@ -42,8 +45,10 @@ import {
 import {
   MailboxDatabase,
   MailboxDraftStore,
+  MailboxIdentity,
   MailboxMessageStore,
   MailboxOutboundStore,
+  MailboxRuntime,
 } from "./sqlite-services";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
@@ -55,6 +60,17 @@ const makeRuntime = () => {
     randomId: () => `generated-${(next += 1)}`,
   };
 };
+
+const mailboxSqliteTestLive = (runtime = makeRuntime()) =>
+  MailboxDoHandlerTestLive.pipe(
+    Layer.provide(
+      Layer.merge(
+        Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
+        Layer.succeed(MailboxRuntime, MailboxRuntime.of(runtime))
+      )
+    ),
+    Layer.provideMerge(MailboxDatabaseTestLive)
+  );
 
 const listMessages = (input: ListMessagesInput) =>
   MailboxMessageStore.pipe(
@@ -224,8 +240,7 @@ const failure = <A, E>(result: Result.Result<A, E>) => {
 
 describe("Mailbox mail data SQLite", () => {
   it("returns update-draft not-found through the DO handler and client", async () => {
-    const run = makeMailDataTestDatabase(mailboxId, makeRuntime());
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         const handler = yield* MailboxDoHandler;
         const repositoryLive = MailboxRepositoryDoLive.pipe(
@@ -273,13 +288,12 @@ describe("Mailbox mail data SQLite", () => {
           resourceType: "draft",
           resourceId: "missing-draft",
         });
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });
 
   it("reconstructs messages, filters pages, and binds cursors", async () => {
-    const run = makeMailDataTestDatabase(mailboxId);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         yield* seedMessages;
@@ -355,13 +369,12 @@ describe("Mailbox mail data SQLite", () => {
           cursorError: "validation",
           filtered: ["m1"],
         });
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });
 
   it("keeps cursors bounded and query-bound for many long label IDs", async () => {
-    const run = makeMailDataTestDatabase(mailboxId);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         yield* seedMessages;
@@ -416,13 +429,12 @@ describe("Mailbox mail data SQLite", () => {
         expect(first.nextCursor.length).toBeLessThanOrEqual(2048);
         expect(next.items.map((item) => item.id)).toStrictEqual(["m1"]);
         expect(wrongQuery.reason).toBe("validation");
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });
 
   it("projects acceptedAt from the canonical outbound delivery", async () => {
-    const run = makeMailDataTestDatabase(mailboxId);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         yield* seedMessages;
@@ -455,13 +467,12 @@ describe("Mailbox mail data SQLite", () => {
         );
 
         expect(detail.acceptedAt).toBe(400);
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });
 
   it("returns chronological threads with a derived summary", async () => {
-    const run = makeMailDataTestDatabase(mailboxId);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         yield* seedMessages;
@@ -482,14 +493,13 @@ describe("Mailbox mail data SQLite", () => {
           unread: 1,
           latest: 200,
         });
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });
 
   it("applies message CAS, no-op versioning, moves, and labels", async () => {
     const runtime = makeRuntime();
-    const run = makeMailDataTestDatabase(mailboxId, runtime);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         yield* seedMessages;
@@ -561,14 +571,13 @@ describe("Mailbox mail data SQLite", () => {
           conflict: { reason: "version-conflict", actualVersion: 4 },
           missingTarget: { reason: "not-found", resourceType: "folder" },
         });
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
   });
 
   it("creates and updates drafts with replay and CAS", async () => {
     const runtime = makeRuntime();
-    const run = makeMailDataTestDatabase(mailboxId, runtime);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         const input = Schema.decodeUnknownSync(CreateDraftInput)({
@@ -636,14 +645,13 @@ describe("Mailbox mail data SQLite", () => {
         );
         expect(updated.textBody).toBeUndefined();
         expect(found.textBody).toBeUndefined();
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
   });
 
   it("schedules an immutable snapshot idempotently and cancels it", async () => {
     const runtime = makeRuntime();
-    const run = makeMailDataTestDatabase(mailboxId, runtime);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         const created = yield* createDraft(
@@ -719,14 +727,13 @@ describe("Mailbox mail data SQLite", () => {
           staleCancel: { reason: "version-conflict", actualVersion: 2 },
           invalidState: { reason: "invalid-state" },
         });
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
   });
 
   it("validates scheduling and resends only eligible source states", async () => {
     const runtime = makeRuntime();
-    const run = makeMailDataTestDatabase(mailboxId, runtime);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         const db = yield* MailboxDatabase;
@@ -837,14 +844,13 @@ describe("Mailbox mail data SQLite", () => {
           },
           replay: { delivery: { id: resent.delivery.id } },
         });
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
   });
 
   it("rolls back scheduling when the operation ledger write fails", async () => {
     const runtime = makeRuntime();
-    const run = makeMailDataTestDatabase(mailboxId, runtime);
-    await run(
+    await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
         const db = yield* MailboxDatabase;
@@ -893,7 +899,7 @@ describe("Mailbox mail data SQLite", () => {
           deliveryCount: 0,
           draftRow: { deletedAt: null },
         });
-      })
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
   });
 });

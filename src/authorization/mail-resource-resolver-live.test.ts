@@ -5,7 +5,8 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { MailboxRepositoryError } from "../mailboxes/errors";
-import { MailboxRepository, MessageLocation } from "../mailboxes/repository";
+import { MailboxRepository } from "../mailboxes/repository";
+import { MessageLocation, MessageLookup } from "../mailboxes/resource-location";
 import { MailResourceResolverLive } from "./mail-resource-resolver-live";
 import { MailResourceResolver } from "./resources";
 
@@ -17,11 +18,13 @@ const resolverWith = (
 ) =>
   Effect.gen(function* () {
     const resolver = yield* MailResourceResolver;
-    return yield* resolver.resolveMessage({
-      _tag: "Message",
-      messageId: "message-1",
-      route: { mailboxId: "mailbox-a" },
-    });
+    return yield* resolver.resolveMessage(
+      Schema.decodeUnknownSync(MessageLookup)({
+        _tag: "Message",
+        mailboxId: "mailbox-a",
+        messageId: "message-1",
+      })
+    );
   }).pipe(
     Effect.provide(
       MailResourceResolverLive.pipe(
@@ -78,6 +81,7 @@ describe("MailboxDO mail resource resolver", () => {
         resolverWith(() => Effect.succeed(Option.some(location)))
       )
     ).resolves.toStrictEqual({
+      _tag: "Message",
       mailboxId: "mailbox-a",
       folderId: "archive",
       messageId: "message-1",

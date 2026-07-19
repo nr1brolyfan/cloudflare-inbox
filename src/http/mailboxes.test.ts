@@ -30,8 +30,10 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { CurrentRequestAuthMiddlewareLive } from "../auth/session";
-import { MailAuthorization } from "../authorization/mail-authorization";
+import {
+  CurrentRequestAuthMiddlewareLive,
+  RequestSessionAuthenticatorLive,
+} from "../auth/session";
 import type { MailboxAdministration as MailboxAdministrationService } from "../mailboxes/administration";
 import {
   MailboxAdministration,
@@ -115,16 +117,16 @@ const makeHandler = (
       allowMissingOrigin: false,
       allowedOrigins: [publicOrigin],
     }),
-    CurrentRequestAuthMiddlewareLive.pipe(Layer.provide(requestAuthLive))
+    CurrentRequestAuthMiddlewareLive.pipe(
+      Layer.provide(
+        RequestSessionAuthenticatorLive.pipe(Layer.provide(requestAuthLive))
+      )
+    )
   );
   const groupLive = MailboxGroupLive.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(MailboxAdministration, administration),
-        Layer.succeed(
-          MailAuthorization,
-          MailAuthorization.of({} as MailAuthorization)
-        ),
         requestAuthLive,
         middlewareLive
       )

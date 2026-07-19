@@ -25,15 +25,15 @@ import type {
   MailboxDomainErrorDto,
 } from "./do-protocol";
 import { MailboxDomainError, MailboxRepositoryError } from "./errors";
+import { MailboxRepository } from "./repository";
 import {
-  MailboxRepository,
   MailboxResourceLookup,
   MailboxResourceLookupResult,
-} from "./repository";
+} from "./resource-location";
 import type {
   MailboxResourceLookup as MailboxResourceLookupType,
   MailboxResourceLookupResult as MailboxResourceLookupResultType,
-} from "./repository";
+} from "./resource-location";
 
 export interface MailboxRegistry {
   readonly exists: (mailboxId: MailboxId) => Effect.Effect<boolean, unknown>;
