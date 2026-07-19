@@ -83,12 +83,17 @@ export const InboundAttachmentStoreRuntimeLive = Layer.succeed(
   })
 );
 
-const storeError = (operation: "head" | "write", cause: unknown) =>
+const storeError = (
+  operation: "head" | "write",
+  cause: unknown,
+  retryable = true
+) =>
   new BlobStoreError({
     cause,
     message: "Failed to store inbound attachment",
     objectType: "attachment",
     operation,
+    retryable,
   });
 
 const metadataBytes = (attachment: ExtractedInboundAttachmentV1) =>
@@ -160,7 +165,11 @@ const storeAttachment = (
     if (stored !== null) {
       if (!objectMatches(stored, attachment, customMetadata, contentSha256)) {
         return yield* Effect.fail(
-          storeError("write", new Error("Stored attachment is inconsistent"))
+          storeError(
+            "write",
+            new Error("Stored attachment is inconsistent"),
+            false
+          )
         );
       }
       return;
@@ -175,7 +184,11 @@ const storeAttachment = (
       !objectMatches(existing, attachment, customMetadata, contentSha256)
     ) {
       return yield* Effect.fail(
-        storeError("head", new Error("Existing attachment is inconsistent"))
+        storeError(
+          "head",
+          new Error("Existing attachment is inconsistent"),
+          false
+        )
       );
     }
   });

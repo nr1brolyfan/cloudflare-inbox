@@ -12,70 +12,75 @@ import {
 } from "./do-protocol";
 import { MailboxRepositoryError } from "./errors";
 import type { MailboxDomainError } from "./errors";
-import { InboundMessageCommitter } from "./inbound";
+import { InboundProcessingRecorder } from "./inbound";
 import type { InboundProcessingResult } from "./inbound";
 
-const repositoryError = (
-  message: string,
-  cause: unknown,
-  commitState: "not-committed" | "unknown",
-  transient: boolean
-) =>
+const checkpointRank = {
+  raw_stored: 1,
+  parsing: 2,
+  attachments_stored: 3,
+} as const;
+
+const stateMatchesRecord = (
+  input: Parameters<InboundProcessingRecorder["record"]>[0],
+  result: InboundProcessingResult
+) => {
+  if (input._tag === "Failure") {
+    return result.status === "failed" || result.status === "ready";
+  }
+  if (result.status === "failed" || result.status === "ready") {
+    return true;
+  }
+  if (result.status === "received") {
+    return false;
+  }
+  return checkpointRank[result.status] >= checkpointRank[input.status];
+};
+
+const repositoryError = (message: string, cause: unknown, transient: boolean) =>
   new MailboxRepositoryError({
     cause,
-    commitState,
+    commitState: transient ? "unknown" : "not-committed",
     message,
     operation: "write",
     transient,
   });
 
-/** Durable Object adapter for the Workflow's trusted final inbound commit. */
-export const InboundMessageCommitterDoLive = Layer.effect(
-  InboundMessageCommitter,
+/** Durable Object adapter for monotonic inbound checkpoints and failures. */
+export const InboundProcessingRecorderDoLive = Layer.effect(
+  InboundProcessingRecorder,
   Effect.gen(function* () {
     const namespace = yield* MailboxDoNamespace;
 
-    return InboundMessageCommitter.of({
-      commit: (input) => {
-        const request = { _tag: "CommitInbound" as const, input };
+    return InboundProcessingRecorder.of({
+      record: (input) => {
+        const request = { _tag: "RecordInboundProcessing" as const, input };
         return Schema.encodeEffect(MailDataRpcRequest)(request).pipe(
           Effect.mapError((cause) =>
-            repositoryError(
-              "Invalid inbound commit request",
-              cause,
-              "not-committed",
-              false
-            )
+            repositoryError("Invalid inbound processing record", cause, false)
           ),
           Effect.flatMap((encoded) =>
             Effect.try({
               try: () =>
                 namespace.getByName(input.mailboxId).executeMailData(encoded),
               catch: (cause) =>
-                repositoryError(
-                  "Inbound commit RPC failed",
-                  cause,
-                  "unknown",
-                  true
-                ),
+                repositoryError("Inbound processing RPC failed", cause, true),
             }).pipe(
               Effect.flatMap((rpc) =>
                 rpc.pipe(
                   Effect.provide(RuntimeContext.phantom),
                   Effect.mapError((cause) =>
                     repositoryError(
-                      "Inbound commit RPC failed",
+                      "Inbound processing RPC failed",
                       cause,
-                      "unknown",
                       true
                     )
                   ),
                   Effect.catchDefect((cause) =>
                     Effect.fail(
                       repositoryError(
-                        "Inbound commit RPC failed",
+                        "Inbound processing RPC failed",
                         cause,
-                        "unknown",
                         true
                       )
                     )
@@ -88,9 +93,8 @@ export const InboundMessageCommitterDoLive = Layer.effect(
             Schema.decodeUnknownEffect(MailDataRpcResponse)(response).pipe(
               Effect.mapError((cause) =>
                 repositoryError(
-                  "Inbound commit RPC returned invalid data",
+                  "Inbound processing RPC returned invalid data",
                   cause,
-                  "unknown",
                   false
                 )
               )
@@ -106,13 +110,12 @@ export const InboundMessageCommitterDoLive = Layer.effect(
               if (
                 !mailDataResponseMatchesRequest(request, response) ||
                 (response._tag !== "DomainError" &&
-                  response._tag !== "InboundCommitted")
+                  response._tag !== "InboundProcessingRecorded")
               ) {
                 return Effect.fail(
                   repositoryError(
-                    "Inbound commit RPC returned the wrong response type",
+                    "Inbound processing RPC returned the wrong response type",
                     response,
-                    "unknown",
                     false
                   )
                 );
@@ -123,14 +126,12 @@ export const InboundMessageCommitterDoLive = Layer.effect(
               if (
                 response.value.id !== input.inboundIngestId ||
                 response.value.mailboxId !== input.mailboxId ||
-                response.value.status !== "ready" ||
-                response.value.messageId === undefined
+                !stateMatchesRecord(input, response.value)
               ) {
                 return Effect.fail(
                   repositoryError(
-                    "Inbound commit RPC returned an unrelated result",
+                    "Inbound processing RPC returned an unrelated result",
                     response,
-                    "unknown",
                     false
                   )
                 );

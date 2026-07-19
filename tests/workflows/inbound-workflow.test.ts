@@ -4,12 +4,18 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { BlobStoreError } from "#/mailboxes/errors";
+import {
+  BlobStoreError,
+  MailboxDomainError,
+  MailboxRepositoryError,
+  MimeParseError,
+} from "#/mailboxes/errors";
 import type {
   InboundAttachmentStore as InboundAttachmentStoreShape,
   InboundMessageCommitter as InboundMessageCommitterShape,
   InboundMimeAttachmentExtractor as InboundMimeAttachmentExtractorShape,
   InboundMimeParser as InboundMimeParserShape,
+  InboundProcessingRecorder as InboundProcessingRecorderShape,
   InboundRawMessageReader as InboundRawMessageReaderShape,
 } from "#/mailboxes/inbound";
 import {
@@ -17,6 +23,7 @@ import {
   InboundMessageCommitter,
   InboundMimeAttachmentExtractor,
   InboundMimeParser,
+  InboundProcessingRecorder,
   InboundRawMessageReader,
   ParsedInboundMessageV1,
   InboundProcessingSchema,
@@ -54,11 +61,38 @@ const committedProcessing = Schema.decodeUnknownSync(InboundProcessingSchema)({
   version: 1,
 });
 
+const recordProcessing: InboundProcessingRecorderShape["record"] = (input) =>
+  Effect.succeed(
+    Schema.decodeUnknownSync(InboundProcessingSchema)({
+      attemptCount: 1,
+      createdAt: input.receivedAt,
+      failure:
+        input._tag === "Failure"
+          ? {
+              code: input.failure.code,
+              failedAt: input.receivedAt,
+              replayable: input.failure.replayable,
+            }
+          : undefined,
+      id: input.inboundIngestId,
+      mailboxId: input.mailboxId,
+      status: input._tag === "Failure" ? "failed" : input.status,
+      updatedAt: input.receivedAt,
+      version: 1,
+    })
+  );
+
 const runStep = <T>(
   options: Cloudflare.Workflows.WorkflowTaskOptions<T, unknown, unknown>,
-  stepNames: string[]
+  stepNames: string[],
+  taskConfigs: unknown[]
 ): Effect.Effect<T> => {
   stepNames.push(options.name);
+  taskConfigs.push({
+    name: options.name,
+    retries: options.retries,
+    timeout: options.timeout,
+  });
   // Alchemy provides the captured Workflow context before calling step.do.
   return options.effect as Effect.Effect<T>;
 };
@@ -74,7 +108,9 @@ const runWorkflow = (
     Effect.succeed({ attachments: [], manifest: parsedManifest }),
   store: InboundAttachmentStoreShape["store"] = () => Effect.void,
   commit: InboundMessageCommitterShape["commit"] = () =>
-    Effect.succeed(committedProcessing)
+    Effect.succeed(committedProcessing),
+  record: InboundProcessingRecorderShape["record"] = recordProcessing,
+  taskConfigs: unknown[] = []
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -95,7 +131,7 @@ const runWorkflow = (
           Layer.succeed(
             Cloudflare.Workflows.WorkflowStep,
             Cloudflare.Workflows.WorkflowStep.of({
-              do: (options) => runStep(options, stepNames),
+              do: (options) => runStep(options, stepNames, taskConfigs),
               sleep: () => Effect.void,
               sleepUntil: () => Effect.void,
               waitForEvent: () => Effect.die("waitForEvent must not run"),
@@ -117,6 +153,10 @@ const runWorkflow = (
           Layer.succeed(
             InboundMessageCommitter,
             InboundMessageCommitter.of({ commit })
+          ),
+          Layer.succeed(
+            InboundProcessingRecorder,
+            InboundProcessingRecorder.of({ record })
           )
         )
       )
@@ -126,8 +166,20 @@ const runWorkflow = (
 describe("inbound Workflow", () => {
   it("parses raw MIME after the raw_stored checkpoint", async () => {
     const stepNames: string[] = [];
+    const taskConfigs: unknown[] = [];
 
-    const result = await runWorkflow(validInput, "ingest-1", stepNames);
+    const result = await runWorkflow(
+      validInput,
+      "ingest-1",
+      stepNames,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      taskConfigs
+    );
 
     expect(result).toStrictEqual({
       formatVersion: 1,
@@ -137,11 +189,35 @@ describe("inbound Workflow", () => {
       status: "ready",
     });
     expect(stepNames).toStrictEqual([
-      "record-raw-stored",
-      "parse-raw-mime",
-      "store-inbound-attachments",
-      "commit-inbound-message",
+      "record-raw-stored-v2",
+      "record-parsing-v2",
+      "parse-raw-mime-v2",
+      "store-inbound-attachments-v2",
+      "record-attachments-stored-v2",
+      "commit-inbound-message-v2",
     ]);
+    expect(taskConfigs).toStrictEqual(
+      expect.arrayContaining([
+        {
+          name: "parse-raw-mime-v2",
+          retries: {
+            backoff: "exponential",
+            delay: "5 seconds",
+            limit: 5,
+          },
+          timeout: "5 minutes",
+        },
+        {
+          name: "record-raw-stored-v2",
+          retries: {
+            backoff: "exponential",
+            delay: "2 seconds",
+            limit: 5,
+          },
+          timeout: "1 minute",
+        },
+      ])
+    );
   });
 
   it("passes trusted ingest metadata and the exact raw buffer to parsing", async () => {
@@ -190,6 +266,7 @@ describe("inbound Workflow", () => {
               message: "Failed to read inbound raw message",
               objectType: "raw-message",
               operation: "read",
+              retryable: false,
             })
           ),
         () =>
@@ -201,6 +278,74 @@ describe("inbound Workflow", () => {
     ).rejects.toBeDefined();
 
     expect(parserCalls).toBe(0);
+  });
+
+  it("records a permanent MIME failure without running later steps", async () => {
+    const stepNames: string[] = [];
+    let failureInput: unknown;
+
+    await expect(
+      runWorkflow(
+        validInput,
+        "ingest-1",
+        stepNames,
+        undefined,
+        () =>
+          Effect.fail(
+            new MimeParseError({
+              message: "Malformed MIME",
+              reason: "malformed-message",
+            })
+          ),
+        undefined,
+        undefined,
+        undefined,
+        (input) => {
+          if (input._tag === "Failure") {
+            failureInput = input;
+          }
+          return recordProcessing(input);
+        }
+      )
+    ).rejects.toBeDefined();
+
+    expect({ failureInput, stepNames }).toMatchObject({
+      failureInput: {
+        _tag: "Failure",
+        failure: { code: "malformed_message", replayable: false },
+      },
+      stepNames: [
+        "record-raw-stored-v2",
+        "record-parsing-v2",
+        "parse-raw-mime-v2",
+        "record-inbound-failure",
+      ],
+    });
+  });
+
+  it("does not persist unclassified programming defects as business failures", async () => {
+    let failureRecords = 0;
+
+    await expect(
+      runWorkflow(
+        validInput,
+        "ingest-1",
+        [],
+        undefined,
+        () => Effect.die(new Error("parser defect")),
+        undefined,
+        undefined,
+        undefined,
+        (input) => {
+          if (input._tag === "Failure") {
+            failureRecords += 1;
+          }
+          return recordProcessing(input);
+        }
+      )
+    ).rejects.toBeDefined();
+
+    expect(failureRecords).toBe(0);
   });
 
   it("does not store attachments when reparsing changes the manifest", async () => {
@@ -324,6 +469,7 @@ describe("inbound Workflow", () => {
               message: "Failed to store inbound attachment",
               objectType: "attachment",
               operation: "write",
+              retryable: false,
             })
           ),
         () =>
@@ -335,6 +481,76 @@ describe("inbound Workflow", () => {
     ).rejects.toBeDefined();
 
     expect(commitCalls).toBe(0);
+  });
+
+  it("returns ready when failure recording resolves an ambiguous commit", async () => {
+    let failureRecorded = false;
+
+    const result = await runWorkflow(
+      validInput,
+      "ingest-1",
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () =>
+        Effect.fail(
+          new MailboxRepositoryError({
+            cause: new Error("response lost"),
+            commitState: "unknown",
+            message: "Inbound commit RPC failed",
+            operation: "write",
+            transient: true,
+          })
+        ),
+      (input) => {
+        if (input._tag === "Failure") {
+          failureRecorded = true;
+          return Effect.succeed(committedProcessing);
+        }
+        return recordProcessing(input);
+      }
+    );
+
+    expect({ failureRecorded, result }).toMatchObject({
+      failureRecorded: true,
+      result: { messageId: "message-1", status: "ready" },
+    });
+  });
+
+  it("does not mask an idempotency conflict with the existing ready row", async () => {
+    let failureRecords = 0;
+
+    await expect(
+      runWorkflow(
+        validInput,
+        "ingest-1",
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () =>
+          Effect.fail(
+            new MailboxDomainError({
+              message: "Conflicting commit",
+              operation: "commit-inbound",
+              reason: "idempotency-conflict",
+              resourceId: "ingest-1",
+              resourceType: "inbound",
+            })
+          ),
+        (input) => {
+          if (input._tag === "Failure") {
+            failureRecords += 1;
+          }
+          return recordProcessing(input);
+        }
+      )
+    ).rejects.toBeDefined();
+
+    expect(failureRecords).toBe(0);
   });
 
   it("rejects an instance ID that differs from the ingest ID", async () => {

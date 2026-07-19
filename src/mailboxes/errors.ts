@@ -15,6 +15,7 @@ export class BlobStoreError extends Data.TaggedError("BlobStoreError")<{
   readonly objectType: "raw-message" | "body" | "attachment";
   readonly message: string;
   readonly cause: unknown;
+  readonly retryable: boolean;
 }> {}
 
 export class DeliveryIndeterminateError extends Data.TaggedError(
@@ -70,6 +71,7 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "get-outbound"
     | "cancel-outbound"
     | "resend-outbound"
+    | "record-inbound"
     | "commit-inbound"
     | "replay-inbound";
   readonly reason:
@@ -108,9 +110,10 @@ export class MailboxRepositoryError extends Data.TaggedError(
   readonly commitState: "not-committed" | "committed" | "unknown";
   readonly message: string;
   readonly cause: unknown;
+  readonly transient?: boolean;
 }> {
   get retryable(): boolean {
-    return this.commitState === "not-committed";
+    return this.transient ?? this.commitState === "not-committed";
   }
 }
 
@@ -128,6 +131,17 @@ export class InboundManifestMismatchError extends Data.TaggedError(
 )<{
   readonly message: string;
 }> {}
+
+/** Marker preserved through Workflow retries so only exhausted transient failures are persisted. */
+export class InboundRetryableStepError extends Error {
+  readonly cause: unknown;
+
+  constructor(cause: unknown) {
+    super("Retryable inbound Workflow step failed");
+    this.name = "InboundRetryableStepError";
+    this.cause = cause;
+  }
+}
 
 export class RuleEvaluationError extends Data.TaggedError(
   "RuleEvaluationError"

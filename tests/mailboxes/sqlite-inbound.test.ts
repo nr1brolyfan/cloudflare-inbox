@@ -7,7 +7,10 @@ import { describe, expect, it } from "vitest";
 
 import { MailboxId } from "#/mailboxes/core";
 import { MailboxDoHandler } from "#/mailboxes/do-handler";
-import { CommitInboundMessageV1 } from "#/mailboxes/inbound";
+import {
+  CommitInboundMessageV1,
+  RecordInboundProcessingV1,
+} from "#/mailboxes/inbound";
 import {
   attachment,
   folder,
@@ -111,7 +114,165 @@ const initializeInbox = MailboxDatabase.pipe(
 const commit = (input = commitInput) =>
   MailboxInboundStore.pipe(Effect.flatMap((store) => store.commit(input)));
 
+const processingRecord = (
+  value:
+    | {
+        readonly _tag: "Checkpoint";
+        readonly status: "raw_stored" | "parsing" | "attachments_stored";
+      }
+    | {
+        readonly _tag: "Failure";
+        readonly message?: (typeof commitInput)["message"];
+        readonly failure: {
+          readonly code: "processing_failed";
+          readonly replayable: boolean;
+        };
+      }
+) =>
+  Schema.decodeUnknownSync(RecordInboundProcessingV1)({
+    ...value,
+    envelope: commitInput.envelope,
+    formatVersion: 1,
+    inboundIngestId: commitInput.inboundIngestId,
+    mailboxId,
+    receivedAt: commitInput.receivedAt,
+  });
+
+const record = (input: ReturnType<typeof processingRecord>) =>
+  MailboxInboundStore.pipe(Effect.flatMap((store) => store.record(input)));
+
 describe("MailboxDO SQLite inbound commit", () => {
+  it("records monotonic checkpoints before the atomic ready commit", async () => {
+    const runtime = makeRuntime();
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          const rawStored = yield* record(
+            processingRecord({ _tag: "Checkpoint", status: "raw_stored" })
+          );
+          const replay = yield* record(
+            processingRecord({ _tag: "Checkpoint", status: "raw_stored" })
+          );
+          const parsing = yield* record(
+            processingRecord({ _tag: "Checkpoint", status: "parsing" })
+          );
+          const attachmentsStored = yield* record(
+            processingRecord({
+              _tag: "Checkpoint",
+              status: "attachments_stored",
+            })
+          );
+          const ready = yield* commit();
+          return { attachmentsStored, parsing, rawStored, ready, replay };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(outcome).toMatchObject({
+      attachmentsStored: { status: "attachments_stored", version: 3 },
+      parsing: { status: "parsing", version: 2 },
+      rawStored: { status: "raw_stored", version: 1 },
+      ready: { messageId: "generated-2", status: "ready", version: 4 },
+      replay: { status: "raw_stored", version: 1 },
+    });
+  });
+
+  it("keeps terminal failure sticky and rejects an ordinary commit", async () => {
+    const runtime = makeRuntime();
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* record(
+            processingRecord({ _tag: "Checkpoint", status: "raw_stored" })
+          );
+          const failed = yield* record(
+            processingRecord({
+              _tag: "Failure",
+              failure: { code: "processing_failed", replayable: true },
+            })
+          );
+          const stale = yield* record(
+            processingRecord({ _tag: "Checkpoint", status: "parsing" })
+          );
+          const commitResult = yield* Effect.result(commit());
+          return { commitResult, failed, stale };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect({
+      commitFailure: Result.isFailure(outcome.commitResult)
+        ? outcome.commitResult.failure
+        : undefined,
+      failed: outcome.failed,
+      stale: outcome.stale,
+    }).toMatchObject({
+      commitFailure: {
+        operation: "commit-inbound",
+        reason: "invalid-state",
+      },
+      failed: {
+        failure: { code: "processing_failed", replayable: true },
+        status: "failed",
+        version: 2,
+      },
+      stale: { status: "failed", version: 2 },
+    });
+  });
+
+  it("returns ready when a late failure follows an acknowledged-lost commit", async () => {
+    const runtime = makeRuntime();
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          const ready = yield* commit();
+          const lateFailure = yield* record(
+            processingRecord({
+              _tag: "Failure",
+              failure: { code: "processing_failed", replayable: true },
+              message: commitInput.message,
+            })
+          );
+          const conflict = yield* Effect.result(
+            record(
+              processingRecord({
+                _tag: "Failure",
+                failure: { code: "processing_failed", replayable: true },
+                message: Schema.decodeUnknownSync(CommitInboundMessageV1)({
+                  ...Schema.encodeSync(CommitInboundMessageV1)(commitInput),
+                  message: {
+                    ...Schema.encodeSync(CommitInboundMessageV1)(commitInput)
+                      .message,
+                    subject: "Changed",
+                  },
+                }).message,
+              })
+            )
+          );
+          return { conflict, lateFailure, ready };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(outcome).toMatchObject({
+      conflict: {
+        failure: {
+          operation: "record-inbound",
+          reason: "idempotency-conflict",
+        },
+      },
+      lateFailure: {
+        messageId: "generated-2",
+        status: "ready",
+        version: 1,
+      },
+      ready: { messageId: "generated-2", status: "ready", version: 1 },
+    });
+  });
+
   it("atomically creates a ready message and replays the exact commit", async () => {
     const runtime = makeRuntime();
     const outcome = await Effect.runPromise(

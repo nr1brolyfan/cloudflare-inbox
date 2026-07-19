@@ -70,6 +70,7 @@ const storageError = (cause: unknown) =>
     message: "Failed to store inbound raw message",
     objectType: "raw-message",
     operation: "write",
+    retryable: true,
   });
 
 const rejectStorageFailure = (cause: unknown) =>

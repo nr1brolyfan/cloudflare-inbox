@@ -23,12 +23,13 @@ export const InboundRawMessageR2Client =
     "cloudflare-inbox/InboundRawMessageR2Client"
   );
 
-const readError = (cause: unknown) =>
+const readError = (cause: unknown, retryable: boolean) =>
   new BlobStoreError({
     cause,
     message: "Failed to read inbound raw message",
     objectType: "raw-message",
     operation: "read",
+    retryable,
   });
 
 /** Reads and verifies the immutable raw object selected by a trusted ingest ID. */
@@ -43,12 +44,12 @@ export const InboundRawMessageReaderR2Live = Layer.effect(
           const object = yield* client
             .get(`inbound/${input.inboundIngestId}/raw.eml`)
             .pipe(
-              Effect.mapError(readError),
-              Effect.catchDefect((cause) => Effect.fail(readError(cause)))
+              Effect.mapError((cause) => readError(cause, true)),
+              Effect.catchDefect((cause) => Effect.fail(readError(cause, true)))
             );
           if (object === null) {
             return yield* Effect.fail(
-              readError(new Error("Inbound raw message was not found"))
+              readError(new Error("Inbound raw message was not found"), false)
             );
           }
 
@@ -66,18 +67,22 @@ export const InboundRawMessageReaderR2Live = Layer.effect(
           if (!metadataMatches || object.size !== input.rawSize) {
             return yield* Effect.fail(
               readError(
-                new Error("Inbound raw message metadata is inconsistent")
+                new Error("Inbound raw message metadata is inconsistent"),
+                false
               )
             );
           }
 
           const raw = yield* object.arrayBuffer().pipe(
-            Effect.mapError(readError),
-            Effect.catchDefect((cause) => Effect.fail(readError(cause)))
+            Effect.mapError((cause) => readError(cause, true)),
+            Effect.catchDefect((cause) => Effect.fail(readError(cause, true)))
           );
           if (raw.byteLength !== input.rawSize) {
             return yield* Effect.fail(
-              readError(new Error("Inbound raw message size is inconsistent"))
+              readError(
+                new Error("Inbound raw message size is inconsistent"),
+                false
+              )
             );
           }
           return raw;

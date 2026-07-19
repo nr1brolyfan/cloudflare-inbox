@@ -1,22 +1,31 @@
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { RawMessagesBucket } from "../infra/resources";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
-import { InboundManifestMismatchError } from "../mailboxes/errors";
+import type {
+  BlobStoreError,
+  MailboxDomainError,
+  MailboxRepositoryError,
+  MimeParseError,
+} from "../mailboxes/errors";
+import {
+  InboundManifestMismatchError,
+  InboundRetryableStepError,
+} from "../mailboxes/errors";
 import type { ParsedInboundMessageV1 as ParsedInboundMessageV1Type } from "../mailboxes/inbound";
 import {
   InboundAttachmentStore,
-  InboundAttachmentsStoredCheckpointV1,
-  InboundCommittedCheckpointV1,
   InboundMessageCommitter,
   InboundMimeAttachmentExtractor,
   InboundMimeParser,
+  InboundProcessingRecorder,
   InboundRawMessageReader,
-  InboundRawStoredCheckpointV1,
   InboundWorkflowParamsV1,
   InboundWorkflowResultV1,
   ParsedInboundMessageV1,
@@ -32,6 +41,7 @@ import {
   InboundMimeParserConfigLive,
   InboundMimeParserPostalMimeLive,
 } from "../mailboxes/inbound-mime-parser-postal-live";
+import { InboundProcessingRecorderDoLive } from "../mailboxes/inbound-processing-recorder-do-live";
 import {
   InboundRawMessageR2Client,
   InboundRawMessageReaderR2Live,
@@ -61,6 +71,76 @@ const attachmentObject = (object: {
   size: object.size,
 });
 
+interface ProcessingFailure {
+  readonly code:
+    | "malformed_message"
+    | "message_too_large"
+    | "unsupported_message"
+    | "processing_failed";
+  readonly replayable: boolean;
+}
+
+type StepOutcome<A> =
+  | { readonly _tag: "Success"; readonly value: A }
+  | { readonly _tag: "Failure"; readonly failure: ProcessingFailure }
+  | { readonly _tag: "Rejected" };
+
+const isRetryableStepError = (value: unknown): boolean => {
+  const visited = new Set<unknown>();
+  let current = value;
+  while (typeof current === "object" && current !== null) {
+    if (current instanceof InboundRetryableStepError) {
+      return true;
+    }
+    if (visited.has(current) || !("cause" in current)) {
+      return false;
+    }
+    visited.add(current);
+    current = current.cause;
+  }
+  return false;
+};
+
+const processingTaskConfig = {
+  retries: { limit: 5, delay: "5 seconds", backoff: "exponential" },
+  timeout: "5 minutes",
+} as const;
+
+const mailboxStateTaskConfig = {
+  retries: { limit: 5, delay: "2 seconds", backoff: "exponential" },
+  timeout: "1 minute",
+} as const;
+
+const mimeFailure = (error: MimeParseError): ProcessingFailure => ({
+  code:
+    error.reason === "malformed-message"
+      ? "malformed_message"
+      : error.reason === "message-too-large"
+        ? "message_too_large"
+        : "unsupported_message",
+  replayable: false,
+});
+
+const blobFailure = <A>(
+  error: BlobStoreError
+): Effect.Effect<StepOutcome<A>> =>
+  error.retryable
+    ? Effect.die(new InboundRetryableStepError(error))
+    : Effect.succeed({
+        _tag: "Failure",
+        failure: { code: "processing_failed", replayable: false },
+      });
+
+const repositoryFailure = <A>(
+  error: MailboxRepositoryError
+): Effect.Effect<StepOutcome<A>> =>
+  error.retryable
+    ? Effect.die(new InboundRetryableStepError(error))
+    : Effect.succeed({
+        _tag: "Failure",
+        failure: { code: "processing_failed", replayable: false },
+      });
+
 export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
   Effect.gen(function* () {
     const params = yield* Schema.decodeUnknownEffect(InboundWorkflowParamsV1)(
@@ -74,102 +154,294 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
       );
     }
 
-    const rawStored = yield* Schema.decodeUnknownEffect(
-      InboundRawStoredCheckpointV1
-    )({
-      formatVersion: 1,
-      inboundIngestId: params.inboundIngestId,
-      mailboxId: params.mailboxId,
-      status: "raw_stored",
-    }).pipe(Effect.orDie);
-
-    yield* Cloudflare.Workflows.task(
-      "record-raw-stored",
-      Effect.succeed(rawStored)
-    );
-
-    const parsed = yield* Cloudflare.Workflows.task(
-      "parse-raw-mime",
-      Effect.gen(function* () {
-        const reader = yield* InboundRawMessageReader;
-        const parser = yield* InboundMimeParser;
-        const raw = yield* reader.read({
-          inboundIngestId: params.inboundIngestId,
-          mailboxId: params.mailboxId,
-          rawSize: params.envelope.rawSize,
-          receivedAt: params.receivedAt,
-        });
-        return yield* parser.parse(raw);
-      }).pipe(Effect.orDie)
-    );
-
-    yield* Cloudflare.Workflows.task(
-      "store-inbound-attachments",
-      Effect.gen(function* () {
-        const reader = yield* InboundRawMessageReader;
-        const extractor = yield* InboundMimeAttachmentExtractor;
-        const store = yield* InboundAttachmentStore;
-        const raw = yield* reader.read({
-          inboundIngestId: params.inboundIngestId,
-          mailboxId: params.mailboxId,
-          rawSize: params.envelope.rawSize,
-          receivedAt: params.receivedAt,
-        });
-        const extracted = yield* extractor.extract(raw);
-        if (encodedManifest(parsed) !== encodedManifest(extracted.manifest)) {
-          return yield* Effect.fail(
-            new InboundManifestMismatchError({
-              message: "Reparsed inbound MIME manifest does not match",
+    const recordCheckpoint = (
+      name: string,
+      status: "raw_stored" | "parsing" | "attachments_stored"
+    ) =>
+      Cloudflare.Workflows.task(
+        name,
+        InboundProcessingRecorder.pipe(
+          Effect.flatMap((recorder) =>
+            recorder.record({
+              _tag: "Checkpoint",
+              envelope: params.envelope,
+              formatVersion: 1,
+              inboundIngestId: params.inboundIngestId,
+              mailboxId: params.mailboxId,
+              receivedAt: params.receivedAt,
+              status,
             })
+          ),
+          Effect.matchEffect({
+            onFailure: (error) =>
+              error._tag === "MailboxRepositoryError" && error.retryable
+                ? Effect.die(new InboundRetryableStepError(error))
+                : Effect.succeed({ _tag: "Rejected" as const }),
+            onSuccess: (value) =>
+              Effect.succeed({ _tag: "Recorded" as const, value }),
+          })
+        ),
+        mailboxStateTaskConfig
+      );
+    let parsedForFailure: ParsedInboundMessageV1Type | undefined;
+    const recordFailure = (failure: ProcessingFailure) =>
+      Cloudflare.Workflows.task(
+        "record-inbound-failure",
+        InboundProcessingRecorder.pipe(
+          Effect.flatMap((recorder) =>
+            recorder.record({
+              _tag: "Failure",
+              envelope: params.envelope,
+              failure,
+              formatVersion: 1,
+              inboundIngestId: params.inboundIngestId,
+              mailboxId: params.mailboxId,
+              message: parsedForFailure,
+              receivedAt: params.receivedAt,
+            })
+          ),
+          Effect.matchEffect({
+            onFailure: (error) =>
+              error._tag === "MailboxRepositoryError" && error.retryable
+                ? Effect.die(new InboundRetryableStepError(error))
+                : Effect.succeed({ _tag: "Rejected" as const }),
+            onSuccess: (value) =>
+              Effect.succeed({ _tag: "Recorded" as const, value }),
+          })
+        ),
+        mailboxStateTaskConfig
+      );
+
+    const processing = yield* Effect.exit(
+      Effect.gen(function* () {
+        for (const [name, status] of [
+          ["record-raw-stored-v2", "raw_stored"],
+          ["record-parsing-v2", "parsing"],
+        ] as const) {
+          const recorded = yield* recordCheckpoint(name, status);
+          if (recorded._tag === "Rejected") {
+            return yield* Effect.die(
+              new Error("MailboxDO rejected an inbound checkpoint")
+            );
+          }
+          if (recorded.value.status === "ready") {
+            return { _tag: "Completed" as const, value: recorded.value };
+          }
+          if (recorded.value.status === "failed") {
+            return { _tag: "Stopped" as const };
+          }
+        }
+
+        const parsed = yield* Cloudflare.Workflows.task(
+          "parse-raw-mime-v2",
+          Effect.gen(function* () {
+            const reader = yield* InboundRawMessageReader;
+            const parser = yield* InboundMimeParser;
+            const raw = yield* reader.read({
+              inboundIngestId: params.inboundIngestId,
+              mailboxId: params.mailboxId,
+              rawSize: params.envelope.rawSize,
+              receivedAt: params.receivedAt,
+            });
+            return yield* parser.parse(raw);
+          }).pipe(
+            Effect.matchEffect({
+              onFailure: (
+                error
+              ): Effect.Effect<StepOutcome<ParsedInboundMessageV1Type>> =>
+                error._tag === "MimeParseError"
+                  ? Effect.succeed({
+                      _tag: "Failure",
+                      failure: mimeFailure(error),
+                    })
+                  : blobFailure(error),
+              onSuccess: (value) =>
+                Effect.succeed({ _tag: "Success" as const, value }),
+            })
+          ),
+          processingTaskConfig
+        );
+        if (parsed._tag === "Failure") {
+          return { _tag: "Failed" as const, failure: parsed.failure };
+        }
+        if (parsed._tag === "Rejected") {
+          return { _tag: "Rejected" as const };
+        }
+        parsedForFailure = parsed.value;
+
+        const attachments = yield* Cloudflare.Workflows.task(
+          "store-inbound-attachments-v2",
+          Effect.gen(function* () {
+            const reader = yield* InboundRawMessageReader;
+            const extractor = yield* InboundMimeAttachmentExtractor;
+            const store = yield* InboundAttachmentStore;
+            const raw = yield* reader.read({
+              inboundIngestId: params.inboundIngestId,
+              mailboxId: params.mailboxId,
+              rawSize: params.envelope.rawSize,
+              receivedAt: params.receivedAt,
+            });
+            const extracted = yield* extractor.extract(raw);
+            if (
+              encodedManifest(parsed.value) !==
+              encodedManifest(extracted.manifest)
+            ) {
+              return yield* Effect.fail(
+                new InboundManifestMismatchError({
+                  message: "Reparsed inbound MIME manifest does not match",
+                })
+              );
+            }
+            yield* store.store({
+              attachments: extracted.attachments,
+              inboundIngestId: params.inboundIngestId,
+              mailboxId: params.mailboxId,
+              receivedAt: params.receivedAt,
+            });
+          }).pipe(
+            Effect.matchEffect({
+              onFailure: (error): Effect.Effect<StepOutcome<void>> => {
+                switch (error._tag) {
+                  case "BlobStoreError": {
+                    return blobFailure(error);
+                  }
+                  case "MimeParseError": {
+                    return Effect.succeed({
+                      _tag: "Failure",
+                      failure: mimeFailure(error),
+                    });
+                  }
+                  case "InboundManifestMismatchError": {
+                    return Effect.succeed({
+                      _tag: "Failure",
+                      failure: {
+                        code: "processing_failed",
+                        replayable: false,
+                      },
+                    });
+                  }
+                  default: {
+                    const exhaustive: never = error;
+                    return exhaustive;
+                  }
+                }
+              },
+              onSuccess: () =>
+                Effect.succeed({ _tag: "Success" as const, value: undefined }),
+            })
+          ),
+          processingTaskConfig
+        );
+        if (attachments._tag === "Failure") {
+          return { _tag: "Failed" as const, failure: attachments.failure };
+        }
+        if (attachments._tag === "Rejected") {
+          return { _tag: "Rejected" as const };
+        }
+
+        const stored = yield* recordCheckpoint(
+          "record-attachments-stored-v2",
+          "attachments_stored"
+        );
+        if (stored._tag === "Rejected") {
+          return yield* Effect.die(
+            new Error("MailboxDO rejected an inbound checkpoint")
           );
         }
-        yield* store.store({
-          attachments: extracted.attachments,
-          inboundIngestId: params.inboundIngestId,
-          mailboxId: params.mailboxId,
-          receivedAt: params.receivedAt,
-        });
-        return yield* Schema.decodeUnknownEffect(
-          InboundAttachmentsStoredCheckpointV1
-        )({
-          attachmentCount: extracted.attachments.length,
-          formatVersion: 1,
-          inboundIngestId: params.inboundIngestId,
-          mailboxId: params.mailboxId,
-          status: "attachments_stored",
-        });
-      }).pipe(Effect.orDie)
+        if (stored.value.status === "ready") {
+          return { _tag: "Completed" as const, value: stored.value };
+        }
+        if (stored.value.status === "failed") {
+          return { _tag: "Stopped" as const };
+        }
+
+        const committed = yield* Cloudflare.Workflows.task(
+          "commit-inbound-message-v2",
+          InboundMessageCommitter.pipe(
+            Effect.flatMap((committer) =>
+              committer.commit({
+                envelope: params.envelope,
+                formatVersion: 1,
+                inboundIngestId: params.inboundIngestId,
+                mailboxId: params.mailboxId,
+                message: parsed.value,
+                receivedAt: params.receivedAt,
+              })
+            ),
+            Effect.matchEffect({
+              onFailure: (
+                error: MailboxDomainError | MailboxRepositoryError
+              ):
+                | Effect.Effect<StepOutcome<never>>
+                | Effect.Effect<StepOutcome<never>, never> =>
+                error._tag === "MailboxRepositoryError"
+                  ? repositoryFailure(error)
+                  : Effect.succeed({
+                      _tag: "Rejected",
+                    }),
+              onSuccess: (value) =>
+                Effect.succeed({ _tag: "Success" as const, value }),
+            })
+          ),
+          processingTaskConfig
+        );
+        if (committed._tag === "Failure") {
+          return { _tag: "Failed" as const, failure: committed.failure };
+        }
+        return committed._tag === "Rejected"
+          ? { _tag: "Rejected" as const }
+          : { _tag: "Completed" as const, value: committed.value };
+      })
     );
 
-    const committed = yield* Cloudflare.Workflows.task(
-      "commit-inbound-message",
-      Effect.gen(function* () {
-        const committer = yield* InboundMessageCommitter;
-        const processing = yield* committer.commit({
-          envelope: params.envelope,
-          formatVersion: 1,
-          inboundIngestId: params.inboundIngestId,
-          mailboxId: params.mailboxId,
-          message: parsed,
-          receivedAt: params.receivedAt,
-        });
-        return yield* Schema.decodeUnknownEffect(InboundCommittedCheckpointV1)({
-          formatVersion: 1,
-          inboundIngestId: processing.id,
-          mailboxId: processing.mailboxId,
-          messageId: processing.messageId,
-          status: processing.status,
-        });
-      }).pipe(Effect.orDie)
-    );
+    if (Exit.isSuccess(processing) && processing.value._tag === "Completed") {
+      return yield* Schema.decodeUnknownEffect(InboundWorkflowResultV1)({
+        formatVersion: 1,
+        inboundIngestId: params.inboundIngestId,
+        mailboxId: params.mailboxId,
+        messageId: processing.value.value.messageId,
+        status: "ready",
+      }).pipe(Effect.orDie);
+    }
+    if (Exit.isSuccess(processing) && processing.value._tag === "Stopped") {
+      return yield* Effect.die(
+        new Error("Inbound processing is already terminally failed")
+      );
+    }
+    if (Exit.isSuccess(processing) && processing.value._tag === "Rejected") {
+      return yield* Effect.die(
+        new Error("MailboxDO rejected inbound processing")
+      );
+    }
 
-    return yield* Schema.decodeUnknownEffect(InboundWorkflowResultV1)({
-      formatVersion: 1,
-      inboundIngestId: params.inboundIngestId,
-      mailboxId: params.mailboxId,
-      messageId: committed.messageId,
-      status: "ready",
-    }).pipe(Effect.orDie);
+    const retryableStepExhausted =
+      Exit.isFailure(processing) &&
+      isRetryableStepError(Cause.squash(processing.cause));
+    if (Exit.isFailure(processing) && !retryableStepExhausted) {
+      return yield* Effect.die(Cause.squash(processing.cause));
+    }
+
+    const failure =
+      Exit.isSuccess(processing) && processing.value._tag === "Failed"
+        ? processing.value.failure
+        : ({ code: "processing_failed", replayable: true } as const);
+    const failed = yield* recordFailure(failure);
+    if (
+      failed._tag === "Recorded" &&
+      failed.value.status === "ready" &&
+      failed.value.messageId !== undefined
+    ) {
+      return yield* Schema.decodeUnknownEffect(InboundWorkflowResultV1)({
+        formatVersion: 1,
+        inboundIngestId: params.inboundIngestId,
+        mailboxId: params.mailboxId,
+        messageId: failed.value.messageId,
+        status: "ready",
+      }).pipe(Effect.orDie);
+    }
+    return yield* Effect.die(
+      new Error("Inbound processing failed after durable failure recording")
+    );
   })
 );
 
@@ -221,10 +493,15 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
       Layer.merge(attachmentClientLive, InboundAttachmentStoreRuntimeLive)
     )
   );
+  const mailboxDoNamespaceLive = Layer.succeed(
+    MailboxDoNamespace,
+    MailboxDoNamespace.of(mailboxDataPlane)
+  );
   const inboundCommitterLive = InboundMessageCommitterDoLive.pipe(
-    Layer.provide(
-      Layer.succeed(MailboxDoNamespace, MailboxDoNamespace.of(mailboxDataPlane))
-    )
+    Layer.provide(mailboxDoNamespaceLive)
+  );
+  const inboundProcessingRecorderLive = InboundProcessingRecorderDoLive.pipe(
+    Layer.provide(mailboxDoNamespaceLive)
   );
   const mimeParserLive = InboundMimeParserPostalMimeLive.pipe(
     Layer.provide(InboundMimeParserConfigLive)
@@ -238,7 +515,8 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
     mimeParserLive,
     attachmentExtractorLive,
     attachmentStoreLive,
-    inboundCommitterLive
+    inboundCommitterLive,
+    inboundProcessingRecorderLive
   );
   const program = yield* inboundWorkflowProgram;
 

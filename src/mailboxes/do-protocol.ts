@@ -24,7 +24,11 @@ import {
   UpdateDraftInput,
 } from "./drafts";
 import { MailboxDomainError } from "./errors";
-import { CommitInboundMessageV1, InboundProcessingResult } from "./inbound";
+import {
+  CommitInboundMessageV1,
+  InboundProcessingResult,
+  RecordInboundProcessingV1,
+} from "./inbound";
 import {
   AddMessageLabelInput,
   GetMessageInput,
@@ -73,6 +77,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "get-outbound",
     "cancel-outbound",
     "resend-outbound",
+    "record-inbound",
     "commit-inbound",
   ]),
   reason: Schema.Literals([
@@ -246,6 +251,10 @@ export const MailDataRpcRequest = Schema.Union([
     _tag: Schema.Literal("CommitInbound"),
     input: CommitInboundMessageV1,
   }),
+  Schema.Struct({
+    _tag: Schema.Literal("RecordInboundProcessing"),
+    input: RecordInboundProcessingV1,
+  }),
 ]);
 export type MailDataRpcRequest = Schema.Schema.Type<typeof MailDataRpcRequest>;
 
@@ -288,6 +297,10 @@ export const MailDataRpcResponse = Schema.Union([
   }),
   Schema.Struct({
     _tag: Schema.Literal("InboundCommitted"),
+    value: InboundProcessingResult,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("InboundProcessingRecorded"),
     value: InboundProcessingResult,
   }),
   MailboxDomainErrorDto,
@@ -433,6 +446,11 @@ export const mailDataRequestMetadataByTag = {
     operation: "commit-inbound",
     kind: "write",
     responseTag: "InboundCommitted",
+  },
+  RecordInboundProcessing: {
+    operation: "record-inbound",
+    kind: "write",
+    responseTag: "InboundProcessingRecorded",
   },
 } as const satisfies Record<MailDataRpcRequest["_tag"], RpcRequestMetadata>;
 

@@ -204,6 +204,13 @@ const executeMailDataRequest = (
         (value) => ({ _tag: "InboundCommitted", value })
       );
     }
+    case "RecordInboundProcessing": {
+      return encodeMailDataResult(
+        request,
+        stores.record(request.input),
+        (value) => ({ _tag: "InboundProcessingRecorded", value })
+      );
+    }
     default: {
       const exhaustive: never = request;
       return exhaustive;

@@ -378,6 +378,44 @@ export type CommitInboundMessageV1 = Schema.Schema.Type<
   typeof CommitInboundMessageV1
 >;
 
+const InboundCheckpointStatus = Schema.Literals([
+  "raw_stored",
+  "parsing",
+  "attachments_stored",
+]);
+
+export const RecordInboundCheckpointV1 = Schema.Struct({
+  _tag: Schema.Literal("Checkpoint"),
+  formatVersion: Schema.Literal(1),
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  envelope: ReceiveInboundEmailInput,
+  receivedAt: UnixMillis,
+  status: InboundCheckpointStatus,
+});
+
+export const RecordInboundFailureV1 = Schema.Struct({
+  _tag: Schema.Literal("Failure"),
+  formatVersion: Schema.Literal(1),
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  envelope: ReceiveInboundEmailInput,
+  receivedAt: UnixMillis,
+  message: Schema.optional(ParsedInboundMessageV1),
+  failure: Schema.Struct({
+    code: InboundFailureCode,
+    replayable: Schema.Boolean,
+  }),
+});
+
+export const RecordInboundProcessingV1 = Schema.Union([
+  RecordInboundCheckpointV1,
+  RecordInboundFailureV1,
+]);
+export type RecordInboundProcessingV1 = Schema.Schema.Type<
+  typeof RecordInboundProcessingV1
+>;
+
 export const InboundCommittedCheckpointV1 = Schema.Struct({
   formatVersion: Schema.Literal(1),
   inboundIngestId: InboundIngestId,
@@ -399,3 +437,18 @@ export interface InboundMessageCommitter {
 export const InboundMessageCommitter = Context.Service<InboundMessageCommitter>(
   "cloudflare-inbox/InboundMessageCommitter"
 );
+
+export interface InboundProcessingRecorder {
+  readonly record: (
+    input: RecordInboundProcessingV1
+  ) => Effect.Effect<
+    InboundProcessingResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+}
+
+/** Durable progress and terminal failure boundary owned by MailboxDO. */
+export const InboundProcessingRecorder =
+  Context.Service<InboundProcessingRecorder>(
+    "cloudflare-inbox/InboundProcessingRecorder"
+  );
