@@ -25,9 +25,11 @@ import {
 } from "./drafts";
 import { MailboxDomainError } from "./errors";
 import {
-  CommitInboundMessageV1,
+  CommitInboundMessage,
   InboundProcessingResult,
-  RecordInboundProcessingV1,
+  PreparedInboundReplayV1,
+  RecordInboundProcessing,
+  ReplayInboundInput,
 } from "./inbound";
 import {
   AddMessageLabelInput,
@@ -79,6 +81,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "resend-outbound",
     "record-inbound",
     "commit-inbound",
+    "replay-inbound",
   ]),
   reason: Schema.Literals([
     "validation",
@@ -249,11 +252,15 @@ export const MailDataRpcRequest = Schema.Union([
   }),
   Schema.Struct({
     _tag: Schema.Literal("CommitInbound"),
-    input: CommitInboundMessageV1,
+    input: CommitInboundMessage,
   }),
   Schema.Struct({
     _tag: Schema.Literal("RecordInboundProcessing"),
-    input: RecordInboundProcessingV1,
+    input: RecordInboundProcessing,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("PrepareInboundReplay"),
+    input: ReplayInboundInput,
   }),
 ]);
 export type MailDataRpcRequest = Schema.Schema.Type<typeof MailDataRpcRequest>;
@@ -302,6 +309,10 @@ export const MailDataRpcResponse = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("InboundProcessingRecorded"),
     value: InboundProcessingResult,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("InboundReplayPrepared"),
+    value: PreparedInboundReplayV1,
   }),
   MailboxDomainErrorDto,
 ]);
@@ -451,6 +462,11 @@ export const mailDataRequestMetadataByTag = {
     operation: "record-inbound",
     kind: "write",
     responseTag: "InboundProcessingRecorded",
+  },
+  PrepareInboundReplay: {
+    operation: "replay-inbound",
+    kind: "write",
+    responseTag: "InboundReplayPrepared",
   },
 } as const satisfies Record<MailDataRpcRequest["_tag"], RpcRequestMetadata>;
 

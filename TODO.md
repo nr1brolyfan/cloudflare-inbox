@@ -4,11 +4,11 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 ## Status
 
-- Ostatnia aktualizacja: 2026-07-19
-- Postęp zadań: **60/109 (55%)**
-- Ukończone etapy: **3/11**
-- Aktualny etap: **6. Inbound email**
-- Aktualne zadanie: **Bezpieczny replay z raw MIME w R2**
+- Ostatnia aktualizacja: 2026-07-20
+- Postęp zadań: **61/109 (56%)**
+- Ukończone etapy: **4/11**
+- Aktualny etap: **7. Inbox UI i bezpieczne renderowanie**
+- Aktualne zadanie: **Responsywny mailbox shell**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -17,8 +17,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 3   | Effect-auth i sesje                   | IN PROGRESS | 15/20  |
 | 4   | Permissions i control plane           | DONE        | 10/10  |
 | 5   | MailboxDO i domena pocztowa           | DONE        | 9/9    |
-| 6   | Inbound email                         | CURRENT     | 8/9    |
-| 7   | Inbox UI i bezpieczne renderowanie    | TODO        | 0/9    |
+| 6   | Inbound email                         | DONE        | 9/9    |
+| 7   | Inbox UI i bezpieczne renderowanie    | CURRENT     | 0/9    |
 | 8   | Reguły automatyczne                   | TODO        | 0/6    |
 | 9   | Drafty i outbound                     | TODO        | 0/9    |
 | 10  | AI                                    | TODO        | 0/6    |
@@ -116,11 +116,11 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Ekstrahować attachmenty i CID do R2.
 - [x] Obsłużyć deduplikację oraz idempotentny commit w MailboxDO.
 - [x] Obsłużyć retry, failure states i częściowe awarie.
-- [ ] CURRENT Dodać bezpieczny replay z raw MIME w R2.
+- [x] Dodać bezpieczny replay z raw MIME w R2.
 
 ## 7. Inbox UI i bezpieczne renderowanie
 
-- [ ] Zbudować responsywny mailbox shell.
+- [ ] CURRENT Zbudować responsywny mailbox shell.
 - [ ] Dodać nawigację folderów i labels.
 - [ ] Dodać listę wiadomości i widok wątku.
 - [ ] Dodać search, filtry i paginację.

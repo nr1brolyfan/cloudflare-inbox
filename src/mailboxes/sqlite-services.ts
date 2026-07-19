@@ -13,6 +13,7 @@ import {
   MailAddress,
   MailboxId,
   MessageId,
+  OperationId,
   UnixMillis,
   Version,
 } from "./core";
@@ -38,10 +39,12 @@ import {
   CommitInboundMessageV1,
   InboundProcessingSchema,
   InboundWorkflowParamsV1,
+  PreparedInboundReplayV1,
 } from "./inbound";
 import type {
-  CommitInboundMessageV1 as CommitInboundMessageV1Type,
-  RecordInboundProcessingV1,
+  CommitInboundMessage as CommitInboundMessageType,
+  RecordInboundProcessing,
+  ReplayInboundInput,
 } from "./inbound";
 import {
   AddMessageLabelInput,
@@ -2148,16 +2151,15 @@ const inboundSnippet = (textBody: string | undefined) =>
   (textBody ?? "").replaceAll(/\s+/gu, " ").trim().slice(0, 500);
 
 const inboundIdentityKey = (input: {
-  readonly envelope: CommitInboundMessageV1Type["envelope"];
-  readonly formatVersion: 1;
-  readonly inboundIngestId: CommitInboundMessageV1Type["inboundIngestId"];
+  readonly envelope: CommitInboundMessageType["envelope"];
+  readonly inboundIngestId: CommitInboundMessageType["inboundIngestId"];
   readonly mailboxId: MailboxId;
-  readonly receivedAt: CommitInboundMessageV1Type["receivedAt"];
+  readonly receivedAt: CommitInboundMessageType["receivedAt"];
 }) =>
   JSON.stringify(
     Schema.encodeSync(InboundWorkflowParamsV1)({
       envelope: input.envelope,
-      formatVersion: input.formatVersion,
+      formatVersion: 1,
       inboundIngestId: input.inboundIngestId,
       mailboxId: input.mailboxId,
       receivedAt: input.receivedAt,
@@ -2169,6 +2171,24 @@ const committedInboundIdentityKey = (requestKey: string) =>
     Schema.decodeUnknownSync(CommitInboundMessageV1)(JSON.parse(requestKey))
   );
 
+const inboundCommitRequestKey = (input: CommitInboundMessageType) =>
+  JSON.stringify(
+    Schema.encodeSync(CommitInboundMessageV1)({
+      envelope: input.envelope,
+      formatVersion: 1,
+      inboundIngestId: input.inboundIngestId,
+      mailboxId: input.mailboxId,
+      message: input.message,
+      receivedAt: input.receivedAt,
+    })
+  );
+
+const executionAttempt = (
+  input:
+    | { readonly formatVersion: 1 }
+    | { readonly formatVersion: 2; readonly executionAttempt: number }
+) => (input.formatVersion === 1 ? 1 : input.executionAttempt);
+
 const checkpointRank = {
   received: 0,
   raw_stored: 1,
@@ -2178,7 +2198,7 @@ const checkpointRank = {
 
 const recordInboundProcessing = (
   mailboxId: MailboxId,
-  input: RecordInboundProcessingV1,
+  input: RecordInboundProcessing,
   runtime: MailboxRuntime
 ) =>
   Effect.gen(function* () {
@@ -2187,27 +2207,34 @@ const recordInboundProcessing = (
       // oxlint-disable-next-line eslint/complexity -- Monotonic state validation must be atomic with the write.
       Effect.gen(function* () {
         const requestKey = inboundIdentityKey(input);
+        const attempt = executionAttempt(input);
         const [existing] = yield* tx
           .select()
           .from(inboundProcessing)
           .where(eq(inboundProcessing.id, input.inboundIngestId))
           .limit(1);
         if (existing !== undefined) {
+          if (existing.attemptCount !== attempt) {
+            return yield* messageDomainError(
+              "record-inbound",
+              "invalid-state",
+              "Inbound Workflow execution is stale",
+              { resourceType: "inbound", resourceId: input.inboundIngestId }
+            );
+          }
           if (
             existing.status === "ready" &&
             input._tag === "Failure" &&
             input.message !== undefined
           ) {
-            const expectedCommitKey = JSON.stringify(
-              Schema.encodeSync(CommitInboundMessageV1)({
-                envelope: input.envelope,
-                formatVersion: input.formatVersion,
-                inboundIngestId: input.inboundIngestId,
-                mailboxId: input.mailboxId,
-                message: input.message,
-                receivedAt: input.receivedAt,
-              })
-            );
+            const expectedCommitKey = inboundCommitRequestKey({
+              envelope: input.envelope,
+              formatVersion: 1,
+              inboundIngestId: input.inboundIngestId,
+              mailboxId: input.mailboxId,
+              message: input.message,
+              receivedAt: input.receivedAt,
+            });
             if (existing.requestKey !== expectedCommitKey) {
               return yield* messageDomainError(
                 "record-inbound",
@@ -2298,6 +2325,14 @@ const recordInboundProcessing = (
           return readInboundProcessingRow(advanced, mailboxId);
         }
 
+        if (attempt !== 1) {
+          return yield* messageDomainError(
+            "record-inbound",
+            "invalid-state",
+            "Replayed inbound processing must already be prepared",
+            { resourceType: "inbound", resourceId: input.inboundIngestId }
+          );
+        }
         if (input._tag === "Checkpoint" && input.status !== "raw_stored") {
           return yield* messageDomainError(
             "record-inbound",
@@ -2342,7 +2377,7 @@ const recordInboundProcessing = (
 
 const commitInboundMessage = (
   mailboxId: MailboxId,
-  input: CommitInboundMessageV1Type,
+  input: CommitInboundMessageType,
   runtime: MailboxRuntime
 ) =>
   Effect.gen(function* () {
@@ -2350,16 +2385,23 @@ const commitInboundMessage = (
     return yield* db.transaction((tx) =>
       // oxlint-disable-next-line eslint/complexity -- The atomic commit keeps validation and writes in one transaction.
       Effect.gen(function* () {
-        const requestKey = JSON.stringify(
-          Schema.encodeSync(CommitInboundMessageV1)(input)
-        );
+        const requestKey = inboundCommitRequestKey(input);
         const identityKey = inboundIdentityKey(input);
+        const attempt = executionAttempt(input);
         const [existing] = yield* tx
           .select()
           .from(inboundProcessing)
           .where(eq(inboundProcessing.id, input.inboundIngestId))
           .limit(1);
         if (existing !== undefined) {
+          if (existing.attemptCount !== attempt) {
+            return yield* messageDomainError(
+              "commit-inbound",
+              "invalid-state",
+              "Inbound Workflow execution is stale",
+              { resourceType: "inbound", resourceId: input.inboundIngestId }
+            );
+          }
           if (existing.status === "ready") {
             if (existing.requestKey !== requestKey) {
               return yield* messageDomainError(
@@ -2396,6 +2438,14 @@ const commitInboundMessage = (
               }
             );
           }
+        }
+        if (existing === undefined && attempt !== 1) {
+          return yield* messageDomainError(
+            "commit-inbound",
+            "invalid-state",
+            "Replayed inbound processing must already be prepared",
+            { resourceType: "inbound", resourceId: input.inboundIngestId }
+          );
         }
 
         const nearestReferences: RfcMessageId[] = [];
@@ -2532,17 +2582,119 @@ const commitInboundMessage = (
     );
   });
 
+const prepareInboundReplay = (
+  mailboxId: MailboxId,
+  input: ReplayInboundInput,
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
+) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const requestKey = JSON.stringify({
+          inboundIngestId: input.inboundIngestId,
+          mailboxId: input.mailboxId,
+        });
+        const previous = yield* operations.replay(
+          input.operationId,
+          "replay-inbound",
+          "replay-inbound",
+          requestKey,
+          PreparedInboundReplayV1
+        );
+        if (previous !== undefined) {
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
+        }
+        const [existing] = yield* tx
+          .select()
+          .from(inboundProcessing)
+          .where(eq(inboundProcessing.id, input.inboundIngestId))
+          .limit(1);
+        if (existing === undefined) {
+          return yield* messageDomainError(
+            "replay-inbound",
+            "not-found",
+            "Inbound processing was not found",
+            { resourceType: "inbound", resourceId: input.inboundIngestId }
+          );
+        }
+        if (existing.status !== "failed" || existing.failureReplayable !== 1) {
+          return yield* messageDomainError(
+            "replay-inbound",
+            "invalid-state",
+            "Inbound processing is not replayable",
+            { resourceType: "inbound", resourceId: input.inboundIngestId }
+          );
+        }
+        const original = Schema.decodeUnknownSync(InboundWorkflowParamsV1)(
+          JSON.parse(existing.requestKey)
+        );
+        const workflowInstanceId = Schema.decodeUnknownSync(OperationId)(
+          runtime.randomId()
+        );
+        const attemptCount = Math.max(existing.attemptCount, 1) + 1;
+        const updatedAt = Math.max(runtime.now(), existing.updatedAt);
+        const [reopened] = yield* tx
+          .update(inboundProcessing)
+          .set({
+            status: "received",
+            failureCode: null,
+            failureAt: null,
+            failureReplayable: null,
+            attemptCount,
+            updatedAt,
+            version: existing.version + 1,
+          })
+          .where(eq(inboundProcessing.id, input.inboundIngestId))
+          .returning();
+        if (reopened === undefined) {
+          return yield* Effect.die(
+            new Error("Inbound replay update returned no row")
+          );
+        }
+        const prepared = Schema.decodeUnknownSync(PreparedInboundReplayV1)({
+          formatVersion: 1,
+          processing: readInboundProcessingRow(reopened, mailboxId),
+          workflow: {
+            ...original,
+            executionAttempt: attemptCount,
+            formatVersion: 2,
+            workflowInstanceId,
+          },
+        });
+        yield* operations.store(
+          input.operationId,
+          "replay-inbound",
+          requestKey,
+          input.inboundIngestId,
+          JSON.stringify(Schema.encodeSync(PreparedInboundReplayV1)(prepared)),
+          updatedAt
+        );
+        return prepared;
+      })
+    );
+  });
+
 const makeMailboxInboundStore = (
   db: MailboxDatabase,
   runtime: MailboxRuntime,
-  mailboxId: MailboxId
+  mailboxId: MailboxId,
+  operations: MailboxOperationStore
 ) => ({
-  commit: (input: CommitInboundMessageV1Type) =>
+  commit: (input: CommitInboundMessageType) =>
     commitInboundMessage(mailboxId, input, runtime).pipe(
       Effect.provideService(MailboxDatabase, db)
     ),
-  record: (input: RecordInboundProcessingV1) =>
+  record: (input: RecordInboundProcessing) =>
     recordInboundProcessing(mailboxId, input, runtime).pipe(
+      Effect.provideService(MailboxDatabase, db)
+    ),
+  prepareReplay: (input: ReplayInboundInput) =>
+    prepareInboundReplay(mailboxId, input, runtime, operations).pipe(
       Effect.provideService(MailboxDatabase, db)
     ),
 });
@@ -2559,8 +2711,9 @@ export const MailboxInboundStoreLive = Layer.effect(
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
     const { mailboxId } = yield* MailboxIdentity;
+    const operations = yield* MailboxOperationStore;
     return MailboxInboundStore.of(
-      makeMailboxInboundStore(db, runtime, mailboxId)
+      makeMailboxInboundStore(db, runtime, mailboxId, operations)
     );
   })
 );

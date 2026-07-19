@@ -158,6 +158,11 @@ const expectedMailDataMetadata = {
     kind: "write",
     responseTag: "InboundProcessingRecorded",
   },
+  PrepareInboundReplay: {
+    operation: "replay-inbound",
+    kind: "write",
+    responseTag: "InboundReplayPrepared",
+  },
 } as const satisfies Record<MailDataRpcRequest["_tag"], MailDataMetadata>;
 
 describe("MailboxDO protocol metadata", () => {

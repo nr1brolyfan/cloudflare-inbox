@@ -28,6 +28,12 @@ import {
   MailboxAdministrationRuntimeLive,
 } from "../control-plane/mailbox-administration-live";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
+import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
+import {
+  InboundReplayLive,
+  InboundReplayPreparerDoLive,
+} from "../mailboxes/inbound-replay-do-live";
+import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendHttpApi } from "./api";
 import { DevEmailGroupLive } from "./dev-emails";
@@ -92,8 +98,24 @@ const BackendRoutesLive = Layer.unwrap(
         Layer.merge(MailboxAdministrationRuntimeLive, mailAuthorizationLive)
       )
     );
+    const inboundReplayLive = InboundReplayLive.pipe(
+      Layer.provide(
+        Layer.merge(
+          InboundReplayPreparerDoLive.pipe(Layer.provide(MailboxRegistryLive)),
+          InboundWorkflowStarterLive
+        )
+      )
+    );
     const mailboxGroupLive = MailboxGroupLive.pipe(
-      Layer.provide(mailboxAdministrationLive),
+      Layer.provide(
+        Layer.mergeAll(
+          mailboxAdministrationLive,
+          InboundReplayAuthorizationLive.pipe(
+            Layer.provide(mailAuthorizationLive)
+          ),
+          inboundReplayLive
+        )
+      ),
       Layer.provide(currentRequestAuthLive),
       Layer.provide(requestValidationLive)
     );

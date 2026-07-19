@@ -220,6 +220,55 @@ describe("inbound Workflow", () => {
     );
   });
 
+  it("fences replay checkpoints and commit with the prepared attempt", async () => {
+    const replayInput = {
+      ...validInput,
+      executionAttempt: 2,
+      formatVersion: 2,
+      workflowInstanceId: "replay-instance-1",
+    };
+    const records: unknown[] = [];
+    let commitInput: unknown;
+
+    const result = await runWorkflow(
+      replayInput,
+      "replay-instance-1",
+      [],
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      (input) => {
+        commitInput = input;
+        return Effect.succeed(
+          Schema.decodeUnknownSync(InboundProcessingSchema)({
+            ...committedProcessing,
+            attemptCount: 2,
+            version: 5,
+          })
+        );
+      },
+      (input) => {
+        records.push(input);
+        return recordProcessing(input);
+      }
+    );
+
+    expect({ commitInput, records, result }).toMatchObject({
+      commitInput: { executionAttempt: 2, formatVersion: 2 },
+      records: [
+        { executionAttempt: 2, formatVersion: 2, status: "raw_stored" },
+        { executionAttempt: 2, formatVersion: 2, status: "parsing" },
+        {
+          executionAttempt: 2,
+          formatVersion: 2,
+          status: "attachments_stored",
+        },
+      ],
+      result: { messageId: "message-1", status: "ready" },
+    });
+  });
+
   it("passes trusted ingest metadata and the exact raw buffer to parsing", async () => {
     const raw = new Uint8Array([4, 5, 6]).buffer;
     let readInput: unknown;
@@ -318,7 +367,7 @@ describe("inbound Workflow", () => {
         "record-raw-stored-v2",
         "record-parsing-v2",
         "parse-raw-mime-v2",
-        "record-inbound-failure",
+        "record-inbound-failure-v2",
       ],
     });
   });

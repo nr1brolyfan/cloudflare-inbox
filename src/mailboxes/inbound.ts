@@ -181,6 +181,31 @@ export type InboundWorkflowParamsV1 = Schema.Schema.Type<
   typeof InboundWorkflowParamsV1
 >;
 
+const InboundExecutionAttempt = AttemptCount.pipe(
+  Schema.check(Schema.isGreaterThanOrEqualTo(1))
+);
+
+export const InboundWorkflowParamsV2 = Schema.Struct({
+  formatVersion: Schema.Literal(2),
+  workflowInstanceId: OperationId,
+  executionAttempt: InboundExecutionAttempt,
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  envelope: ReceiveInboundEmailInput,
+  receivedAt: UnixMillis,
+});
+export type InboundWorkflowParamsV2 = Schema.Schema.Type<
+  typeof InboundWorkflowParamsV2
+>;
+
+export const InboundWorkflowParams = Schema.Union([
+  InboundWorkflowParamsV1,
+  InboundWorkflowParamsV2,
+]);
+export type InboundWorkflowParams = Schema.Schema.Type<
+  typeof InboundWorkflowParams
+>;
+
 export const InboundRawStoredCheckpointV1 = Schema.Struct({
   formatVersion: Schema.Literal(1),
   inboundIngestId: InboundIngestId,
@@ -207,7 +232,7 @@ export type InboundWorkflowResultV1 = Schema.Schema.Type<
 
 export interface InboundWorkflowStarter {
   readonly start: (
-    params: InboundWorkflowParamsV1
+    params: InboundWorkflowParams
   ) => Effect.Effect<void, WorkflowStartError>;
 }
 
@@ -378,6 +403,24 @@ export type CommitInboundMessageV1 = Schema.Schema.Type<
   typeof CommitInboundMessageV1
 >;
 
+export const CommitInboundMessageV2 = Schema.Struct({
+  formatVersion: Schema.Literal(2),
+  executionAttempt: InboundExecutionAttempt,
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  envelope: ReceiveInboundEmailInput,
+  receivedAt: UnixMillis,
+  message: ParsedInboundMessageV1,
+});
+
+export const CommitInboundMessage = Schema.Union([
+  CommitInboundMessageV1,
+  CommitInboundMessageV2,
+]);
+export type CommitInboundMessage = Schema.Schema.Type<
+  typeof CommitInboundMessage
+>;
+
 const InboundCheckpointStatus = Schema.Literals([
   "raw_stored",
   "parsing",
@@ -416,6 +459,45 @@ export type RecordInboundProcessingV1 = Schema.Schema.Type<
   typeof RecordInboundProcessingV1
 >;
 
+export const RecordInboundCheckpointV2 = Schema.Struct({
+  ...RecordInboundCheckpointV1.fields,
+  formatVersion: Schema.Literal(2),
+  executionAttempt: InboundExecutionAttempt,
+});
+
+export const RecordInboundFailureV2 = Schema.Struct({
+  ...RecordInboundFailureV1.fields,
+  formatVersion: Schema.Literal(2),
+  executionAttempt: InboundExecutionAttempt,
+});
+
+export const RecordInboundProcessing = Schema.Union([
+  RecordInboundProcessingV1,
+  RecordInboundCheckpointV2,
+  RecordInboundFailureV2,
+]);
+export type RecordInboundProcessing = Schema.Schema.Type<
+  typeof RecordInboundProcessing
+>;
+
+export const PreparedInboundReplayV1 = Schema.Struct({
+  formatVersion: Schema.Literal(1),
+  processing: InboundProcessingResult,
+  workflow: InboundWorkflowParamsV2,
+}).check(
+  Schema.makeFilter((prepared) =>
+    prepared.processing.status === "received" &&
+    prepared.processing.id === prepared.workflow.inboundIngestId &&
+    prepared.processing.mailboxId === prepared.workflow.mailboxId &&
+    prepared.processing.attemptCount === prepared.workflow.executionAttempt
+      ? undefined
+      : "prepared replay processing and workflow must describe the same received attempt"
+  )
+);
+export type PreparedInboundReplayV1 = Schema.Schema.Type<
+  typeof PreparedInboundReplayV1
+>;
+
 export const InboundCommittedCheckpointV1 = Schema.Struct({
   formatVersion: Schema.Literal(1),
   inboundIngestId: InboundIngestId,
@@ -426,7 +508,7 @@ export const InboundCommittedCheckpointV1 = Schema.Struct({
 
 export interface InboundMessageCommitter {
   readonly commit: (
-    input: CommitInboundMessageV1
+    input: CommitInboundMessage
   ) => Effect.Effect<
     InboundProcessingResult,
     MailboxDomainError | MailboxRepositoryError
@@ -440,7 +522,7 @@ export const InboundMessageCommitter = Context.Service<InboundMessageCommitter>(
 
 export interface InboundProcessingRecorder {
   readonly record: (
-    input: RecordInboundProcessingV1
+    input: RecordInboundProcessing
   ) => Effect.Effect<
     InboundProcessingResult,
     MailboxDomainError | MailboxRepositoryError
@@ -452,3 +534,29 @@ export const InboundProcessingRecorder =
   Context.Service<InboundProcessingRecorder>(
     "cloudflare-inbox/InboundProcessingRecorder"
   );
+
+export interface InboundReplayPreparer {
+  readonly claim: (
+    input: ReplayInboundInput
+  ) => Effect.Effect<
+    PreparedInboundReplayV1,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+}
+
+export const InboundReplayPreparer = Context.Service<InboundReplayPreparer>(
+  "cloudflare-inbox/InboundReplayPreparer"
+);
+
+export interface InboundReplay {
+  readonly replay: (
+    input: ReplayInboundInput
+  ) => Effect.Effect<
+    InboundProcessingResult,
+    MailboxDomainError | MailboxRepositoryError | WorkflowStartError
+  >;
+}
+
+export const InboundReplay = Context.Service<InboundReplay>(
+  "cloudflare-inbox/InboundReplay"
+);

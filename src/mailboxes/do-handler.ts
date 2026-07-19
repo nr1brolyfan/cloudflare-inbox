@@ -211,6 +211,13 @@ const executeMailDataRequest = (
         (value) => ({ _tag: "InboundProcessingRecorded", value })
       );
     }
+    case "PrepareInboundReplay": {
+      return encodeMailDataResult(
+        request,
+        stores.prepareReplay(request.input),
+        (value) => ({ _tag: "InboundReplayPrepared", value })
+      );
+    }
     default: {
       const exhaustive: never = request;
       return exhaustive;

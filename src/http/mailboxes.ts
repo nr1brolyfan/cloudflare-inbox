@@ -14,6 +14,13 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailboxAdministrationError } from "../mailboxes/administration";
 import { MailboxAdministration } from "../mailboxes/administration";
+import type {
+  MailboxDomainError,
+  MailboxRepositoryError,
+  WorkflowStartError,
+} from "../mailboxes/errors";
+import { InboundReplay } from "../mailboxes/inbound";
+import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
 import { BackendHttpApi } from "./api";
 import { MailboxPublicErrorSchema } from "./mailbox-contract";
 
@@ -106,13 +113,38 @@ type MailboxHandlerError =
   | AuthInternalError
   | AuthUnauthenticatedError
   | MailAuthorizationError
-  | MailboxAdministrationError;
+  | MailboxAdministrationError
+  | MailboxDomainError
+  | MailboxRepositoryError
+  | WorkflowStartError;
+
+const mapInboundDomainError = (
+  error: MailboxDomainError
+): Effect.Effect<never, AuthNotFoundError | AuthConflictError> =>
+  error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Inbound processing not found",
+        })
+      )
+    : Effect.fail(
+        new AuthConflictError({
+          code: "conflict",
+          message: "Inbound processing cannot be replayed",
+        })
+      );
 
 const mapHttpErrors = <A, R>(
   effect: Effect.Effect<A, MailboxHandlerError, R>
 ) =>
   mapAuthGuardErrors(effect).pipe(
     Effect.catchTag("MailboxAdministrationError", mapAdministrationError),
+    Effect.catchTag("MailboxDomainError", mapInboundDomainError),
+    Effect.catchTags({
+      MailboxRepositoryError: () => Effect.fail(internalError()),
+      WorkflowStartError: () => Effect.fail(internalError()),
+    }),
     Effect.catchTag("MailResourceResolveError", () =>
       Effect.fail(internalError())
     ),
@@ -133,6 +165,8 @@ export const MailboxGroupLive = HttpApiBuilder.group(
   "mailboxes",
   Effect.fn("backend.http.mailbox_group")(function* (handlers) {
     const administration = yield* MailboxAdministration;
+    const replayAuthorization = yield* InboundReplayAuthorization;
+    const inboundReplay = yield* InboundReplay;
 
     return handlers
       .handle("bootstrapOwner", ({ payload }) =>
@@ -147,6 +181,16 @@ export const MailboxGroupLive = HttpApiBuilder.group(
             mailboxId: params.mailboxId,
           })
           .pipe(mapHttpErrors)
+      )
+      .handle("replayInbound", ({ params, payload }) =>
+        Effect.gen(function* () {
+          yield* replayAuthorization.require(params.mailboxId);
+          return yield* inboundReplay.replay({
+            inboundIngestId: params.inboundIngestId,
+            mailboxId: params.mailboxId,
+            operationId: payload.operationId,
+          });
+        }).pipe(mapHttpErrors)
       );
   })
 );

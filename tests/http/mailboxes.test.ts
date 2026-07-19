@@ -43,6 +43,8 @@ import {
   MailboxAdministrationError,
 } from "#/mailboxes/administration";
 import { MailboxRecordSchema } from "#/mailboxes/core";
+import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
+import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 
 const publicOrigin = "https://inbox.test";
 const MailboxTestApi = HttpApi.make("AuthApi").add(MailboxGroup);
@@ -79,6 +81,15 @@ const mailbox = Schema.decodeUnknownSync(MailboxRecordSchema)({
   status: "active",
   updatedAt: 1000,
   version: 1,
+});
+const replayedProcessing = Schema.decodeUnknownSync(InboundProcessingSchema)({
+  attemptCount: 2,
+  createdAt: 1000,
+  id: "ingest-1",
+  mailboxId: "primary",
+  status: "received",
+  updatedAt: 2000,
+  version: 3,
 });
 
 const makeAdministration = (
@@ -127,6 +138,16 @@ const makeHandler = (
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(MailboxAdministration, administration),
+        Layer.succeed(
+          InboundReplay,
+          InboundReplay.of({
+            replay: () => Effect.succeed(replayedProcessing),
+          })
+        ),
+        Layer.succeed(
+          InboundReplayAuthorization,
+          InboundReplayAuthorization.of({ require: () => Effect.void })
+        ),
         requestAuthLive,
         middlewareLive
       )
@@ -146,10 +167,14 @@ const makeHandler = (
 const mailboxRequest = (
   path: string,
   method: "PATCH" | "POST",
-  options: { readonly cookie?: boolean; readonly origin?: string | null } = {}
+  options: {
+    readonly body?: unknown;
+    readonly cookie?: boolean;
+    readonly origin?: string | null;
+  } = {}
 ) =>
   new Request(`https://backend.test${path}`, {
-    body: JSON.stringify({ displayName: "Recruiting" }),
+    body: JSON.stringify(options.body ?? { displayName: "Recruiting" }),
     headers: {
       "content-type": "application/json",
       ...(options.cookie === false
@@ -163,6 +188,29 @@ const mailboxRequest = (
   });
 
 describe("protected mailbox API", () => {
+  it("accepts a fenced inbound replay request", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/inbound/ingest-1/replay",
+          "POST",
+          { body: { operationId: "operation-1" } }
+        )
+      );
+
+      expect(response.status).toBe(202);
+      await expect(response.json()).resolves.toMatchObject({
+        attemptCount: 2,
+        id: "ingest-1",
+        status: "received",
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
   it("returns a schema-encoded owner bootstrap response", async () => {
     let validations = 0;
     const { dispose, handler } = makeHandler(makeAdministration(), () => {

@@ -26,7 +26,7 @@ import {
   InboundMimeParser,
   InboundProcessingRecorder,
   InboundRawMessageReader,
-  InboundWorkflowParamsV1,
+  InboundWorkflowParams,
   InboundWorkflowResultV1,
   ParsedInboundMessageV1,
 } from "../mailboxes/inbound";
@@ -143,12 +143,16 @@ const repositoryFailure = <A>(
 
 export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
   Effect.gen(function* () {
-    const params = yield* Schema.decodeUnknownEffect(InboundWorkflowParamsV1)(
+    const params = yield* Schema.decodeUnknownEffect(InboundWorkflowParams)(
       input
     ).pipe(Effect.orDie);
     const event = yield* Cloudflare.Workflows.WorkflowEvent;
 
-    if (event.instanceId !== params.inboundIngestId) {
+    const expectedInstanceId =
+      params.formatVersion === 1
+        ? params.inboundIngestId
+        : params.workflowInstanceId;
+    if (event.instanceId !== expectedInstanceId) {
       return yield* Effect.die(
         new Error("Inbound Workflow instance ID does not match its ingest ID")
       );
@@ -165,7 +169,12 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
             recorder.record({
               _tag: "Checkpoint",
               envelope: params.envelope,
-              formatVersion: 1,
+              ...(params.formatVersion === 1
+                ? { formatVersion: 1 as const }
+                : {
+                    executionAttempt: params.executionAttempt,
+                    formatVersion: 2 as const,
+                  }),
               inboundIngestId: params.inboundIngestId,
               mailboxId: params.mailboxId,
               receivedAt: params.receivedAt,
@@ -184,16 +193,22 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
         mailboxStateTaskConfig
       );
     let parsedForFailure: ParsedInboundMessageV1Type | undefined;
+    const taskSuffix = params.formatVersion === 1 ? "v2" : "v3";
     const recordFailure = (failure: ProcessingFailure) =>
       Cloudflare.Workflows.task(
-        "record-inbound-failure",
+        `record-inbound-failure-${taskSuffix}`,
         InboundProcessingRecorder.pipe(
           Effect.flatMap((recorder) =>
             recorder.record({
               _tag: "Failure",
               envelope: params.envelope,
               failure,
-              formatVersion: 1,
+              ...(params.formatVersion === 1
+                ? { formatVersion: 1 as const }
+                : {
+                    executionAttempt: params.executionAttempt,
+                    formatVersion: 2 as const,
+                  }),
               inboundIngestId: params.inboundIngestId,
               mailboxId: params.mailboxId,
               message: parsedForFailure,
@@ -215,8 +230,8 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
     const processing = yield* Effect.exit(
       Effect.gen(function* () {
         for (const [name, status] of [
-          ["record-raw-stored-v2", "raw_stored"],
-          ["record-parsing-v2", "parsing"],
+          [`record-raw-stored-${taskSuffix}`, "raw_stored"],
+          [`record-parsing-${taskSuffix}`, "parsing"],
         ] as const) {
           const recorded = yield* recordCheckpoint(name, status);
           if (recorded._tag === "Rejected") {
@@ -233,7 +248,7 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
         }
 
         const parsed = yield* Cloudflare.Workflows.task(
-          "parse-raw-mime-v2",
+          `parse-raw-mime-${taskSuffix}`,
           Effect.gen(function* () {
             const reader = yield* InboundRawMessageReader;
             const parser = yield* InboundMimeParser;
@@ -270,7 +285,7 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
         parsedForFailure = parsed.value;
 
         const attachments = yield* Cloudflare.Workflows.task(
-          "store-inbound-attachments-v2",
+          `store-inbound-attachments-${taskSuffix}`,
           Effect.gen(function* () {
             const reader = yield* InboundRawMessageReader;
             const extractor = yield* InboundMimeAttachmentExtractor;
@@ -340,7 +355,7 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
         }
 
         const stored = yield* recordCheckpoint(
-          "record-attachments-stored-v2",
+          `record-attachments-stored-${taskSuffix}`,
           "attachments_stored"
         );
         if (stored._tag === "Rejected") {
@@ -356,12 +371,17 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
         }
 
         const committed = yield* Cloudflare.Workflows.task(
-          "commit-inbound-message-v2",
+          `commit-inbound-message-${taskSuffix}`,
           InboundMessageCommitter.pipe(
             Effect.flatMap((committer) =>
               committer.commit({
                 envelope: params.envelope,
-                formatVersion: 1,
+                ...(params.formatVersion === 1
+                  ? { formatVersion: 1 as const }
+                  : {
+                      executionAttempt: params.executionAttempt,
+                      formatVersion: 2 as const,
+                    }),
                 inboundIngestId: params.inboundIngestId,
                 mailboxId: params.mailboxId,
                 message: parsed.value,

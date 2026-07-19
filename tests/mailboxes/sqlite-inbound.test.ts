@@ -9,7 +9,10 @@ import { MailboxId } from "#/mailboxes/core";
 import { MailboxDoHandler } from "#/mailboxes/do-handler";
 import {
   CommitInboundMessageV1,
+  CommitInboundMessageV2,
+  RecordInboundProcessing,
   RecordInboundProcessingV1,
+  ReplayInboundInput,
 } from "#/mailboxes/inbound";
 import {
   attachment,
@@ -141,7 +144,139 @@ const processingRecord = (
 const record = (input: ReturnType<typeof processingRecord>) =>
   MailboxInboundStore.pipe(Effect.flatMap((store) => store.record(input)));
 
+const prepareReplay = () =>
+  MailboxInboundStore.pipe(
+    Effect.flatMap((store) =>
+      store.prepareReplay(
+        Schema.decodeUnknownSync(ReplayInboundInput)({
+          inboundIngestId: commitInput.inboundIngestId,
+          mailboxId,
+          operationId: "replay-operation-1",
+        })
+      )
+    )
+  );
+
 describe("MailboxDO SQLite inbound commit", () => {
+  it("replays a failed ingest with an attempt fence and stable Workflow ID", async () => {
+    const runtime = makeRuntime();
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* record(
+            processingRecord({ _tag: "Checkpoint", status: "raw_stored" })
+          );
+          yield* record(
+            processingRecord({
+              _tag: "Failure",
+              failure: { code: "processing_failed", replayable: true },
+            })
+          );
+          const prepared = yield* prepareReplay();
+          const replayed = yield* prepareReplay();
+          const stale = yield* Effect.result(
+            record(processingRecord({ _tag: "Checkpoint", status: "parsing" }))
+          );
+          const store = yield* MailboxInboundStore;
+          for (const status of [
+            "raw_stored",
+            "parsing",
+            "attachments_stored",
+          ] as const) {
+            yield* store.record(
+              Schema.decodeUnknownSync(RecordInboundProcessing)({
+                _tag: "Checkpoint",
+                envelope: commitInput.envelope,
+                executionAttempt: 2,
+                formatVersion: 2,
+                inboundIngestId: commitInput.inboundIngestId,
+                mailboxId,
+                receivedAt: commitInput.receivedAt,
+                status,
+              })
+            );
+          }
+          const ready = yield* store.commit(
+            Schema.decodeUnknownSync(CommitInboundMessageV2)({
+              ...Schema.encodeSync(CommitInboundMessageV1)(commitInput),
+              executionAttempt: 2,
+              formatVersion: 2,
+            })
+          );
+          return { prepared, ready, replayed, stale };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect({
+      prepared: outcome.prepared,
+      ready: outcome.ready,
+      replayed: outcome.replayed,
+      staleFailure: Result.isFailure(outcome.stale)
+        ? outcome.stale.failure
+        : undefined,
+    }).toMatchObject({
+      prepared: {
+        processing: { attemptCount: 2, status: "received", version: 3 },
+        workflow: {
+          executionAttempt: 2,
+          inboundIngestId: "ingest-1",
+          workflowInstanceId: "generated-1",
+        },
+      },
+      ready: { attemptCount: 2, messageId: "generated-3", status: "ready" },
+      replayed: {
+        workflow: { workflowInstanceId: "generated-1" },
+      },
+      staleFailure: {
+        operation: "record-inbound",
+        reason: "invalid-state",
+      },
+    });
+  });
+
+  it("rolls back replay state when its operation ledger cannot persist", async () => {
+    const runtime = makeRuntime();
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* record(
+            processingRecord({ _tag: "Checkpoint", status: "raw_stored" })
+          );
+          yield* record(
+            processingRecord({
+              _tag: "Failure",
+              failure: { code: "processing_failed", replayable: true },
+            })
+          );
+          const db = yield* MailboxDatabase;
+          yield* db.$client.unsafe(
+            "CREATE TRIGGER reject_replay_operation BEFORE INSERT ON mailbox_operation BEGIN SELECT RAISE(ABORT, 'forced failure'); END"
+          );
+          const result = yield* Effect.result(prepareReplay());
+          const [row] = yield* db
+            .select()
+            .from(inboundProcessing)
+            .where(eq(inboundProcessing.id, "ingest-1"));
+          return { failed: Result.isFailure(result), row };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(outcome).toMatchObject({
+      failed: true,
+      row: {
+        attemptCount: 1,
+        failureCode: "processing_failed",
+        failureReplayable: 1,
+        status: "failed",
+        version: 2,
+      },
+    });
+  });
+
   it("records monotonic checkpoints before the atomic ready commit", async () => {
     const runtime = makeRuntime();
     const outcome = await Effect.runPromise(

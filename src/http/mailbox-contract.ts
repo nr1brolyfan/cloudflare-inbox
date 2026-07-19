@@ -21,9 +21,21 @@ import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
-import { MailboxId, MailboxRecordSchema } from "../mailboxes/core";
+import {
+  InboundIngestId,
+  MailboxId,
+  MailboxRecordSchema,
+} from "../mailboxes/core";
+import {
+  InboundProcessingResult,
+  ReplayInboundInput,
+} from "../mailboxes/inbound";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
+const InboundReplayParams = Schema.Struct({
+  mailboxId: MailboxId,
+  inboundIngestId: InboundIngestId,
+});
 const MailboxErrors = [
   AuthBadRequestError,
   AuthUnauthenticatedError,
@@ -62,8 +74,21 @@ export const RenameMailboxEndpoint = HttpApiEndpoint.patch(
   }
 );
 
+export const ReplayInboundEndpoint = HttpApiEndpoint.post(
+  "replayInbound",
+  "/api/mailboxes/:mailboxId/inbound/:inboundIngestId/replay",
+  {
+    error: MailboxErrors,
+    params: InboundReplayParams,
+    payload: Schema.Struct({
+      operationId: ReplayInboundInput.fields.operationId,
+    }),
+    success: InboundProcessingResult.pipe(HttpApiSchema.status(202)),
+  }
+);
+
 export class MailboxGroup extends HttpApiGroup.make("mailboxes")
-  .add(BootstrapOwnerEndpoint, RenameMailboxEndpoint)
+  .add(BootstrapOwnerEndpoint, RenameMailboxEndpoint, ReplayInboundEndpoint)
   .middleware(AuthSchemaErrorMiddleware)
   .middleware(CurrentRequestAuthMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}

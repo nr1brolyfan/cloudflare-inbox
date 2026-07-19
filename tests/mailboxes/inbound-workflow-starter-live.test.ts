@@ -6,6 +6,7 @@ import { describe, expect, it } from "vitest";
 import { WorkflowStartError } from "#/mailboxes/errors";
 import {
   InboundWorkflowParamsV1,
+  InboundWorkflowParamsV2,
   InboundWorkflowStarter,
 } from "#/mailboxes/inbound";
 import type { InboundWorkflowClient as InboundWorkflowClientShape } from "#/mailboxes/inbound-workflow-starter-live";
@@ -25,11 +26,20 @@ const params = Schema.decodeUnknownSync(InboundWorkflowParamsV1)({
   mailboxId: "primary",
   receivedAt: 2000,
 });
+const replayParams = Schema.decodeUnknownSync(InboundWorkflowParamsV2)({
+  ...Schema.encodeSync(InboundWorkflowParamsV1)(params),
+  executionAttempt: 2,
+  formatVersion: 2,
+  workflowInstanceId: "replay-instance-1",
+});
 
-const runStart = (client: InboundWorkflowClientShape) =>
+const runStart = (
+  client: InboundWorkflowClientShape,
+  startParams: typeof params | typeof replayParams = params
+) =>
   Effect.runPromise(
     InboundWorkflowStarter.pipe(
-      Effect.flatMap((starter) => starter.start(params)),
+      Effect.flatMap((starter) => starter.start(startParams)),
       Effect.provide(
         InboundWorkflowStarterLive.pipe(
           Layer.provide(
@@ -56,6 +66,26 @@ describe("inbound Workflow starter", () => {
     });
 
     expect(createOptions).toStrictEqual({ id: "ingest-1", params });
+  });
+
+  it("uses the prepared Workflow ID for a replay execution", async () => {
+    let createOptions: unknown;
+
+    await runStart(
+      {
+        create: (options) => {
+          createOptions = options;
+          return Effect.succeed({ id: options.id });
+        },
+        get: () => Effect.die("get must not run"),
+      },
+      replayParams
+    );
+
+    expect(createOptions).toStrictEqual({
+      id: "replay-instance-1",
+      params: replayParams,
+    });
   });
 
   it("confirms an existing instance after an ambiguous create failure", async () => {

@@ -5,13 +5,13 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 
 import { WorkflowStartError } from "./errors";
-import type { InboundWorkflowParamsV1 } from "./inbound";
+import type { InboundWorkflowParams } from "./inbound";
 import { InboundWorkflowStarter } from "./inbound";
 
 export interface InboundWorkflowClient {
   readonly create: (options: {
     readonly id: string;
-    readonly params: InboundWorkflowParamsV1;
+    readonly params: InboundWorkflowParams;
   }) => Effect.Effect<{ readonly id: string }, unknown>;
   readonly get: (
     instanceId: string
@@ -23,10 +23,15 @@ export const InboundWorkflowClient = Context.Service<InboundWorkflowClient>(
   "cloudflare-inbox/InboundWorkflowClient"
 );
 
-const startError = (params: InboundWorkflowParamsV1, cause: unknown) =>
+const instanceId = (params: InboundWorkflowParams) =>
+  params.formatVersion === 1
+    ? params.inboundIngestId
+    : params.workflowInstanceId;
+
+const startError = (params: InboundWorkflowParams, cause: unknown) =>
   new WorkflowStartError({
     cause,
-    instanceId: params.inboundIngestId,
+    instanceId: instanceId(params),
     message: "Failed to start inbound workflow",
     workflow: "inbound",
   });
@@ -40,13 +45,13 @@ export const InboundWorkflowStarterLive = Layer.effect(
     return InboundWorkflowStarter.of({
       start: (params) =>
         Effect.gen(function* () {
-          const instanceId = params.inboundIngestId;
+          const expectedInstanceId = instanceId(params);
           const created = yield* Effect.exit(
-            client.create({ id: instanceId, params })
+            client.create({ id: expectedInstanceId, params })
           );
 
           if (Exit.isSuccess(created)) {
-            if (created.value.id !== instanceId) {
+            if (created.value.id !== expectedInstanceId) {
               return yield* Effect.fail(
                 startError(
                   params,
@@ -57,8 +62,11 @@ export const InboundWorkflowStarterLive = Layer.effect(
             return;
           }
 
-          const existing = yield* Effect.exit(client.get(instanceId));
-          if (Exit.isSuccess(existing) && existing.value.id === instanceId) {
+          const existing = yield* Effect.exit(client.get(expectedInstanceId));
+          if (
+            Exit.isSuccess(existing) &&
+            existing.value.id === expectedInstanceId
+          ) {
             return;
           }
 

@@ -122,8 +122,16 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       AuthRuntimeConfig,
       AuthRuntimeConfig.of(authRuntimeConfig)
     );
+    const workflowClientLive = Layer.succeed(
+      InboundWorkflowClient,
+      InboundWorkflowClient.of({
+        create: (options) => inboundWorkflow.create(options),
+        get: (instanceId) => inboundWorkflow.get(instanceId),
+      })
+    );
     const workerServicesLive = Layer.mergeAll(
       authRuntimeConfigLive,
+      workflowClientLive,
       Layer.succeed(
         MailboxAdministrationConfig,
         MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })
@@ -168,13 +176,6 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               rawMessages
                 .put(key, value as unknown as ReadableStream, options)
                 .pipe(Effect.provide(RuntimeContext.phantom)),
-          })
-        );
-        const workflowClientLive = Layer.succeed(
-          InboundWorkflowClient,
-          InboundWorkflowClient.of({
-            create: (options) => inboundWorkflow.create(options),
-            get: (instanceId) => inboundWorkflow.get(instanceId),
           })
         );
         const workflowStarterLive = InboundWorkflowStarterLive.pipe(
