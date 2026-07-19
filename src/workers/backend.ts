@@ -22,12 +22,20 @@ import {
 } from "../infra/resources";
 import { EmailAddress } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
+import {
+  handleCloudflareEmailRoutingMessage,
+  InboundEmailIngressUnavailableLive,
+} from "../mailboxes/inbound-email-routing";
 import { MailboxDO } from "../mailboxes/mailbox-do";
 import {
   BackendObservabilityConfig,
   BackendObservabilityLive,
 } from "../observability/backend";
 import { BackendHealthBindings } from "../observability/backend-health-live";
+import {
+  EmailRoutingEventSource,
+  EmailRoutingEventSourceLive,
+} from "./email-routing-event-source";
 
 export default class Backend extends Cloudflare.Worker<Backend>()(
   "Backend",
@@ -64,6 +72,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
     const authRateLimit = yield* RateLimitDurableObject;
     const mailboxDataPlane = yield* MailboxDO;
+    const emailRouting = yield* EmailRoutingEventSource;
     const isDevelopment = yield* ALCHEMY_DEV;
     const otlpBaseUrl = isDevelopment
       ? Option.getOrUndefined(
@@ -129,6 +138,18 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         )
       )
     );
+    yield* emailRouting.listen((message) =>
+      handleCloudflareEmailRoutingMessage(message).pipe(
+        Effect.withSpan("backend.email", {
+          attributes: {
+            "email.raw_size": message.rawSize,
+          },
+          kind: "server",
+          root: true,
+        }),
+        Effect.provide(InboundEmailIngressUnavailableLive)
+      )
+    );
     return {
       fetch: Effect.gen(function* () {
         // Building in Alchemy's request scope flushes OTLP finalizers through waitUntil.
@@ -168,6 +189,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       }),
     };
   }).pipe(
+    Effect.provide(EmailRoutingEventSourceLive),
     Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
     Effect.provide(Cloudflare.Email.SendBinding),
     Effect.provide(Cloudflare.R2.ReadWriteBucketBinding)

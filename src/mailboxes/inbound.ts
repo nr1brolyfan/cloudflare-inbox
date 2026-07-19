@@ -1,8 +1,11 @@
 /* oxlint-disable max-classes-per-file -- Inbound domain schemas are intentionally consolidated. */
+import * as Data from "effect/Data";
 import * as Schema from "effect/Schema";
 
 import {
   AttemptCount,
+  ByteSize,
+  EmailAddress,
   InboundIngestId,
   MailboxId,
   MessageId,
@@ -120,3 +123,23 @@ export const InboundProcessingResult = InboundProcessingSchema;
 export type InboundProcessingResult = Schema.Schema.Type<
   typeof InboundProcessingResult
 >;
+
+export const ReceiveInboundEmailInput = Schema.Struct({
+  envelopeFrom: Schema.optional(EmailAddress),
+  envelopeTo: EmailAddress,
+  rawSize: ByteSize,
+});
+export type ReceiveInboundEmailInput = Schema.Schema.Type<
+  typeof ReceiveInboundEmailInput
+>;
+
+export class InboundEmailRejected extends Data.TaggedError(
+  "InboundEmailRejected"
+)<{
+  readonly reason:
+    | "invalid-envelope"
+    | "processing-unavailable"
+    | "unknown-recipient";
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
