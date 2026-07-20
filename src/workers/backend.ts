@@ -10,6 +10,13 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
+import { AiInferenceUnavailableLive } from "../ai/inference";
+import {
+  WorkersAiClientLive,
+  WorkersAiConfigLive,
+  WorkersAiGateway,
+  WorkersAiInferenceLive,
+} from "../ai/workers-ai-live";
 import { AuthRuntimeConfig, AuthRuntimeConfigSchema } from "../auth/live";
 import {
   ControlPlaneD1Binding,
@@ -22,6 +29,7 @@ import { DevEmailConfig } from "../http/dev-emails";
 import {
   AuthEmailSender,
   ControlPlaneDatabase as ControlPlaneDatabaseResource,
+  InboxAiGateway,
   MailboxEmailSender,
   RawMessagesBucket,
 } from "../infra/resources";
@@ -117,6 +125,41 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const inboundWorkflow = yield* InboundWorkflow;
     const emailRouting = yield* EmailRoutingEventSource;
     const isDevelopment = yield* ALCHEMY_DEV;
+    const aiInferenceLive = isDevelopment
+      ? AiInferenceUnavailableLive
+      : yield* Effect.gen(function* () {
+          const queryGateway =
+            yield* Cloudflare.AI.QueryGateway(InboxAiGateway);
+          return WorkersAiInferenceLive.pipe(
+            Layer.provide(
+              WorkersAiClientLive.pipe(
+                Layer.provide(WorkersAiConfigLive),
+                Layer.provide(
+                  Layer.succeed(
+                    WorkersAiGateway,
+                    WorkersAiGateway.of({
+                      run: ({ input, model }) =>
+                        Effect.gen(function* () {
+                          const [ai, gatewayId] = yield* Effect.all([
+                            queryGateway.raw,
+                            queryGateway.id,
+                          ]).pipe(Effect.provide(RuntimeContext.phantom));
+
+                          return yield* Effect.tryPromise({
+                            try: () =>
+                              ai.run(model, input, {
+                                gateway: { id: gatewayId },
+                              }),
+                            catch: (cause) => cause,
+                          });
+                        }),
+                    })
+                  )
+                )
+              )
+            )
+          );
+        });
     const mailboxEmailSendBinding = isDevelopment
       ? undefined
       : yield* Cloudflare.Email.Send(MailboxEmailSender);
@@ -255,6 +298,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       draftAttachmentClientLive,
       outboundAttachmentReadClientLive,
       mailboxOutboundProviderLive,
+      aiInferenceLive,
       Layer.succeed(
         MailboxAdministrationConfig,
         MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })
@@ -372,6 +416,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     };
   }).pipe(
     Effect.provide(EmailRoutingEventSourceLive),
+    Effect.provide(Cloudflare.AI.QueryGatewayBinding),
     Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
     Effect.provide(Cloudflare.Email.SendBinding),
     Effect.provide(Cloudflare.R2.ReadWriteBucketBinding)
