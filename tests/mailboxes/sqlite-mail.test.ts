@@ -11,7 +11,8 @@ import {
   MailboxRegistry,
   MailboxRepositoryDoLive,
 } from "#/mailboxes/do-client";
-import { MailboxDoHandler } from "#/mailboxes/do-handler";
+import { MailboxDoHandler, MailboxDoHandlerLive } from "#/mailboxes/do-handler";
+import { MailDataRpcResponse } from "#/mailboxes/do-protocol";
 import {
   CompleteDraftAttachmentInput,
   GetDraftAttachmentInput,
@@ -39,6 +40,7 @@ import {
   ResendOutboundInput,
   ScheduleOutboundInput,
 } from "#/mailboxes/outbound";
+import { MailboxOutboundAlarmScheduler } from "#/mailboxes/outbound-alarm-live";
 import { MailboxRepository } from "#/mailboxes/repository";
 import {
   attachment,
@@ -63,6 +65,7 @@ import {
 import {
   MailboxDatabaseTestLive,
   MailboxDoHandlerTestLive,
+  MailboxStoresTestLive,
 } from "../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
@@ -1275,6 +1278,141 @@ describe("Mailbox mail data SQLite", () => {
           reason: "invalid-state",
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("reconciles the outbound alarm after scheduling, replay, cancellation, and resend", async () => {
+    const runtime = makeRuntime();
+    let reconcileCount = 0;
+    const outboundAlarm = MailboxOutboundAlarmScheduler.of({
+      nextScheduledAt: Effect.succeed(null),
+      reconcile: Effect.sync(() => {
+        reconcileCount += 1;
+      }),
+    });
+    const testLive = MailboxDoHandlerLive.pipe(
+      Layer.provide(
+        Layer.succeed(MailboxOutboundAlarmScheduler, outboundAlarm)
+      ),
+      Layer.provideMerge(MailboxStoresTestLive),
+      Layer.provide(
+        Layer.merge(
+          Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
+          Layer.succeed(MailboxRuntime, MailboxRuntime.of(runtime))
+        )
+      ),
+      Layer.provideMerge(MailboxDatabaseTestLive)
+    );
+
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const handler = yield* MailboxDoHandler;
+        const firstDraft = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "alarm-draft",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              subject: "Alarm",
+              to: [{ address: "to@example.com" }],
+            },
+          })
+        );
+        const scheduleInput = Schema.decodeUnknownSync(ScheduleOutboundInput)({
+          draftId: firstDraft.id,
+          expectedVersion: 1,
+          mailboxId,
+          operationId: "alarm-schedule",
+          sendAt: 1000,
+        });
+        const scheduled = Schema.decodeUnknownSync(MailDataRpcResponse)(
+          yield* handler.executeMailData({
+            _tag: "ScheduleOutbound",
+            input: scheduleInput,
+          })
+        );
+        const replay = Schema.decodeUnknownSync(MailDataRpcResponse)(
+          yield* handler.executeMailData({
+            _tag: "ScheduleOutbound",
+            input: scheduleInput,
+          })
+        );
+        if (scheduled._tag !== "OutboundScheduled") {
+          throw new Error("Expected scheduled outbound response");
+        }
+        yield* handler.executeMailData({
+          _tag: "CancelOutboundDelivery",
+          input: Schema.decodeUnknownSync(CancelOutboundDeliveryInput)({
+            expectedVersion: 1,
+            mailboxId,
+            operationId: "alarm-cancel",
+            outboundDeliveryId: scheduled.value.delivery.id,
+          }),
+        });
+
+        const resendDraft = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "alarm-resend-draft",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              subject: "Alarm resend",
+              to: [{ address: "to@example.com" }],
+            },
+          })
+        );
+        const source = Schema.decodeUnknownSync(MailDataRpcResponse)(
+          yield* handler.executeMailData({
+            _tag: "ScheduleOutbound",
+            input: Schema.decodeUnknownSync(ScheduleOutboundInput)({
+              draftId: resendDraft.id,
+              expectedVersion: 1,
+              mailboxId,
+              operationId: "alarm-resend-source",
+              sendAt: 1000,
+            }),
+          })
+        );
+        if (source._tag !== "OutboundScheduled") {
+          throw new Error("Expected resend source response");
+        }
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(outboundDelivery)
+          .set({
+            failureAt: 1000,
+            failureCode: "provider_rejected",
+            status: "failed",
+          })
+          .where(eq(outboundDelivery.id, source.value.delivery.id));
+        const resent = Schema.decodeUnknownSync(MailDataRpcResponse)(
+          yield* handler.executeMailData({
+            _tag: "ResendOutbound",
+            input: Schema.decodeUnknownSync(ResendOutboundInput)({
+              acknowledgeDuplicateRisk: true,
+              expectedVersion: 1,
+              mailboxId,
+              operationId: "alarm-resend",
+              outboundDeliveryId: source.value.delivery.id,
+            }),
+          })
+        );
+
+        expect({
+          reconcileCount,
+          replayTag: replay._tag,
+          resendTag: resent._tag,
+        }).toStrictEqual({
+          reconcileCount: 5,
+          replayTag: "OutboundScheduled",
+          resendTag: "OutboundResent",
+        });
+      }).pipe(Effect.provide(testLive))
     );
   });
 

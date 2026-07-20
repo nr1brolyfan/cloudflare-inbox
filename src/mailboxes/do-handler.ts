@@ -21,6 +21,7 @@ import type {
   MailDataRpcResponse as MailDataRpcResponseType,
 } from "./do-protocol";
 import type { MailboxDomainError } from "./errors";
+import { MailboxOutboundAlarmScheduler } from "./outbound-alarm-live";
 import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
@@ -398,6 +399,7 @@ export const MailboxDoHandlerLive = Layer.effect(
     const draftAttachmentStore = yield* MailboxDraftAttachmentStore;
     const outboundStore = yield* MailboxOutboundStore;
     const inboundStore = yield* MailboxInboundStore;
+    const outboundAlarm = yield* MailboxOutboundAlarmScheduler;
     const { mailboxId } = yield* MailboxIdentity;
     const mailDataStores = {
       ...messageStore,
@@ -426,7 +428,18 @@ export const MailboxDoHandlerLive = Layer.effect(
             mailboxId,
             request.input.mailboxId
           );
-          return yield* executeMailDataRequest(request, mailDataStores);
+          const response = yield* executeMailDataRequest(
+            request,
+            mailDataStores
+          );
+          if (
+            request._tag === "ScheduleOutbound" ||
+            request._tag === "CancelOutboundDelivery" ||
+            request._tag === "ResendOutbound"
+          ) {
+            yield* outboundAlarm.reconcile;
+          }
+          return response;
         }).pipe(Effect.orDie),
       resolveMailResource: (input) =>
         Effect.gen(function* () {

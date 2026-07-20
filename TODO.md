@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **79/109 (72%)**
+- Postęp zadań: **80/109 (73%)**
 - Ukończone etapy: **6/11**
 - Aktualny etap: **9. Drafty i outbound**
-- Aktualne zadanie: **Planowanie wysyłki alarmem MailboxDO**
+- Aktualne zadanie: **Okno undo send**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -20,7 +20,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 6   | Inbound email                         | DONE        | 9/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | DONE        | 9/9    |
 | 8   | Reguły automatyczne                   | DONE        | 6/6    |
-| 9   | Drafty i outbound                     | CURRENT     | 3/9    |
+| 9   | Drafty i outbound                     | CURRENT     | 4/9    |
 | 10  | AI                                    | TODO        | 0/6    |
 | 11  | Hardening i produkcja                 | TODO        | 0/11   |
 
@@ -144,8 +144,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Zbudować draft editor.
 - [x] Dodać attachment upload reservations.
 - [x] Tworzyć immutable send snapshot.
-- [ ] CURRENT Planować wysyłkę alarmem MailboxDO.
-- [ ] Dodać okno undo send.
+- [x] Planować wysyłkę alarmem MailboxDO.
+- [ ] CURRENT Dodać okno undo send.
 - [ ] Podłączyć Cloudflare Email Sending dla mailboxa.
 - [ ] Obsłużyć statusy `scheduled`, `sending`, `accepted`, `failed`, `indeterminate`.
 - [ ] Zapewnić idempotency i retry bez podwójnej wysyłki.

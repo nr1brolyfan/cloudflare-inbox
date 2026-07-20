@@ -4,6 +4,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { MailboxDoHandler, MailboxDoHandlerLive } from "./do-handler";
+import {
+  MailboxAlarmStorageLive,
+  MailboxOutboundAlarmScheduler,
+  MailboxOutboundAlarmSchedulerLive,
+} from "./outbound-alarm-live";
 import { mailboxSchemaVersion } from "./sqlite-migrations";
 import { mailboxSchemaMigration } from "./sqlite-schema";
 import {
@@ -28,14 +33,17 @@ const mailboxDoImplementation = Effect.gen(function* () {
   const directoryStore = yield* MailboxDirectoryStore;
   const resourceIndex = yield* MailboxResourceIndex;
   const handler = yield* MailboxDoHandler;
+  const outboundAlarm = yield* MailboxOutboundAlarmScheduler;
 
   yield* resourceIndex.initialize;
   yield* directoryStore.initialize;
+  yield* outboundAlarm.reconcile;
 
   return {
     executeDirectory: handler.executeDirectory,
     executeMailData: handler.executeMailData,
     resolveMailResource: handler.resolveMailResource,
+    alarm: () => outboundAlarm.reconcile,
     sqliteReady: () =>
       Effect.gen(function* () {
         const [row] = yield* database
@@ -79,13 +87,24 @@ const MailboxSqliteLive = Layer.merge(
   MailboxStoresLive
 );
 
+const MailboxOutboundAlarmLive = MailboxOutboundAlarmSchedulerLive.pipe(
+  Layer.provide(MailboxAlarmStorageLive),
+  Layer.provide(MailboxInfrastructureLive)
+);
+
 const MailboxHandlerLive = MailboxDoHandlerLive.pipe(
-  Layer.provide(MailboxSqliteLive)
+  Layer.provide(Layer.merge(MailboxSqliteLive, MailboxOutboundAlarmLive))
 );
 
 const mailboxDoLive = mailboxDoImplementation.pipe(
   Effect.orDie,
-  Effect.provide(Layer.merge(MailboxSqliteLive, MailboxHandlerLive))
+  Effect.provide(
+    Layer.mergeAll(
+      MailboxSqliteLive,
+      MailboxHandlerLive,
+      MailboxOutboundAlarmLive
+    )
+  )
 );
 
 /** SQLite-backed data-plane object with migrations completed before RPC starts. */

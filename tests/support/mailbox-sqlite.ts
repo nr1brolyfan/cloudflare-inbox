@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { MailboxDoHandlerLive } from "#/mailboxes/do-handler";
+import { MailboxOutboundAlarmScheduler } from "#/mailboxes/outbound-alarm-live";
 import { applyMailboxMigrations } from "#/mailboxes/sqlite-migrations";
 import { mailboxRelations } from "#/mailboxes/sqlite-schema";
 import {
@@ -97,5 +98,14 @@ export const MailboxStoresTestLive = Layer.mergeAll(
 
 /** SQLite stores plus the in-process Durable Object protocol handler. */
 export const MailboxDoHandlerTestLive = MailboxDoHandlerLive.pipe(
+  Layer.provide(
+    Layer.succeed(
+      MailboxOutboundAlarmScheduler,
+      MailboxOutboundAlarmScheduler.of({
+        nextScheduledAt: Effect.succeed(null),
+        reconcile: Effect.void,
+      })
+    )
+  ),
   Layer.provideMerge(MailboxStoresTestLive)
 );
