@@ -37,6 +37,10 @@ import {
   ReplayInboundInput,
 } from "../mailboxes/inbound";
 import {
+  MailboxMessageActionPayload,
+  MailboxMessageActionResult,
+} from "../mailboxes/message-actions";
+import {
   MailboxMessageListResult,
   MailboxThreadResult,
 } from "../mailboxes/message-reading";
@@ -50,6 +54,10 @@ const InboundReplayParams = Schema.Struct({
 const MailboxThreadParams = Schema.Struct({
   mailboxId: MailboxId,
   threadId: ThreadId,
+});
+const MailboxMessageParams = Schema.Struct({
+  mailboxId: MailboxId,
+  messageId: MessageId,
 });
 export const MailboxMessageViewQuery = Schema.Struct({
   attachment: Schema.optional(Schema.Literals(["true", "false"])),
@@ -122,6 +130,17 @@ export const ListMailboxMessagesEndpoint = HttpApiEndpoint.get(
   }
 );
 
+export const ActOnMailboxMessageEndpoint = HttpApiEndpoint.patch(
+  "actOnMessage",
+  "/api/mailboxes/:mailboxId/messages/:messageId",
+  {
+    error: MailboxErrors,
+    params: MailboxMessageParams,
+    payload: MailboxMessageActionPayload,
+    success: MailboxMessageActionResult,
+  }
+);
+
 export const GetMailboxThreadEndpoint = HttpApiEndpoint.get(
   "getThread",
   "/api/mailboxes/:mailboxId/threads/:threadId",
@@ -161,6 +180,7 @@ export const ReplayInboundEndpoint = HttpApiEndpoint.post(
 
 export class MailboxGroup extends HttpApiGroup.make("mailboxes")
   .add(
+    ActOnMailboxMessageEndpoint,
     BootstrapOwnerEndpoint,
     GetMailboxThreadEndpoint,
     GetMailboxNavigationEndpoint,

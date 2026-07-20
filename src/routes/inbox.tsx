@@ -27,6 +27,7 @@ import type {
   MailboxViewSelection,
 } from "../inbox/mailbox-view-links";
 import { mailboxViewHref } from "../inbox/mailbox-view-links";
+import type { MessageRowAction } from "../inbox/message-list";
 import { MessageList } from "../inbox/message-list";
 import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
 import {
@@ -36,6 +37,7 @@ import {
   SearchQuery,
   ThreadId,
 } from "../mailboxes/core";
+import { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import {
   MailboxMessageListInput,
   MailboxMessageView,
@@ -46,6 +48,7 @@ import {
   getMailboxNavigation,
   getMailboxThread,
   listMailboxMessages,
+  actOnMailboxMessage,
 } from "../server/tanstack-functions";
 
 const InboxSearch = Schema.Struct({
@@ -71,6 +74,9 @@ const decodeInboxSearch = Schema.decodeUnknownSync(InboxSearch);
 const decodeMailboxMessageView = Schema.decodeUnknownSync(MailboxMessageView);
 const decodeMailboxMessageListInput = Schema.decodeUnknownSync(
   MailboxMessageListInput
+);
+const decodeMailboxMessageAction = Schema.decodeUnknownSync(
+  MailboxMessageActionCommand
 );
 const decodeOpenMailboxThread = Schema.decodeUnknownSync(
   OpenMailboxThreadInput
@@ -101,6 +107,67 @@ const inboxSearchFor = (
     starred: filters.starred ? "true" : undefined,
     thread: open?.threadId,
   });
+
+const messageActionCommand = (
+  action: MessageRowAction,
+  mailboxId: string,
+  message: {
+    readonly id: string;
+    readonly read: boolean;
+    readonly starred: boolean;
+    readonly version: number;
+  }
+) => {
+  const common = {
+    expectedVersion: message.version,
+    mailboxId,
+    messageId: message.id,
+    operationId: crypto.randomUUID(),
+  };
+  switch (action) {
+    case "read": {
+      return decodeMailboxMessageAction({
+        ...common,
+        _tag: "SetRead",
+        read: !message.read,
+      });
+    }
+    case "star": {
+      return decodeMailboxMessageAction({
+        ...common,
+        _tag: "SetStarred",
+        starred: !message.starred,
+      });
+    }
+    case "archive": {
+      return decodeMailboxMessageAction({ ...common, _tag: "Archive" });
+    }
+    case "trash": {
+      return decodeMailboxMessageAction({ ...common, _tag: "Trash" });
+    }
+    default: {
+      return decodeMailboxMessageAction({ ...common, _tag: "Trash" });
+    }
+  }
+};
+
+const messageActionErrorText = (
+  failed: boolean,
+  result: { readonly ok: boolean; readonly status?: number } | undefined
+) => {
+  if (failed) {
+    return "The message action could not be completed.";
+  }
+  if (result?.ok !== false) {
+    return;
+  }
+  if (result.status === 403) {
+    return "You do not have permission to change this message.";
+  }
+  return result.status === 409
+    ? "The message changed. Its latest state has been loaded."
+    : "The message action could not be completed.";
+};
 
 const resolveNavigationSelection = (
   folders: readonly {
@@ -362,6 +429,7 @@ function MailboxWorkspace({
   readonly threadId?: string;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const view = decodeMailboxMessageView(
     selection.folder === undefined
       ? { _tag: "Label", labelId: selection.label, mailboxId }
@@ -399,6 +467,28 @@ function MailboxWorkspace({
     ],
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
+    retry: false,
+  });
+  const messageAction = useMutation({
+    mutationFn: (
+      command: Schema.Schema.Type<typeof MailboxMessageActionCommand>
+    ) => actOnMailboxMessage({ data: command }),
+    onSuccess: async (result) => {
+      if (!result.ok && result.status === 401) {
+        await clearCachedAuthSession(queryClient);
+        return;
+      }
+      if (result.ok) {
+        await queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+        return;
+      }
+      if (result.status !== 403) {
+        await queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+      }
+    },
+    onError: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+    },
     retry: false,
   });
 
@@ -445,16 +535,29 @@ function MailboxWorkspace({
     items: pages.flatMap((page) => page.items),
     nextCursor: lastPage?.nextCursor,
   };
+  const actionError = messageActionErrorText(
+    messageAction.error !== null,
+    messageAction.data
+  );
+  const executeMessageAction = (
+    action: MessageRowAction,
+    message: (typeof data.items)[number]
+  ) => {
+    messageAction.reset();
+    messageAction.mutate(messageActionCommand(action, mailboxId, message));
+  };
 
   return (
     <div className="grid h-full min-h-0 lg:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)]">
       <MessageList
         key={JSON.stringify(filters)}
+        actionError={actionError}
         data={data}
         filters={filters}
         isLoadingMore={messages.isFetchingNextPage}
         loadMoreFailed={messages.isFetchNextPageError}
         onLoadMore={() => void messages.fetchNextPage()}
+        onMessageAction={executeMessageAction}
         onOpenMessage={(nextThreadId, nextMessageId) =>
           void navigate({
             to: "/inbox",
@@ -469,6 +572,16 @@ function MailboxWorkspace({
             to: "/inbox",
             search: inboxSearchFor(selection, state),
           })
+        }
+        onRetryAction={
+          messageAction.error !== null && messageAction.variables !== undefined
+            ? () => messageAction.mutate(messageAction.variables)
+            : undefined
+        }
+        pendingMessageId={
+          messageAction.isPending
+            ? messageAction.variables?.messageId
+            : undefined
         }
         selectedThreadId={threadId}
         selection={selection}

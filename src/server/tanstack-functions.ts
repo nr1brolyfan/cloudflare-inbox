@@ -5,6 +5,7 @@ import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
+import { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -19,6 +20,13 @@ const mailboxMessageListInput = Schema.decodeUnknownSync(
   MailboxMessageListInput
 );
 const openMailboxThreadInput = Schema.decodeUnknownSync(OpenMailboxThreadInput);
+const mailboxMessageActionInput = Schema.decodeUnknownSync(
+  MailboxMessageActionCommand
+);
+
+export const actOnMailboxMessage = createServerFn({ method: "POST" })
+  .validator(mailboxMessageActionInput)
+  .handler(({ data }) => websiteBackend.actOnMailboxMessage(data));
 
 export const bootstrapMailboxOwner = createServerFn({ method: "POST" })
   .validator(bootstrapInput)

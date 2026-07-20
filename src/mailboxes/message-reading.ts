@@ -26,6 +26,7 @@ import {
   SearchQuery,
   ThreadId,
   UnixMillis,
+  Version,
 } from "./core";
 import { MailboxDomainError } from "./errors";
 import type { MailboxRepositoryError } from "./errors";
@@ -105,6 +106,8 @@ export class MailboxMessageListItem extends Schema.Class<MailboxMessageListItem>
   read: Schema.Boolean,
   starred: Schema.Boolean,
   hasAttachments: Schema.Boolean,
+  folderId: FolderId,
+  version: Version,
 }) {}
 
 export const MailboxMessageListResult = Schema.Struct({
@@ -318,6 +321,7 @@ export const MailboxMessageReadingLive = Layer.effect(
               activityAt: message.activityAt,
               direction: message.direction,
               hasAttachments: message.hasAttachments,
+              folderId: message.folderId,
               id: message.id,
               read: message.read,
               recipients: message.recipients,
@@ -326,6 +330,7 @@ export const MailboxMessageReadingLive = Layer.effect(
               starred: message.starred,
               subject: message.subject,
               threadId: message.threadId,
+              version: message.version,
             })),
             nextCursor: page.nextCursor,
           }).pipe(Effect.mapError((cause) => readingError("storage", cause)));

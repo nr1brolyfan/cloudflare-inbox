@@ -1,12 +1,16 @@
 import type * as Schema from "effect/Schema";
 import {
+  Archive,
   ArrowDownLeft,
   ArrowUpRight,
   Inbox,
   LoaderCircle,
+  Mail,
+  MailOpen,
   Paperclip,
   Search,
   Star,
+  Trash2,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -20,6 +24,8 @@ import type {
 import { mailboxViewHref } from "./mailbox-view-links";
 
 type MessageListData = Schema.Codec.Encoded<typeof MailboxMessageListResult>;
+export type MessageListItemData = MessageListData["items"][number];
+export type MessageRowAction = "archive" | "read" | "star" | "trash";
 
 const messageDate = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
@@ -157,24 +163,96 @@ function MessageSearchControls({
   );
 }
 
+function MessageActionButtons({
+  message,
+  onAction,
+  pending,
+}: {
+  readonly message: MessageListItemData;
+  readonly onAction: (
+    action: MessageRowAction,
+    message: MessageListItemData
+  ) => void;
+  readonly pending: boolean;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-1 border-t border-[var(--line)]/70 px-3 py-1.5">
+      {pending ? (
+        <LoaderCircle
+          aria-label="Updating message"
+          className="mr-auto animate-spin text-[var(--sea-ink-soft)]"
+          size={14}
+        />
+      ) : null}
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => onAction("read", message)}
+        aria-label={message.read ? "Mark unread" : "Mark read"}
+        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-40"
+      >
+        {message.read ? <Mail size={14} /> : <MailOpen size={14} />}
+      </button>
+      <button
+        type="button"
+        disabled={pending}
+        onClick={() => onAction("star", message)}
+        aria-label={message.starred ? "Remove star" : "Add star"}
+        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--palm)] disabled:opacity-40"
+      >
+        <Star size={14} fill={message.starred ? "currentColor" : "none"} />
+      </button>
+      <button
+        type="button"
+        disabled={pending || message.folderId === "archive"}
+        onClick={() => onAction("archive", message)}
+        aria-label="Archive message"
+        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-30"
+      >
+        <Archive size={14} />
+      </button>
+      <button
+        type="button"
+        disabled={pending || message.folderId === "trash"}
+        onClick={() => onAction("trash", message)}
+        aria-label="Move message to trash"
+        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-red-50 hover:text-red-700 disabled:opacity-30"
+      >
+        <Trash2 size={14} />
+      </button>
+    </div>
+  );
+}
+
 export function MessageList({
+  actionError,
   data,
   filters,
   isLoadingMore,
   loadMoreFailed,
   onLoadMore,
+  onMessageAction,
   onOpenMessage,
   onQueryChange,
+  onRetryAction,
+  pendingMessageId,
   selectedThreadId,
   selection,
 }: {
+  readonly actionError?: string;
   readonly data: MessageListData;
   readonly filters: MailboxMessageQueryState;
   readonly isLoadingMore: boolean;
   readonly loadMoreFailed: boolean;
   readonly onLoadMore: () => void;
+  readonly onMessageAction: (
+    action: MessageRowAction,
+    message: MessageListItemData
+  ) => void;
   readonly onOpenMessage: (threadId: string, messageId: string) => void;
   readonly onQueryChange: (state: MailboxMessageQueryState) => void;
+  readonly onRetryAction?: () => void;
+  readonly pendingMessageId?: string;
   readonly selectedThreadId?: string;
   readonly selection: MailboxViewSelection;
 }) {
@@ -198,6 +276,23 @@ export function MessageList({
           filters={filters}
           onQueryChange={onQueryChange}
         />
+        {actionError === undefined ? null : (
+          <div
+            role="alert"
+            className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-[0.68rem] font-bold text-red-700"
+          >
+            <span className="flex-1">{actionError}</span>
+            {onRetryAction === undefined ? null : (
+              <button
+                type="button"
+                onClick={onRetryAction}
+                className="rounded-md bg-white px-2 py-1 text-red-800"
+              >
+                Try again
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2 sm:p-3">
@@ -227,80 +322,89 @@ export function MessageList({
                   : `To ${message.recipients[0] === undefined ? "undisclosed recipients" : addressName(message.recipients[0])}`;
 
               return (
-                <a
+                <article
                   key={message.id}
-                  href={mailboxViewHref(
-                    selection,
-                    message.threadId,
-                    message.id,
-                    filters
-                  )}
-                  aria-label={`${correspondent}: ${message.subject || "No subject"}`}
-                  aria-current={selected ? "page" : undefined}
-                  onClick={(event) => {
-                    if (
-                      event.button === 0 &&
-                      !event.altKey &&
-                      !event.ctrlKey &&
-                      !event.metaKey &&
-                      !event.shiftKey
-                    ) {
-                      event.preventDefault();
-                      onOpenMessage(message.threadId, message.id);
-                    }
-                  }}
-                  className={`block rounded-2xl border px-4 py-3.5 no-underline sm:px-5 ${
+                  className={`overflow-hidden rounded-2xl border ${
                     selected
                       ? "border-[var(--lagoon)] bg-white text-[var(--sea-ink)] shadow-[0_9px_24px_rgba(23,58,64,0.09)] hover:text-[var(--sea-ink)]"
                       : "border-transparent text-[var(--sea-ink)] hover:border-[var(--line)] hover:bg-white/68 hover:text-[var(--sea-ink)]"
                   }`}
                 >
-                  <div className="flex items-center gap-2">
-                    <span
-                      className={`size-2 shrink-0 rounded-full ${message.read ? "bg-transparent" : "bg-[var(--lagoon-deep)]"}`}
-                    />
-                    <span
-                      className={`min-w-0 flex-1 truncate text-sm ${message.read ? "font-bold" : "font-extrabold"}`}
-                    >
-                      {correspondent}
-                    </span>
-                    <span className="shrink-0 text-[0.65rem] font-bold text-[var(--sea-ink-soft)]">
-                      {messageDate.format(new Date(message.activityAt))}
-                    </span>
-                  </div>
-                  <div className="mt-2 pl-4">
+                  <a
+                    href={mailboxViewHref(
+                      selection,
+                      message.threadId,
+                      message.id,
+                      filters
+                    )}
+                    aria-label={`${correspondent}: ${message.subject || "No subject"}`}
+                    aria-current={selected ? "page" : undefined}
+                    onClick={(event) => {
+                      if (
+                        event.button === 0 &&
+                        !event.altKey &&
+                        !event.ctrlKey &&
+                        !event.metaKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        onOpenMessage(message.threadId, message.id);
+                      }
+                    }}
+                    className="block px-4 py-3.5 text-inherit no-underline hover:text-inherit sm:px-5"
+                  >
                     <div className="flex items-center gap-2">
-                      {message.direction === "inbound" ? (
-                        <ArrowDownLeft
-                          aria-label="Received"
-                          size={13}
-                          className="shrink-0 text-[var(--palm)]"
-                        />
-                      ) : (
-                        <ArrowUpRight
-                          aria-label="Sent"
-                          size={13}
-                          className="shrink-0 text-[var(--lagoon-deep)]"
-                        />
-                      )}
-                      <p
-                        className={`truncate text-sm ${message.read ? "font-semibold" : "font-extrabold"}`}
+                      <span
+                        className={`size-2 shrink-0 rounded-full ${message.read ? "bg-transparent" : "bg-[var(--lagoon-deep)]"}`}
+                      />
+                      <span
+                        className={`min-w-0 flex-1 truncate text-sm ${message.read ? "font-bold" : "font-extrabold"}`}
                       >
-                        {message.subject || "(No subject)"}
-                      </p>
-                      {message.hasAttachments ? (
-                        <Paperclip
-                          aria-label="Has attachments"
-                          className="ml-auto shrink-0 text-[var(--sea-ink-soft)]"
-                          size={14}
-                        />
-                      ) : null}
+                        {correspondent}
+                      </span>
+                      <span className="shrink-0 text-[0.65rem] font-bold text-[var(--sea-ink-soft)]">
+                        {messageDate.format(new Date(message.activityAt))}
+                      </span>
                     </div>
-                    <p className="mt-1 truncate text-xs leading-5 text-[var(--sea-ink-soft)]">
-                      {message.snippet || "No text preview"}
-                    </p>
-                  </div>
-                </a>
+                    <div className="mt-2 pl-4">
+                      <div className="flex items-center gap-2">
+                        {message.direction === "inbound" ? (
+                          <ArrowDownLeft
+                            aria-label="Received"
+                            size={13}
+                            className="shrink-0 text-[var(--palm)]"
+                          />
+                        ) : (
+                          <ArrowUpRight
+                            aria-label="Sent"
+                            size={13}
+                            className="shrink-0 text-[var(--lagoon-deep)]"
+                          />
+                        )}
+                        <p
+                          className={`truncate text-sm ${message.read ? "font-semibold" : "font-extrabold"}`}
+                        >
+                          {message.subject || "(No subject)"}
+                        </p>
+                        {message.hasAttachments ? (
+                          <Paperclip
+                            aria-label="Has attachments"
+                            className="ml-auto shrink-0 text-[var(--sea-ink-soft)]"
+                            size={14}
+                          />
+                        ) : null}
+                      </div>
+                      <p className="mt-1 truncate text-xs leading-5 text-[var(--sea-ink-soft)]">
+                        {message.snippet || "No text preview"}
+                      </p>
+                    </div>
+                  </a>
+                  <MessageActionButtons
+                    message={message}
+                    onAction={onMessageAction}
+                    pending={pendingMessageId === message.id}
+                  />
+                </article>
               );
             })}
           </div>

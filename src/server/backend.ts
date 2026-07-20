@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -27,6 +28,14 @@ const websiteRuntime = ManagedRuntime.make(WebsiteLive);
 
 /** Promise facade used by TanStack adapters; all Effect execution stays here. */
 export const websiteBackend = {
+  actOnMailboxMessage: (command: MailboxMessageActionCommand) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.actOnMessage({ command, incoming });
+      })
+    ),
   bootstrapMailboxOwner: (displayName: string) =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {

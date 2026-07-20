@@ -35,6 +35,7 @@ import {
   InboundReplayPreparerDoLive,
 } from "../mailboxes/inbound-replay-do-live";
 import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
+import { MailboxMessageActionsLive } from "../mailboxes/message-actions";
 import { MailboxMessageReadingLive } from "../mailboxes/message-reading";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendHttpApi } from "./api";
@@ -106,6 +107,9 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxMessageReadingLive = MailboxMessageReadingLive.pipe(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
+    const mailboxMessageActionsLive = MailboxMessageActionsLive.pipe(
+      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+    );
     const inboundReplayLive = InboundReplayLive.pipe(
       Layer.provide(
         Layer.merge(
@@ -120,6 +124,7 @@ const BackendRoutesLive = Layer.unwrap(
           mailboxAdministrationLive,
           mailboxNavigationLive,
           mailboxMessageReadingLive,
+          mailboxMessageActionsLive,
           InboundReplayAuthorizationLive.pipe(
             Layer.provide(mailAuthorizationLive)
           ),

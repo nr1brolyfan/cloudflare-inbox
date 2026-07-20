@@ -12,6 +12,7 @@ import * as Schema from "effect/Schema";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
+import type { MailResourceResolveError } from "../authorization/resources";
 import type { MailboxAdministrationError } from "../mailboxes/administration";
 import { MailboxAdministration } from "../mailboxes/administration";
 import type {
@@ -21,6 +22,8 @@ import type {
 } from "../mailboxes/errors";
 import { InboundReplay } from "../mailboxes/inbound";
 import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
+import type { MailboxMessageActionError } from "../mailboxes/message-actions";
+import { MailboxMessageActions } from "../mailboxes/message-actions";
 import type { MailboxMessageReadingError } from "../mailboxes/message-reading";
 import { MailboxMessageReading } from "../mailboxes/message-reading";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
@@ -120,6 +123,7 @@ type MailboxHandlerError =
   | MailboxAdministrationError
   | MailboxNavigationError
   | MailboxMessageReadingError
+  | MailboxMessageActionError
   | MailboxDomainError
   | MailboxRepositoryError
   | WorkflowStartError;
@@ -177,6 +181,61 @@ const mapMessageReadingError = (
     : Effect.fail(internalError());
 };
 
+const mapMessageActionError = (
+  error: MailboxMessageActionError
+): Effect.Effect<
+  never,
+  | AuthBadRequestError
+  | AuthConflictError
+  | AuthInternalError
+  | AuthNotFoundError
+> => {
+  switch (error.reason) {
+    case "invalid-input": {
+      return Effect.fail(
+        new AuthBadRequestError({
+          code: "bad_request",
+          message: "Invalid mailbox message action",
+        })
+      );
+    }
+    case "not-found": {
+      return Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Mailbox message not found",
+        })
+      );
+    }
+    case "conflict": {
+      return Effect.fail(
+        new AuthConflictError({
+          code: "conflict",
+          message: "Mailbox message changed",
+        })
+      );
+    }
+    case "storage": {
+      return Effect.fail(internalError());
+    }
+    default: {
+      return Effect.fail(internalError());
+    }
+  }
+};
+
+const mapResourceResolveError = (
+  error: MailResourceResolveError
+): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
+  error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Mailbox resource not found",
+        })
+      )
+    : Effect.fail(internalError());
+
 const mapHttpErrors = <A, R>(
   effect: Effect.Effect<A, MailboxHandlerError, R>
 ) =>
@@ -184,14 +243,13 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxAdministrationError", mapAdministrationError),
     Effect.catchTag("MailboxNavigationError", mapNavigationError),
     Effect.catchTag("MailboxMessageReadingError", mapMessageReadingError),
+    Effect.catchTag("MailboxMessageActionError", mapMessageActionError),
     Effect.catchTag("MailboxDomainError", mapInboundDomainError),
     Effect.catchTags({
       MailboxRepositoryError: () => Effect.fail(internalError()),
       WorkflowStartError: () => Effect.fail(internalError()),
     }),
-    Effect.catchTag("MailResourceResolveError", () =>
-      Effect.fail(internalError())
-    ),
+    Effect.catchTag("MailResourceResolveError", mapResourceResolveError),
     Effect.catchTag("AuthUnauthenticatedError", () =>
       Effect.fail(
         new AuthUnauthenticatedError({
@@ -211,10 +269,20 @@ export const MailboxGroupLive = HttpApiBuilder.group(
     const administration = yield* MailboxAdministration;
     const navigation = yield* MailboxNavigation;
     const messageReading = yield* MailboxMessageReading;
+    const messageActions = yield* MailboxMessageActions;
     const replayAuthorization = yield* InboundReplayAuthorization;
     const inboundReplay = yield* InboundReplay;
 
     return handlers
+      .handle("actOnMessage", ({ params, payload }) =>
+        messageActions
+          .execute({
+            ...payload,
+            mailboxId: params.mailboxId,
+            messageId: params.messageId,
+          })
+          .pipe(mapHttpErrors)
+      )
       .handle("bootstrapOwner", ({ payload }) =>
         administration
           .bootstrapOwner({ displayName: payload.displayName })

@@ -224,9 +224,14 @@ describe("mailbox message reading", () => {
         mailboxId: "primary",
         page: { limit: 25 },
       },
-      item: { id: "message-1", threadId: "thread-1" },
+      item: {
+        folderId: "inbox",
+        id: "message-1",
+        threadId: "thread-1",
+        version: 3,
+      },
     });
-    expect(JSON.stringify(encoded)).not.toMatch(/mailboxId|version|size/u);
+    expect(JSON.stringify(encoded)).not.toMatch(/mailboxId|size/u);
   });
 
   it("maps a label view to one repository label filter", async () => {

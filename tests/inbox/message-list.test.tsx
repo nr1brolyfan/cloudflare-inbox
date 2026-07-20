@@ -4,6 +4,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { MailboxMessageQueryState } from "#/inbox/mailbox-view-links";
+import type {
+  MessageListItemData,
+  MessageRowAction,
+} from "#/inbox/message-list";
 import { MessageList } from "#/inbox/message-list";
 
 const messages = {
@@ -11,6 +15,7 @@ const messages = {
     {
       activityAt: 2000,
       direction: "inbound" as const,
+      folderId: "inbox",
       hasAttachments: true,
       id: "message-b",
       read: false,
@@ -20,10 +25,12 @@ const messages = {
       starred: false,
       subject: "Second subject",
       threadId: "thread-shared",
+      version: 1,
     },
     {
       activityAt: 1000,
       direction: "inbound" as const,
+      folderId: "inbox",
       hasAttachments: false,
       id: "message-a",
       read: true,
@@ -33,6 +40,7 @@ const messages = {
       starred: false,
       subject: "First subject",
       threadId: "thread-shared",
+      version: 2,
     },
   ],
   nextCursor: "next-page",
@@ -52,6 +60,9 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={onLoadMore}
+        onMessageAction={vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >()}
         onOpenMessage={onOpenMessage}
         onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
         selection={{ folder: "inbox" }}
@@ -86,6 +97,9 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageAction={vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >()}
         onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
         onQueryChange={onQueryChange}
         selection={{ label: "work" }}
@@ -113,6 +127,31 @@ describe(MessageList, () => {
     });
   });
 
+  it("dispatches row actions without opening the message", () => {
+    const onMessageAction =
+      vi.fn<(action: MessageRowAction, message: MessageListItemData) => void>();
+    const onOpenMessage =
+      vi.fn<(threadId: string, messageId: string) => void>();
+    render(
+      <MessageList
+        data={{ items: [messages.items[0]] }}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onMessageAction={onMessageAction}
+        onOpenMessage={onOpenMessage}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add star" }));
+
+    expect(onMessageAction).toHaveBeenCalledWith("star", messages.items[0]);
+    expect(onOpenMessage).not.toHaveBeenCalled();
+  });
+
   it("rejects searches without an FTS term before navigation", () => {
     const onQueryChange = vi.fn<(state: MailboxMessageQueryState) => void>();
     render(
@@ -122,6 +161,9 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageAction={vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >()}
         onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
         onQueryChange={onQueryChange}
         selection={{ folder: "inbox" }}

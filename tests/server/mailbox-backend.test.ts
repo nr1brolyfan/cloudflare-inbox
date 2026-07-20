@@ -3,6 +3,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { MailboxMessageActionCommand } from "#/mailboxes/message-actions";
 import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -41,6 +42,7 @@ const messages = {
     {
       activityAt: 2000,
       direction: "inbound",
+      folderId: "inbox",
       hasAttachments: false,
       id: "message-1",
       read: false,
@@ -50,6 +52,7 @@ const messages = {
       starred: false,
       subject: "Hello",
       threadId: "thread-1",
+      version: 1,
     },
   ],
 } as const;
@@ -77,6 +80,13 @@ const thread = {
     unreadCount: 1,
   },
 } as const;
+const messageAction = {
+  folderId: "archive",
+  id: "message-1",
+  read: false,
+  starred: false,
+  version: 2,
+} as const;
 
 const runForward = <A>(
   fetch: (request: Request) => Promise<Response>,
@@ -101,6 +111,44 @@ const runForward = <A>(
   );
 
 describe("Website mailbox Backend forwarding", () => {
+  it("forwards a message action with encoded path identity", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const command = Schema.decodeUnknownSync(MailboxMessageActionCommand)({
+      _tag: "Archive",
+      expectedVersion: 1,
+      mailboxId: "team/primary",
+      messageId: "message/one",
+      operationId: "operation-1",
+    });
+    const responseAction = { ...messageAction, id: "message/one" };
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(responseAction));
+      },
+      (operations) => operations.actOnMessage({ command, incoming })
+    );
+
+    expect(result).toStrictEqual({ action: responseAction, ok: true });
+    expect({
+      body: await forwarded?.json(),
+      method: forwarded?.method,
+      path:
+        forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
+    }).toStrictEqual({
+      body: {
+        _tag: "Archive",
+        expectedVersion: 1,
+        operationId: "operation-1",
+      },
+      method: "PATCH",
+      path: "/api/mailboxes/team%2Fprimary/messages/message%2Fone",
+    });
+  });
+
   it("encodes mailbox message label views with URLSearchParams", async () => {
     let forwarded: Request | undefined;
     const incoming = new Request("https://inbox.test/_server", {

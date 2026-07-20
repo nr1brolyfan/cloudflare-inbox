@@ -34,6 +34,7 @@ import {
   CurrentRequestAuthMiddlewareLive,
   RequestSessionAuthenticatorLive,
 } from "#/auth/session";
+import { MailResourceResolveError } from "#/authorization/resources";
 import { MailboxGroup } from "#/http/mailbox-contract";
 import { MailboxGroupLive } from "#/http/mailboxes";
 import { HttpApiPlatformLive } from "#/http/platform";
@@ -45,6 +46,10 @@ import {
 import { MailboxRecordSchema } from "#/mailboxes/core";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
+import {
+  MailboxMessageActionResult,
+  MailboxMessageActions,
+} from "#/mailboxes/message-actions";
 import {
   MailboxMessageListResult,
   MailboxMessageReading,
@@ -120,6 +125,7 @@ const mailboxMessages = Schema.decodeUnknownSync(MailboxMessageListResult)({
     {
       activityAt: 2000,
       direction: "inbound",
+      folderId: "inbox",
       hasAttachments: false,
       id: "message-1",
       read: false,
@@ -129,8 +135,18 @@ const mailboxMessages = Schema.decodeUnknownSync(MailboxMessageListResult)({
       starred: false,
       subject: "Hello",
       threadId: "thread-1",
+      version: 1,
     },
   ],
+});
+const mailboxMessageAction = Schema.decodeUnknownSync(
+  MailboxMessageActionResult
+)({
+  folderId: "inbox",
+  id: "message-1",
+  read: true,
+  starred: false,
+  version: 2,
 });
 const mailboxThread = Schema.decodeUnknownSync(MailboxThreadResult)({
   hasMore: false,
@@ -183,6 +199,9 @@ const makeHandler = (
   messageReading: MailboxMessageReading = MailboxMessageReading.of({
     listView: () => Effect.succeed(mailboxMessages),
     openThread: () => Effect.succeed(mailboxThread),
+  }),
+  messageActions: MailboxMessageActions = MailboxMessageActions.of({
+    execute: () => Effect.succeed(mailboxMessageAction),
   })
 ) => {
   const requestAuthLive = Layer.mergeAll(
@@ -213,6 +232,7 @@ const makeHandler = (
         Layer.succeed(MailboxAdministration, administration),
         Layer.succeed(MailboxNavigation, navigation),
         Layer.succeed(MailboxMessageReading, messageReading),
+        Layer.succeed(MailboxMessageActions, messageActions),
         Layer.succeed(
           InboundReplay,
           InboundReplay.of({
@@ -271,6 +291,93 @@ const mailboxRequest = (
 };
 
 describe("protected mailbox API", () => {
+  it("executes a versioned mailbox message action", async () => {
+    let actionCommand: unknown;
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      undefined,
+      MailboxMessageActions.of({
+        execute: (command) => {
+          actionCommand = command;
+          return Effect.succeed(mailboxMessageAction);
+        },
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/primary/messages/message-1", "PATCH", {
+          body: {
+            _tag: "SetRead",
+            expectedVersion: 1,
+            operationId: "operation-1",
+            read: true,
+          },
+        })
+      );
+
+      expect(response.status).toBe(200);
+      expect(actionCommand).toMatchObject({
+        _tag: "SetRead",
+        mailboxId: "primary",
+        messageId: "message-1",
+        operationId: "operation-1",
+        read: true,
+      });
+      await expect(response.json()).resolves.toMatchObject({
+        id: "message-1",
+        read: true,
+        version: 2,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("maps a missing action resource to not found", async () => {
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      undefined,
+      MailboxMessageActions.of({
+        execute: (command) =>
+          Effect.fail(
+            new MailResourceResolveError({
+              message: "Message not found",
+              reason: "not-found",
+              resource: {
+                _tag: "Message",
+                mailboxId: command.mailboxId,
+                messageId: command.messageId,
+              },
+            })
+          ),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/primary/messages/missing", "PATCH", {
+          body: {
+            _tag: "Trash",
+            expectedVersion: 1,
+            operationId: "operation-missing",
+          },
+        })
+      );
+
+      expect(response.status).toBe(404);
+      await expect(response.json()).resolves.toMatchObject({
+        code: "not_found",
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
   it("returns the selected mailbox message view", async () => {
     const { dispose, handler } = makeHandler(makeAdministration());
 

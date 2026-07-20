@@ -8,6 +8,8 @@ import * as Schema from "effect/Schema";
 import type { MailboxPublicError } from "../http/mailbox-contract";
 import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import { MailboxRecordSchema } from "../mailboxes/core";
+import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
+import { MailboxMessageActionResult } from "../mailboxes/message-actions";
 import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -42,6 +44,13 @@ export type MailboxNavigationServerResult =
 export type MailboxMessageListServerResult =
   | {
       readonly messages: Schema.Codec.Encoded<typeof MailboxMessageListResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxMessageActionServerResult =
+  | {
+      readonly action: Schema.Codec.Encoded<typeof MailboxMessageActionResult>;
       readonly ok: true;
     }
   | MailboxServerErrorResult;
@@ -134,7 +143,29 @@ const policyDeniedMessage = (body: object) => {
     : publicErrors.policy_denied.message;
 };
 
+const operationErrorMessage = (
+  code: keyof typeof publicErrors,
+  operation: string
+) => {
+  if (operation !== "website.mailbox.message_action") {
+    return publicErrors[code].message;
+  }
+  if (code === "bad_request") {
+    return "Invalid mailbox message action";
+  }
+  if (code === "conflict") {
+    return "Mailbox message changed";
+  }
+  return code === "not_found"
+    ? "Mailbox message not found"
+    : publicErrors[code].message;
+};
+
 export interface MailboxBackendOperationsShape {
+  readonly actOnMessage: (input: {
+    readonly command: MailboxMessageActionCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxMessageActionServerResult>;
   readonly bootstrapOwner: (input: {
     readonly displayName: string;
     readonly incoming: Request;
@@ -225,7 +256,7 @@ export const MailboxBackendOperationsLive = Layer.effect(
         const message =
           encodedError.code === "policy_denied"
             ? policyDeniedMessage(encodedError)
-            : definition.message;
+            : operationErrorMessage(encodedError.code, input.operation);
         const sanitizedError = yield* Schema.decodeUnknownEffect(
           MailboxPublicErrorSchema
         )({ ...encodedError, message }).pipe(
@@ -242,6 +273,53 @@ export const MailboxBackendOperationsLive = Layer.effect(
       });
 
     return MailboxBackendOperations.of({
+      actOnMessage: ({ command, incoming }) => {
+        const payload =
+          command._tag === "SetRead"
+            ? {
+                _tag: command._tag,
+                expectedVersion: command.expectedVersion,
+                operationId: command.operationId,
+                read: command.read,
+              }
+            : command._tag === "SetStarred"
+              ? {
+                  _tag: command._tag,
+                  expectedVersion: command.expectedVersion,
+                  operationId: command.operationId,
+                  starred: command.starred,
+                }
+              : {
+                  _tag: command._tag,
+                  expectedVersion: command.expectedVersion,
+                  operationId: command.operationId,
+                };
+        return forwardRequest({
+          incoming,
+          method: "PATCH",
+          operation: "website.mailbox.message_action",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/messages/${encodeURIComponent(command.messageId)}`,
+          payload,
+        }).pipe(
+          Effect.map((result): MailboxMessageActionServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              MailboxMessageActionResult
+            )(result.body);
+            return Exit.isSuccess(decoded) &&
+              decoded.value.id === command.messageId
+              ? {
+                  action: Schema.encodeSync(MailboxMessageActionResult)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        );
+      },
       bootstrapOwner: ({ displayName, incoming }) =>
         forwardRequest({
           incoming,
