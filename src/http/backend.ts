@@ -8,6 +8,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import { AiToolAuditD1Live } from "../ai/tool-audit";
+import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
+import { AiToolRunBudgetLive } from "../ai/tool-run-budget";
 import { CoreAuthGroupHandlersLive } from "../auth/http-api";
 import { AuthRuntimeConfig, AuthServicesLive } from "../auth/live";
 import {
@@ -55,6 +58,13 @@ import { DevEmailGroupLive } from "./dev-emails";
 import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
 import { HttpApiPlatformLive } from "./platform";
+
+/** Acquire once per interactive request/run so its atomic budget is never process-global. */
+export const BackendAiInteractiveToolkitLive =
+  AiToolExecutorMailInteractiveLive.pipe(
+    Layer.provide(AiToolRunBudgetLive),
+    Layer.provide(AiToolAuditD1Live)
+  );
 
 /** Builds all BackendHttpApi groups from Worker resources and deployment config. */
 const BackendRoutesLive = Layer.unwrap(

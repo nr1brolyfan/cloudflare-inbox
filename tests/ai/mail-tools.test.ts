@@ -43,6 +43,7 @@ import type {
   AiToolProtocolError,
   AiToolResult,
 } from "#/ai/tool-protocol";
+import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
 import {
   MailboxMessageListResult,
   MailboxMessageReadResult,
@@ -182,7 +183,10 @@ const execute = (
         Layer.provide(
           Layer.merge(
             AuditTestLive,
-            Layer.succeed(MailboxMessageReading, reading)
+            Layer.merge(
+              AiToolRunBudgetLive,
+              Layer.succeed(MailboxMessageReading, reading)
+            )
           )
         )
       )
@@ -454,6 +458,34 @@ describe("read-only mail tool executor", () => {
     }
   });
 
+  it("measures multibyte arguments as UTF-8 bytes", async () => {
+    let searches = 0;
+    const result = await Effect.runPromise(
+      execute(
+        makeCall("mail_search", {
+          query: "\u{1F642}".repeat(5000),
+          view: { folderId: "inbox" },
+        }),
+        readingWith({
+          listView: () => {
+            searches += 1;
+            return Effect.succeed(searchResult);
+          },
+        })
+      )
+    );
+
+    expect(failureResult(result).error).toMatchObject({
+      code: "limit-exceeded",
+      message: "AI tool run limit was exceeded",
+    });
+    expect(searches).toBe(0);
+    expect(auditRecords[0]?.event).toMatchObject({
+      outcome: "rejected",
+      reason: "limit-argument-bytes-per-call",
+    });
+  });
+
   it.each([
     "mailboxId",
     "principalId",
@@ -463,37 +495,48 @@ describe("read-only mail tool executor", () => {
     "provenance",
     "confirmation",
     "initiator",
-  ])("rejects forged %s authority before dispatch or audit", async (field) => {
-    let reads = 0;
-    const valid = makeCall("mail_read", {
-      messageId: "message-1",
-      view: { folderId: "inbox" },
-    });
-    const forged = {
-      ...valid,
-      arguments: { ...valid.arguments, [field]: "attacker" },
-    } as unknown as AiToolCall;
-    const error = await Effect.runPromise(
-      execute(
-        forged,
-        readingWith({
-          readMessage: () => {
-            reads += 1;
-            return Effect.succeed(readResult);
-          },
-        })
-      ).pipe(Effect.flip)
-    );
+    "authority",
+    "constructor",
+    "prototype",
+    "__proto__",
+  ])(
+    "rejects and audits forged %s authority before dispatch",
+    async (field) => {
+      let reads = 0;
+      const valid = makeCall("mail_read", {
+        messageId: "message-1",
+        view: { folderId: "inbox" },
+      });
+      const forged = {
+        ...valid,
+        arguments: { ...valid.arguments, [field]: "attacker" },
+      } as unknown as AiToolCall;
+      const error = await Effect.runPromise(
+        execute(
+          forged,
+          readingWith({
+            readMessage: () => {
+              reads += 1;
+              return Effect.succeed(readResult);
+            },
+          })
+        ).pipe(Effect.flip)
+      );
 
-    expect(error).toMatchObject({
-      _tag: "AiToolProtocolError",
-      reason: "forbidden-arguments",
-    });
-    expect({ audits: auditRecords.length, reads }).toStrictEqual({
-      audits: 0,
-      reads: 0,
-    });
-  });
+      expect(error).toMatchObject({
+        _tag: "AiToolProtocolError",
+        reason: "forbidden-arguments",
+      });
+      expect({ audits: auditRecords.length, reads }).toStrictEqual({
+        audits: 1,
+        reads: 0,
+      });
+      expect(auditRecords[0]?.event).toMatchObject({
+        outcome: "rejected",
+        reason: "forbidden-arguments",
+      });
+    }
+  );
 
   it.each(["unknown_tool", "send", "send_email", "create_draft"])(
     "fails closed for unknown or mutating name %s",
@@ -578,9 +621,11 @@ describe("read-only mail tool executor", () => {
     expect(JSON.stringify(failure)).not.toMatch(/private|provider|stack/u);
     expect(Object.keys(audit)).toStrictEqual([
       "callId",
+      "kind",
       "mailboxId",
       "name",
       "outcome",
+      "reason",
       "runId",
       "source",
     ]);

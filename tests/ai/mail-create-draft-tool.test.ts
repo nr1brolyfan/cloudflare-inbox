@@ -26,6 +26,8 @@ import {
   AiToolSuccessResult,
 } from "#/ai/tool-protocol";
 import type { AiToolResult } from "#/ai/tool-protocol";
+import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
+import type { AiToolRunBudget } from "#/ai/tool-run-budget";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
@@ -128,6 +130,7 @@ const execute = (
         Layer.provide(
           Layer.mergeAll(
             AuditTestLive,
+            AiToolRunBudgetLive,
             Layer.succeed(MailboxDraftEditing, editing),
             Layer.succeed(MailboxMessageReading, reading)
           )
@@ -160,7 +163,10 @@ const failureResult = (result: AiToolResult) => {
 const visibleInteractiveRequirements: Layer.Layer<
   AiToolExecutor,
   never,
-  AiToolAudit | MailboxDraftEditingService | MailboxMessageReadingService
+  | AiToolAudit
+  | AiToolRunBudget
+  | MailboxDraftEditingService
+  | MailboxMessageReadingService
 > = AiToolExecutorMailInteractiveLive;
 
 describe("mail create draft tool", () => {
@@ -325,32 +331,43 @@ describe("mail create draft tool", () => {
     "provenance",
     "confirmation",
     "initiator",
-  ])("rejects forged %s authority before draft editing", async (field) => {
-    let creates = 0;
-    const valid = makeCall("mail_create_draft", createArguments);
-    const forged = {
-      ...valid,
-      arguments: { ...valid.arguments, [field]: "attacker" },
-    } as unknown as AiToolCall;
-    const error = await Effect.runPromise(
-      execute(
-        forged,
-        editingWith(() => {
-          creates += 1;
-          return Effect.succeed(draft);
-        })
-      ).pipe(Effect.flip)
-    );
+    "authority",
+    "constructor",
+    "prototype",
+    "__proto__",
+  ])(
+    "rejects and audits forged %s authority before draft editing",
+    async (field) => {
+      let creates = 0;
+      const valid = makeCall("mail_create_draft", createArguments);
+      const forged = {
+        ...valid,
+        arguments: { ...valid.arguments, [field]: "attacker" },
+      } as unknown as AiToolCall;
+      const error = await Effect.runPromise(
+        execute(
+          forged,
+          editingWith(() => {
+            creates += 1;
+            return Effect.succeed(draft);
+          })
+        ).pipe(Effect.flip)
+      );
 
-    expect(error).toMatchObject({
-      _tag: "AiToolProtocolError",
-      reason: "forbidden-arguments",
-    });
-    expect({ audits: auditRecords.length, creates }).toStrictEqual({
-      audits: 0,
-      creates: 0,
-    });
-  });
+      expect(error).toMatchObject({
+        _tag: "AiToolProtocolError",
+        reason: "forbidden-arguments",
+      });
+      expect({ audits: auditRecords.length, creates }).toStrictEqual({
+        audits: 1,
+        creates: 0,
+      });
+      expect(auditRecords[0]?.event).toMatchObject({
+        outcome: "rejected",
+        reason: "forbidden-arguments",
+      });
+    }
+  );
 
   it.each(["sender", "attachments", "attachmentIds", "sendAt", "sendNow"])(
     "rejects model-controlled outbound field %s",
@@ -416,9 +433,11 @@ describe("mail create draft tool", () => {
 
     expect(Object.keys(encoded)).toStrictEqual([
       "callId",
+      "kind",
       "mailboxId",
       "name",
       "outcome",
+      "reason",
       "runId",
       "source",
     ]);
@@ -471,7 +490,10 @@ describe("mail create draft tool", () => {
             Layer.provide(
               Layer.merge(
                 AuditTestLive,
-                Layer.succeed(MailboxMessageReading, reading)
+                Layer.merge(
+                  AiToolRunBudgetLive,
+                  Layer.succeed(MailboxMessageReading, reading)
+                )
               )
             )
           )

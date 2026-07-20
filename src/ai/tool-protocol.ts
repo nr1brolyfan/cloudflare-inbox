@@ -34,14 +34,24 @@ export const AiToolName = Schema.String.pipe(
 export type AiToolName = Schema.Schema.Type<typeof AiToolName>;
 
 const modelControlledIdentityFields = new Set([
+  "__proto__",
+  "actor",
   "allowlist",
+  "authority",
+  "authorization",
   "confirmation",
+  "constructor",
   "initiator",
   "mailboxId",
   "operationId",
   "permissions",
   "principalId",
+  "prototype",
   "provenance",
+  "role",
+  "roles",
+  "scope",
+  "scopes",
   "sessionId",
   "source",
   "userId",
@@ -65,6 +75,9 @@ const checkJsonObject = (
     }
 
     if (isJsonArray(json)) {
+      if (Object.getPrototypeOf(json) !== Array.prototype) {
+        return "JSON arrays must use the built-in prototype";
+      }
       entries += json.length;
       if (entries > aiToolJsonMaxEntries) {
         return `JSON must not exceed ${aiToolJsonMaxEntries} entries`;
@@ -78,16 +91,28 @@ const checkJsonObject = (
       return undefined;
     }
 
+    const prototype = Object.getPrototypeOf(json);
+    if (prototype !== Object.prototype && prototype !== null) {
+      return "JSON objects must not carry a custom prototype";
+    }
+    if (Object.getOwnPropertySymbols(json).length > 0) {
+      return "JSON objects must not contain symbol fields";
+    }
+    const descriptors = Object.getOwnPropertyDescriptors(json);
     const keys = Object.keys(json);
     entries += keys.length;
     if (entries > aiToolJsonMaxEntries) {
       return `JSON must not exceed ${aiToolJsonMaxEntries} entries`;
     }
     for (const key of keys) {
+      const descriptor = descriptors[key];
+      if (descriptor === undefined || !("value" in descriptor)) {
+        return "JSON objects must contain data fields only";
+      }
       if (rejectIdentityFields && modelControlledIdentityFields.has(key)) {
         return `model-controlled arguments must not contain ${key}`;
       }
-      const issue = visit(json[key], depth + 1);
+      const issue = visit(descriptor.value as Schema.Json, depth + 1);
       if (issue !== undefined) {
         return issue;
       }
@@ -153,6 +178,7 @@ export class AiToolFailure extends Schema.Class<AiToolFailure>(
     "execution-failed",
     "invalid-arguments",
     "invalid-result",
+    "limit-exceeded",
     "unavailable",
   ]),
   message: sanitizedMessage,
@@ -189,6 +215,7 @@ export class AiToolProtocolError extends Schema.TaggedErrorClass<AiToolProtocolE
   reason: Schema.Literals([
     "forbidden-arguments",
     "invalid-call",
+    "limit-exceeded",
     "unknown-tool",
   ]),
 }) {}

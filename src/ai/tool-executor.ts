@@ -1,4 +1,4 @@
-import * as AuthPermission from "@effect-auth/core/Permission";
+import type * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -35,19 +35,24 @@ import {
   mailSearchDefaultLimit,
   mailThreadMaxMessages,
 } from "./mail-tools";
-import { AiToolAudit, AiToolAuditEvent } from "./tool-audit";
+import { AiToolAudit, AiToolAuditEvent, AiToolAuditReason } from "./tool-audit";
+import type { AiToolAuditReason as AiToolAuditReasonValue } from "./tool-audit";
 import {
   AiToolArguments,
   AiToolCall,
+  AiToolCallId,
   AiToolExecutionError,
   AiToolFailure,
   AiToolFailureResult,
   AiToolProtocolError,
   AiToolRunId,
+  AiToolName,
   AiToolSuccessResult,
   AiToolResultData,
 } from "./tool-protocol";
 import type { AiToolResult } from "./tool-protocol";
+import { AiToolRunBudget } from "./tool-run-budget";
+import type { AiToolBudgetExceeded, AiToolKind } from "./tool-run-budget";
 
 export const CurrentAiToolScopeSchema = Schema.Struct({
   mailboxId: MailboxId,
@@ -65,7 +70,7 @@ export const CurrentAiToolScope = Context.Service<CurrentAiToolScope>(
 
 export interface AiToolExecutor {
   readonly execute: (
-    call: AiToolCall
+    call: unknown
   ) => Effect.Effect<
     AiToolResult,
     AiToolExecutionError | AiToolProtocolError,
@@ -77,54 +82,346 @@ export const AiToolExecutor = Context.Service<AiToolExecutor>(
   "cloudflare-inbox/AiToolExecutor"
 );
 
+const strictDecodeOptions = { onExcessProperty: "error" } as const;
+const textEncoder = new TextEncoder();
+const CallMetadata = Schema.Struct({ callId: AiToolCallId, name: AiToolName });
+const CallEnvelope = Schema.Struct({
+  arguments: Schema.Unknown,
+  callId: AiToolCallId,
+  name: AiToolName,
+});
+
+type CallMetadata = Schema.Schema.Type<typeof CallMetadata>;
+
+const safeCallMetadata = (value: unknown) =>
+  Effect.sync(() => {
+    try {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        return null;
+      }
+      const prototype = Object.getPrototypeOf(value);
+      if (
+        prototype !== Object.prototype &&
+        prototype !== AiToolCall.prototype &&
+        prototype !== null
+      ) {
+        return null;
+      }
+      const descriptors = Object.getOwnPropertyDescriptors(value);
+      const { callId, name } = descriptors;
+      if (
+        callId === undefined ||
+        name === undefined ||
+        !("value" in callId) ||
+        !("value" in name)
+      ) {
+        return null;
+      }
+      return { callId: callId.value, name: name.value };
+    } catch {
+      return null;
+    }
+  }).pipe(
+    Effect.flatMap((metadata) =>
+      metadata === null
+        ? Effect.succeed(null)
+        : Schema.decodeUnknownEffect(CallMetadata)(metadata).pipe(
+            Effect.option,
+            Effect.map((option) =>
+              option._tag === "Some" ? option.value : null
+            )
+          )
+    )
+  );
+
+const safelyMapCallEnvelope = (value: unknown) =>
+  Effect.try({
+    try: () => {
+      if (value === null || typeof value !== "object" || Array.isArray(value)) {
+        throw new Error("Envelope must be an object");
+      }
+      const prototype = Object.getPrototypeOf(value);
+      if (
+        prototype !== Object.prototype &&
+        prototype !== AiToolCall.prototype &&
+        prototype !== null
+      ) {
+        throw new Error("Envelope has an unsafe prototype");
+      }
+      if (Object.getOwnPropertySymbols(value).length > 0) {
+        throw new Error("Envelope has symbol fields");
+      }
+      const descriptors = Object.getOwnPropertyDescriptors(value);
+      const keys = Object.keys(descriptors);
+      if (
+        keys.length !== 3 ||
+        !keys.includes("arguments") ||
+        !keys.includes("callId") ||
+        !keys.includes("name")
+      ) {
+        throw new Error("Envelope fields do not match the protocol");
+      }
+      const argumentsDescriptor = descriptors.arguments;
+      const callIdDescriptor = descriptors.callId;
+      const nameDescriptor = descriptors.name;
+      if (
+        argumentsDescriptor === undefined ||
+        callIdDescriptor === undefined ||
+        nameDescriptor === undefined ||
+        !("value" in argumentsDescriptor) ||
+        !("value" in callIdDescriptor) ||
+        !("value" in nameDescriptor)
+      ) {
+        throw new Error("Envelope must contain data fields only");
+      }
+
+      let entries = 0;
+      // oxlint-disable-next-line eslint/complexity -- Every branch rejects one unsafe JSON shape.
+      const copyJson = (input: unknown, depth: number): Schema.Json => {
+        if (depth > 8) {
+          throw new Error("JSON nesting is too deep");
+        }
+        if (
+          input === null ||
+          typeof input === "string" ||
+          typeof input === "boolean"
+        ) {
+          return input;
+        }
+        if (typeof input === "number" && Number.isFinite(input)) {
+          return input;
+        }
+        if (typeof input !== "object") {
+          throw new TypeError("Value is not JSON");
+        }
+        if (Object.getOwnPropertySymbols(input).length > 0) {
+          throw new Error("JSON has symbol fields");
+        }
+        const inputPrototype = Object.getPrototypeOf(input);
+        const inputDescriptors = Object.getOwnPropertyDescriptors(input);
+        if (Array.isArray(input)) {
+          if (inputPrototype !== Array.prototype) {
+            throw new Error("JSON array has an unsafe prototype");
+          }
+          const lengthDescriptor = inputDescriptors.length;
+          if (
+            lengthDescriptor === undefined ||
+            !("value" in lengthDescriptor) ||
+            typeof lengthDescriptor.value !== "number"
+          ) {
+            throw new Error("JSON array length is invalid");
+          }
+          const length = lengthDescriptor.value;
+          if (Object.keys(inputDescriptors).length !== length + 1) {
+            throw new Error("JSON arrays must be dense and contain no fields");
+          }
+          entries += length;
+          if (entries > 256) {
+            throw new Error("JSON has too many entries");
+          }
+          const output: Schema.Json[] = [];
+          for (let index = 0; index < length; index += 1) {
+            const descriptor = inputDescriptors[String(index)];
+            if (descriptor === undefined || !("value" in descriptor)) {
+              throw new Error("JSON arrays must contain data fields only");
+            }
+            output.push(copyJson(descriptor.value, depth + 1));
+          }
+          return output;
+        }
+        if (inputPrototype !== Object.prototype && inputPrototype !== null) {
+          throw new Error("JSON object has an unsafe prototype");
+        }
+        const output = Object.create(null) as Record<string, Schema.Json>;
+        const objectKeys = Object.keys(inputDescriptors);
+        entries += objectKeys.length;
+        if (entries > 256) {
+          throw new Error("JSON has too many entries");
+        }
+        for (const key of objectKeys) {
+          const descriptor = inputDescriptors[key];
+          if (descriptor === undefined || !("value" in descriptor)) {
+            throw new Error("JSON objects must contain data fields only");
+          }
+          Object.defineProperty(output, key, {
+            configurable: true,
+            enumerable: true,
+            value: copyJson(descriptor.value, depth + 1),
+            writable: true,
+          });
+        }
+        return output;
+      };
+
+      return {
+        arguments: copyJson(argumentsDescriptor.value, 1),
+        callId: callIdDescriptor.value,
+        name: nameDescriptor.value,
+      };
+    },
+    catch: () =>
+      new AiToolProtocolError({
+        message: "AI tool call is outside the protocol contract",
+        reason: "invalid-call",
+      }),
+  });
+
+const decodeCall = (value: unknown) =>
+  safelyMapCallEnvelope(value).pipe(
+    Effect.flatMap((envelope) =>
+      Schema.decodeUnknownEffect(CallEnvelope)(envelope, strictDecodeOptions)
+    ),
+    Effect.mapError(
+      () =>
+        new AiToolProtocolError({
+          message: "AI tool call is outside the protocol contract",
+          reason: "invalid-call",
+        })
+    ),
+    Effect.flatMap((envelope) =>
+      Schema.decodeUnknownEffect(AiToolArguments)(
+        envelope.arguments,
+        strictDecodeOptions
+      ).pipe(
+        Effect.mapError(
+          () =>
+            new AiToolProtocolError({
+              callId: envelope.callId,
+              message: "AI tool arguments are not permitted",
+              reason: "forbidden-arguments",
+            })
+        ),
+        Effect.map(
+          (argumentsValue) =>
+            new AiToolCall({
+              arguments: argumentsValue,
+              callId: envelope.callId,
+              name: envelope.name,
+            })
+        )
+      )
+    )
+  );
+
+const toolKind = (name: AiToolName): AiToolKind => {
+  switch (name) {
+    case "mail_create_draft": {
+      return "mutation";
+    }
+    case "mail_read":
+    case "mail_search":
+    case "mail_thread": {
+      return "read";
+    }
+    default: {
+      return "unknown";
+    }
+  }
+};
+
+const utf8JsonBytes = (value: unknown) =>
+  Effect.try({
+    try: () => textEncoder.encode(JSON.stringify(value)).byteLength,
+    catch: () =>
+      new AiToolProtocolError({
+        message: "AI tool data could not be encoded",
+        reason: "invalid-call",
+      }),
+  });
+
+const budgetReason = (error: AiToolBudgetExceeded): AiToolAuditReasonValue =>
+  Schema.decodeUnknownSync(AiToolAuditReason)(`limit-${error.limit}`);
+
+const budgetFailure = (callId: AiToolCallId) =>
+  new AiToolFailureResult({
+    _tag: "AiToolFailureResult",
+    callId,
+    error: new AiToolFailure({
+      code: "limit-exceeded",
+      message: "AI tool run limit was exceeded",
+      retryable: false,
+    }),
+  });
+
+const auditExecutionError = (callId: AiToolCallId) =>
+  new AiToolExecutionError({
+    callId,
+    message: "AI tool execution could not be audited",
+    reason: "failed",
+    retryable: true,
+  });
+
 /** Foundation toolset has no names or handlers and therefore fails closed. */
 export const AiToolExecutorFoundationLive = Layer.effect(
   AiToolExecutor,
   Effect.gen(function* () {
     const audit = yield* AiToolAudit;
+    const budget = yield* AiToolRunBudget;
 
     return AiToolExecutor.of({
       execute: (untrustedCall) =>
         Effect.gen(function* () {
-          yield* AuthPermission.CurrentPrincipal;
           const scope = yield* CurrentAiToolScope;
-          yield* Schema.decodeUnknownEffect(AiToolArguments)(
-            untrustedCall.arguments
-          ).pipe(
-            Effect.mapError(
-              () =>
-                new AiToolProtocolError({
-                  message: "AI tool arguments are not permitted",
-                  reason: "forbidden-arguments",
-                })
-            )
-          );
-          const call = yield* Schema.decodeUnknownEffect(AiToolCall)(
-            untrustedCall
-          ).pipe(
-            Effect.mapError(
-              () =>
-                new AiToolProtocolError({
-                  message: "AI tool call is outside the protocol contract",
-                  reason: "invalid-call",
-                })
-            )
-          );
+          const metadata = yield* safeCallMetadata(untrustedCall);
+          if (metadata === null) {
+            return yield* Effect.fail(
+              new AiToolProtocolError({
+                message: "AI tool call is outside the protocol contract",
+                reason: "invalid-call",
+              })
+            );
+          }
 
-          yield* audit.record(
-            new AiToolAuditEvent({
-              callId: call.callId,
-              mailboxId: scope.mailboxId,
-              name: call.name,
-              outcome: "rejected",
-              runId: scope.runId,
-              source: scope.source,
-            })
-          );
+          const record = (
+            outcome: AiToolAuditEvent["outcome"],
+            reason: AiToolAuditReasonValue
+          ) =>
+            audit
+              .record(
+                new AiToolAuditEvent({
+                  callId: metadata.callId,
+                  kind: "unknown",
+                  mailboxId: scope.mailboxId,
+                  name: metadata.name,
+                  outcome,
+                  reason,
+                  runId: scope.runId,
+                  source: scope.source,
+                })
+              )
+              .pipe(
+                Effect.mapError(() => auditExecutionError(metadata.callId))
+              );
+
+          const consumed = yield* budget
+            .consumeCall(metadata.callId, metadata.name)
+            .pipe(Effect.result);
+          if (consumed._tag === "Failure") {
+            yield* record("rejected", budgetReason(consumed.failure));
+            return budgetFailure(metadata.callId);
+          }
+
+          const decoded = yield* decodeCall(untrustedCall).pipe(Effect.result);
+          if (decoded._tag === "Failure") {
+            const reason =
+              decoded.failure.reason === "limit-exceeded"
+                ? "invalid-call"
+                : decoded.failure.reason;
+            yield* record("rejected", reason);
+            return yield* Effect.fail(
+              new AiToolProtocolError({
+                callId: metadata.callId,
+                message: decoded.failure.message,
+                reason: decoded.failure.reason,
+              })
+            );
+          }
+
+          yield* record("rejected", "unknown-tool");
 
           return yield* Effect.fail(
             new AiToolProtocolError({
-              callId: call.callId,
+              callId: metadata.callId,
               message: "AI tool is not available",
               reason: "unknown-tool",
             })
@@ -133,8 +430,6 @@ export const AiToolExecutorFoundationLive = Layer.effect(
     });
   })
 );
-
-const strictDecodeOptions = { onExcessProperty: "error" } as const;
 
 const truncate = (value: string, maxLength: number) =>
   [...value].slice(0, maxLength).join("");
@@ -299,6 +594,24 @@ const failureOutcome = (failure: AiToolFailure) =>
     ? ("rejected" as const)
     : ("failed" as const);
 
+const failureReason = (failure: AiToolFailure): AiToolAuditReasonValue => {
+  switch (failure.code) {
+    case "denied":
+    case "execution-failed":
+    case "invalid-arguments":
+    case "invalid-result":
+    case "unavailable": {
+      return failure.code;
+    }
+    case "limit-exceeded": {
+      return "limit-replay-mismatch";
+    }
+    default: {
+      return failure.code satisfies never;
+    }
+  }
+};
+
 const operationIdFrom = (runId: AiToolRunId, callId: AiToolCall["callId"]) => {
   const encoded = `${runId.length}:${runId}:${callId.length}:${callId}`;
   const readable = `ai-draft:${encoded}`;
@@ -334,55 +647,100 @@ const operationIdFrom = (runId: AiToolRunId, callId: AiToolCall["callId"]) => {
 
 const mailExecutor = (
   audit: AiToolAudit,
+  budget: AiToolRunBudget,
   reading: MailboxMessageReading,
   editing?: MailboxDraftEditing
 ) =>
   AiToolExecutor.of({
     execute: (untrustedCall) =>
       Effect.gen(function* () {
-        yield* AuthPermission.CurrentPrincipal;
         const scope = yield* CurrentAiToolScope;
-        yield* Schema.decodeUnknownEffect(AiToolArguments)(
-          untrustedCall.arguments
-        ).pipe(
-          Effect.mapError(
-            () =>
-              new AiToolProtocolError({
-                message: "AI tool arguments are not permitted",
-                reason: "forbidden-arguments",
-              })
-          )
-        );
-        const call = yield* Schema.decodeUnknownEffect(AiToolCall)(
-          untrustedCall
-        ).pipe(
-          Effect.mapError(
-            () =>
-              new AiToolProtocolError({
-                message: "AI tool call is outside the protocol contract",
-                reason: "invalid-call",
-              })
-          )
-        );
-
-        const record = (outcome: "failed" | "rejected" | "succeeded") =>
-          audit.record(
-            new AiToolAuditEvent({
-              callId: call.callId,
-              mailboxId: scope.mailboxId,
-              name: call.name,
-              outcome,
-              runId: scope.runId,
-              source: scope.source,
+        const metadata = yield* safeCallMetadata(untrustedCall);
+        if (metadata === null) {
+          return yield* Effect.fail(
+            new AiToolProtocolError({
+              message: "AI tool call is outside the protocol contract",
+              reason: "invalid-call",
             })
           );
+        }
+        const kind =
+          metadata.name === "mail_create_draft" && editing === undefined
+            ? "unknown"
+            : toolKind(metadata.name);
+        const record = (
+          outcome: AiToolAuditEvent["outcome"],
+          reason: AiToolAuditReasonValue
+        ) =>
+          audit
+            .record(
+              new AiToolAuditEvent({
+                callId: metadata.callId,
+                kind,
+                mailboxId: scope.mailboxId,
+                name: metadata.name,
+                outcome,
+                reason,
+                runId: scope.runId,
+                source: scope.source,
+              })
+            )
+            .pipe(Effect.mapError(() => auditExecutionError(metadata.callId)));
+
+        const consumed = yield* budget
+          .consumeCall(metadata.callId, metadata.name)
+          .pipe(Effect.result);
+        if (consumed._tag === "Failure") {
+          yield* record("rejected", budgetReason(consumed.failure));
+          return budgetFailure(metadata.callId);
+        }
+
+        const decodedCall = yield* decodeCall(untrustedCall).pipe(
+          Effect.result
+        );
+        if (decodedCall._tag === "Failure") {
+          const reason =
+            decodedCall.failure.reason === "limit-exceeded"
+              ? "invalid-call"
+              : decodedCall.failure.reason;
+          yield* record("rejected", reason);
+          return yield* Effect.fail(
+            new AiToolProtocolError({
+              callId: metadata.callId,
+              message: decodedCall.failure.message,
+              reason: decodedCall.failure.reason,
+            })
+          );
+        }
+        const call = decodedCall.success;
+
+        if (kind === "unknown") {
+          yield* record("rejected", "unknown-tool");
+          return yield* Effect.fail(
+            new AiToolProtocolError({
+              callId: call.callId,
+              message: "AI tool is not available",
+              reason: "unknown-tool",
+            })
+          );
+        }
+
+        const argumentBytes = yield* utf8JsonBytes(call.arguments);
+        const inputConsumed = yield* budget
+          .consumeInput(call.callId, kind, argumentBytes)
+          .pipe(Effect.result);
+        if (inputConsumed._tag === "Failure") {
+          yield* record("rejected", budgetReason(inputConsumed.failure));
+          return budgetFailure(call.callId);
+        }
+
         const invalidArguments = Effect.gen(function* () {
           const failure = new AiToolFailure({
             code: "invalid-arguments",
             message: "Mail tool arguments are invalid",
             retryable: false,
           });
-          yield* record("rejected");
+          yield* record("rejected", "invalid-arguments");
           return new AiToolFailureResult({
             _tag: "AiToolFailureResult",
             callId: call.callId,
@@ -395,30 +753,50 @@ const mailExecutor = (
             strictDecodeOptions
           ).pipe(Effect.option);
         const finish = <S extends Schema.Top>(schema: S, output: unknown) =>
-          Schema.encodeUnknownEffect(schema)(output, strictDecodeOptions).pipe(
-            Effect.flatMap((encoded) =>
-              Schema.decodeUnknownEffect(AiToolResultData)(encoded)
-            ),
-            Effect.mapError(
-              () =>
+          Effect.gen(function* () {
+            const encodedResult = yield* Schema.encodeUnknownEffect(schema)(
+              output,
+              strictDecodeOptions
+            ).pipe(
+              Effect.flatMap((encoded) =>
+                Schema.decodeUnknownEffect(AiToolResultData)(
+                  encoded,
+                  strictDecodeOptions
+                )
+              ),
+              Effect.result
+            );
+            if (encodedResult._tag === "Failure") {
+              yield* record("failed", "invalid-result");
+              return yield* Effect.fail(
                 new AiToolExecutionError({
                   callId: call.callId,
                   message: "Mail tool returned an invalid result",
                   reason: "invalid-result",
                   retryable: false,
                 })
-            ),
-            Effect.tapError(() => record("failed")),
-            Effect.tap(() => record("succeeded")),
-            Effect.map(
-              (encoded) =>
-                new AiToolSuccessResult({
-                  _tag: "AiToolSuccessResult",
-                  callId: call.callId,
-                  output: encoded,
-                })
-            )
-          );
+              );
+            }
+
+            const encoded = encodedResult.success;
+            const resultBytes = textEncoder.encode(
+              JSON.stringify(encoded)
+            ).byteLength;
+            const resultConsumed = yield* budget
+              .consumeResult(call.callId, resultBytes)
+              .pipe(Effect.result);
+            if (resultConsumed._tag === "Failure") {
+              yield* record("rejected", budgetReason(resultConsumed.failure));
+              return budgetFailure(call.callId);
+            }
+
+            yield* record("succeeded", "completed");
+            return new AiToolSuccessResult({
+              _tag: "AiToolSuccessResult",
+              callId: call.callId,
+              output: encoded,
+            });
+          });
         const run = <A, S extends Schema.Top>(
           effect: Effect.Effect<
             A,
@@ -441,7 +819,10 @@ const mailExecutor = (
             Effect.matchEffect({
               onFailure: (error) => {
                 const failure = expectedFailure(error);
-                return record(failureOutcome(failure)).pipe(
+                return record(
+                  failureOutcome(failure),
+                  failureReason(failure)
+                ).pipe(
                   Effect.as(
                     new AiToolFailureResult({
                       _tag: "AiToolFailureResult",
@@ -472,13 +853,8 @@ const mailExecutor = (
         switch (call.name) {
           case "mail_create_draft": {
             if (editing === undefined) {
-              yield* record("rejected");
-              return yield* Effect.fail(
-                new AiToolProtocolError({
-                  callId: call.callId,
-                  message: "AI tool is not available",
-                  reason: "unknown-tool",
-                })
+              return yield* Effect.die(
+                "Unavailable draft tool passed availability check"
               );
             }
             const decoded = yield* decodeArguments(MailCreateDraftArguments);
@@ -489,7 +865,7 @@ const mailExecutor = (
             const operationId = yield* operationIdFrom(
               scope.runId,
               call.callId
-            ).pipe(Effect.tapError(() => record("failed")));
+            ).pipe(Effect.tapError(() => record("failed", "execution-failed")));
             return yield* run(
               editing.create({
                 content: {
@@ -585,7 +961,7 @@ const mailExecutor = (
             );
           }
           default: {
-            yield* record("rejected");
+            yield* record("rejected", "unknown-tool");
             return yield* Effect.fail(
               new AiToolProtocolError({
                 callId: call.callId,
@@ -603,9 +979,10 @@ export const AiToolExecutorMailReadOnlyLive = Layer.effect(
   AiToolExecutor,
   Effect.gen(function* () {
     const audit = yield* AiToolAudit;
+    const budget = yield* AiToolRunBudget;
     const reading = yield* MailboxMessageReading;
 
-    return mailExecutor(audit, reading);
+    return mailExecutor(audit, budget, reading);
   })
 );
 
@@ -614,9 +991,10 @@ export const AiToolExecutorMailInteractiveLive = Layer.effect(
   AiToolExecutor,
   Effect.gen(function* () {
     const audit = yield* AiToolAudit;
+    const budget = yield* AiToolRunBudget;
     const editing = yield* MailboxDraftEditing;
     const reading = yield* MailboxMessageReading;
 
-    return mailExecutor(audit, reading, editing);
+    return mailExecutor(audit, budget, reading, editing);
   })
 );

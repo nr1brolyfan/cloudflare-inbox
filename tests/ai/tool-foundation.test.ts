@@ -37,6 +37,7 @@ import type {
   AiToolProtocolError,
   AiToolResult as AiToolResultValue,
 } from "#/ai/tool-protocol";
+import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
 import { MailboxId } from "#/mailboxes/core";
 
 const call = Schema.decodeUnknownSync(AiToolCall)({
@@ -69,7 +70,7 @@ const AiToolAuditTestLive = Layer.succeed(
 );
 
 const AiToolExecutorTestLive = AiToolExecutorFoundationLive.pipe(
-  Layer.provide(AiToolAuditTestLive)
+  Layer.provide(Layer.merge(AiToolAuditTestLive, AiToolRunBudgetLive))
 );
 
 const executeWithVisibleRequirements = (
@@ -313,7 +314,7 @@ describe("AI tool foundation executor", () => {
     });
   });
 
-  it("validates forbidden arguments before any dispatch or audit call", async () => {
+  it("audits forbidden arguments without dispatch", async () => {
     const forgedCall = {
       ...call,
       arguments: { mailboxId: "mailbox-attacker" },
@@ -326,7 +327,10 @@ describe("AI tool foundation executor", () => {
       _tag: "AiToolProtocolError",
       reason: "forbidden-arguments",
     });
-    expect(auditRecords).toHaveLength(0);
+    expect(auditRecords[0]?.event).toMatchObject({
+      outcome: "rejected",
+      reason: "forbidden-arguments",
+    });
   });
 
   it("isolates principals while keeping identity out of audit events", async () => {
@@ -377,9 +381,11 @@ describe("AI tool foundation executor", () => {
 
     expect(Object.keys(encoded)).toStrictEqual([
       "callId",
+      "kind",
       "mailboxId",
       "name",
       "outcome",
+      "reason",
       "runId",
       "source",
     ]);
