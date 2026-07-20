@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **86/109 (79%)**
+- Postęp zadań: **87/109 (80%)**
 - Ukończone etapy: **7/11**
 - Aktualny etap: **10. AI**
-- Aktualne zadanie: **Autoryzowana warstwa narzędzi AI**
+- Aktualne zadanie: **Narzędzia AI read, search i thread**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -21,7 +21,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 7   | Inbox UI i bezpieczne renderowanie    | DONE        | 9/9    |
 | 8   | Reguły automatyczne                   | DONE        | 6/6    |
 | 9   | Drafty i outbound                     | DONE        | 9/9    |
-| 10  | AI                                    | CURRENT     | 1/6    |
+| 10  | AI                                    | CURRENT     | 2/6    |
 | 11  | Hardening i produkcja                 | TODO        | 0/11   |
 
 ### Zasady aktualizacji
@@ -154,8 +154,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## 10. AI
 
 - [x] Podłączyć Workers AI.
-- [ ] CURRENT Zbudować autoryzowaną warstwę narzędzi AI.
-- [ ] Dodać narzędzia read, search i thread.
+- [x] Zbudować autoryzowaną warstwę narzędzi AI.
+- [ ] CURRENT Dodać narzędzia read, search i thread.
 - [ ] Dodać `createDraft` bez autonomicznego send.
 - [ ] Wymagać jawnej akcji użytkownika przed wysłaniem.
 - [ ] Dodać limity, audit i bezpieczne mapowanie danych wejściowych.
