@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DraftEditor } from "#/inbox/draft-editor";
+import { DraftAttachmentReservationSchema } from "#/mailboxes/draft-attachments";
 import { DraftEditorContent } from "#/mailboxes/draft-editing";
 
 const initial = Schema.decodeUnknownSync(DraftEditorContent)({
@@ -14,6 +15,21 @@ const initial = Schema.decodeUnknownSync(DraftEditorContent)({
   textBody: "Unsaved local body",
   to: [{ address: "person@example.test", displayName: "Person, Primary" }],
 });
+const storedAttachment = Schema.decodeUnknownSync(
+  DraftAttachmentReservationSchema
+)({
+  contentSha256: "a".repeat(64),
+  createdAt: 1000,
+  draftId: "draft-1",
+  expiresAt: 901_000,
+  fileName: "brief.pdf",
+  id: "attachment-1",
+  mailboxId: "primary",
+  mimeType: "application/pdf",
+  size: 2048,
+  status: "stored",
+  storedAt: 2000,
+});
 
 describe(DraftEditor, () => {
   afterEach(cleanup);
@@ -22,10 +38,15 @@ describe(DraftEditor, () => {
     const onSave = vi.fn<(content: typeof initial) => void>();
     render(
       <DraftEditor
+        attachments={[]}
+        attachmentUploads={[]}
         initial={initial}
         isNew={false}
         isSaving={false}
+        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
         onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
         onSave={onSave}
         saved={false}
       />
@@ -62,12 +83,17 @@ describe(DraftEditor, () => {
     const onRetry = vi.fn<() => void>();
     render(
       <DraftEditor
+        attachments={[]}
+        attachmentUploads={[]}
         error="The draft could not be saved. Your local content is still here."
         initial={initial}
         isNew
         isSaving={false}
+        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
         onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
         onRetry={onRetry}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
         onSave={vi.fn<(content: typeof initial) => void>()}
         saved={false}
       />
@@ -93,10 +119,15 @@ describe(DraftEditor, () => {
     const onSave = vi.fn<(content: typeof initial) => void>();
     render(
       <DraftEditor
+        attachments={[]}
+        attachmentUploads={[]}
         initial={initial}
         isNew
         isSaving={false}
+        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
         onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
         onSave={onSave}
         saved={false}
       />
@@ -111,5 +142,35 @@ describe(DraftEditor, () => {
     expect(screen.getByRole("alert").textContent).toContain(
       "Check the recipient addresses"
     );
+  });
+
+  it("shows stored files and selects uploads only for a clean saved draft", () => {
+    const onAttachFiles = vi.fn<(files: readonly File[]) => void>();
+    render(
+      <DraftEditor
+        attachments={[storedAttachment]}
+        attachmentUploads={[]}
+        initial={initial}
+        isNew={false}
+        isSaving={false}
+        onAttachFiles={onAttachFiles}
+        onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
+        onSave={vi.fn<(content: typeof initial) => void>()}
+        saved
+      />
+    );
+    const file = new File([new Uint8Array([1, 2, 3])], "next.pdf", {
+      type: "application/pdf",
+    });
+    fireEvent.change(
+      screen.getByLabelText("Add draft attachments", { selector: "input" }),
+      { target: { files: [file] } }
+    );
+
+    expect(screen.getByText("brief.pdf")).toBeDefined();
+    expect(screen.getByText("2.0 KB · Uploaded")).toBeDefined();
+    expect(onAttachFiles).toHaveBeenCalledWith([file]);
   });
 });

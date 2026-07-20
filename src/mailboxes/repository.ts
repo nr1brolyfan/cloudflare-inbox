@@ -27,6 +27,15 @@ import type {
   Label,
 } from "./directory";
 import type {
+  CompleteDraftAttachmentInput,
+  DraftAttachmentList,
+  DraftAttachmentReservation,
+  DraftAttachmentUploadResult,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+  ReserveDraftAttachmentCommand,
+} from "./draft-attachments";
+import type {
   CreateDraftInput,
   DraftResult,
   GetDraftInput,
@@ -78,6 +87,12 @@ export interface MailboxRepository {
     input: CancelOutboundDeliveryInput
   ) => Effect.Effect<
     OutboundDeliveryResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly completeDraftAttachment: (
+    input: CompleteDraftAttachmentInput
+  ) => Effect.Effect<
+    DraftAttachmentUploadResult,
     MailboxDomainError | MailboxRepositoryError
   >;
   readonly createFolder: (
@@ -133,6 +148,12 @@ export interface MailboxRepository {
   readonly getDraft: (
     input: GetDraftInput
   ) => Effect.Effect<DraftResult, MailboxDomainError | MailboxRepositoryError>;
+  readonly getDraftAttachment: (
+    input: GetDraftAttachmentInput
+  ) => Effect.Effect<
+    DraftAttachmentReservation,
+    MailboxDomainError | MailboxRepositoryError
+  >;
   readonly getMessage: (
     input: GetMessageInput
   ) => Effect.Effect<
@@ -154,6 +175,12 @@ export interface MailboxRepository {
   readonly listFolders: (
     input: ListFoldersInput
   ) => Effect.Effect<FolderList, MailboxDomainError | MailboxRepositoryError>;
+  readonly listDraftAttachments: (
+    input: ListDraftAttachmentsInput
+  ) => Effect.Effect<
+    DraftAttachmentList,
+    MailboxDomainError | MailboxRepositoryError
+  >;
   readonly listLabels: (
     input: ListLabelsInput
   ) => Effect.Effect<LabelList, MailboxDomainError | MailboxRepositoryError>;
@@ -170,6 +197,12 @@ export interface MailboxRepository {
     input: RemoveMessageLabelInput
   ) => Effect.Effect<
     MessageMutationResult,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly reserveDraftAttachment: (
+    input: ReserveDraftAttachmentCommand
+  ) => Effect.Effect<
+    DraftAttachmentReservation,
     MailboxDomainError | MailboxRepositoryError
   >;
   readonly renameFolder: (

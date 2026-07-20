@@ -109,6 +109,12 @@ export const ByteSize = Schema.Int.pipe(
 );
 export type ByteSize = Schema.Schema.Type<typeof ByteSize>;
 
+export const Sha256Digest = Schema.String.pipe(
+  Schema.check(Schema.isPattern(/^[a-f0-9]{64}$/u)),
+  Schema.brand("cloudflare-inbox/Sha256Digest")
+);
+export type Sha256Digest = Schema.Schema.Type<typeof Sha256Digest>;
+
 export const AttemptCount = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0)),
   Schema.brand("cloudflare-inbox/AttemptCount")

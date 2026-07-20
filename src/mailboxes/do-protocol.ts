@@ -18,6 +18,15 @@ import {
   RenameLabelInput,
 } from "./directory";
 import {
+  CompleteDraftAttachmentInput,
+  DraftAttachmentList,
+  DraftAttachmentReservationSchema,
+  DraftAttachmentUploadResult,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+  ReserveDraftAttachmentCommand,
+} from "./draft-attachments";
+import {
   CreateDraftInput,
   DraftResult,
   GetDraftInput,
@@ -78,6 +87,10 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "create-draft",
     "get-draft",
     "update-draft",
+    "reserve-draft-attachment",
+    "get-draft-attachment",
+    "list-draft-attachments",
+    "complete-draft-attachment",
     "schedule-outbound",
     "get-outbound",
     "cancel-outbound",
@@ -239,6 +252,22 @@ export const MailDataRpcRequest = Schema.Union([
   }),
   Schema.Struct({ _tag: Schema.Literal("GetDraft"), input: GetDraftInput }),
   Schema.Struct({
+    _tag: Schema.Literal("ReserveDraftAttachment"),
+    input: ReserveDraftAttachmentCommand,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("GetDraftAttachment"),
+    input: GetDraftAttachmentInput,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ListDraftAttachments"),
+    input: ListDraftAttachmentsInput,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("CompleteDraftAttachment"),
+    input: CompleteDraftAttachmentInput,
+  }),
+  Schema.Struct({
     _tag: Schema.Literal("UpdateDraft"),
     input: UpdateDraftInput,
   }),
@@ -298,6 +327,22 @@ export const MailDataRpcResponse = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("DraftCreated"), value: DraftResult }),
   Schema.Struct({ _tag: Schema.Literal("DraftFound"), value: DraftResult }),
   Schema.Struct({ _tag: Schema.Literal("DraftUpdated"), value: DraftResult }),
+  Schema.Struct({
+    _tag: Schema.Literal("DraftAttachmentReserved"),
+    value: DraftAttachmentReservationSchema,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("DraftAttachmentFound"),
+    value: DraftAttachmentReservationSchema,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("DraftAttachmentsListed"),
+    value: DraftAttachmentList,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("DraftAttachmentCompleted"),
+    value: DraftAttachmentUploadResult,
+  }),
   Schema.Struct({
     _tag: Schema.Literal("OutboundScheduled"),
     value: ScheduleOutboundResult,
@@ -449,6 +494,26 @@ export const mailDataRequestMetadataByTag = {
     operation: "update-draft",
     kind: "write",
     responseTag: "DraftUpdated",
+  },
+  ReserveDraftAttachment: {
+    operation: "reserve-draft-attachment",
+    kind: "write",
+    responseTag: "DraftAttachmentReserved",
+  },
+  GetDraftAttachment: {
+    operation: "get-draft-attachment",
+    kind: "read",
+    responseTag: "DraftAttachmentFound",
+  },
+  ListDraftAttachments: {
+    operation: "list-draft-attachments",
+    kind: "read",
+    responseTag: "DraftAttachmentsListed",
+  },
+  CompleteDraftAttachment: {
+    operation: "complete-draft-attachment",
+    kind: "write",
+    responseTag: "DraftAttachmentCompleted",
   },
   ScheduleOutbound: {
     operation: "schedule-outbound",

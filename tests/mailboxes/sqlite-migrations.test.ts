@@ -63,6 +63,7 @@ describe("MailboxDO migrations", () => {
         { version: 6, applied_at: expect.any(String) },
         { version: 7, applied_at: expect.any(String) },
         { version: 8, applied_at: expect.any(String) },
+        { version: 9, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -337,7 +338,7 @@ describe("MailboxDO migrations", () => {
           .prepare(
             `SELECT name FROM sqlite_schema
               WHERE type = 'table'
-                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule', 'inbound_processing', 'label', 'mailbox_operation', 'message_label', 'message_search', 'outbound_delivery', 'rule_application', 'rule_evaluation')
+                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'draft_attachment', 'filter_rule', 'inbound_processing', 'label', 'mailbox_operation', 'message_label', 'message_search', 'outbound_delivery', 'rule_application', 'rule_evaluation')
               ORDER BY name`
           )
           .all()
@@ -345,6 +346,7 @@ describe("MailboxDO migrations", () => {
       ).toStrictEqual([
         "attachment",
         "draft",
+        "draft_attachment",
         "filter_rule",
         "folder",
         "inbound_processing",

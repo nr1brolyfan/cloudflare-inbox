@@ -46,6 +46,11 @@ import {
 import { MailboxInlineAttachmentReading } from "#/mailboxes/attachment-reading";
 import { MailboxRecordSchema, MimeType } from "#/mailboxes/core";
 import {
+  DraftAttachmentReservationSchema,
+  DraftAttachmentUploadResult,
+  MailboxDraftAttachments,
+} from "#/mailboxes/draft-attachments";
+import {
   DraftEditorDraft,
   MailboxDraftEditing,
 } from "#/mailboxes/draft-editing";
@@ -189,12 +194,37 @@ const mailboxMessageHtml = Schema.decodeUnknownSync(MailboxMessageHtmlResult)({
   messageId: "message-1",
 });
 const mailboxDraft = Schema.decodeUnknownSync(DraftEditorDraft)({
+  attachments: [],
   id: "draft-1",
   mailboxId: "primary",
   content: { bcc: [], cc: [], subject: "Draft", to: [] },
   createdAt: 1000,
   updatedAt: 1000,
   version: 1,
+});
+const draftAttachment = Schema.decodeUnknownSync(
+  DraftAttachmentReservationSchema
+)({
+  createdAt: 1000,
+  draftId: "draft-1",
+  expiresAt: 901_000,
+  fileName: "brief.pdf",
+  id: "attachment-1",
+  mailboxId: "primary",
+  mimeType: "application/pdf",
+  size: 3,
+  status: "reserved",
+});
+const draftAttachmentUpload = Schema.decodeUnknownSync(
+  DraftAttachmentUploadResult
+)({
+  attachment: {
+    ...draftAttachment,
+    contentSha256: "a".repeat(64),
+    status: "stored",
+    storedAt: 2000,
+  },
+  draftVersion: 2,
 });
 
 const makeAdministration = (
@@ -243,6 +273,10 @@ const makeHandler = (
     create: () => Effect.succeed(mailboxDraft),
     get: () => Effect.succeed(mailboxDraft),
     update: () => Effect.succeed(mailboxDraft),
+  }),
+  draftAttachments: MailboxDraftAttachments = MailboxDraftAttachments.of({
+    reserve: () => Effect.succeed(draftAttachment),
+    upload: () => Effect.succeed(draftAttachmentUpload),
   })
 ) => {
   const requestAuthLive = Layer.mergeAll(
@@ -277,6 +311,7 @@ const makeHandler = (
         Layer.succeed(MailboxMessageHtmlReading, messageHtml),
         Layer.succeed(MailboxInlineAttachmentReading, inlineAttachments),
         Layer.succeed(MailboxDraftEditing, draftEditing),
+        Layer.succeed(MailboxDraftAttachments, draftAttachments),
         Layer.succeed(
           InboundReplay,
           InboundReplay.of({
@@ -305,7 +340,7 @@ const makeHandler = (
 
 const mailboxRequest = (
   path: string,
-  method: "GET" | "PATCH" | "POST",
+  method: "GET" | "PATCH" | "POST" | "PUT",
   options: {
     readonly body?: unknown;
     readonly cookie?: boolean;
@@ -325,8 +360,7 @@ const mailboxRequest = (
   if (method === "GET") {
     return new Request(`https://backend.test${path}`, { headers });
   }
-  const mutationMethod = method === "PATCH" ? "PATCH" : "POST";
-
+  const mutationMethod: "PATCH" | "POST" | "PUT" = method;
   return new Request(`https://backend.test${path}`, {
     body: JSON.stringify(options.body ?? { displayName: "Recruiting" }),
     headers,
@@ -335,6 +369,56 @@ const mailboxRequest = (
 };
 
 describe("protected mailbox API", () => {
+  it("reserves and uploads raw draft attachment bytes", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const reserved = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/drafts/draft-1/attachments/reservations",
+          "POST",
+          {
+            body: {
+              fileName: "brief.pdf",
+              mimeType: "application/pdf",
+              operationId: "reserve-1",
+              size: 3,
+            },
+          }
+        )
+      );
+      const uploaded = await handler(
+        new Request(
+          "https://backend.test/api/mailboxes/primary/drafts/draft-1/attachments/attachment-1/content",
+          {
+            body: new Uint8Array([1, 2, 3]),
+            headers: {
+              "content-type": "application/octet-stream",
+              cookie: `__Host-session=${sessionToken}`,
+              origin: publicOrigin,
+            },
+            method: "PUT",
+          }
+        )
+      );
+
+      expect({
+        reserve: reserved.status,
+        upload: uploaded.status,
+      }).toStrictEqual({ reserve: 201, upload: 200 });
+      await expect(reserved.json()).resolves.toMatchObject({
+        id: "attachment-1",
+        status: "reserved",
+      });
+      await expect(uploaded.json()).resolves.toMatchObject({
+        attachment: { id: "attachment-1", status: "stored" },
+        draftVersion: 2,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
   it("returns an independently authorized inline attachment", async () => {
     const { dispose, handler } = makeHandler(makeAdministration());
 

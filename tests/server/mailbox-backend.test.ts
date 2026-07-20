@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { MailboxInlineAttachmentInput } from "#/mailboxes/attachment-reading";
+import { GetDraftAttachmentInput } from "#/mailboxes/draft-attachments";
 import {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
@@ -101,6 +102,7 @@ const messageHtml = {
   messageId: "message/one",
 } as const;
 const draft = {
+  attachments: [],
   content: {
     bcc: [],
     cc: [],
@@ -138,6 +140,58 @@ const runForward = <A>(
   );
 
 describe("Website mailbox Backend forwarding", () => {
+  it("streams a bounded draft attachment upload and validates its identity", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      body: new Uint8Array([1, 2, 3]),
+      headers: {
+        "content-length": "3",
+        "content-type": "application/octet-stream",
+        cookie: "__Host-session=session-a.secret",
+        origin: "https://inbox.test",
+        "x-forwarded-for": "203.0.113.1",
+      },
+      method: "PUT",
+    });
+    const input = Schema.decodeUnknownSync(GetDraftAttachmentInput)({
+      attachmentId: "attachment/one",
+      draftId: "draft/one",
+      mailboxId: "team/primary",
+    });
+    const upload = {
+      attachment: {
+        contentSha256: "a".repeat(64),
+        createdAt: 1000,
+        draftId: input.draftId,
+        expiresAt: 901_000,
+        fileName: "brief.pdf",
+        id: input.attachmentId,
+        mailboxId: input.mailboxId,
+        mimeType: "application/pdf",
+        size: 3,
+        status: "stored",
+        storedAt: 2000,
+      },
+      draftVersion: 2,
+    } as const;
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(upload));
+      },
+      (operations) => operations.uploadDraftAttachment({ ...input, incoming })
+    );
+
+    expect(result).toStrictEqual({ ok: true, upload });
+    expect(new URL(forwarded?.url ?? "https://invalid.test").pathname).toBe(
+      "/api/mailboxes/team%2Fprimary/drafts/draft%2Fone/attachments/attachment%2Fone/content"
+    );
+    expect(forwarded?.headers.get("x-forwarded-for")).toBeNull();
+    await expect(forwarded?.arrayBuffer()).resolves.toStrictEqual(
+      new Uint8Array([1, 2, 3]).buffer
+    );
+  });
+
   it("forwards a create command without adding hidden draft fields", async () => {
     let forwarded: Request | undefined;
     const incoming = new Request("https://inbox.test/_server", {

@@ -19,6 +19,7 @@ import { Route as AuthCompleteEmailVerificationRouteImport } from './routes/auth
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/html'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
+import { Route as ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRouteImport } from './routes/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
 
 const InboxRoute = InboxRouteImport.update({
   id: '/inbox',
@@ -76,6 +77,14 @@ const ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute =
       getParentRoute: () => rootRouteImport,
     } as any,
   )
+const ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute =
+  ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRouteImport.update(
+    {
+      id: '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content',
+      path: '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content',
+      getParentRoute: () => rootRouteImport,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -87,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
+  '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRoutesByTo {
@@ -99,6 +109,7 @@ export interface FileRoutesByTo {
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
+  '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRoutesById {
@@ -112,6 +123,7 @@ export interface FileRoutesById {
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
+  '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRouteTypes {
@@ -126,6 +138,7 @@ export interface FileRouteTypes {
     | '/auth-complete/password-reset'
     | '/auth/$'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
+    | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -138,6 +151,7 @@ export interface FileRouteTypes {
     | '/auth-complete/password-reset'
     | '/auth/$'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
+    | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   id:
     | '__root__'
@@ -150,6 +164,7 @@ export interface FileRouteTypes {
     | '/auth-complete/password-reset'
     | '/auth/$'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
+    | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   fileRoutesById: FileRoutesById
 }
@@ -163,6 +178,7 @@ export interface RootRouteChildren {
   AuthCompletePasswordResetRoute: typeof AuthCompletePasswordResetRoute
   AuthSplatRoute: typeof AuthSplatRoute
   ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
+  ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute: typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 
@@ -238,6 +254,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': {
+      id: '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
+      path: '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
+      fullPath: '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
+      preLoaderRoute: typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -252,6 +275,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthSplatRoute: AuthSplatRoute,
   ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute:
     ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute,
+  ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute:
+    ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute,
   ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute:
     ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute,
 }

@@ -26,6 +26,8 @@ import {
 } from "../infra/resources";
 import { EmailAddress } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
+import type { DraftAttachmentR2Object } from "../mailboxes/draft-attachment-store-r2-live";
+import { DraftAttachmentR2Client } from "../mailboxes/draft-attachment-store-r2-live";
 import { InboundAttachmentR2ReadClient } from "../mailboxes/inbound-attachment-reader-r2-live";
 import {
   InboundEmailIngressLive,
@@ -48,6 +50,23 @@ import {
   EmailRoutingEventSource,
   EmailRoutingEventSourceLive,
 } from "./email-routing-event-source";
+
+const r2AttachmentObject = (object: {
+  readonly checksums: { readonly sha256?: ArrayBuffer };
+  readonly customMetadata?: Record<string, string>;
+  readonly httpMetadata?: { readonly contentType?: string };
+  readonly size: number;
+}): DraftAttachmentR2Object => ({
+  contentType: object.httpMetadata?.contentType,
+  customMetadata: object.customMetadata ?? {},
+  sha256:
+    object.checksums.sha256 === undefined
+      ? undefined
+      : [...new Uint8Array(object.checksums.sha256)]
+          .map((byte) => byte.toString(16).padStart(2, "0"))
+          .join(""),
+  size: object.size,
+});
 
 export default class Backend extends Cloudflare.Worker<Backend>()(
   "Backend",
@@ -157,10 +176,30 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           ),
       })
     );
+    const draftAttachmentClientLive = Layer.succeed(
+      DraftAttachmentR2Client,
+      DraftAttachmentR2Client.of({
+        head: (key) =>
+          rawMessages.head(key).pipe(
+            Effect.provide(RuntimeContext.phantom),
+            Effect.map((object) =>
+              object === null ? null : r2AttachmentObject(object)
+            )
+          ),
+        put: (key, content, options) =>
+          rawMessages.put(key, content, options).pipe(
+            Effect.provide(RuntimeContext.phantom),
+            Effect.map((object) =>
+              object === null ? null : r2AttachmentObject(object)
+            )
+          ),
+      })
+    );
     const workerServicesLive = Layer.mergeAll(
       authRuntimeConfigLive,
       workflowClientLive,
       attachmentReadClientLive,
+      draftAttachmentClientLive,
       Layer.succeed(
         MailboxAdministrationConfig,
         MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })

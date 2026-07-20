@@ -5,6 +5,10 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 
 import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
 import type {
+  ReserveDraftAttachmentCommand,
+  UploadDraftAttachmentCommand,
+} from "../mailboxes/draft-attachments";
+import type {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
   UpdateMailboxDraftCommand,
@@ -147,6 +151,14 @@ export const websiteBackend = {
         return yield* operations.rename({ ...input, incoming });
       })
     ),
+  reserveMailboxDraftAttachment: (command: ReserveDraftAttachmentCommand) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.reserveDraftAttachment({ command, incoming });
+      })
+    ),
   updateMailboxDraft: (command: UpdateMailboxDraftCommand) =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {
@@ -154,5 +166,16 @@ export const websiteBackend = {
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.updateDraft({ command, incoming });
       })
+    ),
+  uploadMailboxDraftAttachment: (
+    input: Omit<UploadDraftAttachmentCommand, "content">,
+    incoming: Request
+  ) =>
+    websiteRuntime.runPromise(
+      MailboxBackendOperations.pipe(
+        Effect.flatMap((operations) =>
+          operations.uploadDraftAttachment({ ...input, incoming })
+        )
+      )
     ),
 } as const;

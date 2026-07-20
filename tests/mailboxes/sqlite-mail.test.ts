@@ -13,6 +13,12 @@ import {
 } from "#/mailboxes/do-client";
 import { MailboxDoHandler } from "#/mailboxes/do-handler";
 import {
+  CompleteDraftAttachmentInput,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+  ReserveDraftAttachmentCommand,
+} from "#/mailboxes/draft-attachments";
+import {
   CreateDraftInput,
   GetDraftInput,
   UpdateDraftInput,
@@ -46,6 +52,7 @@ import {
 import {
   MailboxDatabase,
   MailboxDraftStore,
+  MailboxDraftAttachmentStore,
   MailboxIdentity,
   MailboxMessageStore,
   MailboxOutboundStore,
@@ -106,6 +113,22 @@ const getDraft = (input: GetDraftInput) =>
   MailboxDraftStore.pipe(Effect.flatMap((store) => store.getDraft(input)));
 const updateDraft = (input: UpdateDraftInput) =>
   MailboxDraftStore.pipe(Effect.flatMap((store) => store.updateDraft(input)));
+const reserveDraftAttachment = (input: ReserveDraftAttachmentCommand) =>
+  MailboxDraftAttachmentStore.pipe(
+    Effect.flatMap((store) => store.reserveDraftAttachment(input))
+  );
+const getDraftAttachment = (input: GetDraftAttachmentInput) =>
+  MailboxDraftAttachmentStore.pipe(
+    Effect.flatMap((store) => store.getDraftAttachment(input))
+  );
+const listDraftAttachments = (input: ListDraftAttachmentsInput) =>
+  MailboxDraftAttachmentStore.pipe(
+    Effect.flatMap((store) => store.listDraftAttachments(input))
+  );
+const completeDraftAttachment = (input: CompleteDraftAttachmentInput) =>
+  MailboxDraftAttachmentStore.pipe(
+    Effect.flatMap((store) => store.completeDraftAttachment(input))
+  );
 const scheduleOutbound = (input: ScheduleOutboundInput) =>
   MailboxOutboundStore.pipe(
     Effect.flatMap((store) => store.scheduleOutbound(input))
@@ -899,6 +922,177 @@ describe("Mailbox mail data SQLite", () => {
         });
         expect(updated.textBody).toBeUndefined();
         expect(found.textBody).toBeUndefined();
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("reserves and atomically attaches an idempotently stored upload", async () => {
+    const runtime = makeRuntime();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const created = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "draft-for-attachment",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              subject: "Attachment",
+              to: [],
+            },
+          })
+        );
+        const reserveInput = Schema.decodeUnknownSync(
+          ReserveDraftAttachmentCommand
+        )({
+          draftId: created.id,
+          fileName: "brief.pdf",
+          mailboxId,
+          mimeType: "application/pdf",
+          operationId: "reserve-attachment",
+          size: 3,
+        });
+        const reserved = yield* reserveDraftAttachment(reserveInput);
+        const replay = yield* reserveDraftAttachment(reserveInput);
+        const before = yield* listDraftAttachments(
+          Schema.decodeUnknownSync(ListDraftAttachmentsInput)({
+            draftId: created.id,
+            mailboxId,
+          })
+        );
+        const completionInput = Schema.decodeUnknownSync(
+          CompleteDraftAttachmentInput
+        )({
+          attachmentId: reserved.id,
+          contentSha256: "a".repeat(64),
+          draftId: created.id,
+          mailboxId,
+        });
+        const completed = yield* completeDraftAttachment(completionInput);
+        const completionReplay =
+          yield* completeDraftAttachment(completionInput);
+        const found = yield* getDraftAttachment(
+          Schema.decodeUnknownSync(GetDraftAttachmentInput)({
+            attachmentId: reserved.id,
+            draftId: created.id,
+            mailboxId,
+          })
+        );
+        const updatedDraft = yield* getDraft(
+          Schema.decodeUnknownSync(GetDraftInput)({
+            draftId: created.id,
+            mailboxId,
+          })
+        );
+        const conflict = failure(
+          yield* Effect.result(
+            completeDraftAttachment(
+              Schema.decodeUnknownSync(CompleteDraftAttachmentInput)({
+                ...completionInput,
+                contentSha256: "b".repeat(64),
+              })
+            )
+          )
+        );
+
+        expect({
+          before,
+          completed,
+          completionReplay,
+          conflict,
+          found,
+          replay,
+          reserved,
+          updatedDraft,
+        }).toMatchObject({
+          before: { items: [{ id: reserved.id, status: "reserved" }] },
+          completed: {
+            attachment: { id: reserved.id, status: "stored" },
+            draftVersion: 2,
+          },
+          completionReplay: { draftVersion: 2 },
+          conflict: { reason: "idempotency-conflict" },
+          found: { id: reserved.id, status: "stored" },
+          replay: { id: reserved.id },
+          reserved: { status: "reserved" },
+          updatedDraft: { attachmentIds: [reserved.id], version: 2 },
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("expires unused reservations before blob storage and releases quota", async () => {
+    let now = 1000;
+    let next = 0;
+    const runtime = {
+      now: () => now,
+      randomId: () => `expiry-${(next += 1)}`,
+    };
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const created = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "expiry-draft",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              subject: "Expiry",
+              to: [],
+            },
+          })
+        );
+        const reservation = yield* reserveDraftAttachment(
+          Schema.decodeUnknownSync(ReserveDraftAttachmentCommand)({
+            draftId: created.id,
+            fileName: "old.pdf",
+            mailboxId,
+            mimeType: "application/pdf",
+            operationId: "reserve-old",
+            size: 1024,
+          })
+        );
+        now = reservation.expiresAt;
+        const expired = failure(
+          yield* Effect.result(
+            getDraftAttachment(
+              Schema.decodeUnknownSync(GetDraftAttachmentInput)({
+                attachmentId: reservation.id,
+                draftId: created.id,
+                mailboxId,
+              })
+            )
+          )
+        );
+        const listed = yield* listDraftAttachments(
+          Schema.decodeUnknownSync(ListDraftAttachmentsInput)({
+            draftId: created.id,
+            mailboxId,
+          })
+        );
+        const replacement = yield* reserveDraftAttachment(
+          Schema.decodeUnknownSync(ReserveDraftAttachmentCommand)({
+            draftId: created.id,
+            fileName: "new.pdf",
+            mailboxId,
+            mimeType: "application/pdf",
+            operationId: "reserve-new",
+            size: 1024,
+          })
+        );
+
+        expect({ expired, listed, replacement }).toMatchObject({
+          expired: {
+            operation: "get-draft-attachment",
+            reason: "invalid-state",
+          },
+          listed: { items: [] },
+          replacement: { status: "reserved" },
+        });
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
   });

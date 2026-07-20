@@ -15,6 +15,7 @@ import { mailboxRelations } from "#/mailboxes/sqlite-schema";
 import {
   MailboxDatabase,
   MailboxDirectoryStoreLive,
+  MailboxDraftAttachmentStoreLive,
   MailboxDraftStoreLive,
   MailboxInboundStoreLive,
   MailboxMessageStoreLive,
@@ -90,6 +91,7 @@ export const MailboxStoresTestLive = Layer.mergeAll(
   MailboxMessageStoreLive,
   MailboxInboundStoreLive,
   MailboxDraftStoreLive,
+  MailboxDraftAttachmentStoreLive,
   MailboxOutboundStoreLive
 ).pipe(Layer.provide(MailboxOperationStoreLive));
 

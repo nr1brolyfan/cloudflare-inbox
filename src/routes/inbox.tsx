@@ -52,6 +52,11 @@ import {
   ThreadId,
 } from "../mailboxes/core";
 import {
+  DraftAttachmentUploadResult,
+  draftAttachmentMaxBytes,
+  ReserveDraftAttachmentCommand,
+} from "../mailboxes/draft-attachments";
+import {
   CreateMailboxDraftCommand,
   DraftEditorContent,
   DraftEditorDraft,
@@ -71,6 +76,7 @@ import {
   listMailboxMessages,
   actOnMailboxMessage,
   createMailboxDraft,
+  reserveMailboxDraftAttachment,
   updateMailboxDraft,
 } from "../server/tanstack-functions";
 
@@ -125,6 +131,12 @@ const decodeDraftEditorContent = Schema.decodeUnknownSync(DraftEditorContent);
 const decodeDraftEditorDraft = Schema.decodeUnknownSync(DraftEditorDraft);
 const decodeUpdateMailboxDraft = Schema.decodeUnknownSync(
   UpdateMailboxDraftCommand
+);
+const decodeReserveDraftAttachment = Schema.decodeUnknownSync(
+  ReserveDraftAttachmentCommand
+);
+const decodeDraftAttachmentUploadResult = Schema.decodeUnknownSync(
+  DraftAttachmentUploadResult
 );
 const mailboxNavigationQueryKey = ["mailbox", "navigation"] as const;
 const emptyDraftContent = decodeDraftEditorContent({
@@ -858,6 +870,99 @@ type DraftSaveCommand =
   | Schema.Schema.Type<typeof CreateMailboxDraftCommand>
   | Schema.Schema.Type<typeof UpdateMailboxDraftCommand>;
 
+interface PendingDraftAttachment {
+  readonly file: File;
+  readonly id: string;
+  readonly operationId: string;
+  readonly progress: number;
+  readonly retryable: boolean;
+  readonly reservationId?: string;
+  readonly status: "reserving" | "uploading" | "failed";
+  readonly error?: string;
+}
+
+const uploadReservedAttachment = (
+  input: {
+    readonly attachmentId: string;
+    readonly draftId: string;
+    readonly file: File;
+    readonly mailboxId: string;
+  },
+  onProgress: (progress: number) => void
+) =>
+  // oxlint-disable-next-line promise/avoid-new -- XMLHttpRequest is required for browser upload progress events.
+  new Promise<Schema.Schema.Type<typeof DraftAttachmentUploadResult>>(
+    (resolve, reject) => {
+      const request = new XMLHttpRequest();
+      request.open(
+        "PUT",
+        `/api/mailboxes/${encodeURIComponent(input.mailboxId)}/drafts/${encodeURIComponent(input.draftId)}/attachments/${encodeURIComponent(input.attachmentId)}/content`
+      );
+      request.setRequestHeader("content-type", "application/octet-stream");
+      request.upload.addEventListener("progress", (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          onProgress(
+            Math.min(100, Math.round((event.loaded / event.total) * 100))
+          );
+        }
+      });
+      request.addEventListener("load", () => {
+        if (request.status < 200 || request.status >= 300) {
+          reject(new Error(`upload:${request.status}`));
+          return;
+        }
+        try {
+          resolve(
+            decodeDraftAttachmentUploadResult(JSON.parse(request.responseText))
+          );
+        } catch (error) {
+          reject(error);
+        }
+      });
+      request.addEventListener("error", () =>
+        reject(new Error("upload:network"))
+      );
+      request.send(input.file);
+    }
+  );
+
+const attachmentUploadFailure = (error: unknown) => {
+  const status =
+    error instanceof Error && /^(?:reserve|upload):\d+$/u.test(error.message)
+      ? Number(error.message.split(":")[1])
+      : undefined;
+  if (status === 409) {
+    return {
+      message:
+        "The upload reservation expired. Dismiss this file and add it again.",
+      retryable: false,
+      status,
+    };
+  }
+  if (status === 401 || status === 403) {
+    return {
+      message:
+        status === 401
+          ? "Your session ended before this file was uploaded."
+          : "You do not have permission to upload this file.",
+      retryable: false,
+      status,
+    };
+  }
+  if (status === 400 || status === 404) {
+    return {
+      message: "This file cannot use the current upload reservation.",
+      retryable: false,
+      status,
+    };
+  }
+  return {
+    message: "Upload failed. Retry with the same secure reservation.",
+    retryable: status === undefined || status >= 500,
+    status,
+  };
+};
+
 const draftSaveErrorText = (status: number) => {
   if (status === 400) {
     return "Check the draft fields and try again.";
@@ -899,6 +1004,9 @@ function DraftWorkspace({
     readonly message: string;
     readonly retryable: boolean;
   }>();
+  const [attachmentUploads, setAttachmentUploads] = useState<
+    readonly PendingDraftAttachment[]
+  >([]);
   const draftQueryKey = [
     "mailbox",
     "draft",
@@ -965,6 +1073,132 @@ function DraftWorkspace({
     },
     retry: false,
   });
+  const runAttachmentUpload = async (pending: PendingDraftAttachment) => {
+    if (draftId === undefined) {
+      return;
+    }
+    const { file, id, operationId } = pending;
+    try {
+      let { reservationId } = pending;
+      if (reservationId === undefined) {
+        const reservation = await reserveMailboxDraftAttachment({
+          data: decodeReserveDraftAttachment({
+            draftId,
+            fileName: file.name,
+            mailboxId,
+            mimeType: file.type || "application/octet-stream",
+            operationId,
+            size: file.size,
+          }),
+        });
+        if (!reservation.ok) {
+          throw new Error(`reserve:${reservation.status}`);
+        }
+        reservationId = reservation.reservation.id;
+        setAttachmentUploads((currentUploads) =>
+          currentUploads.map((upload) =>
+            upload.id === id
+              ? {
+                  ...upload,
+                  progress: 0,
+                  reservationId,
+                  status: "uploading",
+                }
+              : upload
+          )
+        );
+      } else {
+        setAttachmentUploads((currentUploads) =>
+          currentUploads.map((upload) =>
+            upload.id === id
+              ? {
+                  ...upload,
+                  error: undefined,
+                  retryable: true,
+                  status: "uploading",
+                }
+              : upload
+          )
+        );
+      }
+      await uploadReservedAttachment(
+        {
+          attachmentId: reservationId,
+          draftId,
+          file,
+          mailboxId,
+        },
+        (progress) =>
+          setAttachmentUploads((currentUploads) =>
+            currentUploads.map((upload) =>
+              upload.id === id ? { ...upload, progress } : upload
+            )
+          )
+      );
+      setAttachmentUploads((currentUploads) =>
+        currentUploads.filter((upload) => upload.id !== id)
+      );
+      await draft.refetch();
+      void queryClient.invalidateQueries({
+        queryKey: ["mailbox", "navigation"],
+      });
+    } catch (error) {
+      const {
+        message: uploadError,
+        retryable: uploadRetryable,
+        status: uploadStatus,
+      } = attachmentUploadFailure(error);
+      if (uploadStatus === 401) {
+        void clearCachedAuthSession(queryClient);
+      }
+      setAttachmentUploads((currentUploads) =>
+        currentUploads.map((upload) =>
+          upload.id === id
+            ? {
+                ...upload,
+                error: uploadError,
+                retryable: uploadRetryable,
+                status: "failed",
+              }
+            : upload
+        )
+      );
+    }
+  };
+  const attachFiles = (files: readonly File[]) => {
+    const pending = files.map(
+      (file): PendingDraftAttachment => ({
+        file,
+        id: crypto.randomUUID(),
+        operationId: crypto.randomUUID(),
+        progress: 0,
+        retryable: true,
+        status: "reserving",
+      })
+    );
+    const rejected = pending.filter(
+      (upload) =>
+        upload.file.size < 1 || upload.file.size > draftAttachmentMaxBytes
+    );
+    const accepted = pending.filter((upload) => !rejected.includes(upload));
+    setAttachmentUploads([
+      ...accepted,
+      ...rejected.map((upload) => ({
+        ...upload,
+        error: "Files must be between 1 byte and 10 MB.",
+        retryable: false,
+        status: "failed" as const,
+      })),
+    ]);
+    const uploadSequentially = async () => {
+      for (const upload of accepted) {
+        // Uploads stay sequential to bound Worker buffering and preserve quota ordering.
+        // oxlint-disable-next-line eslint/no-await-in-loop
+        await runAttachmentUpload(upload);
+      }
+    };
+    void uploadSequentially();
+  };
 
   if (draftId !== undefined && draft.isLoading) {
     return (
@@ -1020,17 +1254,39 @@ function DraftWorkspace({
 
   return (
     <DraftEditor
-      key={current?.id ?? "new"}
+      key={current === undefined ? "new" : `${current.id}:${current.version}`}
+      attachments={current?.attachments ?? []}
+      attachmentUploads={attachmentUploads.map((upload) => ({
+        error: upload.error,
+        fileName: upload.file.name,
+        id: upload.id,
+        progress: upload.progress,
+        retryable: upload.retryable,
+        size: upload.file.size,
+        status: upload.status,
+      }))}
       error={failure?.message}
       initial={current?.content ?? emptyDraftContent}
       isNew={current === undefined}
       isSaving={save.isPending}
+      onAttachFiles={attachFiles}
       onClose={onClose}
       onRetry={
         failure?.retryable === true
           ? () => save.mutate(failure.command)
           : undefined
       }
+      onDismissAttachmentUpload={(id) =>
+        setAttachmentUploads((uploads) =>
+          uploads.filter((upload) => upload.id !== id)
+        )
+      }
+      onRetryAttachmentUpload={(id) => {
+        const upload = attachmentUploads.find((item) => item.id === id);
+        if (upload !== undefined) {
+          void runAttachmentUpload(upload);
+        }
+      }}
       onSave={submit}
       saved={saved}
     />

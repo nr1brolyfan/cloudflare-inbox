@@ -41,6 +41,19 @@ const updatedDraft = Schema.decodeUnknownSync(DraftSchema)({
   updatedAt: 2000,
   version: 2,
 });
+const newDraft = Schema.decodeUnknownSync(DraftSchema)({
+  attachmentIds: [],
+  bcc: [],
+  cc: [],
+  createdAt: 1000,
+  id: "draft-new",
+  mailboxId: "primary",
+  subject: "New draft",
+  textBody: "A plain-text message",
+  to: [{ address: "person@example.test" }],
+  updatedAt: 1000,
+  version: 1,
+});
 const unused = () => Effect.die(new Error("Unexpected repository operation"));
 const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
@@ -51,6 +64,7 @@ const repositoryWith = (
   MailboxRepository.of({
     addMessageLabel: unused,
     cancelOutboundDelivery: unused,
+    completeDraftAttachment: unused,
     createDraft: unused,
     createFolder: unused,
     createLabel: unused,
@@ -63,14 +77,17 @@ const repositoryWith = (
     findRuleLocation: unused,
     getAttachmentBlob: unused,
     getDraft: unused,
+    getDraftAttachment: unused,
     getMessage: unused,
     getOutboundDelivery: unused,
     getThread: unused,
     listFolders: unused,
+    listDraftAttachments: () => Effect.succeed({ items: [] }),
     listLabels: unused,
     listMessages: unused,
     moveMessage: unused,
     removeMessageLabel: unused,
+    reserveDraftAttachment: unused,
     renameFolder: unused,
     renameLabel: unused,
     resendOutbound: unused,
@@ -155,17 +172,9 @@ describe("mailbox draft editing", () => {
         createDraft: (input) => {
           calls.push("create");
           repositoryInput = input;
-          return Effect.succeed(
-            Schema.decodeUnknownSync(DraftSchema)({
-              ...input.content,
-              createdAt: 1000,
-              id: "draft-new",
-              mailboxId: input.mailboxId,
-              updatedAt: 1000,
-              version: 1,
-            })
-          );
+          return Effect.succeed(newDraft);
         },
+        getDraft: () => Effect.succeed(newDraft),
       }),
       (service) => service.create(command)
     );
@@ -195,6 +204,7 @@ describe("mailbox draft editing", () => {
 
   it("preserves reply, HTML, and attachment fields during a CAS update", async () => {
     const calls: string[] = [];
+    let draftReads = 0;
     let repositoryInput: unknown;
     const command = Schema.decodeUnknownSync(UpdateMailboxDraftCommand)({
       content: {
@@ -223,7 +233,10 @@ describe("mailbox draft editing", () => {
       repositoryWith({
         getDraft: () => {
           calls.push("get");
-          return Effect.succeed(existingDraft);
+          draftReads += 1;
+          return Effect.succeed(
+            draftReads === 1 ? existingDraft : updatedDraft
+          );
         },
         updateDraft: (input) => {
           calls.push("update");
@@ -239,6 +252,8 @@ describe("mailbox draft editing", () => {
       "authorize-draft",
       "get",
       "update",
+      "get",
+      "get",
     ]);
     expect(repositoryInput).toMatchObject({
       content: {

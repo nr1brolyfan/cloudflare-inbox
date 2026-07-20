@@ -380,6 +380,71 @@ export const draft = sqliteTable(
   ]
 );
 
+export const draftAttachment = sqliteTable(
+  "draft_attachment",
+  {
+    id: text("id").primaryKey(),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => draft.id, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    fileName: text("file_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    status: text("status", { enum: ["reserved", "stored"] })
+      .notNull()
+      .default("reserved"),
+    contentSha256: text("content_sha256"),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    storedAt: integer("stored_at"),
+  },
+  (t) => [
+    check(
+      "draft_attachment_id_check",
+      sql`length(${t.id}) between 1 and 128 and ${t.id} = trim(${t.id})`
+    ),
+    check(
+      "draft_attachment_file_name_check",
+      sql`length(${t.fileName}) between 1 and 255 and ${t.fileName} = trim(${t.fileName})`
+    ),
+    check(
+      "draft_attachment_mime_type_check",
+      sql`length(${t.mimeType}) between 3 and 255`
+    ),
+    check("draft_attachment_size_check", sql`${t.size} between 1 and 10485760`),
+    check(
+      "draft_attachment_status_check",
+      sql`${t.status} in ('reserved', 'stored')`
+    ),
+    check(
+      "draft_attachment_sha256_check",
+      sql`${t.contentSha256} is null or (length(${t.contentSha256}) = 64 and ${t.contentSha256} not glob '*[^a-f0-9]*')`
+    ),
+    check("draft_attachment_created_at_check", sql`${t.createdAt} >= 0`),
+    check(
+      "draft_attachment_expires_at_check",
+      sql`${t.expiresAt} > ${t.createdAt}`
+    ),
+    check(
+      "draft_attachment_stored_at_check",
+      sql`${t.storedAt} is null or ${t.storedAt} >= ${t.createdAt}`
+    ),
+    check(
+      "draft_attachment_storage_state_check",
+      sql`(${t.status} = 'reserved' and ${t.contentSha256} is null and ${t.storedAt} is null) or (${t.status} = 'stored' and ${t.contentSha256} is not null and ${t.storedAt} is not null)`
+    ),
+    index("draft_attachment_draft_status_idx").on(
+      t.draftId,
+      t.status,
+      t.expiresAt,
+      t.id
+    ),
+  ]
+);
+
 export const filterRule = sqliteTable(
   "filter_rule",
   {
@@ -760,6 +825,7 @@ export const mailboxSchema = {
   asyncRuleJob,
   attachment,
   draft,
+  draftAttachment,
   filterRule,
   ruleEvaluation,
   ruleApplication,
@@ -838,6 +904,19 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
     inboundProcessing: r.one.inboundProcessing({
       from: r.attachment.inboundIngestId,
       to: r.inboundProcessing.id,
+    }),
+  },
+  draft: {
+    attachments: r.many.draftAttachment({
+      from: r.draft.id,
+      to: r.draftAttachment.draftId,
+    }),
+  },
+  draftAttachment: {
+    draft: r.one.draft({
+      from: r.draftAttachment.draftId,
+      to: r.draft.id,
+      optional: false,
     }),
   },
   asyncRuleJob: {

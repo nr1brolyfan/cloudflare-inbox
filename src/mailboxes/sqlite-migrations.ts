@@ -454,6 +454,29 @@ const migrations = [
         ON async_rule_job(status, updated_at, id)`,
     ],
   },
+  {
+    version: 9,
+    statements: [
+      `CREATE TABLE draft_attachment (
+        id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128 AND id = trim(id)),
+        draft_id TEXT NOT NULL REFERENCES draft(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        file_name TEXT NOT NULL CHECK (length(file_name) BETWEEN 1 AND 255 AND file_name = trim(file_name)),
+        mime_type TEXT NOT NULL CHECK (length(mime_type) BETWEEN 3 AND 255),
+        size INTEGER NOT NULL CHECK (size BETWEEN 1 AND 10485760),
+        status TEXT NOT NULL DEFAULT 'reserved' CHECK (status IN ('reserved', 'stored')),
+        content_sha256 TEXT CHECK (content_sha256 IS NULL OR (length(content_sha256) = 64 AND content_sha256 NOT GLOB '*[^a-f0-9]*')),
+        created_at INTEGER NOT NULL CHECK (created_at >= 0),
+        expires_at INTEGER NOT NULL CHECK (expires_at > created_at),
+        stored_at INTEGER CHECK (stored_at IS NULL OR stored_at >= created_at),
+        CHECK (
+          (status = 'reserved' AND content_sha256 IS NULL AND stored_at IS NULL) OR
+          (status = 'stored' AND content_sha256 IS NOT NULL AND stored_at IS NOT NULL)
+        )
+      ) STRICT`,
+      `CREATE INDEX draft_attachment_draft_status_idx
+        ON draft_attachment(draft_id, status, expires_at, id)`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

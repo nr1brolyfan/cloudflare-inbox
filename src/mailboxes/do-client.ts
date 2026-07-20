@@ -392,6 +392,16 @@ export const MailboxRepositoryDoLive = Layer.effect(
                 : mailDataProtocolError(response, true)
           )
         ),
+      completeDraftAttachment: (input) =>
+        executeMailData({ _tag: "CompleteDraftAttachment", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "DraftAttachmentCompleted"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
       createDraft: (input) =>
         executeMailData({ _tag: "CreateDraft", input }).pipe(
           Effect.flatMap((response) =>
@@ -511,6 +521,16 @@ export const MailboxRepositoryDoLive = Layer.effect(
                 : mailDataProtocolError(response, false)
           )
         ),
+      getDraftAttachment: (input) =>
+        executeMailData({ _tag: "GetDraftAttachment", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "DraftAttachmentFound"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
       getAttachmentBlob: (input) =>
         executeMailData({ _tag: "GetAttachmentBlob", input }).pipe(
           Effect.flatMap((response) =>
@@ -562,6 +582,16 @@ export const MailboxRepositoryDoLive = Layer.effect(
               : protocolError(response, false);
           })
         ),
+      listDraftAttachments: (input) =>
+        executeMailData({ _tag: "ListDraftAttachments", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "DraftAttachmentsListed"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
       listLabels: (input) =>
         executeDirectory({ _tag: "ListLabels", input }).pipe(
           Effect.flatMap((response) => {
@@ -609,6 +639,16 @@ export const MailboxRepositoryDoLive = Layer.effect(
             response._tag === "DomainError"
               ? domainFailure(response)
               : response._tag === "MessageMutated"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, true)
+          )
+        ),
+      reserveDraftAttachment: (input) =>
+        executeMailData({ _tag: "ReserveDraftAttachment", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "DraftAttachmentReserved"
                 ? Effect.succeed(response.value)
                 : mailDataProtocolError(response, true)
           )

@@ -133,6 +133,26 @@ const expectedMailDataMetadata = {
     kind: "write",
     responseTag: "DraftUpdated",
   },
+  ReserveDraftAttachment: {
+    operation: "reserve-draft-attachment",
+    kind: "write",
+    responseTag: "DraftAttachmentReserved",
+  },
+  GetDraftAttachment: {
+    operation: "get-draft-attachment",
+    kind: "read",
+    responseTag: "DraftAttachmentFound",
+  },
+  ListDraftAttachments: {
+    operation: "list-draft-attachments",
+    kind: "read",
+    responseTag: "DraftAttachmentsListed",
+  },
+  CompleteDraftAttachment: {
+    operation: "complete-draft-attachment",
+    kind: "write",
+    responseTag: "DraftAttachmentCompleted",
+  },
   ScheduleOutbound: {
     operation: "schedule-outbound",
     kind: "write",

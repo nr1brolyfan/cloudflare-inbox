@@ -1,21 +1,55 @@
 import * as Schema from "effect/Schema";
-import { CircleAlert, LoaderCircle, RotateCcw, Save, X } from "lucide-react";
+import {
+  CircleAlert,
+  FileText,
+  LoaderCircle,
+  Paperclip,
+  RotateCcw,
+  Save,
+  X,
+} from "lucide-react";
 import { useState } from "react";
 
+import type { DraftAttachmentReservation } from "../mailboxes/draft-attachments";
 import { DraftEditorContent } from "../mailboxes/draft-editing";
 
 type EditorContent = Schema.Schema.Type<typeof DraftEditorContent>;
 
 interface DraftEditorProps {
+  readonly attachments: readonly DraftAttachmentReservation[];
+  readonly attachmentUploads: readonly DraftAttachmentUploadView[];
   readonly error?: string;
   readonly initial: EditorContent;
   readonly isNew: boolean;
   readonly isSaving: boolean;
+  readonly onAttachFiles: (files: readonly File[]) => void;
   readonly onClose: () => void;
   readonly onRetry?: () => void;
+  readonly onDismissAttachmentUpload: (id: string) => void;
+  readonly onRetryAttachmentUpload: (id: string) => void;
   readonly onSave: (content: EditorContent) => void;
   readonly saved: boolean;
 }
+
+export interface DraftAttachmentUploadView {
+  readonly error?: string;
+  readonly fileName: string;
+  readonly id: string;
+  readonly progress: number;
+  readonly retryable: boolean;
+  readonly size: number;
+  readonly status: "reserving" | "uploading" | "failed";
+}
+
+const formatBytes = (bytes: number) => {
+  if (bytes < 1024) {
+    return `${bytes} B`;
+  }
+  const kibibytes = bytes / 1024;
+  return kibibytes < 1024
+    ? `${kibibytes.toFixed(1)} KB`
+    : `${(kibibytes / 1024).toFixed(1)} MB`;
+};
 
 const formatAddresses = (addresses: EditorContent["to"]) =>
   addresses
@@ -74,13 +108,19 @@ const parseAddresses = (value: string) => {
     .map(parseAddress);
 };
 
+// oxlint-disable-next-line eslint/complexity -- Editor validation, lock state, and accessible upload controls share one form boundary.
 export function DraftEditor({
+  attachments,
+  attachmentUploads,
   error,
   initial,
   isNew,
   isSaving,
+  onAttachFiles,
   onClose,
   onRetry,
+  onDismissAttachmentUpload,
+  onRetryAttachmentUpload,
   onSave,
   saved,
 }: DraftEditorProps) {
@@ -90,7 +130,8 @@ export function DraftEditor({
   const [subject, setSubject] = useState<string>(initial.subject);
   const [textBody, setTextBody] = useState(initial.textBody ?? "");
   const [validationError, setValidationError] = useState<string>();
-  const editorLocked = isSaving || onRetry !== undefined;
+  const editorLocked =
+    isSaving || onRetry !== undefined || attachmentUploads.length > 0;
   const dirty =
     to !== formatAddresses(initial.to) ||
     cc !== formatAddresses(initial.cc) ||
@@ -213,6 +254,140 @@ export function DraftEditor({
           />
         </label>
 
+        <section
+          aria-label="Draft attachments"
+          className="mt-4 shrink-0 rounded-2xl border border-[var(--line)] bg-white/72 p-4 sm:p-5"
+        >
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-extrabold">Attachments</p>
+              <p className="mt-1 text-[0.68rem] text-[var(--sea-ink-soft)]">
+                Up to 10 files, 10 MB each and 20 MB total.
+              </p>
+            </div>
+            <label
+              className={`inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3.5 py-2 text-xs font-extrabold ${
+                isNew || dirty || editorLocked
+                  ? "cursor-not-allowed opacity-45"
+                  : "cursor-pointer hover:bg-[var(--foam)]"
+              }`}
+            >
+              <Paperclip size={15} /> Add files
+              <input
+                type="file"
+                multiple
+                aria-label="Add draft attachments"
+                className="sr-only"
+                disabled={isNew || dirty || editorLocked}
+                onChange={(event) => {
+                  const files = [...(event.target.files ?? [])];
+                  event.target.value = "";
+                  if (files.length > 0) {
+                    onAttachFiles(files);
+                  }
+                }}
+              />
+            </label>
+          </div>
+          {isNew || dirty ? (
+            <p className="mt-3 text-[0.68rem] font-bold text-[var(--sea-ink-soft)]">
+              {isNew
+                ? "Save this draft before attaching files."
+                : "Save text changes before attaching files."}
+            </p>
+          ) : null}
+          {attachments.length === 0 && attachmentUploads.length === 0 ? null : (
+            <ul aria-live="polite" className="mt-4 space-y-2">
+              {attachments.map((attachment) => (
+                <li
+                  key={attachment.id}
+                  className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--foam)] px-3 py-2.5"
+                >
+                  <FileText
+                    aria-hidden="true"
+                    className="shrink-0 text-[var(--palm)]"
+                    size={17}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-xs font-extrabold">
+                      {attachment.fileName}
+                    </span>
+                    <span className="block text-[0.65rem] text-[var(--sea-ink-soft)]">
+                      {formatBytes(attachment.size)} · Uploaded
+                    </span>
+                  </span>
+                </li>
+              ))}
+              {attachmentUploads.map((upload) => (
+                <li
+                  key={upload.id}
+                  className="rounded-xl border border-[var(--line)] bg-white px-3 py-2.5"
+                >
+                  <div className="flex items-center gap-3">
+                    {upload.status === "failed" ? (
+                      <CircleAlert
+                        aria-hidden="true"
+                        className="shrink-0 text-red-700"
+                        size={17}
+                      />
+                    ) : (
+                      <LoaderCircle
+                        aria-hidden="true"
+                        className="shrink-0 animate-spin text-[var(--palm)]"
+                        size={17}
+                      />
+                    )}
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-xs font-extrabold">
+                        {upload.fileName}
+                      </span>
+                      <span
+                        role={upload.status === "failed" ? "alert" : "status"}
+                        className="block text-[0.65rem] text-[var(--sea-ink-soft)]"
+                      >
+                        {upload.error ??
+                          (upload.status === "reserving"
+                            ? "Reserving secure upload"
+                            : `Uploading ${upload.progress}%`)}
+                      </span>
+                    </span>
+                    {upload.status === "failed" ? (
+                      <span className="flex items-center gap-1">
+                        {upload.retryable ? (
+                          <button
+                            type="button"
+                            aria-label={`Retry ${upload.fileName} upload`}
+                            onClick={() => onRetryAttachmentUpload(upload.id)}
+                            className="rounded-lg px-2 py-1 text-[0.65rem] font-extrabold"
+                          >
+                            Retry
+                          </button>
+                        ) : null}
+                        <button
+                          type="button"
+                          aria-label={`Dismiss ${upload.fileName} upload`}
+                          onClick={() => onDismissAttachmentUpload(upload.id)}
+                          className="flex size-7 items-center justify-center rounded-lg"
+                        >
+                          <X size={13} />
+                        </button>
+                      </span>
+                    ) : null}
+                  </div>
+                  {upload.status === "uploading" ? (
+                    <progress
+                      aria-label={`${upload.fileName} upload progress`}
+                      max={100}
+                      value={upload.progress}
+                      className="mt-2 block h-1.5 w-full overflow-hidden rounded-full accent-[var(--lagoon-deep)]"
+                    />
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
         <div className="mt-4 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div aria-live="polite" className="min-h-5">
             {visibleError === undefined ? null : (
@@ -237,7 +412,7 @@ export function DraftEditor({
             )}
             <button
               type="submit"
-              disabled={isSaving || onRetry !== undefined}
+              disabled={editorLocked}
               className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-2.5 text-xs font-extrabold text-white shadow-[0_10px_26px_rgba(23,58,64,0.18)] disabled:opacity-55"
             >
               {isSaving ? (

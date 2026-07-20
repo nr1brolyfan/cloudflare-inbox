@@ -35,6 +35,12 @@ import {
   ThreadId,
 } from "../mailboxes/core";
 import {
+  DraftAttachmentUploadResult,
+  ReserveDraftAttachmentCommand,
+  ReservedDraftAttachment,
+  UploadDraftAttachmentCommand,
+} from "../mailboxes/draft-attachments";
+import {
   CreateMailboxDraftCommand,
   DraftEditorDraft,
   UpdateMailboxDraftCommand,
@@ -68,6 +74,11 @@ const MailboxMessageParams = Schema.Struct({
   messageId: MessageId,
 });
 const MailboxDraftParams = Schema.Struct({
+  draftId: DraftId,
+  mailboxId: MailboxId,
+});
+const MailboxDraftAttachmentParams = Schema.Struct({
+  attachmentId: AttachmentId,
   draftId: DraftId,
   mailboxId: MailboxId,
 });
@@ -197,6 +208,35 @@ export const UpdateMailboxDraftEndpoint = HttpApiEndpoint.patch(
   }
 );
 
+export const ReserveDraftAttachmentEndpoint = HttpApiEndpoint.post(
+  "reserveDraftAttachment",
+  "/api/mailboxes/:mailboxId/drafts/:draftId/attachments/reservations",
+  {
+    error: MailboxErrors,
+    params: MailboxDraftParams,
+    payload: Schema.Struct({
+      fileName: ReserveDraftAttachmentCommand.fields.fileName,
+      mimeType: ReserveDraftAttachmentCommand.fields.mimeType,
+      operationId: ReserveDraftAttachmentCommand.fields.operationId,
+      size: ReserveDraftAttachmentCommand.fields.size,
+    }),
+    success: ReservedDraftAttachment.pipe(HttpApiSchema.status(201)),
+  }
+);
+
+export const UploadDraftAttachmentEndpoint = HttpApiEndpoint.put(
+  "uploadDraftAttachment",
+  "/api/mailboxes/:mailboxId/drafts/:draftId/attachments/:attachmentId/content",
+  {
+    error: MailboxErrors,
+    params: MailboxDraftAttachmentParams,
+    payload: UploadDraftAttachmentCommand.fields.content.pipe(
+      HttpApiSchema.asUint8Array({ contentType: "application/octet-stream" })
+    ),
+    success: DraftAttachmentUploadResult,
+  }
+);
+
 export const GetMailboxMessageHtmlEndpoint = HttpApiEndpoint.get(
   "getMessageHtml",
   "/api/mailboxes/:mailboxId/messages/:messageId/html",
@@ -268,8 +308,10 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     GetMailboxNavigationEndpoint,
     ListMailboxMessagesEndpoint,
     RenameMailboxEndpoint,
+    ReserveDraftAttachmentEndpoint,
     ReplayInboundEndpoint,
-    UpdateMailboxDraftEndpoint
+    UpdateMailboxDraftEndpoint,
+    UploadDraftAttachmentEndpoint
   )
   .middleware(AuthSchemaErrorMiddleware)
   .middleware(CurrentRequestAuthMiddleware)

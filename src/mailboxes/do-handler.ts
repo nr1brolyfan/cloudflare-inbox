@@ -27,6 +27,7 @@ import {
 } from "./resource-location";
 import {
   MailboxDirectoryStore,
+  MailboxDraftAttachmentStore,
   MailboxDraftStore,
   MailboxIdentity,
   MailboxInboundStore,
@@ -82,6 +83,7 @@ const executeMailDataRequest = (
   request: MailDataRpcRequestType,
   stores: MailboxMessageStore &
     MailboxDraftStore &
+    MailboxDraftAttachmentStore &
     MailboxOutboundStore &
     MailboxInboundStore
 ) => {
@@ -175,6 +177,34 @@ const executeMailDataRequest = (
         request,
         stores.updateDraft(request.input),
         (value) => ({ _tag: "DraftUpdated", value })
+      );
+    }
+    case "ReserveDraftAttachment": {
+      return encodeMailDataResult(
+        request,
+        stores.reserveDraftAttachment(request.input),
+        (value) => ({ _tag: "DraftAttachmentReserved", value })
+      );
+    }
+    case "GetDraftAttachment": {
+      return encodeMailDataResult(
+        request,
+        stores.getDraftAttachment(request.input),
+        (value) => ({ _tag: "DraftAttachmentFound", value })
+      );
+    }
+    case "ListDraftAttachments": {
+      return encodeMailDataResult(
+        request,
+        stores.listDraftAttachments(request.input),
+        (value) => ({ _tag: "DraftAttachmentsListed", value })
+      );
+    }
+    case "CompleteDraftAttachment": {
+      return encodeMailDataResult(
+        request,
+        stores.completeDraftAttachment(request.input),
+        (value) => ({ _tag: "DraftAttachmentCompleted", value })
       );
     }
     case "ScheduleOutbound": {
@@ -365,12 +395,14 @@ export const MailboxDoHandlerLive = Layer.effect(
     const resourceIndex = yield* MailboxResourceIndex;
     const messageStore = yield* MailboxMessageStore;
     const draftStore = yield* MailboxDraftStore;
+    const draftAttachmentStore = yield* MailboxDraftAttachmentStore;
     const outboundStore = yield* MailboxOutboundStore;
     const inboundStore = yield* MailboxInboundStore;
     const { mailboxId } = yield* MailboxIdentity;
     const mailDataStores = {
       ...messageStore,
       ...draftStore,
+      ...draftAttachmentStore,
       ...outboundStore,
       ...inboundStore,
     };

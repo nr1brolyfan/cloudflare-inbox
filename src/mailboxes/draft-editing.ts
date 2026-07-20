@@ -17,6 +17,8 @@ import {
   UnixMillis,
   Version,
 } from "./core";
+import type { DraftAttachmentList } from "./draft-attachments";
+import { StoredDraftAttachment } from "./draft-attachments";
 import type { Draft as DraftType } from "./drafts";
 import { MailboxDomainError } from "./errors";
 import type { MailboxRepositoryError } from "./errors";
@@ -46,6 +48,7 @@ export class DraftEditorDraft extends Schema.Class<DraftEditorDraft>(
   id: DraftId,
   mailboxId: MailboxId,
   content: DraftEditorContent,
+  attachments: Schema.Array(StoredDraftAttachment),
   createdAt: UnixMillis,
   updatedAt: UnixMillis,
   version: Version,
@@ -150,7 +153,7 @@ const mapRepositoryError = (
     : editingError("storage", error);
 };
 
-const projectDraft = (draft: DraftType) =>
+const projectDraft = (draft: DraftType, attachments: DraftAttachmentList) =>
   Schema.decodeUnknownEffect(DraftEditorDraft)({
     id: draft.id,
     mailboxId: draft.mailboxId,
@@ -161,6 +164,9 @@ const projectDraft = (draft: DraftType) =>
       subject: draft.subject,
       textBody: draft.textBody,
     },
+    attachments: attachments.items.filter(
+      (attachment) => attachment.status === "stored"
+    ),
     createdAt: draft.createdAt,
     updatedAt: draft.updatedAt,
     version: draft.version,
@@ -186,6 +192,48 @@ export const MailboxDraftEditingLive = Layer.effect(
   Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
     const repository = yield* MailboxRepository;
+    const loadConsistentDraft = (
+      query: GetMailboxDraftQuery,
+      attempts = 0
+    ): Effect.Effect<
+      DraftEditorDraft,
+      MailboxDraftEditingError | MailAuthorizationError,
+      CurrentPrincipal
+    > =>
+      Effect.gen(function* () {
+        const before = yield* repository
+          .getDraft(query)
+          .pipe(Effect.mapError(mapRepositoryError));
+        yield* verifyIdentity(before, query.mailboxId, query.draftId);
+        const attachments = yield* repository
+          .listDraftAttachments(query)
+          .pipe(Effect.mapError(mapRepositoryError));
+        const after = yield* repository
+          .getDraft(query)
+          .pipe(Effect.mapError(mapRepositoryError));
+        yield* verifyIdentity(after, query.mailboxId, query.draftId);
+        if (before.version !== after.version) {
+          return attempts < 2
+            ? yield* loadConsistentDraft(query, attempts + 1)
+            : yield* editingError(
+                "storage",
+                new Error("Draft changed repeatedly while reading")
+              );
+        }
+        const validAttachments = attachments.items.every(
+          (attachment) =>
+            attachment.mailboxId === query.mailboxId &&
+            attachment.draftId === query.draftId &&
+            (attachment.status !== "stored" ||
+              after.attachmentIds.includes(attachment.id))
+        );
+        return validAttachments
+          ? yield* projectDraft(after, attachments)
+          : yield* editingError(
+              "storage",
+              new Error("Draft attachment list invariant failed")
+            );
+      });
     const requireEdit = (mailboxId: MailboxId, draftId: DraftId) =>
       authorization
         .requireDraftCreate({ resource: { _tag: "Mailbox", mailboxId } })
@@ -214,21 +262,16 @@ export const MailboxDraftEditingLive = Layer.effect(
               },
             })
             .pipe(Effect.mapError(mapRepositoryError));
-          return yield* verifyIdentity(draft, command.mailboxId).pipe(
-            Effect.flatMap(projectDraft)
-          );
+          yield* verifyIdentity(draft, command.mailboxId);
+          return yield* loadConsistentDraft({
+            draftId: draft.id,
+            mailboxId: command.mailboxId,
+          });
         }),
       get: (query) =>
         Effect.gen(function* () {
           yield* requireEdit(query.mailboxId, query.draftId);
-          const draft = yield* repository
-            .getDraft(query)
-            .pipe(Effect.mapError(mapRepositoryError));
-          return yield* verifyIdentity(
-            draft,
-            query.mailboxId,
-            query.draftId
-          ).pipe(Effect.flatMap(projectDraft));
+          return yield* loadConsistentDraft(query);
         }),
       update: (command) =>
         Effect.gen(function* () {
@@ -255,11 +298,8 @@ export const MailboxDraftEditingLive = Layer.effect(
               },
             })
             .pipe(Effect.mapError(mapRepositoryError));
-          return yield* verifyIdentity(
-            draft,
-            command.mailboxId,
-            command.draftId
-          ).pipe(Effect.flatMap(projectDraft));
+          yield* verifyIdentity(draft, command.mailboxId, command.draftId);
+          return yield* loadConsistentDraft(command);
         }),
     });
   })

@@ -11,6 +11,16 @@ import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-readi
 import { isSafeInlineImageMimeType } from "../mailboxes/attachment-reading";
 import { MailboxRecordSchema } from "../mailboxes/core";
 import type {
+  DraftAttachmentReservationSchema,
+  ReserveDraftAttachmentCommand,
+  UploadDraftAttachmentCommand,
+} from "../mailboxes/draft-attachments";
+import {
+  DraftAttachmentUploadResult,
+  draftAttachmentMaxBytes,
+  ReservedDraftAttachment,
+} from "../mailboxes/draft-attachments";
+import type {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
   UpdateMailboxDraftCommand,
@@ -96,12 +106,32 @@ export type MailboxDraftServerResult =
     }
   | MailboxServerErrorResult;
 
+export type MailboxDraftAttachmentReservationServerResult =
+  | {
+      readonly ok: true;
+      readonly reservation: Schema.Codec.Encoded<
+        typeof DraftAttachmentReservationSchema
+      >;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxDraftAttachmentUploadServerResult =
+  | {
+      readonly ok: true;
+      readonly upload: Schema.Codec.Encoded<typeof DraftAttachmentUploadResult>;
+    }
+  | MailboxServerErrorResult;
+
 interface ForwardMailboxRequestInput {
   readonly incoming: Request;
   readonly method: "GET" | "PATCH" | "POST";
   readonly operation: string;
   readonly path: string;
   readonly payload?: Readonly<Record<string, unknown>>;
+}
+
+interface StreamingRequestInit extends RequestInit {
+  readonly duplex: "half";
 }
 
 type ForwardMailboxResult =
@@ -164,6 +194,16 @@ const invalidBackendResponse = (): MailboxServerErrorResult => ({
   },
   ok: false,
   status: 502,
+});
+
+const invalidUploadRequest = (): MailboxServerErrorResult => ({
+  error: {
+    _tag: "AuthBadRequestError",
+    code: "bad_request",
+    message: "Invalid draft attachment",
+  },
+  ok: false,
+  status: 400,
 });
 
 const policyDeniedMessage = (body: object, operation: string) => {
@@ -251,10 +291,20 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
     readonly mailboxId: string;
   }) => Effect.Effect<MailboxServerResult>;
+  readonly reserveDraftAttachment: (input: {
+    readonly command: ReserveDraftAttachmentCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxDraftAttachmentReservationServerResult>;
   readonly updateDraft: (input: {
     readonly command: UpdateMailboxDraftCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxDraftServerResult>;
+  readonly uploadDraftAttachment: (input: {
+    readonly attachmentId: UploadDraftAttachmentCommand["attachmentId"];
+    readonly draftId: UploadDraftAttachmentCommand["draftId"];
+    readonly incoming: Request;
+    readonly mailboxId: UploadDraftAttachmentCommand["mailboxId"];
+  }) => Effect.Effect<MailboxDraftAttachmentUploadServerResult>;
 }
 
 /** Website mailbox use cases backed by the private Backend binding. */
@@ -696,6 +746,43 @@ export const MailboxBackendOperationsLive = Layer.effect(
               : invalidBackendResponse();
           })
         ),
+      reserveDraftAttachment: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "POST",
+          operation: "website.mailbox.draft_attachment_reserve",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/drafts/${encodeURIComponent(command.draftId)}/attachments/reservations`,
+          payload: {
+            fileName: command.fileName,
+            mimeType: command.mimeType,
+            operationId: command.operationId,
+            size: command.size,
+          },
+        }).pipe(
+          Effect.map(
+            (result): MailboxDraftAttachmentReservationServerResult => {
+              if (!result.ok) {
+                return result;
+              }
+              const decoded = Schema.decodeUnknownExit(
+                Schema.toCodecJson(ReservedDraftAttachment)
+              )(result.body);
+              return Exit.isSuccess(decoded) &&
+                decoded.value.mailboxId === command.mailboxId &&
+                decoded.value.draftId === command.draftId &&
+                decoded.value.fileName === command.fileName &&
+                decoded.value.mimeType === command.mimeType &&
+                decoded.value.size === command.size
+                ? {
+                    ok: true,
+                    reservation: Schema.encodeSync(ReservedDraftAttachment)(
+                      decoded.value
+                    ),
+                  }
+                : invalidBackendResponse();
+            }
+          )
+        ),
       updateDraft: ({ command, incoming }) =>
         forwardRequest({
           incoming,
@@ -712,6 +799,72 @@ export const MailboxBackendOperationsLive = Layer.effect(
             decodeDraftResult(result, command.mailboxId, command.draftId)
           )
         ),
+      uploadDraftAttachment: ({
+        attachmentId,
+        draftId,
+        incoming,
+        mailboxId,
+      }) => {
+        const encodedLength = incoming.headers.get("content-length");
+        const contentLength =
+          encodedLength === null ? Number.NaN : Number(encodedLength);
+        if (
+          incoming.headers.get("content-type") !== "application/octet-stream" ||
+          !Number.isSafeInteger(contentLength) ||
+          contentLength < 1 ||
+          contentLength > draftAttachmentMaxBytes
+        ) {
+          return Effect.succeed(invalidUploadRequest());
+        }
+        const headers = new Headers();
+        headers.set("content-length", String(contentLength));
+        headers.set("content-type", "application/octet-stream");
+        for (const name of forwardedHeaderNames) {
+          const value = incoming.headers.get(name);
+          if (value !== null) {
+            headers.set(name, value);
+          }
+        }
+        const path = `/api/mailboxes/${encodeURIComponent(mailboxId)}/drafts/${encodeURIComponent(draftId)}/attachments/${encodeURIComponent(attachmentId)}/content`;
+        return Effect.gen(function* () {
+          const requestInit: StreamingRequestInit = {
+            body: incoming.body,
+            duplex: "half",
+            headers,
+            method: "PUT",
+          };
+          const response = yield* backend.fetch(
+            "website.mailbox.draft_attachment_upload",
+            new Request(new URL(path, incoming.url), requestInit)
+          );
+          if (!response.ok) {
+            return yield* forwardErrorResponse(
+              response,
+              "website.mailbox.draft_attachment_upload"
+            );
+          }
+          const responseBody = yield* Effect.tryPromise(() =>
+            response.json()
+          ).pipe(Effect.option);
+          if (Option.isNone(responseBody)) {
+            return invalidBackendResponse();
+          }
+          const decoded = Schema.decodeUnknownExit(
+            Schema.toCodecJson(DraftAttachmentUploadResult)
+          )(responseBody.value);
+          return Exit.isSuccess(decoded) &&
+            decoded.value.attachment.mailboxId === mailboxId &&
+            decoded.value.attachment.draftId === draftId &&
+            decoded.value.attachment.id === attachmentId
+            ? {
+                ok: true as const,
+                upload: Schema.encodeSync(DraftAttachmentUploadResult)(
+                  decoded.value
+                ),
+              }
+            : invalidBackendResponse();
+        });
+      },
     });
   })
 );

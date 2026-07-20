@@ -5,6 +5,7 @@ import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
+import { ReserveDraftAttachmentCommand } from "../mailboxes/draft-attachments";
 import {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
@@ -35,6 +36,9 @@ const getMailboxDraftInput = Schema.decodeUnknownSync(GetMailboxDraftQuery);
 const updateMailboxDraftInput = Schema.decodeUnknownSync(
   UpdateMailboxDraftCommand
 );
+const reserveDraftAttachmentInput = Schema.decodeUnknownSync(
+  ReserveDraftAttachmentCommand
+);
 
 export const actOnMailboxMessage = createServerFn({ method: "POST" })
   .validator(mailboxMessageActionInput)
@@ -57,6 +61,10 @@ export const getMailboxDraft = createServerFn({ method: "GET" })
 export const renameMailbox = createServerFn({ method: "POST" })
   .validator(renameInput)
   .handler(({ data }) => websiteBackend.renameMailbox(data));
+
+export const reserveMailboxDraftAttachment = createServerFn({ method: "POST" })
+  .validator(reserveDraftAttachmentInput)
+  .handler(({ data }) => websiteBackend.reserveMailboxDraftAttachment(data));
 
 export const getDevEmailInboxStatus = createServerFn({
   method: "GET",

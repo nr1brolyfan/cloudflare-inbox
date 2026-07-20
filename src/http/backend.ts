@@ -30,6 +30,8 @@ import {
 import { MailboxNavigationLive } from "../control-plane/mailbox-navigation-live";
 import { MailboxInlineAttachmentReadingLive } from "../mailboxes/attachment-reading";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
+import { DraftAttachmentBlobStoreR2WithRuntimeLive } from "../mailboxes/draft-attachment-store-r2-live";
+import { MailboxDraftAttachmentsLive } from "../mailboxes/draft-attachments";
 import { MailboxDraftEditingLive } from "../mailboxes/draft-editing";
 import { InboundAttachmentBlobReaderR2WithRuntimeLive } from "../mailboxes/inbound-attachment-reader-r2-live";
 import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
@@ -117,6 +119,15 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxDraftEditingLive = MailboxDraftEditingLive.pipe(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
+    const mailboxDraftAttachmentsLive = MailboxDraftAttachmentsLive.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          mailAuthorizationLive,
+          mailboxRepositoryLive,
+          DraftAttachmentBlobStoreR2WithRuntimeLive
+        )
+      )
+    );
     const mailboxMessageHtmlLive = MailboxMessageHtmlReadingLive.pipe(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
@@ -145,6 +156,7 @@ const BackendRoutesLive = Layer.unwrap(
           mailboxMessageReadingLive,
           mailboxMessageActionsLive,
           mailboxDraftEditingLive,
+          mailboxDraftAttachmentsLive,
           mailboxMessageHtmlLive,
           mailboxInlineAttachmentLive,
           InboundReplayAuthorizationLive.pipe(

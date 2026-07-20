@@ -12,6 +12,7 @@ import {
   MailboxDirectoryStore,
   MailboxDirectoryStoreLive,
   MailboxDraftStoreLive,
+  MailboxDraftAttachmentStoreLive,
   MailboxIdentityLive,
   MailboxInboundStoreLive,
   MailboxMessageStoreLive,
@@ -66,6 +67,7 @@ const MailboxStoresLive = Layer.mergeAll(
   MailboxMessageStoreLive,
   MailboxInboundStoreLive,
   MailboxDraftStoreLive,
+  MailboxDraftAttachmentStoreLive,
   MailboxOutboundStoreLive
 ).pipe(
   Layer.provide(MailboxOperationStoreLive),
