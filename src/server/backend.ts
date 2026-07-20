@@ -19,6 +19,7 @@ import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "../mailboxes/message-reading";
+import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import type {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,
@@ -91,6 +92,14 @@ export const websiteBackend = {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.getNavigation(incoming);
+      })
+    ),
+  getMailboxOutboundDelivery: (query: GetMailboxOutboundDeliveryQuery) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.getOutboundDelivery({ incoming, query });
       })
     ),
   getMailboxInlineAttachment: (

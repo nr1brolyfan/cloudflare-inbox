@@ -42,14 +42,18 @@ import type {
 import { mailboxViewHref } from "../inbox/mailbox-view-links";
 import type { MessageRowAction } from "../inbox/message-list";
 import { MessageList } from "../inbox/message-list";
+import type { OutboundDeliverySnapshot } from "../inbox/outbound-delivery-tracker";
+import {
+  OutboundDeliveryTracker,
+  outboundDeliveryQueryKey,
+} from "../inbox/outbound-delivery-tracker";
 import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
-import type { UndoSendNoticeValue } from "../inbox/undo-send-notice";
-import { UndoSendNotice } from "../inbox/undo-send-notice";
 import {
   FolderId,
   DraftId,
   LabelId,
   MessageId,
+  OutboundDeliveryId,
   SearchQuery,
   ThreadId,
 } from "../mailboxes/core";
@@ -74,6 +78,7 @@ import type { MailboxNavigationResult } from "../mailboxes/navigation";
 import { SendMailboxDraftCommand } from "../mailboxes/outbound-sending";
 import {
   getMailboxNavigation,
+  getMailboxOutboundDelivery,
   getMailboxDraft,
   getMailboxThread,
   listMailboxMessages,
@@ -89,6 +94,7 @@ const InboxSearch = Schema.Struct({
   attachment: Schema.optional(Schema.Literal("true")),
   compose: Schema.optional(Schema.Literal("true")),
   draft: Schema.optional(DraftId),
+  delivery: Schema.optional(OutboundDeliveryId),
   folder: Schema.optional(FolderId),
   label: Schema.optional(LabelId),
   message: Schema.optional(MessageId),
@@ -172,6 +178,7 @@ const inboxSearchFor = (
   decodeInboxSearch({
     ...selection,
     attachment: filters.hasAttachment ? "true" : undefined,
+    delivery: filters.delivery,
     message: open?.messageId,
     q: filters.query,
     read: filters.read,
@@ -1005,7 +1012,7 @@ function DraftWorkspace({
   readonly mailboxId: string;
   readonly onClose: () => void;
   readonly onCreated: (draftId: string) => void;
-  readonly onSent: (notice: UndoSendNoticeValue) => void;
+  readonly onSent: (outbound: OutboundDeliverySnapshot) => void;
   readonly sessionId: string;
 }) {
   const queryClient = useQueryClient();
@@ -1124,13 +1131,7 @@ function DraftWorkspace({
       }
       setSendFailure(undefined);
       void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
-      onSent({
-        mailboxId,
-        outboundDeliveryId: result.send.delivery.id,
-        sendAt: result.send.delivery.sendAt,
-        serverNow: result.send.serverNow,
-        version: result.send.delivery.version,
-      });
+      onSent(result.send);
     },
     retry: false,
   });
@@ -1373,7 +1374,7 @@ function DraftWorkspace({
   );
 }
 
-// oxlint-disable-next-line eslint/complexity -- The authenticated route selects navigation, workspace, and persistent undo-notice states.
+// oxlint-disable-next-line eslint/complexity -- The authenticated route selects navigation, workspace, and persistent delivery-tracker states.
 function AuthenticatedInbox({
   data,
   isSigningOut,
@@ -1393,7 +1394,6 @@ function AuthenticatedInbox({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const [undoNotice, setUndoNotice] = useState<UndoSendNoticeValue>();
   const { folders, labels, mailbox } = data;
   const { selectedFolder, selectedLabel } = resolveNavigationSelection(
     folders,
@@ -1411,6 +1411,7 @@ function AuthenticatedInbox({
     return <MailboxUnavailable status={404} />;
   }
   const filters: MailboxMessageQueryState = {
+    delivery: search.delivery,
     hasAttachment: search.attachment === "true" || undefined,
     query: search.q,
     read: search.read,
@@ -1422,6 +1423,7 @@ function AuthenticatedInbox({
   const trashFolderId = folders.find((folder) => folder.kind === "trash")?.id;
   const draftEditorOpen =
     search.compose === "true" || search.draft !== undefined;
+  const outboundDeliveryId = search.delivery;
   const closeEditor = () =>
     void navigate({
       to: "/inbox",
@@ -1434,6 +1436,7 @@ function AuthenticatedInbox({
         folders={folders}
         labels={labels}
         mailboxName={mailbox.displayName}
+        outboundDeliveryId={outboundDeliveryId}
         headerAction={
           draftEditorOpen ? undefined : (
             <button
@@ -1445,6 +1448,7 @@ function AuthenticatedInbox({
                   search: decodeInboxSearch({
                     ...selection,
                     compose: "true",
+                    delivery: search.delivery,
                   }),
                 })
               }
@@ -1479,12 +1483,29 @@ function AuthenticatedInbox({
             onCreated={(draftId) =>
               void navigate({
                 to: "/inbox",
-                search: decodeInboxSearch({ ...selection, draft: draftId }),
+                search: decodeInboxSearch({
+                  ...selection,
+                  delivery: search.delivery,
+                  draft: draftId,
+                }),
               })
             }
-            onSent={(notice) => {
-              setUndoNotice(notice);
-              closeEditor();
+            onSent={(outbound) => {
+              queryClient.setQueryData(
+                outboundDeliveryQueryKey(
+                  sessionId,
+                  mailbox.id,
+                  outbound.delivery.id
+                ),
+                outbound
+              );
+              void navigate({
+                to: "/inbox",
+                search: inboxSearchFor(selection, {
+                  ...filters,
+                  delivery: outbound.delivery.id,
+                }),
+              });
             }}
             sessionId={sessionId}
           />
@@ -1501,15 +1522,30 @@ function AuthenticatedInbox({
           />
         )}
       </MailboxShell>
-      {undoNotice === undefined ? null : (
-        <UndoSendNotice
-          key={undoNotice.outboundDeliveryId}
-          notice={undoNotice}
-          onClose={() => setUndoNotice(undefined)}
+      {outboundDeliveryId === undefined ? null : (
+        <OutboundDeliveryTracker
+          key={outboundDeliveryId}
+          deliveryId={outboundDeliveryId}
+          getStatus={() =>
+            getMailboxOutboundDelivery({
+              data: {
+                mailboxId: mailbox.id,
+                outboundDeliveryId,
+              },
+            })
+          }
+          mailboxId={mailbox.id}
+          onDismiss={() =>
+            void navigate({
+              to: "/inbox",
+              search: decodeInboxSearch({ ...search, delivery: undefined }),
+            })
+          }
           onMailboxChanged={() =>
             void queryClient.invalidateQueries({ queryKey: ["mailbox"] })
           }
-          onUnauthorized={() => void clearCachedAuthSession(queryClient)}
+          onUnauthorized={() => clearCachedAuthSession(queryClient)}
+          sessionId={sessionId}
           undo={(command) => undoMailboxSend({ data: command })}
         />
       )}

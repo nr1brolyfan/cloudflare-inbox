@@ -54,6 +54,7 @@ describe(MailboxShell, () => {
         principalLabel="user-123"
         isSigningOut={false}
         onSignOut={signOut}
+        outboundDeliveryId="delivery-1"
         selectedFolderId="inbox"
         viewTitle="Inbox"
       >
@@ -73,10 +74,10 @@ describe(MailboxShell, () => {
     ).toBe("page");
     expect(
       screen.getByRole("link", { name: "Archive" }).getAttribute("href")
-    ).toBe("/inbox?folder=archive");
+    ).toBe("/inbox?folder=archive&delivery=delivery-1");
     expect(
       screen.getByRole("link", { name: "Work & travel" }).getAttribute("href")
-    ).toBe("/inbox?label=label-work");
+    ).toBe("/inbox?label=label-work&delivery=delivery-1");
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(signOut).toHaveBeenCalledOnce();

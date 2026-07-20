@@ -60,6 +60,10 @@ import {
 } from "../mailboxes/message-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import {
+  GetMailboxOutboundDeliveryQuery,
+  GetMailboxOutboundDeliveryResult,
+} from "../mailboxes/outbound-delivery-reading";
+import {
   SendMailboxDraftCommand,
   SendMailboxDraftResult,
   UndoMailboxSendCommand,
@@ -85,7 +89,7 @@ const MailboxDraftParams = Schema.Struct({
 });
 const MailboxOutboundDeliveryParams = Schema.Struct({
   mailboxId: MailboxId,
-  outboundDeliveryId: UndoMailboxSendCommand.fields.outboundDeliveryId,
+  outboundDeliveryId: GetMailboxOutboundDeliveryQuery.fields.outboundDeliveryId,
 });
 const MailboxDraftAttachmentParams = Schema.Struct({
   attachmentId: AttachmentId,
@@ -246,6 +250,16 @@ export const UndoMailboxSendEndpoint = HttpApiEndpoint.post(
   }
 );
 
+export const GetMailboxOutboundDeliveryEndpoint = HttpApiEndpoint.get(
+  "getOutboundDelivery",
+  "/api/mailboxes/:mailboxId/outbound/:outboundDeliveryId",
+  {
+    error: MailboxErrors,
+    params: MailboxOutboundDeliveryParams,
+    success: GetMailboxOutboundDeliveryResult,
+  }
+);
+
 export const ReserveDraftAttachmentEndpoint = HttpApiEndpoint.post(
   "reserveDraftAttachment",
   "/api/mailboxes/:mailboxId/drafts/:draftId/attachments/reservations",
@@ -340,6 +354,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     BootstrapOwnerEndpoint,
     CreateMailboxDraftEndpoint,
     GetMailboxDraftEndpoint,
+    GetMailboxOutboundDeliveryEndpoint,
     GetMailboxThreadEndpoint,
     GetMailboxInlineAttachmentEndpoint,
     GetMailboxMessageHtmlEndpoint,

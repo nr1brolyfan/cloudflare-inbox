@@ -37,6 +37,8 @@ import type { MailboxMessageReadingError } from "../mailboxes/message-reading";
 import { MailboxMessageReading } from "../mailboxes/message-reading";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
 import { MailboxNavigation } from "../mailboxes/navigation";
+import type { MailboxOutboundDeliveryReadingError } from "../mailboxes/outbound-delivery-reading";
+import { MailboxOutboundDeliveryReading } from "../mailboxes/outbound-delivery-reading";
 import type { MailboxOutboundSendingError } from "../mailboxes/outbound-sending";
 import { MailboxOutboundSending } from "../mailboxes/outbound-sending";
 import { BackendHttpApi } from "./api";
@@ -139,6 +141,7 @@ type MailboxHandlerError =
   | MailboxInlineAttachmentError
   | MailboxDraftEditingError
   | MailboxDraftAttachmentError
+  | MailboxOutboundDeliveryReadingError
   | MailboxOutboundSendingError
   | MailboxDomainError
   | MailboxRepositoryError
@@ -348,6 +351,18 @@ const mapOutboundSendingError = (
     : Effect.fail(internalError());
 };
 
+const mapOutboundDeliveryReadingError = (
+  error: MailboxOutboundDeliveryReadingError
+): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
+  error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Outbound delivery not found",
+        })
+      )
+    : Effect.fail(internalError());
+
 const mapMessageHtmlError = (
   error: MailboxMessageHtmlError
 ): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
@@ -396,6 +411,10 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxInlineAttachmentError", mapInlineAttachmentError),
     Effect.catchTag("MailboxDraftEditingError", mapDraftEditingError),
     Effect.catchTag("MailboxDraftAttachmentError", mapDraftAttachmentError),
+    Effect.catchTag(
+      "MailboxOutboundDeliveryReadingError",
+      mapOutboundDeliveryReadingError
+    ),
     Effect.catchTag("MailboxOutboundSendingError", mapOutboundSendingError),
     Effect.catchTag("MailboxDomainError", mapInboundDomainError),
     Effect.catchTags({
@@ -427,6 +446,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
     const inlineAttachments = yield* MailboxInlineAttachmentReading;
     const draftEditing = yield* MailboxDraftEditing;
     const draftAttachments = yield* MailboxDraftAttachments;
+    const outboundDeliveryReading = yield* MailboxOutboundDeliveryReading;
     const outboundSending = yield* MailboxOutboundSending;
     const replayAuthorization = yield* InboundReplayAuthorization;
     const inboundReplay = yield* InboundReplay;
@@ -453,6 +473,9 @@ export const MailboxGroupLive = HttpApiBuilder.group(
       )
       .handle("getDraft", ({ params }) =>
         draftEditing.get(params).pipe(mapHttpErrors)
+      )
+      .handle("getOutboundDelivery", ({ params }) =>
+        outboundDeliveryReading.get(params).pipe(mapHttpErrors)
       )
       .handle("getNavigation", () => navigation.getCurrent.pipe(mapHttpErrors))
       .handle("getInlineAttachment", ({ params, query }) =>

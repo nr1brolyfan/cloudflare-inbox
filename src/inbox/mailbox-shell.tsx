@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
+import { mailboxViewHref } from "./mailbox-view-links";
 
 type MailboxNavigationData = Schema.Codec.Encoded<
   typeof MailboxNavigationResult
@@ -46,6 +47,7 @@ interface MailboxShellProps {
   readonly labels: readonly NavigationLabel[];
   readonly mailboxName: string;
   readonly onSignOut: () => void;
+  readonly outboundDeliveryId?: string;
   readonly principalLabel: string;
   readonly selectedFolderId?: string;
   readonly selectedLabelId?: string;
@@ -67,6 +69,7 @@ function MailboxNavigation({
   mailboxName,
   onClose,
   onSignOut,
+  outboundDeliveryId,
   principalLabel,
   selectedFolderId,
   selectedLabelId,
@@ -131,7 +134,12 @@ function MailboxNavigation({
               return (
                 <a
                   key={folder.id}
-                  href={`/inbox?folder=${encodeURIComponent(folder.id)}`}
+                  href={mailboxViewHref(
+                    { folder: folder.id },
+                    undefined,
+                    undefined,
+                    { delivery: outboundDeliveryId }
+                  )}
                   aria-current={selected ? "page" : undefined}
                   title={`${folder.messageCount} messages`}
                   className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
@@ -173,7 +181,12 @@ function MailboxNavigation({
                 return (
                   <a
                     key={label.id}
-                    href={`/inbox?label=${encodeURIComponent(label.id)}`}
+                    href={mailboxViewHref(
+                      { label: label.id },
+                      undefined,
+                      undefined,
+                      { delivery: outboundDeliveryId }
+                    )}
                     aria-current={selected ? "page" : undefined}
                     className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
                       selected
@@ -249,6 +262,7 @@ export function MailboxShell({
   labels,
   mailboxName,
   onSignOut,
+  outboundDeliveryId,
   principalLabel,
   selectedFolderId,
   selectedLabelId,
@@ -282,6 +296,7 @@ export function MailboxShell({
             labels={labels}
             mailboxName={mailboxName}
             onSignOut={onSignOut}
+            outboundDeliveryId={outboundDeliveryId}
             principalLabel={principalLabel}
             selectedFolderId={selectedFolderId}
             selectedLabelId={selectedLabelId}
@@ -310,6 +325,7 @@ export function MailboxShell({
                 mailboxName={mailboxName}
                 onClose={() => setNavigationOpen(false)}
                 onSignOut={onSignOut}
+                outboundDeliveryId={outboundDeliveryId}
                 principalLabel={principalLabel}
                 selectedFolderId={selectedFolderId}
                 selectedLabelId={selectedLabelId}

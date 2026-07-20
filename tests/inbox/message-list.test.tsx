@@ -56,7 +56,7 @@ describe(MessageList, () => {
     render(
       <MessageList
         data={messages}
-        filters={{ query: "invoice", starred: true }}
+        filters={{ delivery: "delivery-1", query: "invoice", starred: true }}
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={onLoadMore}
@@ -76,8 +76,8 @@ describe(MessageList, () => {
       "First: First subject",
     ]);
     expect(links.map((link) => link.getAttribute("href"))).toStrictEqual([
-      "/inbox?folder=inbox&thread=thread-shared&message=message-b&q=invoice&starred=true",
-      "/inbox?folder=inbox&thread=thread-shared&message=message-a&q=invoice&starred=true",
+      "/inbox?folder=inbox&thread=thread-shared&message=message-b&q=invoice&starred=true&delivery=delivery-1",
+      "/inbox?folder=inbox&thread=thread-shared&message=message-a&q=invoice&starred=true&delivery=delivery-1",
     ]);
     expect(links).toHaveLength(2);
     fireEvent.click(
@@ -93,7 +93,7 @@ describe(MessageList, () => {
     render(
       <MessageList
         data={{ items: [] }}
-        filters={{}}
+        filters={{ delivery: "delivery-1" }}
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
@@ -120,6 +120,7 @@ describe(MessageList, () => {
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
     expect(onQueryChange).toHaveBeenCalledWith({
+      delivery: "delivery-1",
       hasAttachment: true,
       query: "quarterly report",
       read: "unread",

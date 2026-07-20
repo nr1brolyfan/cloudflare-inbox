@@ -44,6 +44,10 @@ import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starte
 import { MailboxMessageActionsLive } from "../mailboxes/message-actions";
 import { MailboxMessageHtmlReadingLive } from "../mailboxes/message-html";
 import { MailboxMessageReadingLive } from "../mailboxes/message-reading";
+import {
+  MailboxOutboundDeliveryReadingClockLive,
+  MailboxOutboundDeliveryReadingLive,
+} from "../mailboxes/outbound-delivery-reading";
 import { MailboxOutboundSendingLive } from "../mailboxes/outbound-sending";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendHttpApi } from "./api";
@@ -130,6 +134,16 @@ const BackendRoutesLive = Layer.unwrap(
         )
       )
     );
+    const mailboxOutboundDeliveryReadingLive =
+      MailboxOutboundDeliveryReadingLive.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            mailAuthorizationLive,
+            mailboxRepositoryLive,
+            MailboxOutboundDeliveryReadingClockLive
+          )
+        )
+      );
     const mailboxDraftAttachmentsLive = MailboxDraftAttachmentsLive.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -167,6 +181,7 @@ const BackendRoutesLive = Layer.unwrap(
           mailboxMessageReadingLive,
           mailboxMessageActionsLive,
           mailboxDraftEditingLive,
+          mailboxOutboundDeliveryReadingLive,
           mailboxOutboundSendingLive,
           mailboxDraftAttachmentsLive,
           mailboxMessageHtmlLive,

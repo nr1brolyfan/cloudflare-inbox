@@ -39,6 +39,8 @@ import {
   MailboxThreadResult,
 } from "../mailboxes/message-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
+import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
+import { GetMailboxOutboundDeliveryResult } from "../mailboxes/outbound-delivery-reading";
 import type {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,
@@ -141,6 +143,15 @@ export type MailboxSendUndoServerResult =
   | {
       readonly delivery: Schema.Codec.Encoded<typeof UndoMailboxSendResult>;
       readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxOutboundDeliveryServerResult =
+  | {
+      readonly ok: true;
+      readonly outbound: Schema.Codec.Encoded<
+        typeof GetMailboxOutboundDeliveryResult
+      >;
     }
   | MailboxServerErrorResult;
 
@@ -269,6 +280,11 @@ const operationErrorMessage = (
       ? "Outbound delivery not found"
       : publicErrors[code].message;
   }
+  if (operation === "website.mailbox.outbound_get") {
+    return code === "not_found"
+      ? "Outbound delivery not found"
+      : publicErrors[code].message;
+  }
   if (operation !== "website.mailbox.message_action") {
     return publicErrors[code].message;
   }
@@ -303,6 +319,10 @@ export interface MailboxBackendOperationsShape {
   readonly getNavigation: (
     incoming: Request
   ) => Effect.Effect<MailboxNavigationServerResult>;
+  readonly getOutboundDelivery: (input: {
+    readonly incoming: Request;
+    readonly query: GetMailboxOutboundDeliveryQuery;
+  }) => Effect.Effect<MailboxOutboundDeliveryServerResult>;
   readonly getMessageHtml: (input: {
     readonly incoming: Request;
     readonly query: MailboxMessageHtmlInput;
@@ -635,6 +655,32 @@ export const MailboxBackendOperationsLive = Layer.effect(
                     decoded.value
                   ),
                   ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        ),
+      getOutboundDelivery: ({ incoming, query }) =>
+        forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.outbound_get",
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/outbound/${encodeURIComponent(query.outboundDeliveryId)}`,
+        }).pipe(
+          Effect.map((result): MailboxOutboundDeliveryServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(GetMailboxOutboundDeliveryResult)
+            )(result.body);
+            return Exit.isSuccess(decoded) &&
+              decoded.value.delivery.mailboxId === query.mailboxId &&
+              decoded.value.delivery.id === query.outboundDeliveryId
+              ? {
+                  ok: true,
+                  outbound: Schema.encodeSync(GetMailboxOutboundDeliveryResult)(
+                    decoded.value
+                  ),
                 }
               : invalidBackendResponse();
           })

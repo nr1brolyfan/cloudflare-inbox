@@ -77,6 +77,10 @@ import {
 } from "#/mailboxes/navigation";
 import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import {
+  GetMailboxOutboundDeliveryResult,
+  MailboxOutboundDeliveryReading,
+} from "#/mailboxes/outbound-delivery-reading";
+import {
   MailboxOutboundSending,
   SendMailboxDraftResult,
 } from "#/mailboxes/outbound-sending";
@@ -246,6 +250,9 @@ const mailboxDraftSend = Schema.decodeUnknownSync(SendMailboxDraftResult)({
   delivery: scheduledDelivery,
   serverNow: 1000,
 });
+const mailboxOutboundDelivery = Schema.decodeUnknownSync(
+  GetMailboxOutboundDeliveryResult
+)({ delivery: scheduledDelivery, serverNow: 2000 });
 const cancelledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
   ...scheduledDelivery,
   cancelledAt: 2000,
@@ -308,7 +315,12 @@ const makeHandler = (
   outboundSending: MailboxOutboundSending = MailboxOutboundSending.of({
     send: () => Effect.succeed(mailboxDraftSend),
     undo: () => Effect.succeed(cancelledDelivery),
-  })
+  }),
+  outboundDeliveryReading: MailboxOutboundDeliveryReading = MailboxOutboundDeliveryReading.of(
+    {
+      get: () => Effect.succeed(mailboxOutboundDelivery),
+    }
+  )
 ) => {
   const requestAuthLive = Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
@@ -344,6 +356,7 @@ const makeHandler = (
         Layer.succeed(MailboxDraftEditing, draftEditing),
         Layer.succeed(MailboxDraftAttachments, draftAttachments),
         Layer.succeed(MailboxOutboundSending, outboundSending),
+        Layer.succeed(MailboxOutboundDeliveryReading, outboundDeliveryReading),
         Layer.succeed(
           InboundReplay,
           InboundReplay.of({
@@ -401,8 +414,9 @@ const mailboxRequest = (
 };
 
 describe("protected mailbox API", () => {
-  it("sends and undoes with path identity and caller operation IDs", async () => {
+  it("sends, reads, and undoes with path identity", async () => {
     const commands: unknown[] = [];
+    const queries: unknown[] = [];
     const { dispose, handler } = makeHandler(
       makeAdministration(),
       undefined,
@@ -422,6 +436,12 @@ describe("protected mailbox API", () => {
           commands.push(command);
           return Effect.succeed(cancelledDelivery);
         },
+      }),
+      MailboxOutboundDeliveryReading.of({
+        get: (query) => {
+          queries.push(query);
+          return Effect.succeed(mailboxOutboundDelivery);
+        },
       })
     );
 
@@ -440,8 +460,16 @@ describe("protected mailbox API", () => {
           }
         )
       );
+      const read = await handler(
+        mailboxRequest("/api/mailboxes/primary/outbound/delivery-1", "GET")
+      );
 
-      expect({ send: sent.status, undo: undone.status }).toStrictEqual({
+      expect({
+        read: read.status,
+        send: sent.status,
+        undo: undone.status,
+      }).toStrictEqual({
+        read: 200,
         send: 202,
         undo: 200,
       });
@@ -459,15 +487,26 @@ describe("protected mailbox API", () => {
           outboundDeliveryId: "delivery-1",
         },
       ]);
-      await expect(sent.json()).resolves.toMatchObject({
-        delivery: { id: "delivery-1", mailboxId: "primary" },
-        serverNow: 1000,
-      });
-      await expect(undone.json()).resolves.toMatchObject({
-        id: "delivery-1",
-        mailboxId: "primary",
-        status: "cancelled",
-      });
+      expect(queries).toStrictEqual([
+        { mailboxId: "primary", outboundDeliveryId: "delivery-1" },
+      ]);
+      await expect(
+        Promise.all([sent.json(), undone.json(), read.json()])
+      ).resolves.toMatchObject([
+        {
+          delivery: { id: "delivery-1", mailboxId: "primary" },
+          serverNow: 1000,
+        },
+        {
+          id: "delivery-1",
+          mailboxId: "primary",
+          status: "cancelled",
+        },
+        {
+          delivery: { id: "delivery-1", mailboxId: "primary" },
+          serverNow: 2000,
+        },
+      ]);
     } finally {
       await dispose();
     }

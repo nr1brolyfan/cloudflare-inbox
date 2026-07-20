@@ -15,6 +15,7 @@ import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "#/mailboxes/message-reading";
+import { GetMailboxOutboundDeliveryQuery } from "#/mailboxes/outbound-delivery-reading";
 import {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,
@@ -340,6 +341,65 @@ describe("Website mailbox Backend forwarding", () => {
 
     expect(send).toMatchObject({ ok: false, status: 502 });
     expect(undo).toMatchObject({ ok: false, status: 502 });
+  });
+
+  it("forwards an outbound status GET without a body and preserves auth context", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: {
+        cookie: "__Host-session=session-a.secret",
+        origin: "https://inbox.test",
+      },
+    });
+    const query = Schema.decodeUnknownSync(GetMailboxOutboundDeliveryQuery)({
+      mailboxId: "team/primary",
+      outboundDeliveryId: "delivery/one",
+    });
+    const outbound = { delivery: scheduledDelivery, serverNow: 2500 };
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(outbound));
+      },
+      (operations) => operations.getOutboundDelivery({ incoming, query })
+    );
+
+    expect(result).toStrictEqual({ ok: true, outbound });
+    expect({
+      body: forwarded?.body,
+      cookie: forwarded?.headers.get("cookie"),
+      method: forwarded?.method,
+      origin: forwarded?.headers.get("origin"),
+      pathname:
+        forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
+    }).toStrictEqual({
+      body: null,
+      cookie: "__Host-session=session-a.secret",
+      method: "GET",
+      origin: "https://inbox.test",
+      pathname: "/api/mailboxes/team%2Fprimary/outbound/delivery%2Fone",
+    });
+  });
+
+  it("rejects an outbound status response with mismatched identities", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(GetMailboxOutboundDeliveryQuery)({
+      mailboxId: "team/primary",
+      outboundDeliveryId: "delivery/expected",
+    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json({ delivery: scheduledDelivery, serverNow: 2500 })
+        ),
+      (operations) => operations.getOutboundDelivery({ incoming, query })
+    );
+
+    expect(result).toMatchObject({
+      error: { code: "internal_error", message: "Invalid Backend response" },
+      ok: false,
+      status: 502,
+    });
   });
 
   it("rejects a draft response with mismatched path identity", async () => {

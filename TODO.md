@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **84/109 (77%)**
-- Ukończone etapy: **6/11**
-- Aktualny etap: **9. Drafty i outbound**
-- Aktualne zadanie: **UX błędów i potwierdzenia providera**
+- Postęp zadań: **85/109 (78%)**
+- Ukończone etapy: **7/11**
+- Aktualny etap: **10. AI**
+- Aktualne zadanie: **Workers AI**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -20,8 +20,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 6   | Inbound email                         | DONE        | 9/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | DONE        | 9/9    |
 | 8   | Reguły automatyczne                   | DONE        | 6/6    |
-| 9   | Drafty i outbound                     | CURRENT     | 8/9    |
-| 10  | AI                                    | TODO        | 0/6    |
+| 9   | Drafty i outbound                     | DONE        | 9/9    |
+| 10  | AI                                    | CURRENT     | 0/6    |
 | 11  | Hardening i produkcja                 | TODO        | 0/11   |
 
 ### Zasady aktualizacji
@@ -149,11 +149,11 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Podłączyć Cloudflare Email Sending dla mailboxa.
 - [x] Obsłużyć statusy `scheduled`, `sending`, `accepted`, `failed`, `indeterminate`.
 - [x] Zapewnić idempotency i retry bez podwójnej wysyłki.
-- [ ] CURRENT Dodać UX błędów i potwierdzenia dostarczenia do providera.
+- [x] Dodać UX błędów i potwierdzenia dostarczenia do providera.
 
 ## 10. AI
 
-- [ ] Podłączyć Workers AI.
+- [ ] CURRENT Podłączyć Workers AI.
 - [ ] Zbudować autoryzowaną warstwę narzędzi AI.
 - [ ] Dodać narzędzia read, search i thread.
 - [ ] Dodać `createDraft` bez autonomicznego send.

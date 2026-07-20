@@ -4,6 +4,7 @@ export interface MailboxViewSelection {
 }
 
 export interface MailboxMessageQueryState {
+  readonly delivery?: string;
   readonly hasAttachment?: boolean;
   readonly query?: string;
   readonly read?: "read" | "unread";
@@ -41,6 +42,9 @@ export const mailboxViewHref = (
   }
   if (state.hasAttachment) {
     query.set("attachment", "true");
+  }
+  if (state.delivery !== undefined) {
+    query.set("delivery", state.delivery);
   }
   return `/inbox?${query.toString()}`;
 };

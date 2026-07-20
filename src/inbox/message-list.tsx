@@ -69,6 +69,7 @@ function MessageSearchControls({
         if (trimmedQuery === "" || hasSearchableMessageTerm(trimmedQuery)) {
           setSearchError(false);
           onQueryChange({
+            delivery: filters.delivery,
             hasAttachment: hasAttachment || undefined,
             query: trimmedQuery === "" ? undefined : trimmedQuery,
             read: read === "" ? undefined : read,
@@ -153,7 +154,7 @@ function MessageSearchControls({
           <button
             type="button"
             aria-label="Clear search and filters"
-            onClick={() => onQueryChange({})}
+            onClick={() => onQueryChange({ delivery: filters.delivery })}
             className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-white"
           >
             <X size={14} />
