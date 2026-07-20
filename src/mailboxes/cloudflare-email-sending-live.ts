@@ -7,6 +7,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { MailAddress } from "./core";
+import type { DeliveryProviderUnavailableError } from "./errors";
 import {
   DeliveryIndeterminateError,
   DeliveryRejectedError,
@@ -26,7 +27,7 @@ export interface MailboxEmailSendClient {
     message: CloudflareWorkers.EmailMessageBuilder
   ) => Effect.Effect<
     CloudflareWorkers.EmailSendResult,
-    Cloudflare.Email.SendEmailError
+    Cloudflare.Email.SendEmailError | DeliveryProviderUnavailableError
   >;
 }
 
@@ -205,6 +206,13 @@ const deliveryError = (error: Cloudflare.Email.SendEmailError) => {
   });
 };
 
+const providerError = (
+  error: Cloudflare.Email.SendEmailError | DeliveryProviderUnavailableError
+) =>
+  error._tag === "DeliveryProviderUnavailableError"
+    ? error
+    : deliveryError(error);
+
 const malformedAcceptance = (cause: unknown) =>
   new DeliveryIndeterminateError({
     cause,
@@ -219,7 +227,7 @@ export const CloudflareOutboundEmailProviderLive = Layer.effect(
     return OutboundEmailProvider.of({
       send: (message) =>
         client.send(emailMessageBuilder(message)).pipe(
-          Effect.mapError(deliveryError),
+          Effect.mapError(providerError),
           Effect.flatMap((result) =>
             Schema.decodeUnknownEffect(OutboundProviderAcceptance)({
               providerMessageId: result.messageId,

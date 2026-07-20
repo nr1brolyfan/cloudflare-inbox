@@ -118,6 +118,6 @@ describe("outbound email provider contract", () => {
       )
     );
 
-    expect(error).toMatchObject({ _tag: "DeliveryIndeterminateError" });
+    expect(error).toMatchObject({ _tag: "DeliveryProviderUnavailableError" });
   });
 });

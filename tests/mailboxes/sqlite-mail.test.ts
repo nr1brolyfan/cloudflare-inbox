@@ -613,6 +613,7 @@ describe("Mailbox mail data SQLite", () => {
           messageId: "m1",
           status: "accepted",
           sendAt: 200,
+          providerMessageId: "provider-message-1",
           acceptedAt: 400,
           createdAt: 200,
           updatedAt: 400,

@@ -182,7 +182,12 @@ describe("mail lifecycle statuses", () => {
       decodes(OutboundDeliverySchema, outbound()),
       decodes(
         OutboundDeliverySchema,
-        outbound({ status: "accepted", acceptedAt: 2100, updatedAt: 2100 })
+        outbound({
+          status: "accepted",
+          providerMessageId: "provider-message-1",
+          acceptedAt: 2100,
+          updatedAt: 2100,
+        })
       ),
       decodes(OutboundDeliverySchema, outbound({ status: "accepted" })),
       decodes(
@@ -202,12 +207,30 @@ describe("mail lifecycle statuses", () => {
       decodes(
         OutboundDeliverySchema,
         outbound({
+          status: "accepted",
+          acceptedAt: 2100,
+          updatedAt: 2100,
+        })
+      ),
+      decodes(
+        OutboundDeliverySchema,
+        outbound({
           status: "failed",
           updatedAt: 2200,
           failure: { code: "retry_exhausted", failedAt: 1500 },
         })
       ),
-    ]).toStrictEqual([true, true, false, false, true, false, false, false]);
+    ]).toStrictEqual([
+      true,
+      true,
+      false,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+    ]);
   });
 
   it("associates delivery state only with outbound messages", () => {

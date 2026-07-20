@@ -1283,6 +1283,7 @@ const readOutboundDeliveryRow = (
     messageId: row.messageId,
     status: row.status,
     sendAt: row.sendAt,
+    providerMessageId: row.providerMessageId ?? undefined,
     acceptedAt: row.acceptedAt ?? undefined,
     deliveredAt: row.deliveredAt ?? undefined,
     bouncedAt: row.bouncedAt ?? undefined,

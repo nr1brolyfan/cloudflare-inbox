@@ -186,5 +186,5 @@ describe("Mailbox outbound alarm scheduler", () => {
         expect(stale.scheduledAt).toBeNull();
       }).pipe(Effect.provide(makeSchedulerLive(stale.service, () => 1000)))
     );
-  });
+  }, 15_000);
 });

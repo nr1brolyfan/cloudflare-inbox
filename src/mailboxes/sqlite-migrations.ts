@@ -491,6 +491,17 @@ const migrations = [
         ON attachment(draft_attachment_id, id) WHERE draft_attachment_id IS NOT NULL`,
     ],
   },
+  {
+    version: 11,
+    statements: [
+      `ALTER TABLE outbound_delivery ADD COLUMN provider_message_id TEXT CHECK (
+        provider_message_id IS NULL OR (
+          length(provider_message_id) BETWEEN 1 AND 998 AND
+          provider_message_id = trim(provider_message_id)
+        )
+      )`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

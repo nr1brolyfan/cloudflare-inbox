@@ -65,6 +65,7 @@ describe("MailboxDO migrations", () => {
         { version: 8, applied_at: expect.any(String) },
         { version: 9, applied_at: expect.any(String) },
         { version: 10, applied_at: expect.any(String) },
+        { version: 11, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -127,6 +128,37 @@ describe("MailboxDO migrations", () => {
           .all()
           .map((row) => row.name)
       ).toContain("attachment_draft_attachment_id_idx");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("persists validated outbound provider message identifiers", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+      expect(
+        database
+          .prepare("PRAGMA table_info(outbound_delivery)")
+          .all()
+          .map((row) => row.name)
+      ).toContain("provider_message_id");
+      database.exec(`
+        INSERT INTO folder (id, name, kind, created_at, updated_at)
+          VALUES ('sent', 'Sent', 'sent', 0, 0);
+        INSERT INTO message (id, folder_id) VALUES ('message-1', 'sent');
+        INSERT INTO outbound_delivery
+          (id, message_id, status, send_at, created_at, updated_at, provider_message_id)
+          VALUES ('delivery-1', 'message-1', 'accepted', 0, 0, 0, 'provider-1');
+      `);
+      expect(() =>
+        database
+          .prepare(
+            "UPDATE outbound_delivery SET provider_message_id = '' WHERE id = 'delivery-1'"
+          )
+          .run()
+      ).toThrow("CHECK constraint failed");
     } finally {
       database.close();
     }

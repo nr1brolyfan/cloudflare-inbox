@@ -10,6 +10,7 @@ import {
   MailboxEmailSendClient,
 } from "#/mailboxes/cloudflare-email-sending-live";
 import type { MailboxEmailSendClient as MailboxEmailSendClientService } from "#/mailboxes/cloudflare-email-sending-live";
+import { DeliveryProviderUnavailableError } from "#/mailboxes/errors";
 import {
   OutboundEmailMessage,
   OutboundEmailProvider,
@@ -216,5 +217,18 @@ describe("Cloudflare outbound email provider", () => {
     expect(malformedAcceptance).toMatchObject({
       _tag: "DeliveryIndeterminateError",
     });
+  });
+
+  it("preserves an explicitly unavailable provider as definite non-acceptance", async () => {
+    const unavailable = new DeliveryProviderUnavailableError({
+      cause: new Error("No binding"),
+      message: "Provider unavailable",
+    });
+    const error = await runProvider(
+      MailboxEmailSendClient.of({ send: () => Effect.fail(unavailable) }),
+      (provider) => provider.send(baseMessage).pipe(Effect.flip)
+    );
+
+    expect(error).toBe(unavailable);
   });
 });

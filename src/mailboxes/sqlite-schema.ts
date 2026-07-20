@@ -773,6 +773,7 @@ export const outboundDelivery = sqliteTable(
       ],
     }).notNull(),
     sendAt: integer("send_at").notNull(),
+    providerMessageId: text("provider_message_id"),
     acceptedAt: integer("accepted_at"),
     deliveredAt: integer("delivered_at"),
     bouncedAt: integer("bounced_at"),
@@ -795,6 +796,10 @@ export const outboundDelivery = sqliteTable(
       sql`${t.status} in ('scheduled', 'sending', 'accepted', 'delivered', 'bounced', 'cancelled', 'failed', 'indeterminate')`
     ),
     check("outbound_delivery_send_at_check", sql`${t.sendAt} >= 0`),
+    check(
+      "outbound_delivery_provider_message_id_check",
+      sql`${t.providerMessageId} is null or (length(${t.providerMessageId}) between 1 and 998 and ${t.providerMessageId} = trim(${t.providerMessageId}))`
+    ),
     check(
       "outbound_delivery_accepted_at_check",
       sql`${t.acceptedAt} is null or ${t.acceptedAt} >= 0`

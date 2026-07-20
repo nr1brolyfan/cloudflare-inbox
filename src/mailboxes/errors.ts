@@ -47,6 +47,13 @@ export class DeliveryTemporaryFailureError extends Data.TaggedError(
   readonly cause: unknown;
 }> {}
 
+export class DeliveryProviderUnavailableError extends Data.TaggedError(
+  "DeliveryProviderUnavailableError"
+)<{
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
+
 export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
   readonly operation:
     | "create-address"

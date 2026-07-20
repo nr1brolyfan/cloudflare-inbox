@@ -1,0 +1,187 @@
+import { and, eq } from "drizzle-orm";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import { describe, expect, it } from "vitest";
+
+import { OutboundProviderMessageId } from "#/mailboxes/outbound";
+import {
+  MailboxOutboundLifecycleStore,
+  MailboxOutboundLifecycleStoreSqliteLive,
+  OutboundDeliveryClaim,
+} from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
+import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
+import { MailboxDatabase, MailboxRuntime } from "#/mailboxes/sqlite-services";
+
+import { MailboxDatabaseTestLive } from "../support/mailbox-sqlite";
+
+const runtime = (now: () => number) =>
+  Layer.succeed(
+    MailboxRuntime,
+    MailboxRuntime.of({ now, randomId: () => "unused" })
+  );
+
+const providerMessageId = (value: string) =>
+  Schema.decodeUnknownSync(OutboundProviderMessageId)(value);
+
+const lifecycleLive = (now: () => number) =>
+  MailboxOutboundLifecycleStoreSqliteLive.pipe(
+    Layer.provide(runtime(now)),
+    Layer.provideMerge(MailboxDatabaseTestLive)
+  );
+
+const setup = Effect.gen(function* () {
+  const db = yield* MailboxDatabase;
+  yield* db.insert(folder).values({
+    createdAt: 0,
+    id: "scheduled",
+    kind: "scheduled",
+    name: "Scheduled",
+    updatedAt: 0,
+  });
+});
+
+const seedDelivery = (id: string, sendAt: number, version = 1) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const messageId = `message-${id}`;
+    yield* db.insert(message).values({ folderId: "scheduled", id: messageId });
+    yield* db.insert(outboundDelivery).values({
+      createdAt: 0,
+      id,
+      messageId,
+      sendAt,
+      status: "scheduled",
+      updatedAt: 0,
+      version,
+    });
+  });
+
+describe("outbound lifecycle SQLite store", () => {
+  it("claims the earliest due live delivery deterministically", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("b", 1000);
+        yield* seedDelivery("a", 1000);
+        yield* seedDelivery("earlier", 999);
+        yield* seedDelivery("future", 1001);
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(outboundDelivery)
+          .set({ deletedAt: 1000 })
+          .where(eq(outboundDelivery.id, "earlier"));
+
+        const store = yield* MailboxOutboundLifecycleStore;
+        const claim = yield* store.claimDue;
+        expect(claim).toMatchObject({
+          attemptCount: 1,
+          claimedAt: 1000,
+          outboundDeliveryId: "a",
+          version: 2,
+        });
+
+        const [row] = yield* db
+          .select()
+          .from(outboundDelivery)
+          .where(eq(outboundDelivery.id, "a"));
+        expect(row).toMatchObject({
+          attemptCount: 1,
+          status: "sending",
+          updatedAt: 1000,
+          version: 2,
+        });
+      }).pipe(Effect.provide(lifecycleLive(() => 1000)))
+    );
+  });
+
+  it("settles only the exact claimed version and attempt", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("delivery-1", 1000);
+        const store = yield* MailboxOutboundLifecycleStore;
+        const claim = yield* store.claimDue;
+        if (claim === null) {
+          return yield* Effect.die(new Error("Expected a delivery claim"));
+        }
+        const stale = Schema.decodeUnknownSync(OutboundDeliveryClaim)({
+          ...claim,
+          attemptCount: claim.attemptCount + 1,
+        });
+
+        expect(
+          yield* store.settle(stale, {
+            _tag: "Accepted",
+            providerMessageId: providerMessageId("provider-stale"),
+          })
+        ).toBeFalsy();
+        expect(
+          yield* store.settle(claim, {
+            _tag: "Accepted",
+            providerMessageId: providerMessageId("provider-1"),
+          })
+        ).toBeTruthy();
+        expect(
+          yield* store.settle(claim, {
+            _tag: "Failed",
+            code: "provider_rejected",
+          })
+        ).toBeFalsy();
+
+        const db = yield* MailboxDatabase;
+        const [row] = yield* db
+          .select()
+          .from(outboundDelivery)
+          .where(eq(outboundDelivery.id, "delivery-1"));
+        expect(row).toMatchObject({
+          acceptedAt: 1000,
+          attemptCount: 1,
+          providerMessageId: "provider-1",
+          status: "accepted",
+          version: 3,
+        });
+      }).pipe(Effect.provide(lifecycleLive(() => 1000)))
+    );
+  });
+
+  it("gives cancellation and a due claim exactly one winner", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("delivery-1", 1000);
+        const db = yield* MailboxDatabase;
+        const store = yield* MailboxOutboundLifecycleStore;
+        const [claim, cancelled] = yield* Effect.all(
+          [
+            store.claimDue,
+            db
+              .update(outboundDelivery)
+              .set({
+                cancelledAt: 1000,
+                status: "cancelled",
+                updatedAt: 1000,
+                version: 2,
+              })
+              .where(
+                and(
+                  eq(outboundDelivery.id, "delivery-1"),
+                  eq(outboundDelivery.status, "scheduled"),
+                  eq(outboundDelivery.version, 1)
+                )
+              )
+              .returning({ id: outboundDelivery.id }),
+          ],
+          { concurrency: "unbounded" }
+        );
+
+        expect(Number(claim !== null) + Number(cancelled.length === 1)).toBe(1);
+        const [row] = yield* db
+          .select({ status: outboundDelivery.status })
+          .from(outboundDelivery)
+          .where(eq(outboundDelivery.id, "delivery-1"));
+        expect(["sending", "cancelled"]).toContain(row?.status);
+      }).pipe(Effect.provide(lifecycleLive(() => 1000)))
+    );
+  });
+});

@@ -51,6 +51,9 @@ export const OutboundFailureCode = Schema.Literals([
   "invalid_sender",
   "recipient_suppressed",
   "provider_rejected",
+  "preparation_failed",
+  "temporary_provider_failure",
+  "provider_unavailable",
   "retry_exhausted",
 ]);
 export type OutboundFailureCode = Schema.Schema.Type<
@@ -64,6 +67,14 @@ export class OutboundDeliveryFailure extends Schema.Class<OutboundDeliveryFailur
   failedAt: UnixMillis,
 }) {}
 
+export const OutboundProviderMessageId = Schema.Trimmed.pipe(
+  Schema.check(Schema.isLengthBetween(1, 998)),
+  Schema.brand("cloudflare-inbox/OutboundProviderMessageId")
+);
+export type OutboundProviderMessageId = Schema.Schema.Type<
+  typeof OutboundProviderMessageId
+>;
+
 export class OutboundDelivery extends Schema.Class<OutboundDelivery>(
   "cloudflare-inbox/OutboundDelivery"
 )({
@@ -73,6 +84,7 @@ export class OutboundDelivery extends Schema.Class<OutboundDelivery>(
   messageId: MessageId,
   status: OutboundDeliveryStatus,
   sendAt: UnixMillis,
+  providerMessageId: Schema.optional(OutboundProviderMessageId),
   acceptedAt: Schema.optional(UnixMillis),
   deliveredAt: Schema.optional(UnixMillis),
   bouncedAt: Schema.optional(UnixMillis),
@@ -87,6 +99,7 @@ export class OutboundDelivery extends Schema.Class<OutboundDelivery>(
 type StatusInvariant = (delivery: OutboundDelivery) => string | undefined;
 
 const noProviderOutcome: StatusInvariant = (delivery) =>
+  delivery.providerMessageId === undefined &&
   delivery.acceptedAt === undefined &&
   delivery.deliveredAt === undefined &&
   delivery.bouncedAt === undefined &&
@@ -100,6 +113,7 @@ const statusInvariants = {
   failed: noProviderOutcome,
   indeterminate: noProviderOutcome,
   accepted: (delivery) =>
+    delivery.providerMessageId !== undefined &&
     delivery.acceptedAt !== undefined &&
     delivery.deliveredAt === undefined &&
     delivery.bouncedAt === undefined &&
@@ -107,6 +121,7 @@ const statusInvariants = {
       ? undefined
       : "accepted delivery must contain only acceptedAt",
   delivered: (delivery) =>
+    delivery.providerMessageId !== undefined &&
     delivery.acceptedAt !== undefined &&
     delivery.deliveredAt !== undefined &&
     delivery.deliveredAt >= delivery.acceptedAt &&
@@ -115,6 +130,7 @@ const statusInvariants = {
       ? undefined
       : "delivered delivery requires ordered acceptedAt and deliveredAt",
   bounced: (delivery) =>
+    delivery.providerMessageId !== undefined &&
     delivery.acceptedAt !== undefined &&
     delivery.bouncedAt !== undefined &&
     delivery.bouncedAt >= delivery.acceptedAt &&
@@ -123,6 +139,7 @@ const statusInvariants = {
       ? undefined
       : "bounced delivery requires ordered acceptedAt and bouncedAt",
   cancelled: (delivery) =>
+    delivery.providerMessageId === undefined &&
     delivery.cancelledAt !== undefined &&
     delivery.cancelledAt >= delivery.createdAt &&
     delivery.acceptedAt === undefined &&

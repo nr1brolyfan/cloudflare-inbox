@@ -12,19 +12,15 @@ import {
 } from "./core";
 import type {
   DeliveryIndeterminateError,
+  DeliveryProviderUnavailableError,
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
 } from "./errors";
-import { DeliveryIndeterminateError as IndeterminateError } from "./errors";
-import { outboundMaxRecipientCount } from "./outbound";
-
-export const OutboundProviderMessageId = Schema.Trimmed.pipe(
-  Schema.check(Schema.isLengthBetween(1, 998)),
-  Schema.brand("cloudflare-inbox/OutboundProviderMessageId")
-);
-export type OutboundProviderMessageId = Schema.Schema.Type<
-  typeof OutboundProviderMessageId
->;
+import { DeliveryProviderUnavailableError as ProviderUnavailableError } from "./errors";
+import {
+  OutboundProviderMessageId,
+  outboundMaxRecipientCount,
+} from "./outbound";
 
 export const OutboundEmailAttachment = Schema.Struct({
   content: Schema.Uint8Array,
@@ -81,6 +77,7 @@ export type OutboundProviderAcceptance = Schema.Schema.Type<
 
 export type OutboundEmailProviderError =
   | DeliveryIndeterminateError
+  | DeliveryProviderUnavailableError
   | DeliveryRejectedError
   | DeliveryTemporaryFailureError;
 
@@ -100,7 +97,7 @@ export const OutboundEmailProviderUnavailableLive = Layer.succeed(
   OutboundEmailProvider.of({
     send: () =>
       Effect.fail(
-        new IndeterminateError({
+        new ProviderUnavailableError({
           cause: new Error("Outbound email provider is not configured"),
           message: "Outbound email provider is unavailable",
         })
