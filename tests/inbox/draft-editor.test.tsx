@@ -43,11 +43,13 @@ describe(DraftEditor, () => {
         initial={initial}
         isNew={false}
         isSaving={false}
+        isSending={false}
         onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
         onClose={vi.fn<() => void>()}
         onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
         onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
         onSave={onSave}
+        onSend={vi.fn<() => void>()}
         saved={false}
       />
     );
@@ -89,12 +91,14 @@ describe(DraftEditor, () => {
         initial={initial}
         isNew
         isSaving={false}
+        isSending={false}
         onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
         onClose={vi.fn<() => void>()}
         onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
         onRetry={onRetry}
         onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
         onSave={vi.fn<(content: typeof initial) => void>()}
+        onSend={vi.fn<() => void>()}
         saved={false}
       />
     );
@@ -124,11 +128,13 @@ describe(DraftEditor, () => {
         initial={initial}
         isNew
         isSaving={false}
+        isSending={false}
         onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
         onClose={vi.fn<() => void>()}
         onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
         onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
         onSave={onSave}
+        onSend={vi.fn<() => void>()}
         saved={false}
       />
     );
@@ -153,11 +159,13 @@ describe(DraftEditor, () => {
         initial={initial}
         isNew={false}
         isSaving={false}
+        isSending={false}
         onAttachFiles={onAttachFiles}
         onClose={vi.fn<() => void>()}
         onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
         onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
         onSave={vi.fn<(content: typeof initial) => void>()}
+        onSend={vi.fn<() => void>()}
         saved
       />
     );
@@ -172,5 +180,124 @@ describe(DraftEditor, () => {
     expect(screen.getByText("brief.pdf")).toBeDefined();
     expect(screen.getByText("2.0 KB · Uploaded")).toBeDefined();
     expect(onAttachFiles).toHaveBeenCalledWith([file]);
+  });
+
+  it("sends only a clean persisted draft with valid recipients", () => {
+    const onSend = vi.fn<() => void>();
+    render(
+      <DraftEditor
+        attachments={[]}
+        attachmentUploads={[]}
+        initial={initial}
+        isNew={false}
+        isSaving={false}
+        isSending={false}
+        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
+        onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
+        onSave={vi.fn<(content: typeof initial) => void>()}
+        onSend={onSend}
+        saved
+      />
+    );
+
+    const send = screen.getByRole("button", { name: "Send" });
+    expect(send.hasAttribute("disabled")).toBeFalsy();
+    fireEvent.click(send);
+    expect(onSend).toHaveBeenCalledOnce();
+
+    fireEvent.change(screen.getByRole("textbox", { name: "Subject" }), {
+      target: { value: "Dirty subject" },
+    });
+    expect(send.hasAttribute("disabled")).toBeTruthy();
+    expect(screen.getByText("Save before sending.")).toBeTruthy();
+  });
+
+  it("requires new drafts to be saved before sending", () => {
+    render(
+      <DraftEditor
+        attachments={[]}
+        attachmentUploads={[]}
+        initial={initial}
+        isNew
+        isSaving={false}
+        isSending={false}
+        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
+        onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
+        onSave={vi.fn<(content: typeof initial) => void>()}
+        onSend={vi.fn<() => void>()}
+        saved={false}
+      />
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
+    ).toBeTruthy();
+    expect(screen.getByText("Save before sending.")).toBeTruthy();
+  });
+
+  it("does not send persisted content without a recipient", () => {
+    const withoutRecipients = Schema.decodeUnknownSync(DraftEditorContent)({
+      ...initial,
+      bcc: [],
+      cc: [],
+      to: [],
+    });
+    render(
+      <DraftEditor
+        attachments={[]}
+        attachmentUploads={[]}
+        initial={withoutRecipients}
+        isNew={false}
+        isSaving={false}
+        isSending={false}
+        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
+        onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
+        onSave={vi.fn<(content: typeof initial) => void>()}
+        onSend={vi.fn<() => void>()}
+        saved
+      />
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Add at least one recipient, then save before sending.")
+    ).toBeTruthy();
+  });
+
+  it("disables send while a send or attachment action is pending", () => {
+    render(
+      <DraftEditor
+        attachments={[]}
+        attachmentUploads={[]}
+        initial={initial}
+        isNew={false}
+        isSaving={false}
+        isSending
+        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
+        onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
+        onSave={vi.fn<(content: typeof initial) => void>()}
+        onSend={vi.fn<() => void>()}
+        saved
+      />
+    );
+
+    expect(
+      screen.getByRole("button", { name: "Sending" }).hasAttribute("disabled")
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Sending is unavailable while another draft action is pending."
+      )
+    ).toBeTruthy();
   });
 });

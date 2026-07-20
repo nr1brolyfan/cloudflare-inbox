@@ -37,6 +37,8 @@ import type { MailboxMessageReadingError } from "../mailboxes/message-reading";
 import { MailboxMessageReading } from "../mailboxes/message-reading";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
 import { MailboxNavigation } from "../mailboxes/navigation";
+import type { MailboxOutboundSendingError } from "../mailboxes/outbound-sending";
+import { MailboxOutboundSending } from "../mailboxes/outbound-sending";
 import { BackendHttpApi } from "./api";
 import { MailboxPublicErrorSchema } from "./mailbox-contract";
 
@@ -137,6 +139,7 @@ type MailboxHandlerError =
   | MailboxInlineAttachmentError
   | MailboxDraftEditingError
   | MailboxDraftAttachmentError
+  | MailboxOutboundSendingError
   | MailboxDomainError
   | MailboxRepositoryError
   | WorkflowStartError;
@@ -304,6 +307,47 @@ const mapDraftAttachmentError = (
     : Effect.fail(internalError());
 };
 
+const mapOutboundSendingError = (
+  error: MailboxOutboundSendingError
+): Effect.Effect<
+  never,
+  | AuthBadRequestError
+  | AuthConflictError
+  | AuthInternalError
+  | AuthNotFoundError
+> => {
+  if (error.reason === "invalid-input") {
+    return Effect.fail(
+      new AuthBadRequestError({
+        code: "bad_request",
+        message: "Invalid outbound request",
+      })
+    );
+  }
+  if (error.reason === "not-found") {
+    return Effect.fail(
+      new AuthNotFoundError({
+        code: "not_found",
+        message:
+          error.operation === "send"
+            ? "Draft not found"
+            : "Outbound delivery not found",
+      })
+    );
+  }
+  return error.reason === "conflict"
+    ? Effect.fail(
+        new AuthConflictError({
+          code: "conflict",
+          message:
+            error.operation === "send"
+              ? "Draft changed"
+              : "Outbound delivery changed",
+        })
+      )
+    : Effect.fail(internalError());
+};
+
 const mapMessageHtmlError = (
   error: MailboxMessageHtmlError
 ): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
@@ -352,6 +396,7 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxInlineAttachmentError", mapInlineAttachmentError),
     Effect.catchTag("MailboxDraftEditingError", mapDraftEditingError),
     Effect.catchTag("MailboxDraftAttachmentError", mapDraftAttachmentError),
+    Effect.catchTag("MailboxOutboundSendingError", mapOutboundSendingError),
     Effect.catchTag("MailboxDomainError", mapInboundDomainError),
     Effect.catchTags({
       MailboxRepositoryError: () => Effect.fail(internalError()),
@@ -382,6 +427,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
     const inlineAttachments = yield* MailboxInlineAttachmentReading;
     const draftEditing = yield* MailboxDraftEditing;
     const draftAttachments = yield* MailboxDraftAttachments;
+    const outboundSending = yield* MailboxOutboundSending;
     const replayAuthorization = yield* InboundReplayAuthorization;
     const inboundReplay = yield* InboundReplay;
 
@@ -551,6 +597,12 @@ export const MailboxGroupLive = HttpApiBuilder.group(
       )
       .handle("updateDraft", ({ params, payload }) =>
         draftEditing.update({ ...params, ...payload }).pipe(mapHttpErrors)
+      )
+      .handle("sendDraft", ({ params, payload }) =>
+        outboundSending.send({ ...params, ...payload }).pipe(mapHttpErrors)
+      )
+      .handle("undoSend", ({ params, payload }) =>
+        outboundSending.undo({ ...params, ...payload }).pipe(mapHttpErrors)
       )
       .handle("uploadDraftAttachment", ({ params, payload }) =>
         draftAttachments

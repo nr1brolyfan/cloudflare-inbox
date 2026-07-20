@@ -6,6 +6,7 @@ import {
   Paperclip,
   RotateCcw,
   Save,
+  Send,
   X,
 } from "lucide-react";
 import { useState } from "react";
@@ -22,12 +23,14 @@ interface DraftEditorProps {
   readonly initial: EditorContent;
   readonly isNew: boolean;
   readonly isSaving: boolean;
+  readonly isSending: boolean;
   readonly onAttachFiles: (files: readonly File[]) => void;
   readonly onClose: () => void;
   readonly onRetry?: () => void;
   readonly onDismissAttachmentUpload: (id: string) => void;
   readonly onRetryAttachmentUpload: (id: string) => void;
   readonly onSave: (content: EditorContent) => void;
+  readonly onSend: () => void;
   readonly saved: boolean;
 }
 
@@ -116,12 +119,14 @@ export function DraftEditor({
   initial,
   isNew,
   isSaving,
+  isSending,
   onAttachFiles,
   onClose,
   onRetry,
   onDismissAttachmentUpload,
   onRetryAttachmentUpload,
   onSave,
+  onSend,
   saved,
 }: DraftEditorProps) {
   const [to, setTo] = useState(() => formatAddresses(initial.to));
@@ -131,13 +136,19 @@ export function DraftEditor({
   const [textBody, setTextBody] = useState(initial.textBody ?? "");
   const [validationError, setValidationError] = useState<string>();
   const editorLocked =
-    isSaving || onRetry !== undefined || attachmentUploads.length > 0;
+    isSaving ||
+    isSending ||
+    onRetry !== undefined ||
+    attachmentUploads.length > 0;
   const dirty =
     to !== formatAddresses(initial.to) ||
     cc !== formatAddresses(initial.cc) ||
     bcc !== formatAddresses(initial.bcc) ||
     subject !== initial.subject ||
     textBody !== (initial.textBody ?? "");
+  const hasRecipient =
+    initial.to.length + initial.cc.length + initial.bcc.length > 0;
+  const canSend = !isNew && !dirty && !editorLocked && hasRecipient;
 
   const submit = () => {
     try {
@@ -172,8 +183,9 @@ export function DraftEditor({
         <button
           type="button"
           aria-label="Close draft editor"
+          disabled={editorLocked}
           onClick={onClose}
-          className="flex size-10 items-center justify-center rounded-xl border border-[var(--line)] bg-white/70 text-[var(--sea-ink-soft)] hover:bg-white"
+          className="flex size-10 items-center justify-center rounded-xl border border-[var(--line)] bg-white/70 text-[var(--sea-ink-soft)] hover:bg-white disabled:opacity-55"
         >
           <X size={18} />
         </button>
@@ -403,7 +415,7 @@ export function DraftEditor({
             {onRetry === undefined ? null : (
               <button
                 type="button"
-                disabled={isSaving}
+                disabled={isSaving || isSending}
                 onClick={onRetry}
                 className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-xs font-extrabold disabled:opacity-55"
               >
@@ -422,8 +434,30 @@ export function DraftEditor({
               )}
               {isSaving ? "Saving" : "Save draft"}
             </button>
+            <button
+              type="button"
+              disabled={!canSend}
+              onClick={onSend}
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--lagoon-deep)] px-5 py-2.5 text-xs font-extrabold text-white shadow-[0_10px_26px_rgba(16,116,110,0.2)] disabled:opacity-45"
+            >
+              {isSending ? (
+                <LoaderCircle className="animate-spin" size={15} />
+              ) : (
+                <Send size={15} />
+              )}
+              {isSending ? "Sending" : "Send"}
+            </button>
           </div>
         </div>
+        {canSend ? null : (
+          <p className="mt-2 shrink-0 text-right text-[0.68rem] font-bold text-[var(--sea-ink-soft)]">
+            {isNew || dirty
+              ? "Save before sending."
+              : hasRecipient
+                ? "Sending is unavailable while another draft action is pending."
+                : "Add at least one recipient, then save before sending."}
+          </p>
+        )}
       </form>
     </section>
   );

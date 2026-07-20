@@ -12,6 +12,8 @@ import {
   Version,
 } from "./core";
 
+export const outboundUndoWindowMillis = 10_000;
+
 export const OutboundDeliveryStatus = Schema.Literals([
   "scheduled",
   "sending",
@@ -220,7 +222,6 @@ export const ScheduleOutboundInput = Schema.Struct({
   draftId: DraftId,
   expectedVersion: Version,
   operationId: OperationId,
-  sendAt: UnixMillis,
 });
 export type ScheduleOutboundInput = Schema.Schema.Type<
   typeof ScheduleOutboundInput

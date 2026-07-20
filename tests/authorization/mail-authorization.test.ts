@@ -512,6 +512,26 @@ describe("mail authorization policies", () => {
     ]);
   });
 
+  it("requires the same mailbox-scoped permissions for outbound cancellation", async () => {
+    const fixture = makePermissions([
+      mailboxPermission(MailPermission.draftSend),
+    ]);
+    const error = await runAuthorization(
+      makeResolver(),
+      fixture.service,
+      (authorization) =>
+        authorization
+          .requireMailboxDraftSend({ resource: mailboxRef })
+          .pipe(Effect.flip)
+    );
+
+    expect(error).toBeInstanceOf(AuthPolicy.AuthorizationError);
+    expect(fixture.checks.map(({ permission }) => permission)).toStrictEqual([
+      MailPermission.draftSend,
+      MailPermission.mailboxSend,
+    ]);
+  });
+
   it("allows attachment reads through direct capabilities or folder access", async () => {
     const direct = makePermissions([
       mailboxPermission(MailPermission.messageRead),

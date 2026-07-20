@@ -88,6 +88,9 @@ export interface MailAuthorization {
     readonly action: MailboxAction;
     readonly resource: Resources.MailboxRef;
   }) => MailPolicy<Resources.TrustedMailboxLocation>;
+  readonly requireMailboxDraftSend: (input: {
+    readonly resource: Resources.MailboxRef;
+  }) => MailPolicy<Resources.TrustedMailboxLocation>;
   readonly requireMailboxMessageRead: (input: {
     readonly resource: Resources.MailboxRef;
   }) => MailPolicy<Resources.TrustedMailboxLocation>;
@@ -142,6 +145,15 @@ export const MailAuthorizationLive = Layer.effect(
       AuthPolicy.requirePermission(permission, { scope }).pipe(
         Effect.provideService(AuthPermission.Permissions, permissions)
       );
+    const requireMailboxDraftSendPermissions = (
+      mailboxId: Resources.TrustedMailboxLocation["mailboxId"]
+    ) => {
+      const scope = mailboxScope(mailboxId);
+      return AuthPolicy.all(
+        requirePermission(MailPermission.draftSend, scope),
+        requirePermission(MailPermission.mailboxSend, scope)
+      );
+    };
     const resolveFolder = (resource: Resources.FolderRef) =>
       resolver
         .resolveFolder(resource)
@@ -247,10 +259,7 @@ export const MailAuthorizationLive = Layer.effect(
             const policy =
               action === "edit"
                 ? requirePermission(MailPermission.draftCreate, scope)
-                : AuthPolicy.all(
-                    requirePermission(MailPermission.draftSend, scope),
-                    requirePermission(MailPermission.mailboxSend, scope)
-                  );
+                : requireMailboxDraftSendPermissions(location.mailboxId);
 
             return policy.pipe(Effect.as(location));
           })
@@ -321,6 +330,10 @@ export const MailAuthorizationLive = Layer.effect(
           mailboxScope(location.mailboxId)
         ).pipe(Effect.as(location));
       },
+      requireMailboxDraftSend: ({ resource }) =>
+        requireMailboxDraftSendPermissions(resource.mailboxId).pipe(
+          Effect.as(resource)
+        ),
       requireMailboxMessageRead: ({ resource }) =>
         requirePermission(
           MailPermission.messageRead,

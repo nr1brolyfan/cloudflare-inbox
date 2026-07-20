@@ -19,6 +19,10 @@ import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "../mailboxes/message-reading";
+import type {
+  SendMailboxDraftCommand,
+  UndoMailboxSendCommand,
+} from "../mailboxes/outbound-sending";
 import {
   DevEmailOperations,
   DevEmailOperationsLive,
@@ -159,12 +163,28 @@ export const websiteBackend = {
         return yield* operations.reserveDraftAttachment({ command, incoming });
       })
     ),
+  sendMailboxDraft: (command: SendMailboxDraftCommand) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.sendDraft({ command, incoming });
+      })
+    ),
   updateMailboxDraft: (command: UpdateMailboxDraftCommand) =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.updateDraft({ command, incoming });
+      })
+    ),
+  undoMailboxSend: (command: UndoMailboxSendCommand) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.undoSend({ command, incoming });
       })
     ),
   uploadMailboxDraftAttachment: (

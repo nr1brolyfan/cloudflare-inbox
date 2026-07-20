@@ -17,6 +17,8 @@ import {
   OutboundDeliveryStatus,
   ResendOutboundInput,
   ResendOutboundResult,
+  ScheduleOutboundInput,
+  outboundUndoWindowMillis,
 } from "#/mailboxes/outbound";
 
 const decodes = <S extends Schema.ConstraintDecoder<unknown, never>>(
@@ -79,6 +81,24 @@ const messageDetail = (overrides: Readonly<Record<string, unknown>> = {}) => ({
 });
 
 describe("mail lifecycle statuses", () => {
+  it("defines the fixed undo-send scheduling policy", () => {
+    const input = Schema.decodeUnknownSync(ScheduleOutboundInput)({
+      mailboxId: "primary",
+      draftId: "draft-1",
+      expectedVersion: 1,
+      operationId: "schedule-1",
+      sendAt: 1,
+    });
+
+    expect(outboundUndoWindowMillis).toBe(10_000);
+    expect(input).toStrictEqual({
+      mailboxId: "primary",
+      draftId: "draft-1",
+      expectedVersion: 1,
+      operationId: "schedule-1",
+    });
+  });
+
   it("keeps transaction and AI details out of processing statuses", () => {
     expect([
       decodes(InboundProcessingStatus, "ready"),

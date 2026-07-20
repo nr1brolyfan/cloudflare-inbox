@@ -43,6 +43,8 @@ import { mailboxViewHref } from "../inbox/mailbox-view-links";
 import type { MessageRowAction } from "../inbox/message-list";
 import { MessageList } from "../inbox/message-list";
 import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
+import type { UndoSendNoticeValue } from "../inbox/undo-send-notice";
+import { UndoSendNotice } from "../inbox/undo-send-notice";
 import {
   FolderId,
   DraftId,
@@ -69,6 +71,7 @@ import {
   OpenMailboxThreadInput,
 } from "../mailboxes/message-reading";
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
+import { SendMailboxDraftCommand } from "../mailboxes/outbound-sending";
 import {
   getMailboxNavigation,
   getMailboxDraft,
@@ -77,6 +80,8 @@ import {
   actOnMailboxMessage,
   createMailboxDraft,
   reserveMailboxDraftAttachment,
+  sendMailboxDraft,
+  undoMailboxSend,
   updateMailboxDraft,
 } from "../server/tanstack-functions";
 
@@ -134,6 +139,9 @@ const decodeUpdateMailboxDraft = Schema.decodeUnknownSync(
 );
 const decodeReserveDraftAttachment = Schema.decodeUnknownSync(
   ReserveDraftAttachmentCommand
+);
+const decodeSendMailboxDraft = Schema.decodeUnknownSync(
+  SendMailboxDraftCommand
 );
 const decodeDraftAttachmentUploadResult = Schema.decodeUnknownSync(
   DraftAttachmentUploadResult
@@ -869,6 +877,7 @@ function MailboxWorkspace({
 type DraftSaveCommand =
   | Schema.Schema.Type<typeof CreateMailboxDraftCommand>
   | Schema.Schema.Type<typeof UpdateMailboxDraftCommand>;
+type DraftSendCommand = Schema.Schema.Type<typeof SendMailboxDraftCommand>;
 
 interface PendingDraftAttachment {
   readonly file: File;
@@ -988,6 +997,7 @@ function DraftWorkspace({
   mailboxId,
   onClose,
   onCreated,
+  onSent,
   sessionId,
 }: {
   readonly draftId?: string;
@@ -995,12 +1005,18 @@ function DraftWorkspace({
   readonly mailboxId: string;
   readonly onClose: () => void;
   readonly onCreated: (draftId: string) => void;
+  readonly onSent: (notice: UndoSendNoticeValue) => void;
   readonly sessionId: string;
 }) {
   const queryClient = useQueryClient();
   const [saved, setSaved] = useState(false);
   const [failure, setFailure] = useState<{
     readonly command: DraftSaveCommand;
+    readonly message: string;
+    readonly retryable: boolean;
+  }>();
+  const [sendFailure, setSendFailure] = useState<{
+    readonly command: DraftSendCommand;
     readonly message: string;
     readonly retryable: boolean;
   }>();
@@ -1070,6 +1086,51 @@ function DraftWorkspace({
         return;
       }
       queryClient.setQueryData(draftQueryKey, result);
+    },
+    retry: false,
+  });
+  const send = useMutation({
+    mutationFn: (command: DraftSendCommand) =>
+      sendMailboxDraft({ data: command }),
+    onError: (_error, command) => {
+      setSendFailure({
+        command,
+        message: "The send result could not be confirmed. Retry safely.",
+        retryable: true,
+      });
+    },
+    onSuccess: (result, command) => {
+      if (!result.ok) {
+        if (result.status === 401) {
+          setSendFailure(undefined);
+          void clearCachedAuthSession(queryClient);
+          return;
+        }
+        setSendFailure({
+          command,
+          message:
+            result.status === 400
+              ? "Add at least one recipient and save the draft before sending."
+              : result.status === 403
+                ? "You do not have permission to send from this mailbox."
+                : result.status === 404
+                  ? "This draft no longer exists."
+                  : result.status === 409
+                    ? "This draft changed elsewhere. Close and reopen it before sending."
+                    : "The send result could not be confirmed. Retry safely.",
+          retryable: result.status >= 500,
+        });
+        return;
+      }
+      setSendFailure(undefined);
+      void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+      onSent({
+        mailboxId,
+        outboundDeliveryId: result.send.delivery.id,
+        sendAt: result.send.delivery.sendAt,
+        serverNow: result.send.serverNow,
+        version: result.send.delivery.version,
+      });
     },
     retry: false,
   });
@@ -1236,6 +1297,7 @@ function DraftWorkspace({
   const submit = (content: Schema.Schema.Type<typeof DraftEditorContent>) => {
     setSaved(false);
     setFailure(undefined);
+    setSendFailure(undefined);
     const common = {
       content,
       mailboxId,
@@ -1251,6 +1313,20 @@ function DraftWorkspace({
           });
     save.mutate(command);
   };
+  const submitSend = () => {
+    if (current === undefined) {
+      return;
+    }
+    setSendFailure(undefined);
+    send.mutate(
+      decodeSendMailboxDraft({
+        draftId: current.id,
+        expectedVersion: current.version,
+        mailboxId,
+        operationId: crypto.randomUUID(),
+      })
+    );
+  };
 
   return (
     <DraftEditor
@@ -1265,16 +1341,19 @@ function DraftWorkspace({
         size: upload.file.size,
         status: upload.status,
       }))}
-      error={failure?.message}
+      error={sendFailure?.message ?? failure?.message}
       initial={current?.content ?? emptyDraftContent}
       isNew={current === undefined}
       isSaving={save.isPending}
+      isSending={send.isPending}
       onAttachFiles={attachFiles}
       onClose={onClose}
       onRetry={
-        failure?.retryable === true
-          ? () => save.mutate(failure.command)
-          : undefined
+        sendFailure?.retryable === true
+          ? () => send.mutate(sendFailure.command)
+          : failure?.retryable === true
+            ? () => save.mutate(failure.command)
+            : undefined
       }
       onDismissAttachmentUpload={(id) =>
         setAttachmentUploads((uploads) =>
@@ -1288,11 +1367,13 @@ function DraftWorkspace({
         }
       }}
       onSave={submit}
+      onSend={submitSend}
       saved={saved}
     />
   );
 }
 
+// oxlint-disable-next-line eslint/complexity -- The authenticated route selects navigation, workspace, and persistent undo-notice states.
 function AuthenticatedInbox({
   data,
   isSigningOut,
@@ -1311,6 +1392,8 @@ function AuthenticatedInbox({
   readonly userId: string;
 }) {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const [undoNotice, setUndoNotice] = useState<UndoSendNoticeValue>();
   const { folders, labels, mailbox } = data;
   const { selectedFolder, selectedLabel } = resolveNavigationSelection(
     folders,
@@ -1346,73 +1429,91 @@ function AuthenticatedInbox({
     });
 
   return (
-    <MailboxShell
-      folders={folders}
-      labels={labels}
-      mailboxName={mailbox.displayName}
-      headerAction={
-        draftEditorOpen ? undefined : (
-          <button
-            type="button"
-            aria-label="Compose new draft"
-            onClick={() =>
+    <>
+      <MailboxShell
+        folders={folders}
+        labels={labels}
+        mailboxName={mailbox.displayName}
+        headerAction={
+          draftEditorOpen ? undefined : (
+            <button
+              type="button"
+              aria-label="Compose new draft"
+              onClick={() =>
+                void navigate({
+                  to: "/inbox",
+                  search: decodeInboxSearch({
+                    ...selection,
+                    compose: "true",
+                  }),
+                })
+              }
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-3 py-2.5 text-xs font-extrabold text-white shadow-[0_9px_22px_rgba(23,58,64,0.16)] sm:px-4"
+            >
+              <PenLine size={15} />{" "}
+              <span className="hidden sm:inline">Compose</span>
+            </button>
+          )
+        }
+        principalLabel={userId}
+        selectedFolderId={selectedFolder?.id}
+        selectedLabelId={selectedLabel?.id}
+        viewTitle={
+          search.compose === "true"
+            ? "Compose"
+            : search.draft === undefined
+              ? (selectedLabel?.name ?? selectedFolder?.name ?? "Inbox")
+              : "Edit draft"
+        }
+        isSigningOut={isSigningOut}
+        onSignOut={onSignOut}
+        signOutError={signOutError}
+      >
+        {draftEditorOpen ? (
+          <DraftWorkspace
+            key={search.draft ?? "compose"}
+            draftId={search.draft}
+            filters={filters}
+            mailboxId={mailbox.id}
+            onClose={closeEditor}
+            onCreated={(draftId) =>
               void navigate({
                 to: "/inbox",
-                search: decodeInboxSearch({
-                  ...selection,
-                  compose: "true",
-                }),
+                search: decodeInboxSearch({ ...selection, draft: draftId }),
               })
             }
-            className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-3 py-2.5 text-xs font-extrabold text-white shadow-[0_9px_22px_rgba(23,58,64,0.16)] sm:px-4"
-          >
-            <PenLine size={15} />{" "}
-            <span className="hidden sm:inline">Compose</span>
-          </button>
-        )
-      }
-      principalLabel={userId}
-      selectedFolderId={selectedFolder?.id}
-      selectedLabelId={selectedLabel?.id}
-      viewTitle={
-        search.compose === "true"
-          ? "Compose"
-          : search.draft === undefined
-            ? (selectedLabel?.name ?? selectedFolder?.name ?? "Inbox")
-            : "Edit draft"
-      }
-      isSigningOut={isSigningOut}
-      onSignOut={onSignOut}
-      signOutError={signOutError}
-    >
-      {draftEditorOpen ? (
-        <DraftWorkspace
-          key={search.draft ?? "compose"}
-          draftId={search.draft}
-          filters={filters}
-          mailboxId={mailbox.id}
-          onClose={closeEditor}
-          onCreated={(draftId) =>
-            void navigate({
-              to: "/inbox",
-              search: decodeInboxSearch({ ...selection, draft: draftId }),
-            })
+            onSent={(notice) => {
+              setUndoNotice(notice);
+              closeEditor();
+            }}
+            sessionId={sessionId}
+          />
+        ) : (
+          <MailboxWorkspace
+            archiveFolderId={archiveFolderId}
+            filters={filters}
+            mailboxId={mailbox.id}
+            messageId={search.message}
+            selection={selection}
+            sessionId={sessionId}
+            threadId={search.thread}
+            trashFolderId={trashFolderId}
+          />
+        )}
+      </MailboxShell>
+      {undoNotice === undefined ? null : (
+        <UndoSendNotice
+          key={undoNotice.outboundDeliveryId}
+          notice={undoNotice}
+          onClose={() => setUndoNotice(undefined)}
+          onMailboxChanged={() =>
+            void queryClient.invalidateQueries({ queryKey: ["mailbox"] })
           }
-          sessionId={sessionId}
-        />
-      ) : (
-        <MailboxWorkspace
-          archiveFolderId={archiveFolderId}
-          filters={filters}
-          mailboxId={mailbox.id}
-          messageId={search.message}
-          selection={selection}
-          sessionId={sessionId}
-          threadId={search.thread}
-          trashFolderId={trashFolderId}
+          onUnauthorized={() => void clearCachedAuthSession(queryClient)}
+          undo={(command) => undoMailboxSend({ data: command })}
         />
       )}
-    </MailboxShell>
+    </>
   );
 }
 

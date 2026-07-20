@@ -15,6 +15,10 @@ import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "#/mailboxes/message-reading";
+import {
+  SendMailboxDraftCommand,
+  UndoMailboxSendCommand,
+} from "#/mailboxes/outbound-sending";
 import type { MailboxBackendOperationsShape } from "#/server/mailbox-backend";
 import {
   MailboxBackendOperations,
@@ -115,6 +119,24 @@ const draft = {
   mailboxId: "team/primary",
   updatedAt: 1000,
   version: 1,
+} as const;
+const scheduledDelivery = {
+  attemptCount: 0,
+  createdAt: 1000,
+  id: "delivery/one",
+  mailboxId: "team/primary",
+  messageId: "message/outbound",
+  sendAt: 11_000,
+  status: "scheduled",
+  updatedAt: 1000,
+  version: 1,
+} as const;
+const cancelledDelivery = {
+  ...scheduledDelivery,
+  cancelledAt: 2000,
+  status: "cancelled",
+  updatedAt: 2000,
+  version: 2,
 } as const;
 
 const runForward = <A>(
@@ -219,6 +241,105 @@ describe("Website mailbox Backend forwarding", () => {
       content: draft.content,
       operationId: "operation-create",
     });
+  });
+
+  it("forwards send and undo payloads without path identity fields", async () => {
+    const forwarded: Request[] = [];
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: {
+        cookie: "__Host-session=session-a.secret",
+        origin: "https://inbox.test",
+      },
+    });
+    const sendCommand = Schema.decodeUnknownSync(SendMailboxDraftCommand)({
+      draftId: "draft/one",
+      expectedVersion: 1,
+      mailboxId: "team/primary",
+      operationId: "operation-send",
+    });
+    const undoCommand = Schema.decodeUnknownSync(UndoMailboxSendCommand)({
+      expectedVersion: 1,
+      mailboxId: "team/primary",
+      operationId: "operation-undo",
+      outboundDeliveryId: "delivery/one",
+    });
+    const send = await runForward(
+      (request) => {
+        forwarded.push(request);
+        return Promise.resolve(
+          Response.json({ delivery: scheduledDelivery, serverNow: 1000 })
+        );
+      },
+      (operations) => operations.sendDraft({ command: sendCommand, incoming })
+    );
+    const undo = await runForward(
+      (request) => {
+        forwarded.push(request);
+        return Promise.resolve(Response.json(cancelledDelivery));
+      },
+      (operations) => operations.undoSend({ command: undoCommand, incoming })
+    );
+
+    expect({ send, undo }).toStrictEqual({
+      send: {
+        ok: true,
+        send: { delivery: scheduledDelivery, serverNow: 1000 },
+      },
+      undo: { delivery: cancelledDelivery, ok: true },
+    });
+    await expect(
+      Promise.all(
+        forwarded.map(async (request) => ({
+          body: await request.json(),
+          cookie: request.headers.get("cookie"),
+          origin: request.headers.get("origin"),
+          path: new URL(request.url).pathname,
+        }))
+      )
+    ).resolves.toStrictEqual([
+      {
+        body: { expectedVersion: 1, operationId: "operation-send" },
+        cookie: "__Host-session=session-a.secret",
+        origin: "https://inbox.test",
+        path: "/api/mailboxes/team%2Fprimary/drafts/draft%2Fone/send",
+      },
+      {
+        body: { expectedVersion: 1, operationId: "operation-undo" },
+        cookie: "__Host-session=session-a.secret",
+        origin: "https://inbox.test",
+        path: "/api/mailboxes/team%2Fprimary/outbound/delivery%2Fone/undo",
+      },
+    ]);
+  });
+
+  it("rejects send and undo responses with mismatched identities", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const sendCommand = Schema.decodeUnknownSync(SendMailboxDraftCommand)({
+      draftId: "draft-1",
+      expectedVersion: 1,
+      mailboxId: "primary",
+      operationId: "operation-send",
+    });
+    const undoCommand = Schema.decodeUnknownSync(UndoMailboxSendCommand)({
+      expectedVersion: 1,
+      mailboxId: "team/primary",
+      operationId: "operation-undo",
+      outboundDeliveryId: "delivery/expected",
+    });
+    const send = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json({ delivery: scheduledDelivery, serverNow: 1000 })
+        ),
+      (operations) => operations.sendDraft({ command: sendCommand, incoming })
+    );
+    const undo = await runForward(
+      () => Promise.resolve(Response.json(cancelledDelivery)),
+      (operations) => operations.undoSend({ command: undoCommand, incoming })
+    );
+
+    expect(send).toMatchObject({ ok: false, status: 502 });
+    expect(undo).toMatchObject({ ok: false, status: 502 });
   });
 
   it("rejects a draft response with mismatched path identity", async () => {

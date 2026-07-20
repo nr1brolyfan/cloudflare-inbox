@@ -158,6 +158,7 @@ const authorizationWith = (
     requireFolder: unusedAuthorization,
     requireFolderMessageRead: folderMessageRead,
     requireMailbox: unusedAuthorization,
+    requireMailboxDraftSend: unusedAuthorization,
     requireMailboxMessageRead,
     requireMessage,
     requireRuleManage: unusedAuthorization,

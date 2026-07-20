@@ -75,6 +75,11 @@ import {
   MailboxNavigationError,
   MailboxNavigationResult,
 } from "#/mailboxes/navigation";
+import { OutboundDeliverySchema } from "#/mailboxes/outbound";
+import {
+  MailboxOutboundSending,
+  SendMailboxDraftResult,
+} from "#/mailboxes/outbound-sending";
 
 const publicOrigin = "https://inbox.test";
 const MailboxTestApi = HttpApi.make("AuthApi").add(MailboxGroup);
@@ -226,6 +231,28 @@ const draftAttachmentUpload = Schema.decodeUnknownSync(
   },
   draftVersion: 2,
 });
+const scheduledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
+  attemptCount: 0,
+  createdAt: 1000,
+  id: "delivery-1",
+  mailboxId: "primary",
+  messageId: "message-outbound-1",
+  sendAt: 11_000,
+  status: "scheduled",
+  updatedAt: 1000,
+  version: 1,
+});
+const mailboxDraftSend = Schema.decodeUnknownSync(SendMailboxDraftResult)({
+  delivery: scheduledDelivery,
+  serverNow: 1000,
+});
+const cancelledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
+  ...scheduledDelivery,
+  cancelledAt: 2000,
+  status: "cancelled",
+  updatedAt: 2000,
+  version: 2,
+});
 
 const makeAdministration = (
   overrides: Partial<MailboxAdministrationService> = {}
@@ -277,6 +304,10 @@ const makeHandler = (
   draftAttachments: MailboxDraftAttachments = MailboxDraftAttachments.of({
     reserve: () => Effect.succeed(draftAttachment),
     upload: () => Effect.succeed(draftAttachmentUpload),
+  }),
+  outboundSending: MailboxOutboundSending = MailboxOutboundSending.of({
+    send: () => Effect.succeed(mailboxDraftSend),
+    undo: () => Effect.succeed(cancelledDelivery),
   })
 ) => {
   const requestAuthLive = Layer.mergeAll(
@@ -312,6 +343,7 @@ const makeHandler = (
         Layer.succeed(MailboxInlineAttachmentReading, inlineAttachments),
         Layer.succeed(MailboxDraftEditing, draftEditing),
         Layer.succeed(MailboxDraftAttachments, draftAttachments),
+        Layer.succeed(MailboxOutboundSending, outboundSending),
         Layer.succeed(
           InboundReplay,
           InboundReplay.of({
@@ -369,6 +401,78 @@ const mailboxRequest = (
 };
 
 describe("protected mailbox API", () => {
+  it("sends and undoes with path identity and caller operation IDs", async () => {
+    const commands: unknown[] = [];
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      MailboxOutboundSending.of({
+        send: (command) => {
+          commands.push(command);
+          return Effect.succeed(mailboxDraftSend);
+        },
+        undo: (command) => {
+          commands.push(command);
+          return Effect.succeed(cancelledDelivery);
+        },
+      })
+    );
+
+    try {
+      const sent = await handler(
+        mailboxRequest("/api/mailboxes/primary/drafts/draft-1/send", "POST", {
+          body: { expectedVersion: 1, operationId: "operation-send" },
+        })
+      );
+      const undone = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/outbound/delivery-1/undo",
+          "POST",
+          {
+            body: { expectedVersion: 1, operationId: "operation-undo" },
+          }
+        )
+      );
+
+      expect({ send: sent.status, undo: undone.status }).toStrictEqual({
+        send: 202,
+        undo: 200,
+      });
+      expect(commands).toStrictEqual([
+        {
+          draftId: "draft-1",
+          expectedVersion: 1,
+          mailboxId: "primary",
+          operationId: "operation-send",
+        },
+        {
+          expectedVersion: 1,
+          mailboxId: "primary",
+          operationId: "operation-undo",
+          outboundDeliveryId: "delivery-1",
+        },
+      ]);
+      await expect(sent.json()).resolves.toMatchObject({
+        delivery: { id: "delivery-1", mailboxId: "primary" },
+        serverNow: 1000,
+      });
+      await expect(undone.json()).resolves.toMatchObject({
+        id: "delivery-1",
+        mailboxId: "primary",
+        status: "cancelled",
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
   it("reserves and uploads raw draft attachment bytes", async () => {
     const { dispose, handler } = makeHandler(makeAdministration());
 

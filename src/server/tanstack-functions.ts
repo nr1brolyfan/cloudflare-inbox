@@ -16,6 +16,10 @@ import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "../mailboxes/message-reading";
+import {
+  SendMailboxDraftCommand,
+  UndoMailboxSendCommand,
+} from "../mailboxes/outbound-sending";
 import { websiteBackend } from "./backend";
 
 export type { DevEmailInboxResult } from "./dev-email-backend";
@@ -39,6 +43,8 @@ const updateMailboxDraftInput = Schema.decodeUnknownSync(
 const reserveDraftAttachmentInput = Schema.decodeUnknownSync(
   ReserveDraftAttachmentCommand
 );
+const sendMailboxDraftInput = Schema.decodeUnknownSync(SendMailboxDraftCommand);
+const undoMailboxSendInput = Schema.decodeUnknownSync(UndoMailboxSendCommand);
 
 export const actOnMailboxMessage = createServerFn({ method: "POST" })
   .validator(mailboxMessageActionInput)
@@ -66,6 +72,10 @@ export const reserveMailboxDraftAttachment = createServerFn({ method: "POST" })
   .validator(reserveDraftAttachmentInput)
   .handler(({ data }) => websiteBackend.reserveMailboxDraftAttachment(data));
 
+export const sendMailboxDraft = createServerFn({ method: "POST" })
+  .validator(sendMailboxDraftInput)
+  .handler(({ data }) => websiteBackend.sendMailboxDraft(data));
+
 export const getDevEmailInboxStatus = createServerFn({
   method: "GET",
 }).handler(() => websiteBackend.getDevEmailInboxStatus());
@@ -85,6 +95,10 @@ export const getMailboxThread = createServerFn({ method: "GET" })
 export const updateMailboxDraft = createServerFn({ method: "POST" })
   .validator(updateMailboxDraftInput)
   .handler(({ data }) => websiteBackend.updateMailboxDraft(data));
+
+export const undoMailboxSend = createServerFn({ method: "POST" })
+  .validator(undoMailboxSendInput)
+  .handler(({ data }) => websiteBackend.undoMailboxSend(data));
 
 export const listDevEmails = createServerFn({ method: "GET" }).handler(() =>
   websiteBackend.listDevEmails()

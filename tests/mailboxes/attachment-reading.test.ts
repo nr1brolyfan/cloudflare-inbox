@@ -128,6 +128,7 @@ const authorization = MailAuthorization.of({
       mailboxId: resource.mailboxId,
     }),
   requireMailbox: unusedAuthorization,
+  requireMailboxDraftSend: unusedAuthorization,
   requireMailboxMessageRead: ({ resource }) => Effect.succeed(resource),
   requireMessage: ({ resource }) => Effect.succeed({ ...resource, folderId }),
   requireRuleManage: unusedAuthorization,

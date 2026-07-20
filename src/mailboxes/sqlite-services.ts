@@ -111,6 +111,7 @@ import {
   ResendOutboundResult,
   ScheduleOutboundInput,
   ScheduleOutboundResult,
+  outboundUndoWindowMillis,
 } from "./outbound";
 import type { GetOutboundDeliveryInput } from "./outbound";
 import {
@@ -3772,6 +3773,8 @@ const scheduleOutbound = (
           }
           return previous.success;
         }
+        const now = runtime.now();
+        const sendAt = now + outboundUndoWindowMillis;
         const [sourceDraft] = yield* tx
           .select()
           .from(draft)
@@ -3797,16 +3800,6 @@ const scheduleOutbound = (
             actualVersion: Schema.decodeUnknownSync(Version)(
               sourceDraft.version
             ),
-          });
-        }
-        const now = runtime.now();
-        if (input.sendAt < now) {
-          return yield* new MailboxDomainError({
-            operation: "schedule-outbound",
-            reason: "validation",
-            message: "sendAt cannot be earlier than server time",
-            resourceType: "draft",
-            resourceId: input.draftId,
           });
         }
         const recipients = [
@@ -3878,7 +3871,7 @@ const scheduleOutbound = (
           subject: sourceDraft.subject,
           recipientsJson: JSON.stringify(recipients),
           snippet: body.slice(0, 500),
-          activityAt: input.sendAt,
+          activityAt: sendAt,
           size: snapshotSize,
           referencesJson: "[]",
           toJson: sourceDraft.toJson,
@@ -3886,7 +3879,7 @@ const scheduleOutbound = (
           bccJson: sourceDraft.bccJson,
           textBody: sourceDraft.textBody,
           htmlBody: sourceDraft.htmlBody,
-          scheduledAt: input.sendAt,
+          scheduledAt: sendAt,
           createdAt: now,
           updatedAt: now,
         });
@@ -3913,7 +3906,7 @@ const scheduleOutbound = (
             id: deliveryId,
             messageId,
             status: "scheduled",
-            sendAt: input.sendAt,
+            sendAt,
             createdAt: now,
             updatedAt: now,
           })
@@ -4024,7 +4017,18 @@ const cancelOutboundDelivery = (
             resourceId: input.outboundDeliveryId,
           });
         }
-        const now = Math.max(runtime.now(), current.createdAt);
+        const runtimeNow = runtime.now();
+        if (runtimeNow >= current.sendAt) {
+          return yield* new MailboxDomainError({
+            operation: "cancel-outbound",
+            reason: "invalid-state",
+            message:
+              "Only scheduled deliveries before send time can be cancelled",
+            resourceType: "outbound",
+            resourceId: input.outboundDeliveryId,
+          });
+        }
+        const now = Math.max(runtimeNow, current.createdAt);
         const [updated] = yield* tx
           .update(outboundDelivery)
           .set({

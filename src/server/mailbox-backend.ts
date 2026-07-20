@@ -39,6 +39,14 @@ import {
   MailboxThreadResult,
 } from "../mailboxes/message-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
+import type {
+  SendMailboxDraftCommand,
+  UndoMailboxSendCommand,
+} from "../mailboxes/outbound-sending";
+import {
+  SendMailboxDraftResult,
+  UndoMailboxSendResult,
+} from "../mailboxes/outbound-sending";
 import { BackendClient } from "./website-platform";
 
 export type MailboxPublicStatus = 400 | 401 | 403 | 404 | 409 | 500 | 502;
@@ -119,6 +127,20 @@ export type MailboxDraftAttachmentUploadServerResult =
   | {
       readonly ok: true;
       readonly upload: Schema.Codec.Encoded<typeof DraftAttachmentUploadResult>;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxDraftSendServerResult =
+  | {
+      readonly ok: true;
+      readonly send: Schema.Codec.Encoded<typeof SendMailboxDraftResult>;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxSendUndoServerResult =
+  | {
+      readonly delivery: Schema.Codec.Encoded<typeof UndoMailboxSendResult>;
+      readonly ok: true;
     }
   | MailboxServerErrorResult;
 
@@ -236,6 +258,17 @@ const operationErrorMessage = (
       ? "Draft not found"
       : publicErrors[code].message;
   }
+  if (operation === "website.mailbox.send_undo") {
+    if (code === "bad_request") {
+      return "Invalid outbound request";
+    }
+    if (code === "conflict") {
+      return "Outbound delivery changed";
+    }
+    return code === "not_found"
+      ? "Outbound delivery not found"
+      : publicErrors[code].message;
+  }
   if (operation !== "website.mailbox.message_action") {
     return publicErrors[code].message;
   }
@@ -295,10 +328,18 @@ export interface MailboxBackendOperationsShape {
     readonly command: ReserveDraftAttachmentCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxDraftAttachmentReservationServerResult>;
+  readonly sendDraft: (input: {
+    readonly command: SendMailboxDraftCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxDraftSendServerResult>;
   readonly updateDraft: (input: {
     readonly command: UpdateMailboxDraftCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxDraftServerResult>;
+  readonly undoSend: (input: {
+    readonly command: UndoMailboxSendCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxSendUndoServerResult>;
   readonly uploadDraftAttachment: (input: {
     readonly attachmentId: UploadDraftAttachmentCommand["attachmentId"];
     readonly draftId: UploadDraftAttachmentCommand["draftId"];
@@ -783,6 +824,35 @@ export const MailboxBackendOperationsLive = Layer.effect(
             }
           )
         ),
+      sendDraft: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "POST",
+          operation: "website.mailbox.draft_send",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/drafts/${encodeURIComponent(command.draftId)}/send`,
+          payload: {
+            expectedVersion: command.expectedVersion,
+            operationId: command.operationId,
+          },
+        }).pipe(
+          Effect.map((result): MailboxDraftSendServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(SendMailboxDraftResult)
+            )(result.body);
+            return Exit.isSuccess(decoded) &&
+              decoded.value.delivery.mailboxId === command.mailboxId
+              ? {
+                  ok: true,
+                  send: Schema.encodeSync(SendMailboxDraftResult)(
+                    decoded.value
+                  ),
+                }
+              : invalidBackendResponse();
+          })
+        ),
       updateDraft: ({ command, incoming }) =>
         forwardRequest({
           incoming,
@@ -798,6 +868,36 @@ export const MailboxBackendOperationsLive = Layer.effect(
           Effect.map((result) =>
             decodeDraftResult(result, command.mailboxId, command.draftId)
           )
+        ),
+      undoSend: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "POST",
+          operation: "website.mailbox.send_undo",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/outbound/${encodeURIComponent(command.outboundDeliveryId)}/undo`,
+          payload: {
+            expectedVersion: command.expectedVersion,
+            operationId: command.operationId,
+          },
+        }).pipe(
+          Effect.map((result): MailboxSendUndoServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(UndoMailboxSendResult)
+            )(result.body);
+            return Exit.isSuccess(decoded) &&
+              decoded.value.mailboxId === command.mailboxId &&
+              decoded.value.id === command.outboundDeliveryId
+              ? {
+                  delivery: Schema.encodeSync(UndoMailboxSendResult)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
         ),
       uploadDraftAttachment: ({
         attachmentId,

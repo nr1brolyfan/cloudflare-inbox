@@ -59,6 +59,12 @@ import {
   MailboxThreadResult,
 } from "../mailboxes/message-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
+import {
+  SendMailboxDraftCommand,
+  SendMailboxDraftResult,
+  UndoMailboxSendCommand,
+  UndoMailboxSendResult,
+} from "../mailboxes/outbound-sending";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
 const InboundReplayParams = Schema.Struct({
@@ -76,6 +82,10 @@ const MailboxMessageParams = Schema.Struct({
 const MailboxDraftParams = Schema.Struct({
   draftId: DraftId,
   mailboxId: MailboxId,
+});
+const MailboxOutboundDeliveryParams = Schema.Struct({
+  mailboxId: MailboxId,
+  outboundDeliveryId: UndoMailboxSendCommand.fields.outboundDeliveryId,
 });
 const MailboxDraftAttachmentParams = Schema.Struct({
   attachmentId: AttachmentId,
@@ -208,6 +218,34 @@ export const UpdateMailboxDraftEndpoint = HttpApiEndpoint.patch(
   }
 );
 
+export const SendMailboxDraftEndpoint = HttpApiEndpoint.post(
+  "sendDraft",
+  "/api/mailboxes/:mailboxId/drafts/:draftId/send",
+  {
+    error: MailboxErrors,
+    params: MailboxDraftParams,
+    payload: Schema.Struct({
+      expectedVersion: SendMailboxDraftCommand.fields.expectedVersion,
+      operationId: SendMailboxDraftCommand.fields.operationId,
+    }),
+    success: SendMailboxDraftResult.pipe(HttpApiSchema.status(202)),
+  }
+);
+
+export const UndoMailboxSendEndpoint = HttpApiEndpoint.post(
+  "undoSend",
+  "/api/mailboxes/:mailboxId/outbound/:outboundDeliveryId/undo",
+  {
+    error: MailboxErrors,
+    params: MailboxOutboundDeliveryParams,
+    payload: Schema.Struct({
+      expectedVersion: UndoMailboxSendCommand.fields.expectedVersion,
+      operationId: UndoMailboxSendCommand.fields.operationId,
+    }),
+    success: UndoMailboxSendResult,
+  }
+);
+
 export const ReserveDraftAttachmentEndpoint = HttpApiEndpoint.post(
   "reserveDraftAttachment",
   "/api/mailboxes/:mailboxId/drafts/:draftId/attachments/reservations",
@@ -310,6 +348,8 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     RenameMailboxEndpoint,
     ReserveDraftAttachmentEndpoint,
     ReplayInboundEndpoint,
+    SendMailboxDraftEndpoint,
+    UndoMailboxSendEndpoint,
     UpdateMailboxDraftEndpoint,
     UploadDraftAttachmentEndpoint
   )
