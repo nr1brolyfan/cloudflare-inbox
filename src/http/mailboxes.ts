@@ -18,6 +18,8 @@ import type { MailboxAdministrationError } from "../mailboxes/administration";
 import { MailboxAdministration } from "../mailboxes/administration";
 import type { MailboxInlineAttachmentError } from "../mailboxes/attachment-reading";
 import { MailboxInlineAttachmentReading } from "../mailboxes/attachment-reading";
+import type { MailboxDraftEditingError } from "../mailboxes/draft-editing";
+import { MailboxDraftEditing } from "../mailboxes/draft-editing";
 import type {
   MailboxDomainError,
   MailboxRepositoryError,
@@ -131,6 +133,7 @@ type MailboxHandlerError =
   | MailboxMessageActionError
   | MailboxMessageHtmlError
   | MailboxInlineAttachmentError
+  | MailboxDraftEditingError
   | MailboxDomainError
   | MailboxRepositoryError
   | WorkflowStartError;
@@ -231,6 +234,35 @@ const mapMessageActionError = (
   }
 };
 
+const mapDraftEditingError = (
+  error: MailboxDraftEditingError
+): Effect.Effect<
+  never,
+  | AuthBadRequestError
+  | AuthConflictError
+  | AuthInternalError
+  | AuthNotFoundError
+> => {
+  if (error.reason === "invalid-input") {
+    return Effect.fail(
+      new AuthBadRequestError({
+        code: "bad_request",
+        message: "Invalid draft content",
+      })
+    );
+  }
+  if (error.reason === "not-found") {
+    return Effect.fail(
+      new AuthNotFoundError({ code: "not_found", message: "Draft not found" })
+    );
+  }
+  return error.reason === "conflict"
+    ? Effect.fail(
+        new AuthConflictError({ code: "conflict", message: "Draft changed" })
+      )
+    : Effect.fail(internalError());
+};
+
 const mapMessageHtmlError = (
   error: MailboxMessageHtmlError
 ): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
@@ -277,6 +309,7 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxMessageActionError", mapMessageActionError),
     Effect.catchTag("MailboxMessageHtmlError", mapMessageHtmlError),
     Effect.catchTag("MailboxInlineAttachmentError", mapInlineAttachmentError),
+    Effect.catchTag("MailboxDraftEditingError", mapDraftEditingError),
     Effect.catchTag("MailboxDomainError", mapInboundDomainError),
     Effect.catchTags({
       MailboxRepositoryError: () => Effect.fail(internalError()),
@@ -305,6 +338,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
     const messageActions = yield* MailboxMessageActions;
     const messageHtml = yield* MailboxMessageHtmlReading;
     const inlineAttachments = yield* MailboxInlineAttachmentReading;
+    const draftEditing = yield* MailboxDraftEditing;
     const replayAuthorization = yield* InboundReplayAuthorization;
     const inboundReplay = yield* InboundReplay;
 
@@ -322,6 +356,14 @@ export const MailboxGroupLive = HttpApiBuilder.group(
         administration
           .bootstrapOwner({ displayName: payload.displayName })
           .pipe(mapHttpErrors)
+      )
+      .handle("createDraft", ({ params, payload }) =>
+        draftEditing
+          .create({ ...payload, mailboxId: params.mailboxId })
+          .pipe(mapHttpErrors)
+      )
+      .handle("getDraft", ({ params }) =>
+        draftEditing.get(params).pipe(mapHttpErrors)
       )
       .handle("getNavigation", () => navigation.getCurrent.pipe(mapHttpErrors))
       .handle("getInlineAttachment", ({ params, query }) =>
@@ -460,6 +502,9 @@ export const MailboxGroupLive = HttpApiBuilder.group(
             operationId: payload.operationId,
           });
         }).pipe(mapHttpErrors)
+      )
+      .handle("updateDraft", ({ params, payload }) =>
+        draftEditing.update({ ...params, ...payload }).pipe(mapHttpErrors)
       );
   })
 );

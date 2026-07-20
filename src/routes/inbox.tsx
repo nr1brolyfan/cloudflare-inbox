@@ -14,6 +14,7 @@ import {
   CircleAlert,
   Inbox as InboxIcon,
   LoaderCircle,
+  PenLine,
   RotateCcw,
 } from "lucide-react";
 import { useRef, useState } from "react";
@@ -26,6 +27,7 @@ import {
   handleMailboxReadDenial,
   mailboxReadDenialQueryKey,
 } from "../auth/client";
+import { DraftEditor } from "../inbox/draft-editor";
 import {
   mailboxMessageActionMutationKey,
   projectPendingMessageActions,
@@ -43,11 +45,18 @@ import { MessageList } from "../inbox/message-list";
 import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
 import {
   FolderId,
+  DraftId,
   LabelId,
   MessageId,
   SearchQuery,
   ThreadId,
 } from "../mailboxes/core";
+import {
+  CreateMailboxDraftCommand,
+  DraftEditorContent,
+  DraftEditorDraft,
+  UpdateMailboxDraftCommand,
+} from "../mailboxes/draft-editing";
 import { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import {
   MailboxMessageListInput,
@@ -57,13 +66,18 @@ import {
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
 import {
   getMailboxNavigation,
+  getMailboxDraft,
   getMailboxThread,
   listMailboxMessages,
   actOnMailboxMessage,
+  createMailboxDraft,
+  updateMailboxDraft,
 } from "../server/tanstack-functions";
 
 const InboxSearch = Schema.Struct({
   attachment: Schema.optional(Schema.Literal("true")),
+  compose: Schema.optional(Schema.Literal("true")),
+  draft: Schema.optional(DraftId),
   folder: Schema.optional(FolderId),
   label: Schema.optional(LabelId),
   message: Schema.optional(MessageId),
@@ -75,6 +89,15 @@ const InboxSearch = Schema.Struct({
   Schema.makeFilter((search) => {
     if (search.folder !== undefined && search.label !== undefined) {
       return "folder and label cannot be selected together";
+    }
+    if (search.compose !== undefined && search.draft !== undefined) {
+      return "compose and draft cannot be selected together";
+    }
+    if (
+      (search.compose !== undefined || search.draft !== undefined) &&
+      (search.thread !== undefined || search.message !== undefined)
+    ) {
+      return "draft editor and conversation cannot be selected together";
     }
     return (search.thread === undefined) === (search.message === undefined)
       ? undefined
@@ -95,7 +118,21 @@ const decodeOpenMailboxThread = Schema.decodeUnknownSync(
 const decodeMailboxMessageActionOption = Schema.decodeUnknownOption(
   MailboxMessageActionCommand
 );
+const decodeCreateMailboxDraft = Schema.decodeUnknownSync(
+  CreateMailboxDraftCommand
+);
+const decodeDraftEditorContent = Schema.decodeUnknownSync(DraftEditorContent);
+const decodeDraftEditorDraft = Schema.decodeUnknownSync(DraftEditorDraft);
+const decodeUpdateMailboxDraft = Schema.decodeUnknownSync(
+  UpdateMailboxDraftCommand
+);
 const mailboxNavigationQueryKey = ["mailbox", "navigation"] as const;
+const emptyDraftContent = decodeDraftEditorContent({
+  bcc: [],
+  cc: [],
+  subject: "",
+  to: [],
+});
 
 class MailboxMessagesRequestError extends Error {
   readonly status: number;
@@ -817,6 +854,189 @@ function MailboxWorkspace({
   );
 }
 
+type DraftSaveCommand =
+  | Schema.Schema.Type<typeof CreateMailboxDraftCommand>
+  | Schema.Schema.Type<typeof UpdateMailboxDraftCommand>;
+
+const draftSaveErrorText = (status: number) => {
+  if (status === 400) {
+    return "Check the draft fields and try again.";
+  }
+  if (status === 401) {
+    return "Your session ended. Sign in again to save this draft.";
+  }
+  if (status === 403) {
+    return "You do not have permission to edit drafts in this mailbox.";
+  }
+  if (status === 404) {
+    return "This draft no longer exists.";
+  }
+  return status === 409
+    ? "This draft changed elsewhere. Close and reopen it before saving again."
+    : "The draft could not be saved. Your local content is still here.";
+};
+
+// oxlint-disable-next-line eslint/complexity -- One component owns load, exact-command retry, and CAS save state.
+function DraftWorkspace({
+  draftId,
+  filters,
+  mailboxId,
+  onClose,
+  onCreated,
+  sessionId,
+}: {
+  readonly draftId?: string;
+  readonly filters: MailboxMessageQueryState;
+  readonly mailboxId: string;
+  readonly onClose: () => void;
+  readonly onCreated: (draftId: string) => void;
+  readonly sessionId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [saved, setSaved] = useState(false);
+  const [failure, setFailure] = useState<{
+    readonly command: DraftSaveCommand;
+    readonly message: string;
+    readonly retryable: boolean;
+  }>();
+  const draftQueryKey = [
+    "mailbox",
+    "draft",
+    sessionId,
+    mailboxId,
+    draftId,
+  ] as const;
+  const draft = useQuery({
+    queryFn:
+      draftId === undefined
+        ? skipToken
+        : async () => {
+            const result = await getMailboxDraft({
+              data: { draftId, mailboxId },
+            });
+            if (!result.ok && result.status === 401) {
+              await clearCachedAuthSession(queryClient);
+            }
+            return result;
+          },
+    queryKey: draftQueryKey,
+    refetchOnReconnect: false,
+    refetchOnWindowFocus: false,
+    retry: false,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const save = useMutation({
+    mutationFn: (command: DraftSaveCommand) =>
+      "draftId" in command
+        ? updateMailboxDraft({ data: command })
+        : createMailboxDraft({ data: command }),
+    onError: (_error, command) => {
+      setSaved(false);
+      setFailure({
+        command,
+        message:
+          "The draft could not be saved. Your local content is still here.",
+        retryable: true,
+      });
+    },
+    onSuccess: (result, command) => {
+      if (!result.ok) {
+        setSaved(false);
+        setFailure({
+          command,
+          message: draftSaveErrorText(result.status),
+          retryable: result.status === 500 || result.status === 502,
+        });
+        if (result.status === 401) {
+          void clearCachedAuthSession(queryClient);
+        }
+        return;
+      }
+      setFailure(undefined);
+      setSaved(true);
+      void queryClient.invalidateQueries({
+        queryKey: ["mailbox", "navigation"],
+      });
+      if (!("draftId" in command)) {
+        onCreated(result.draft.id);
+        return;
+      }
+      queryClient.setQueryData(draftQueryKey, result);
+    },
+    retry: false,
+  });
+
+  if (draftId !== undefined && draft.isLoading) {
+    return (
+      <output className="flex h-full min-h-80 items-center justify-center text-[var(--sea-ink-soft)]">
+        <LoaderCircle aria-label="Loading draft" className="animate-spin" />
+      </output>
+    );
+  }
+  if (draftId !== undefined && (draft.error || !draft.data?.ok)) {
+    const status = draft.data?.ok === false ? draft.data.status : 502;
+    return (
+      <WorkspaceStatus
+        title={status === 404 ? "Draft not found" : "Draft unavailable"}
+        detail={
+          status === 403
+            ? "Your session does not include access to this draft."
+            : status === 404
+              ? "This draft may have been removed."
+              : "The draft could not be loaded."
+        }
+        onBack={onClose}
+        backHref={mailboxViewHref({}, undefined, undefined, filters)}
+        onRetry={
+          status === 500 || status === 502
+            ? () => void draft.refetch()
+            : undefined
+        }
+      />
+    );
+  }
+
+  const current = draft.data?.ok
+    ? decodeDraftEditorDraft(draft.data.draft)
+    : undefined;
+  const submit = (content: Schema.Schema.Type<typeof DraftEditorContent>) => {
+    setSaved(false);
+    setFailure(undefined);
+    const common = {
+      content,
+      mailboxId,
+      operationId: crypto.randomUUID(),
+    };
+    const command =
+      current === undefined
+        ? decodeCreateMailboxDraft(common)
+        : decodeUpdateMailboxDraft({
+            ...common,
+            draftId: current.id,
+            expectedVersion: current.version,
+          });
+    save.mutate(command);
+  };
+
+  return (
+    <DraftEditor
+      key={current?.id ?? "new"}
+      error={failure?.message}
+      initial={current?.content ?? emptyDraftContent}
+      isNew={current === undefined}
+      isSaving={save.isPending}
+      onClose={onClose}
+      onRetry={
+        failure?.retryable === true
+          ? () => save.mutate(failure.command)
+          : undefined
+      }
+      onSave={submit}
+      saved={saved}
+    />
+  );
+}
+
 function AuthenticatedInbox({
   data,
   isSigningOut,
@@ -834,6 +1054,7 @@ function AuthenticatedInbox({
   readonly sessionId: string;
   readonly userId: string;
 }) {
+  const navigate = useNavigate();
   const { folders, labels, mailbox } = data;
   const { selectedFolder, selectedLabel } = resolveNavigationSelection(
     folders,
@@ -860,30 +1081,81 @@ function AuthenticatedInbox({
     (folder) => folder.kind === "archive"
   )?.id;
   const trashFolderId = folders.find((folder) => folder.kind === "trash")?.id;
+  const draftEditorOpen =
+    search.compose === "true" || search.draft !== undefined;
+  const closeEditor = () =>
+    void navigate({
+      to: "/inbox",
+      search: inboxSearchFor(selection, filters),
+    });
 
   return (
     <MailboxShell
       folders={folders}
       labels={labels}
       mailboxName={mailbox.displayName}
+      headerAction={
+        draftEditorOpen ? undefined : (
+          <button
+            type="button"
+            aria-label="Compose new draft"
+            onClick={() =>
+              void navigate({
+                to: "/inbox",
+                search: decodeInboxSearch({
+                  ...selection,
+                  compose: "true",
+                }),
+              })
+            }
+            className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-3 py-2.5 text-xs font-extrabold text-white shadow-[0_9px_22px_rgba(23,58,64,0.16)] sm:px-4"
+          >
+            <PenLine size={15} />{" "}
+            <span className="hidden sm:inline">Compose</span>
+          </button>
+        )
+      }
       principalLabel={userId}
       selectedFolderId={selectedFolder?.id}
       selectedLabelId={selectedLabel?.id}
-      viewTitle={selectedLabel?.name ?? selectedFolder?.name ?? "Inbox"}
+      viewTitle={
+        search.compose === "true"
+          ? "Compose"
+          : search.draft === undefined
+            ? (selectedLabel?.name ?? selectedFolder?.name ?? "Inbox")
+            : "Edit draft"
+      }
       isSigningOut={isSigningOut}
       onSignOut={onSignOut}
       signOutError={signOutError}
     >
-      <MailboxWorkspace
-        archiveFolderId={archiveFolderId}
-        filters={filters}
-        mailboxId={mailbox.id}
-        messageId={search.message}
-        selection={selection}
-        sessionId={sessionId}
-        threadId={search.thread}
-        trashFolderId={trashFolderId}
-      />
+      {draftEditorOpen ? (
+        <DraftWorkspace
+          key={search.draft ?? "compose"}
+          draftId={search.draft}
+          filters={filters}
+          mailboxId={mailbox.id}
+          onClose={closeEditor}
+          onCreated={(draftId) =>
+            void navigate({
+              to: "/inbox",
+              search: decodeInboxSearch({ ...selection, draft: draftId }),
+            })
+          }
+          sessionId={sessionId}
+        />
+      ) : (
+        <MailboxWorkspace
+          archiveFolderId={archiveFolderId}
+          filters={filters}
+          mailboxId={mailbox.id}
+          messageId={search.message}
+          selection={selection}
+          sessionId={sessionId}
+          threadId={search.thread}
+          trashFolderId={trashFolderId}
+        />
+      )}
     </MailboxShell>
   );
 }

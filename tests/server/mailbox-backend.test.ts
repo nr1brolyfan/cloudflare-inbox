@@ -4,6 +4,10 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { MailboxInlineAttachmentInput } from "#/mailboxes/attachment-reading";
+import {
+  CreateMailboxDraftCommand,
+  GetMailboxDraftQuery,
+} from "#/mailboxes/draft-editing";
 import { MailboxMessageActionCommand } from "#/mailboxes/message-actions";
 import { MailboxMessageHtmlInput } from "#/mailboxes/message-html";
 import {
@@ -96,6 +100,20 @@ const messageHtml = {
   mailboxId: "team/primary",
   messageId: "message/one",
 } as const;
+const draft = {
+  content: {
+    bcc: [],
+    cc: [],
+    subject: "Quarterly update",
+    textBody: "Draft body",
+    to: [{ address: "person@example.test" }],
+  },
+  createdAt: 1000,
+  id: "draft/one",
+  mailboxId: "team/primary",
+  updatedAt: 1000,
+  version: 1,
+} as const;
 
 const runForward = <A>(
   fetch: (request: Request) => Promise<Response>,
@@ -120,6 +138,53 @@ const runForward = <A>(
   );
 
 describe("Website mailbox Backend forwarding", () => {
+  it("forwards a create command without adding hidden draft fields", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const command = Schema.decodeUnknownSync(CreateMailboxDraftCommand)({
+      content: draft.content,
+      mailboxId: "team/primary",
+      operationId: "operation-create",
+    });
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(draft, { status: 201 }));
+      },
+      (operations) => operations.createDraft({ command, incoming })
+    );
+
+    expect(result).toStrictEqual({ draft, ok: true });
+    expect(forwarded).toBeDefined();
+    expect(new URL(forwarded?.url ?? "https://invalid.test").pathname).toBe(
+      "/api/mailboxes/team%2Fprimary/drafts"
+    );
+    await expect(forwarded?.json()).resolves.toStrictEqual({
+      content: draft.content,
+      operationId: "operation-create",
+    });
+  });
+
+  it("rejects a draft response with mismatched path identity", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(GetMailboxDraftQuery)({
+      draftId: "draft/expected",
+      mailboxId: "team/primary",
+    });
+    const result = await runForward(
+      () => Promise.resolve(Response.json(draft)),
+      (operations) => operations.getDraft({ incoming, query })
+    );
+
+    expect(result).toMatchObject({
+      error: { code: "internal_error", message: "Invalid Backend response" },
+      ok: false,
+      status: 502,
+    });
+  });
+
   it("forwards and validates an inline attachment binary response", async () => {
     let forwarded: Request | undefined;
     const incoming = new Request("https://inbox.test/_server", {

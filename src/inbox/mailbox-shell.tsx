@@ -41,6 +41,7 @@ const folderIconByKind = {
 interface MailboxShellProps {
   readonly children: ReactNode;
   readonly folders: readonly NavigationFolder[];
+  readonly headerAction?: ReactNode;
   readonly isSigningOut: boolean;
   readonly labels: readonly NavigationLabel[];
   readonly mailboxName: string;
@@ -243,6 +244,7 @@ function MailboxNavigation({
 export function MailboxShell({
   children,
   folders,
+  headerAction,
   isSigningOut,
   labels,
   mailboxName,
@@ -338,13 +340,16 @@ export function MailboxShell({
                 </h1>
               </div>
             </div>
-            <div className="flex items-center gap-2 rounded-full border border-[var(--line)] bg-white/66 py-1.5 pr-3 pl-1.5">
-              <span className="flex size-8 items-center justify-center rounded-full bg-[var(--sand)] text-[0.65rem] font-extrabold text-[var(--palm)]">
-                {principalLabel.slice(0, 2).toUpperCase()}
-              </span>
-              <span className="hidden max-w-40 truncate text-xs font-bold text-[var(--sea-ink-soft)] sm:block">
-                {principalLabel}
-              </span>
+            <div className="flex items-center gap-2">
+              {headerAction}
+              <div className="flex items-center gap-2 rounded-full border border-[var(--line)] bg-white/66 py-1.5 pr-3 pl-1.5">
+                <span className="flex size-8 items-center justify-center rounded-full bg-[var(--sand)] text-[0.65rem] font-extrabold text-[var(--palm)]">
+                  {principalLabel.slice(0, 2).toUpperCase()}
+                </span>
+                <span className="hidden max-w-40 truncate text-xs font-bold text-[var(--sea-ink-soft)] sm:block">
+                  {principalLabel}
+                </span>
+              </div>
             </div>
           </header>
 

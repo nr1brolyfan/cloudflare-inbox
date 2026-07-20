@@ -4,6 +4,11 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
 import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
+import type {
+  CreateMailboxDraftCommand,
+  GetMailboxDraftQuery,
+  UpdateMailboxDraftCommand,
+} from "../mailboxes/draft-editing";
 import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
 import type {
@@ -46,6 +51,14 @@ export const websiteBackend = {
         return yield* operations.bootstrapOwner({ displayName, incoming });
       })
     ),
+  createMailboxDraft: (command: CreateMailboxDraftCommand) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.createDraft({ command, incoming });
+      })
+    ),
   clearDevEmails: () =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {
@@ -82,6 +95,14 @@ export const websiteBackend = {
           operations.getInlineAttachment({ incoming, query })
         )
       )
+    ),
+  getMailboxDraft: (query: GetMailboxDraftQuery) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.getDraft({ incoming, query });
+      })
     ),
   getMailboxMessageHtml: (query: MailboxMessageHtmlInput, incoming: Request) =>
     websiteRuntime.runPromise(
@@ -124,6 +145,14 @@ export const websiteBackend = {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.rename({ ...input, incoming });
+      })
+    ),
+  updateMailboxDraft: (command: UpdateMailboxDraftCommand) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.updateDraft({ command, incoming });
       })
     ),
 } as const;

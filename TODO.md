@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **76/109 (70%)**
+- Postęp zadań: **77/109 (71%)**
 - Ukończone etapy: **6/11**
 - Aktualny etap: **9. Drafty i outbound**
-- Aktualne zadanie: **Draft editor**
+- Aktualne zadanie: **Attachment upload reservations**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -20,7 +20,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 6   | Inbound email                         | DONE        | 9/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | DONE        | 9/9    |
 | 8   | Reguły automatyczne                   | DONE        | 6/6    |
-| 9   | Drafty i outbound                     | CURRENT     | 0/9    |
+| 9   | Drafty i outbound                     | CURRENT     | 1/9    |
 | 10  | AI                                    | TODO        | 0/6    |
 | 11  | Hardening i produkcja                 | TODO        | 0/11   |
 
@@ -141,8 +141,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 ## 9. Drafty i outbound
 
-- [ ] CURRENT Zbudować draft editor.
-- [ ] Dodać attachment upload reservations.
+- [x] Zbudować draft editor.
+- [ ] CURRENT Dodać attachment upload reservations.
 - [ ] Tworzyć immutable send snapshot.
 - [ ] Planować wysyłkę alarmem MailboxDO.
 - [ ] Dodać okno undo send.

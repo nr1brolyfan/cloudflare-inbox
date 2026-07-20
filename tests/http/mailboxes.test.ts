@@ -45,6 +45,10 @@ import {
 } from "#/mailboxes/administration";
 import { MailboxInlineAttachmentReading } from "#/mailboxes/attachment-reading";
 import { MailboxRecordSchema, MimeType } from "#/mailboxes/core";
+import {
+  DraftEditorDraft,
+  MailboxDraftEditing,
+} from "#/mailboxes/draft-editing";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import {
@@ -184,6 +188,14 @@ const mailboxMessageHtml = Schema.decodeUnknownSync(MailboxMessageHtmlResult)({
   mailboxId: "primary",
   messageId: "message-1",
 });
+const mailboxDraft = Schema.decodeUnknownSync(DraftEditorDraft)({
+  id: "draft-1",
+  mailboxId: "primary",
+  content: { bcc: [], cc: [], subject: "Draft", to: [] },
+  createdAt: 1000,
+  updatedAt: 1000,
+  version: 1,
+});
 
 const makeAdministration = (
   overrides: Partial<MailboxAdministrationService> = {}
@@ -226,7 +238,12 @@ const makeHandler = (
           mimeType: Schema.decodeUnknownSync(MimeType)("image/png"),
         }),
     }
-  )
+  ),
+  draftEditing: MailboxDraftEditing = MailboxDraftEditing.of({
+    create: () => Effect.succeed(mailboxDraft),
+    get: () => Effect.succeed(mailboxDraft),
+    update: () => Effect.succeed(mailboxDraft),
+  })
 ) => {
   const requestAuthLive = Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
@@ -259,6 +276,7 @@ const makeHandler = (
         Layer.succeed(MailboxMessageActions, messageActions),
         Layer.succeed(MailboxMessageHtmlReading, messageHtml),
         Layer.succeed(MailboxInlineAttachmentReading, inlineAttachments),
+        Layer.succeed(MailboxDraftEditing, draftEditing),
         Layer.succeed(
           InboundReplay,
           InboundReplay.of({

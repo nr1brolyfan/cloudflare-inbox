@@ -10,6 +10,12 @@ import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
 import { isSafeInlineImageMimeType } from "../mailboxes/attachment-reading";
 import { MailboxRecordSchema } from "../mailboxes/core";
+import type {
+  CreateMailboxDraftCommand,
+  GetMailboxDraftQuery,
+  UpdateMailboxDraftCommand,
+} from "../mailboxes/draft-editing";
+import { DraftEditorDraft } from "../mailboxes/draft-editing";
 import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import { MailboxMessageActionResult } from "../mailboxes/message-actions";
 import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
@@ -79,6 +85,13 @@ export type MailboxMessageActionServerResult =
 export type MailboxThreadServerResult =
   | {
       readonly thread: Schema.Codec.Encoded<typeof MailboxThreadResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxDraftServerResult =
+  | {
+      readonly draft: Schema.Codec.Encoded<typeof DraftEditorDraft>;
       readonly ok: true;
     }
   | MailboxServerErrorResult;
@@ -172,6 +185,17 @@ const operationErrorMessage = (
   code: keyof typeof publicErrors,
   operation: string
 ) => {
+  if (operation.startsWith("website.mailbox.draft")) {
+    if (code === "bad_request") {
+      return "Invalid draft content";
+    }
+    if (code === "conflict") {
+      return "Draft changed";
+    }
+    return code === "not_found"
+      ? "Draft not found"
+      : publicErrors[code].message;
+  }
   if (operation !== "website.mailbox.message_action") {
     return publicErrors[code].message;
   }
@@ -195,6 +219,14 @@ export interface MailboxBackendOperationsShape {
     readonly displayName: string;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxServerResult>;
+  readonly createDraft: (input: {
+    readonly command: CreateMailboxDraftCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxDraftServerResult>;
+  readonly getDraft: (input: {
+    readonly incoming: Request;
+    readonly query: GetMailboxDraftQuery;
+  }) => Effect.Effect<MailboxDraftServerResult>;
   readonly getNavigation: (
     incoming: Request
   ) => Effect.Effect<MailboxNavigationServerResult>;
@@ -219,6 +251,10 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
     readonly mailboxId: string;
   }) => Effect.Effect<MailboxServerResult>;
+  readonly updateDraft: (input: {
+    readonly command: UpdateMailboxDraftCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxDraftServerResult>;
 }
 
 /** Website mailbox use cases backed by the private Backend binding. */
@@ -370,6 +406,27 @@ export const MailboxBackendOperationsLive = Layer.effect(
         };
       });
 
+    const decodeDraftResult = (
+      result: ForwardMailboxResult,
+      mailboxId: string,
+      draftId?: string
+    ): MailboxDraftServerResult => {
+      if (!result.ok) {
+        return result;
+      }
+      const decoded = Schema.decodeUnknownExit(
+        Schema.toCodecJson(DraftEditorDraft)
+      )(result.body);
+      return Exit.isSuccess(decoded) &&
+        decoded.value.mailboxId === mailboxId &&
+        (draftId === undefined || decoded.value.id === draftId)
+        ? {
+            draft: Schema.encodeSync(DraftEditorDraft)(decoded.value),
+            ok: true,
+          }
+        : invalidBackendResponse();
+    };
+
     return MailboxBackendOperations.of({
       actOnMessage: ({ command, incoming }) => {
         const payload =
@@ -442,6 +499,30 @@ export const MailboxBackendOperationsLive = Layer.effect(
                 }
               : invalidBackendResponse();
           })
+        ),
+      createDraft: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "POST",
+          operation: "website.mailbox.draft_create",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/drafts`,
+          payload: {
+            content: command.content,
+            operationId: command.operationId,
+          },
+        }).pipe(
+          Effect.map((result) => decodeDraftResult(result, command.mailboxId))
+        ),
+      getDraft: ({ incoming, query }) =>
+        forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.draft_get",
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/drafts/${encodeURIComponent(query.draftId)}`,
+        }).pipe(
+          Effect.map((result) =>
+            decodeDraftResult(result, query.mailboxId, query.draftId)
+          )
         ),
       getNavigation: (incoming) =>
         forwardRequest({
@@ -614,6 +695,22 @@ export const MailboxBackendOperationsLive = Layer.effect(
                 }
               : invalidBackendResponse();
           })
+        ),
+      updateDraft: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "PATCH",
+          operation: "website.mailbox.draft_update",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/drafts/${encodeURIComponent(command.draftId)}`,
+          payload: {
+            content: command.content,
+            expectedVersion: command.expectedVersion,
+            operationId: command.operationId,
+          },
+        }).pipe(
+          Effect.map((result) =>
+            decodeDraftResult(result, command.mailboxId, command.draftId)
+          )
         ),
     });
   })

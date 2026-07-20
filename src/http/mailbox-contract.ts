@@ -24,6 +24,7 @@ import {
 import {
   Cursor,
   AttachmentId,
+  DraftId,
   FolderId,
   InboundIngestId,
   LabelId,
@@ -33,6 +34,11 @@ import {
   SearchQuery,
   ThreadId,
 } from "../mailboxes/core";
+import {
+  CreateMailboxDraftCommand,
+  DraftEditorDraft,
+  UpdateMailboxDraftCommand,
+} from "../mailboxes/draft-editing";
 import {
   InboundProcessingResult,
   ReplayInboundInput,
@@ -60,6 +66,10 @@ const MailboxThreadParams = Schema.Struct({
 const MailboxMessageParams = Schema.Struct({
   mailboxId: MailboxId,
   messageId: MessageId,
+});
+const MailboxDraftParams = Schema.Struct({
+  draftId: DraftId,
+  mailboxId: MailboxId,
 });
 const MailboxInlineAttachmentParams = Schema.Struct({
   attachmentId: AttachmentId,
@@ -148,6 +158,45 @@ export const ActOnMailboxMessageEndpoint = HttpApiEndpoint.patch(
   }
 );
 
+export const CreateMailboxDraftEndpoint = HttpApiEndpoint.post(
+  "createDraft",
+  "/api/mailboxes/:mailboxId/drafts",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    payload: Schema.Struct({
+      operationId: CreateMailboxDraftCommand.fields.operationId,
+      content: CreateMailboxDraftCommand.fields.content,
+    }),
+    success: DraftEditorDraft.pipe(HttpApiSchema.status(201)),
+  }
+);
+
+export const GetMailboxDraftEndpoint = HttpApiEndpoint.get(
+  "getDraft",
+  "/api/mailboxes/:mailboxId/drafts/:draftId",
+  {
+    error: MailboxErrors,
+    params: MailboxDraftParams,
+    success: DraftEditorDraft,
+  }
+);
+
+export const UpdateMailboxDraftEndpoint = HttpApiEndpoint.patch(
+  "updateDraft",
+  "/api/mailboxes/:mailboxId/drafts/:draftId",
+  {
+    error: MailboxErrors,
+    params: MailboxDraftParams,
+    payload: Schema.Struct({
+      operationId: UpdateMailboxDraftCommand.fields.operationId,
+      expectedVersion: UpdateMailboxDraftCommand.fields.expectedVersion,
+      content: UpdateMailboxDraftCommand.fields.content,
+    }),
+    success: DraftEditorDraft,
+  }
+);
+
 export const GetMailboxMessageHtmlEndpoint = HttpApiEndpoint.get(
   "getMessageHtml",
   "/api/mailboxes/:mailboxId/messages/:messageId/html",
@@ -211,13 +260,16 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
   .add(
     ActOnMailboxMessageEndpoint,
     BootstrapOwnerEndpoint,
+    CreateMailboxDraftEndpoint,
+    GetMailboxDraftEndpoint,
     GetMailboxThreadEndpoint,
     GetMailboxInlineAttachmentEndpoint,
     GetMailboxMessageHtmlEndpoint,
     GetMailboxNavigationEndpoint,
     ListMailboxMessagesEndpoint,
     RenameMailboxEndpoint,
-    ReplayInboundEndpoint
+    ReplayInboundEndpoint,
+    UpdateMailboxDraftEndpoint
   )
   .middleware(AuthSchemaErrorMiddleware)
   .middleware(CurrentRequestAuthMiddleware)
