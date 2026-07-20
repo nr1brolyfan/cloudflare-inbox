@@ -1,17 +1,20 @@
-/* oxlint-disable max-classes-per-file -- The three static mail tool contracts are intentionally colocated. */
+/* oxlint-disable max-classes-per-file -- The four static mail tool contracts are intentionally colocated. */
 import * as Schema from "effect/Schema";
 
 import {
   Cursor,
+  DraftId,
   EmailAddress,
   FolderId,
   LabelId,
   MessageDirection,
   MessageId,
+  MessageSubject,
   PageSize,
   SearchQuery,
   ThreadId,
   UnixMillis,
+  Version,
 } from "../mailboxes/core";
 
 export const mailSearchDefaultLimit = Schema.decodeUnknownSync(PageSize)(10);
@@ -21,6 +24,9 @@ export const mailPlainTextMaxLength = 2000;
 
 const AiDisplayName = Schema.String.pipe(Schema.check(Schema.isMaxLength(100)));
 const AiSubject = Schema.String.pipe(Schema.check(Schema.isMaxLength(300)));
+const AiDraftSubject = MessageSubject.pipe(
+  Schema.check(Schema.isMaxLength(300))
+);
 const AiSnippet = Schema.String.pipe(Schema.check(Schema.isMaxLength(300)));
 const AiPlainText = Schema.String.pipe(
   Schema.check(Schema.isMaxLength(mailPlainTextMaxLength))
@@ -90,6 +96,19 @@ export type MailThreadArguments = Schema.Schema.Type<
   typeof MailThreadArguments
 >;
 
+export const MailCreateDraftArguments = Schema.Struct({
+  bcc: AiAddressList,
+  cc: AiAddressList,
+  plainText: Schema.optional(AiPlainText),
+  subject: AiDraftSubject,
+  to: AiAddressList,
+}).annotate({
+  description: "Create a bounded plain-text draft in the authorized mailbox",
+});
+export type MailCreateDraftArguments = Schema.Schema.Type<
+  typeof MailCreateDraftArguments
+>;
+
 const AiSearchItem = Schema.Struct({
   activityAt: UnixMillis,
   direction: MessageDirection,
@@ -148,6 +167,22 @@ export const MailThreadSuccess = Schema.Struct({
   }),
 });
 export type MailThreadSuccess = Schema.Schema.Type<typeof MailThreadSuccess>;
+
+export const MailCreateDraftSuccess = Schema.Struct({
+  draftId: DraftId,
+  version: Version,
+});
+export type MailCreateDraftSuccess = Schema.Schema.Type<
+  typeof MailCreateDraftSuccess
+>;
+
+export const MailCreateDraftTool = {
+  arguments: MailCreateDraftArguments,
+  description:
+    "Create a bounded plain-text draft without scheduling or delivering it.",
+  name: "mail_create_draft",
+  success: MailCreateDraftSuccess,
+} as const;
 
 export const MailReadTool = {
   arguments: MailReadArguments,

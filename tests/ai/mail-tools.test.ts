@@ -6,6 +6,8 @@ import * as Schema from "effect/Schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  MailCreateDraftArguments,
+  MailCreateDraftTool,
   MailReadArguments,
   MailReadSuccess,
   MailReadTool,
@@ -208,13 +210,19 @@ const failureResult = (result: AiToolResult) => {
   throw new Error("Expected a failed tool result");
 };
 
-describe("static read-only mail tool contracts", () => {
-  it("defines exactly the three intended static names", () => {
+describe("static mail tool contracts", () => {
+  it("defines exactly the four intended static names", () => {
     expect([
+      MailCreateDraftTool.name,
       MailReadTool.name,
       MailSearchTool.name,
       MailThreadTool.name,
-    ]).toStrictEqual(["mail_read", "mail_search", "mail_thread"]);
+    ]).toStrictEqual([
+      "mail_create_draft",
+      "mail_read",
+      "mail_search",
+      "mail_thread",
+    ]);
   });
 
   it("keeps identity out of strict model-visible arguments", () => {
@@ -226,6 +234,7 @@ describe("static read-only mail tool contracts", () => {
     ).toMatchObject({ messageId: "message-1" });
 
     for (const schema of [
+      MailCreateDraftArguments,
       MailReadArguments,
       MailSearchArguments,
       MailThreadArguments,
