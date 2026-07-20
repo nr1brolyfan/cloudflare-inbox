@@ -2,7 +2,10 @@ import type * as Schema from "effect/Schema";
 import { ArrowLeft, FileText, MailOpen, Paperclip } from "lucide-react";
 
 import type { MailboxThreadResult } from "../mailboxes/message-reading";
-import type { MailboxViewSelection } from "./mailbox-view-links";
+import type {
+  MailboxMessageQueryState,
+  MailboxViewSelection,
+} from "./mailbox-view-links";
 import { mailboxViewHref } from "./mailbox-view-links";
 
 type ThreadData = Schema.Codec.Encoded<typeof MailboxThreadResult>;
@@ -43,9 +46,13 @@ const byteSize = (size: number) => {
 
 export function ThreadView({
   data,
+  filters,
+  onClose,
   selection,
 }: {
   readonly data: ThreadData;
+  readonly filters: MailboxMessageQueryState;
+  readonly onClose: () => void;
   readonly selection: MailboxViewSelection;
 }) {
   return (
@@ -53,8 +60,20 @@ export function ThreadView({
       <header className="border-b border-[var(--line)] bg-white/58 px-4 py-4 sm:px-7 sm:py-5">
         <div className="flex items-start gap-3">
           <a
-            href={mailboxViewHref(selection)}
+            href={mailboxViewHref(selection, undefined, undefined, filters)}
             aria-label="Close conversation"
+            onClick={(event) => {
+              if (
+                event.button === 0 &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.shiftKey
+              ) {
+                event.preventDefault();
+                onClose();
+              }
+            }}
             className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-white/72 text-[var(--sea-ink-soft)] no-underline hover:bg-white hover:text-[var(--sea-ink)] lg:hidden"
           >
             <ArrowLeft size={18} />

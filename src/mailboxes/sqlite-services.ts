@@ -1,6 +1,16 @@
 import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
 import * as Cloudflare from "alchemy/Cloudflare";
-import { and, asc, count, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  inArray,
+  isNull,
+  sql,
+} from "drizzle-orm";
 import * as DrizzleDo from "drizzle-orm/effect-sqlite-do";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -1356,6 +1366,8 @@ const CursorPayload = Schema.Struct({
   filterFingerprint: Schema.String,
   activityAt: UnixMillis,
   id: MessageId,
+  rank: Schema.optional(Schema.Number),
+  snapshotFingerprint: Schema.optional(Schema.String),
 });
 
 const messageDomainError = (
@@ -1595,6 +1607,18 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
     if (Result.isFailure(decodedCursor)) {
       return yield* decodedCursor.failure;
     }
+    const cursor = decodedCursor.success;
+    if (
+      cursor !== undefined &&
+      (cursor.rank === undefined || cursor.snapshotFingerprint === undefined)
+    ) {
+      return yield* messageDomainError(
+        "search-messages",
+        "validation",
+        "Message cursor does not match this query"
+      );
+    }
+    const cursorRank = cursor?.rank ?? Number.NEGATIVE_INFINITY;
     const rank = sql<number>`(
       SELECT bm25(message_search)
       FROM message_search
@@ -1602,7 +1626,7 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
         AND message_search MATCH ${ftsQuery}
     )`;
     const rows = yield* db
-      .select()
+      .select({ ...getTableColumns(message), searchRank: rank })
       .from(message)
       .where(
         and(
@@ -1617,44 +1641,59 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
       rows.map((row) =>
         Effect.map(readMessageDetailRow(db, row, mailboxId), (detail) => ({
           row,
+          rank: row.searchRank,
           detail,
           summary: readMessageSummaryRow(detail),
         }))
       )
     );
-    const filtered = hydrated.filter(({ detail, row, summary }) =>
+    const matching = hydrated.filter(({ detail, row, summary }) =>
       matchesFilters(summary, detail, row, input.filters)
     );
-    const cursor = decodedCursor.success;
-    const startIndex =
-      cursor === undefined
-        ? 0
-        : filtered.findIndex(
-            ({ summary }) =>
-              summary.id === cursor.id &&
-              summary.activityAt === cursor.activityAt
-          ) + 1;
-    if (startIndex === 0 && cursor !== undefined) {
+    const snapshotFingerprint = fingerprint(
+      JSON.stringify(
+        matching.map(({ rank: searchRank, summary }) => [
+          searchRank,
+          summary.activityAt,
+          summary.id,
+        ])
+      )
+    );
+    if (
+      cursor !== undefined &&
+      cursor.snapshotFingerprint !== snapshotFingerprint
+    ) {
       return yield* messageDomainError(
         "search-messages",
         "validation",
-        "Message cursor does not match this query"
+        "Message cursor does not match the current search results"
       );
     }
-    const remaining = filtered.slice(startIndex);
+    const filtered = matching.filter(
+      ({ rank: searchRank, summary }) =>
+        cursor === undefined ||
+        searchRank > cursorRank ||
+        (searchRank === cursorRank &&
+          (summary.activityAt < cursor.activityAt ||
+            (summary.activityAt === cursor.activityAt &&
+              summary.id < cursor.id)))
+    );
     const limit = input.page?.limit ?? 50;
-    const items = remaining.slice(0, limit).map(({ summary }) => summary);
-    const last = items.at(-1);
+    const page = filtered.slice(0, limit);
+    const items = page.map(({ summary }) => summary);
+    const last = page.at(-1);
     return Schema.decodeUnknownSync(MessagePage)({
       items,
       nextCursor:
-        remaining.length > limit && last !== undefined
+        filtered.length > limit && last !== undefined
           ? encodeCursor({
               mailboxId,
               scope: "messages-search",
               filterFingerprint: key,
-              activityAt: last.activityAt,
-              id: last.id,
+              activityAt: last.summary.activityAt,
+              id: last.summary.id,
+              rank: last.rank,
+              snapshotFingerprint,
             })
           : undefined,
     });

@@ -9,7 +9,7 @@ import type { MailboxPublicError } from "../http/mailbox-contract";
 import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import { MailboxRecordSchema } from "../mailboxes/core";
 import type {
-  MailboxMessageView,
+  MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "../mailboxes/message-reading";
 import {
@@ -148,7 +148,7 @@ export interface MailboxBackendOperationsShape {
   }) => Effect.Effect<MailboxThreadServerResult>;
   readonly listMessages: (input: {
     readonly incoming: Request;
-    readonly view: MailboxMessageView;
+    readonly query: MailboxMessageListInput;
   }) => Effect.Effect<MailboxMessageListServerResult>;
   readonly rename: (input: {
     readonly displayName: string;
@@ -323,19 +323,34 @@ export const MailboxBackendOperationsLive = Layer.effect(
               : invalidBackendResponse();
           })
         ),
-      listMessages: ({ incoming, view }) => {
-        const query = new URLSearchParams();
-        if (view._tag === "Folder") {
-          query.set("folder", view.folderId);
+      listMessages: ({ incoming, query }) => {
+        const search = new URLSearchParams();
+        if (query._tag === "Folder") {
+          search.set("folder", query.folderId);
         } else {
-          query.set("label", view.labelId);
+          search.set("label", query.labelId);
+        }
+        if (query.query !== undefined) {
+          search.set("q", query.query);
+        }
+        if (query.read !== undefined) {
+          search.set("read", String(query.read));
+        }
+        if (query.starred !== undefined) {
+          search.set("starred", String(query.starred));
+        }
+        if (query.hasAttachment !== undefined) {
+          search.set("attachment", String(query.hasAttachment));
+        }
+        if (query.cursor !== undefined) {
+          search.set("cursor", query.cursor);
         }
 
         return forwardRequest({
           incoming,
           method: "GET",
           operation: "website.mailbox.messages",
-          path: `/api/mailboxes/${encodeURIComponent(view.mailboxId)}/messages?${query.toString()}`,
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/messages?${search.toString()}`,
         }).pipe(
           Effect.map((result): MailboxMessageListServerResult => {
             if (!result.ok) {

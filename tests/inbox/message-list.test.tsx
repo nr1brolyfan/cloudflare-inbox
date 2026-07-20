@@ -1,12 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { MailboxMessageQueryState } from "#/inbox/mailbox-view-links";
 import { MessageList } from "#/inbox/message-list";
 
 const messages = {
-  hasMore: true,
   items: [
     {
       activityAt: 2000,
@@ -35,15 +35,25 @@ const messages = {
       threadId: "thread-shared",
     },
   ],
+  nextCursor: "next-page",
 };
 
 describe(MessageList, () => {
   afterEach(cleanup);
 
   it("preserves server order and keeps the folder context in thread links", () => {
+    const onLoadMore = vi.fn<() => void>();
+    const onOpenMessage =
+      vi.fn<(threadId: string, messageId: string) => void>();
     render(
       <MessageList
         data={messages}
+        filters={{ query: "invoice", starred: true }}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={onLoadMore}
+        onOpenMessage={onOpenMessage}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
         selection={{ folder: "inbox" }}
         selectedThreadId="thread-shared"
       />
@@ -55,10 +65,80 @@ describe(MessageList, () => {
       "First: First subject",
     ]);
     expect(links.map((link) => link.getAttribute("href"))).toStrictEqual([
-      "/inbox?folder=inbox&thread=thread-shared&message=message-b",
-      "/inbox?folder=inbox&thread=thread-shared&message=message-a",
+      "/inbox?folder=inbox&thread=thread-shared&message=message-b&q=invoice&starred=true",
+      "/inbox?folder=inbox&thread=thread-shared&message=message-a&q=invoice&starred=true",
     ]);
     expect(links).toHaveLength(2);
-    expect(screen.getByText("More messages are available")).toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("link", { name: "Second: Second subject" })
+    );
+    expect(onOpenMessage).toHaveBeenCalledWith("thread-shared", "message-b");
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    expect(onLoadMore).toHaveBeenCalledOnce();
+  });
+
+  it("submits search and filter controls as one query state", () => {
+    const onQueryChange = vi.fn<(state: MailboxMessageQueryState) => void>();
+    render(
+      <MessageList
+        data={{ items: [] }}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
+        onQueryChange={onQueryChange}
+        selection={{ label: "work" }}
+      />
+    );
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search messages" }),
+      {
+        target: { value: "  quarterly report  " },
+      }
+    );
+    fireEvent.change(screen.getByRole("combobox", { name: "Read status" }), {
+      target: { value: "unread" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Starred" }));
+    fireEvent.click(screen.getByRole("button", { name: "Files" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(onQueryChange).toHaveBeenCalledWith({
+      hasAttachment: true,
+      query: "quarterly report",
+      read: "unread",
+      starred: true,
+    });
+  });
+
+  it("rejects searches without an FTS term before navigation", () => {
+    const onQueryChange = vi.fn<(state: MailboxMessageQueryState) => void>();
+    render(
+      <MessageList
+        data={{ items: [] }}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
+        onQueryChange={onQueryChange}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search messages" }),
+      {
+        target: { value: "!!!" },
+      }
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+
+    expect(onQueryChange).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Enter at least one letter or number"
+    );
   });
 });

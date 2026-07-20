@@ -1,5 +1,6 @@
 import {
   skipToken,
+  useInfiniteQuery,
   useMutation,
   useQuery,
   useQueryClient,
@@ -21,12 +22,22 @@ import {
   currentSessionForQuery,
 } from "../auth/client";
 import { MailboxShell } from "../inbox/mailbox-shell";
-import type { MailboxViewSelection } from "../inbox/mailbox-view-links";
+import type {
+  MailboxMessageQueryState,
+  MailboxViewSelection,
+} from "../inbox/mailbox-view-links";
 import { mailboxViewHref } from "../inbox/mailbox-view-links";
 import { MessageList } from "../inbox/message-list";
 import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
-import { FolderId, LabelId, MessageId, ThreadId } from "../mailboxes/core";
 import {
+  FolderId,
+  LabelId,
+  MessageId,
+  SearchQuery,
+  ThreadId,
+} from "../mailboxes/core";
+import {
+  MailboxMessageListInput,
   MailboxMessageView,
   OpenMailboxThreadInput,
 } from "../mailboxes/message-reading";
@@ -38,9 +49,13 @@ import {
 } from "../server/tanstack-functions";
 
 const InboxSearch = Schema.Struct({
+  attachment: Schema.optional(Schema.Literal("true")),
   folder: Schema.optional(FolderId),
   label: Schema.optional(LabelId),
   message: Schema.optional(MessageId),
+  q: Schema.optional(SearchQuery),
+  read: Schema.optional(Schema.Literals(["read", "unread"])),
+  starred: Schema.optional(Schema.Literal("true")),
   thread: Schema.optional(ThreadId),
 }).check(
   Schema.makeFilter((search) => {
@@ -54,10 +69,38 @@ const InboxSearch = Schema.Struct({
 );
 const decodeInboxSearch = Schema.decodeUnknownSync(InboxSearch);
 const decodeMailboxMessageView = Schema.decodeUnknownSync(MailboxMessageView);
+const decodeMailboxMessageListInput = Schema.decodeUnknownSync(
+  MailboxMessageListInput
+);
 const decodeOpenMailboxThread = Schema.decodeUnknownSync(
   OpenMailboxThreadInput
 );
 const mailboxNavigationQueryKey = ["mailbox", "navigation"] as const;
+
+class MailboxMessagesRequestError extends Error {
+  readonly status: number;
+
+  constructor(status: number) {
+    super("Mailbox messages request failed");
+    this.name = "MailboxMessagesRequestError";
+    this.status = status;
+  }
+}
+
+const inboxSearchFor = (
+  selection: MailboxViewSelection,
+  filters: MailboxMessageQueryState,
+  open?: { readonly messageId: string; readonly threadId: string }
+) =>
+  decodeInboxSearch({
+    ...selection,
+    attachment: filters.hasAttachment ? "true" : undefined,
+    message: open?.messageId,
+    q: filters.query,
+    read: filters.read,
+    starred: filters.starred ? "true" : undefined,
+    thread: open?.threadId,
+  });
 
 const resolveNavigationSelection = (
   folders: readonly {
@@ -163,11 +206,13 @@ function SignInRequired() {
 function WorkspaceStatus({
   backHref,
   detail,
+  onBack,
   onRetry,
   title,
 }: {
   readonly backHref?: string;
   readonly detail: string;
+  readonly onBack?: () => void;
   readonly onRetry?: () => void;
   readonly title: string;
 }) {
@@ -194,6 +239,19 @@ function WorkspaceStatus({
         {backHref ? (
           <a
             href={backHref}
+            onClick={(event) => {
+              if (
+                onBack !== undefined &&
+                event.button === 0 &&
+                !event.altKey &&
+                !event.ctrlKey &&
+                !event.metaKey &&
+                !event.shiftKey
+              ) {
+                event.preventDefault();
+                onBack();
+              }
+            }}
             className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold lg:hidden"
           >
             <ArrowLeft size={14} /> Back to messages
@@ -205,14 +263,18 @@ function WorkspaceStatus({
 }
 
 function ConversationPane({
+  filters,
   mailboxId,
   messageId,
+  onClose,
   selection,
   sessionId,
   threadId,
 }: {
+  readonly filters: MailboxMessageQueryState;
   readonly mailboxId: string;
   readonly messageId?: string;
+  readonly onClose: () => void;
   readonly selection: MailboxViewSelection;
   readonly sessionId: string;
   readonly threadId?: string;
@@ -261,7 +323,8 @@ function ConversationPane({
     const missing = thread.data?.ok === false && thread.data.status === 404;
     return (
       <WorkspaceStatus
-        backHref={mailboxViewHref(selection)}
+        backHref={mailboxViewHref(selection, undefined, undefined, filters)}
+        onBack={onClose}
         title={missing ? "Conversation not found" : "Conversation unavailable"}
         detail={
           missing
@@ -273,29 +336,55 @@ function ConversationPane({
     );
   }
 
-  return <ThreadView data={thread.data.thread} selection={selection} />;
+  return (
+    <ThreadView
+      data={thread.data.thread}
+      filters={filters}
+      onClose={onClose}
+      selection={selection}
+    />
+  );
 }
 
 function MailboxWorkspace({
+  filters,
   mailboxId,
   messageId,
   selection,
   sessionId,
   threadId,
 }: {
+  readonly filters: MailboxMessageQueryState;
   readonly mailboxId: string;
   readonly messageId?: string;
   readonly selection: MailboxViewSelection;
   readonly sessionId: string;
   readonly threadId?: string;
 }) {
+  const navigate = useNavigate();
   const view = decodeMailboxMessageView(
     selection.folder === undefined
       ? { _tag: "Label", labelId: selection.label, mailboxId }
       : { _tag: "Folder", folderId: selection.folder, mailboxId }
   );
-  const messages = useQuery({
-    queryFn: () => listMailboxMessages({ data: view }),
+  const messages = useInfiniteQuery({
+    queryFn: async ({ pageParam }) => {
+      const result = await listMailboxMessages({
+        data: decodeMailboxMessageListInput({
+          ...view,
+          cursor: pageParam,
+          hasAttachment: filters.hasAttachment,
+          query: filters.query,
+          read:
+            filters.read === undefined ? undefined : filters.read === "read",
+          starred: filters.starred,
+        }),
+      });
+      if (!result.ok) {
+        throw new MailboxMessagesRequestError(result.status);
+      }
+      return result.messages;
+    },
     queryKey: [
       "mailbox",
       "messages",
@@ -303,7 +392,13 @@ function MailboxWorkspace({
       mailboxId,
       view._tag,
       view._tag === "Folder" ? view.folderId : view.labelId,
+      filters.query,
+      filters.read,
+      filters.starred,
+      filters.hasAttachment,
     ],
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
     retry: false,
   });
 
@@ -315,33 +410,79 @@ function MailboxWorkspace({
     );
   }
 
-  if (messages.error || !messages.data?.ok) {
-    const denied = messages.data?.ok === false && messages.data.status === 403;
+  const status =
+    messages.error instanceof MailboxMessagesRequestError
+      ? messages.error.status
+      : undefined;
+  if (messages.data === undefined || status === 401 || status === 403) {
+    const errorStatus = status ?? 502;
+    const denied = errorStatus === 403;
+    const invalid = errorStatus === 400;
     return (
       <WorkspaceStatus
         title={
-          denied ? "Message access denied" : "Messages could not be loaded"
+          denied
+            ? "Message access denied"
+            : invalid
+              ? "Message query is invalid"
+              : "Messages could not be loaded"
         }
         detail={
           denied
             ? "Your session does not include mailbox message read access."
-            : "The message service is temporarily unavailable."
+            : invalid
+              ? "Change the search or filters and try again."
+              : "The message service is temporarily unavailable."
         }
         onRetry={denied ? undefined : () => void messages.refetch()}
       />
     );
   }
 
+  const { pages } = messages.data;
+  const lastPage = pages.at(-1);
+  const data = {
+    items: pages.flatMap((page) => page.items),
+    nextCursor: lastPage?.nextCursor,
+  };
+
   return (
     <div className="grid h-full min-h-0 lg:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)]">
       <MessageList
-        data={messages.data.messages}
+        key={JSON.stringify(filters)}
+        data={data}
+        filters={filters}
+        isLoadingMore={messages.isFetchingNextPage}
+        loadMoreFailed={messages.isFetchNextPageError}
+        onLoadMore={() => void messages.fetchNextPage()}
+        onOpenMessage={(nextThreadId, nextMessageId) =>
+          void navigate({
+            to: "/inbox",
+            search: inboxSearchFor(selection, filters, {
+              messageId: nextMessageId,
+              threadId: nextThreadId,
+            }),
+          })
+        }
+        onQueryChange={(state) =>
+          void navigate({
+            to: "/inbox",
+            search: inboxSearchFor(selection, state),
+          })
+        }
         selectedThreadId={threadId}
         selection={selection}
       />
       <ConversationPane
+        filters={filters}
         mailboxId={mailboxId}
         messageId={messageId}
+        onClose={() =>
+          void navigate({
+            to: "/inbox",
+            search: inboxSearchFor(selection, filters),
+          })
+        }
         selection={selection}
         sessionId={sessionId}
         threadId={threadId}
@@ -381,6 +522,12 @@ function AuthenticatedInbox({
   if (selection === undefined) {
     return <MailboxUnavailable status={404} />;
   }
+  const filters: MailboxMessageQueryState = {
+    hasAttachment: search.attachment === "true" || undefined,
+    query: search.q,
+    read: search.read,
+    starred: search.starred === "true" || undefined,
+  };
 
   return (
     <MailboxShell
@@ -395,6 +542,7 @@ function AuthenticatedInbox({
       onSignOut={onSignOut}
     >
       <MailboxWorkspace
+        filters={filters}
         mailboxId={mailbox.id}
         messageId={search.message}
         selection={selection}

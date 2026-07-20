@@ -22,12 +22,14 @@ import {
   RenameMailboxCommand,
 } from "../mailboxes/administration";
 import {
+  Cursor,
   FolderId,
   InboundIngestId,
   LabelId,
   MailboxId,
   MailboxRecordSchema,
   MessageId,
+  SearchQuery,
   ThreadId,
 } from "../mailboxes/core";
 import {
@@ -50,8 +52,13 @@ const MailboxThreadParams = Schema.Struct({
   threadId: ThreadId,
 });
 export const MailboxMessageViewQuery = Schema.Struct({
+  attachment: Schema.optional(Schema.Literals(["true", "false"])),
+  cursor: Schema.optional(Cursor),
   folder: Schema.optional(FolderId),
   label: Schema.optional(LabelId),
+  q: Schema.optional(SearchQuery),
+  read: Schema.optional(Schema.Literals(["true", "false"])),
+  starred: Schema.optional(Schema.Literals(["true", "false"])),
 }).check(
   Schema.makeFilter((query) =>
     (query.folder === undefined) === (query.label === undefined)

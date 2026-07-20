@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  MailboxMessageView,
+  MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "#/mailboxes/message-reading";
 import type { MailboxBackendOperationsShape } from "#/server/mailbox-backend";
@@ -37,7 +37,6 @@ const navigation = {
   labels: [],
 } as const;
 const messages = {
-  hasMore: false,
   items: [
     {
       activityAt: 2000,
@@ -107,17 +106,22 @@ describe("Website mailbox Backend forwarding", () => {
     const incoming = new Request("https://inbox.test/_server", {
       headers: { cookie: "__Host-session=session-a.secret" },
     });
-    const view = Schema.decodeUnknownSync(MailboxMessageView)({
+    const query = Schema.decodeUnknownSync(MailboxMessageListInput)({
       _tag: "Label",
+      cursor: "page/2 ?",
+      hasAttachment: true,
       labelId: "work/urgent ?",
       mailboxId: "team/primary",
+      query: "quarterly report",
+      read: false,
+      starred: true,
     });
     const result = await runForward(
       (request) => {
         forwarded = request;
         return Promise.resolve(Response.json(messages));
       },
-      (operations) => operations.listMessages({ incoming, view })
+      (operations) => operations.listMessages({ incoming, query })
     );
 
     expect(result).toStrictEqual({ messages, ok: true });
@@ -134,7 +138,8 @@ describe("Website mailbox Backend forwarding", () => {
       cookie: "__Host-session=session-a.secret",
       method: "GET",
       path: "/api/mailboxes/team%2Fprimary/messages",
-      search: "?label=work%2Furgent+%3F",
+      search:
+        "?label=work%2Furgent+%3F&q=quarterly+report&read=false&starred=true&attachment=true&cursor=page%2F2+%3F",
     });
   });
 

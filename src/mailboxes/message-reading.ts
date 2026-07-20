@@ -11,6 +11,7 @@ import { MailAuthorization } from "../authorization/mail-authorization";
 import {
   AttachmentId,
   ByteSize,
+  Cursor,
   FileName,
   FolderId,
   LabelId,
@@ -21,6 +22,8 @@ import {
   MessageSnippet,
   MessageSubject,
   MimeType,
+  PageSize,
+  SearchQuery,
   ThreadId,
   UnixMillis,
 } from "./core";
@@ -41,6 +44,32 @@ export const MailboxMessageView = Schema.Union([
   }),
 ]);
 export type MailboxMessageView = Schema.Schema.Type<typeof MailboxMessageView>;
+
+const MailboxMessageQueryFields = {
+  cursor: Schema.optional(Cursor),
+  hasAttachment: Schema.optional(Schema.Boolean),
+  query: Schema.optional(SearchQuery),
+  read: Schema.optional(Schema.Boolean),
+  starred: Schema.optional(Schema.Boolean),
+};
+
+export const MailboxMessageListInput = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Folder"),
+    mailboxId: MailboxId,
+    folderId: FolderId,
+    ...MailboxMessageQueryFields,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Label"),
+    mailboxId: MailboxId,
+    labelId: LabelId,
+    ...MailboxMessageQueryFields,
+  }),
+]);
+export type MailboxMessageListInput = Schema.Schema.Type<
+  typeof MailboxMessageListInput
+>;
 
 export const OpenMailboxThreadInput = Schema.Union([
   Schema.Struct({
@@ -80,7 +109,7 @@ export class MailboxMessageListItem extends Schema.Class<MailboxMessageListItem>
 
 export const MailboxMessageListResult = Schema.Struct({
   items: Schema.Array(MailboxMessageListItem),
-  hasMore: Schema.Boolean,
+  nextCursor: Schema.optional(Cursor),
 });
 export type MailboxMessageListResult = Schema.Schema.Type<
   typeof MailboxMessageListResult
@@ -161,12 +190,12 @@ export class MailboxMessageReadingError extends Data.TaggedError(
 )<{
   readonly cause?: unknown;
   readonly message: string;
-  readonly reason: "not-found" | "storage";
+  readonly reason: "invalid-input" | "not-found" | "storage";
 }> {}
 
 export interface MailboxMessageReading {
   readonly listView: (
-    input: MailboxMessageView
+    input: MailboxMessageListInput
   ) => Effect.Effect<
     MailboxMessageListResult,
     MailAuthorizationError | MailboxMessageReadingError,
@@ -185,22 +214,33 @@ export const MailboxMessageReading = Context.Service<MailboxMessageReading>(
   "cloudflare-inbox/MailboxMessageReading"
 );
 
-const readingError = (reason: "not-found" | "storage", cause?: unknown) =>
+const readingError = (
+  reason: "invalid-input" | "not-found" | "storage",
+  cause?: unknown
+) =>
   new MailboxMessageReadingError({
     cause,
     message:
-      reason === "not-found"
-        ? "Mailbox message content was not found"
-        : "Mailbox message content could not be loaded",
+      reason === "invalid-input"
+        ? "Mailbox message query is invalid"
+        : reason === "not-found"
+          ? "Mailbox message content was not found"
+          : "Mailbox message content could not be loaded",
     reason,
   });
 
 const mapRepositoryError = (
   error: MailboxDomainError | MailboxRepositoryError
 ) =>
-  error instanceof MailboxDomainError && error.reason === "not-found"
-    ? readingError("not-found")
+  error instanceof MailboxDomainError
+    ? error.reason === "not-found"
+      ? readingError("not-found")
+      : error.reason === "validation"
+        ? readingError("invalid-input")
+        : readingError("storage", error)
     : readingError("storage", error);
+
+const mailboxMessagePageSize = Schema.decodeUnknownSync(PageSize)(25);
 
 /** Authorized mailbox-wide reads projected for the inbox UI boundary. */
 export const MailboxMessageReadingLive = Layer.effect(
@@ -233,15 +273,32 @@ export const MailboxMessageReadingLive = Layer.effect(
       listView: (input) =>
         Effect.gen(function* () {
           yield* requireRead(input);
-          const page = yield* repository
-            .listMessages({
-              mailboxId: input.mailboxId,
-              filters:
-                input._tag === "Folder"
-                  ? { folderId: input.folderId }
-                  : { labelIds: [input.labelId] },
-            })
-            .pipe(Effect.mapError(mapRepositoryError));
+          const filters = {
+            ...(input._tag === "Folder"
+              ? { folderId: input.folderId }
+              : { labelIds: [input.labelId] }),
+            hasAttachment: input.hasAttachment,
+            read: input.read,
+            starred: input.starred,
+          };
+          const pageRequest = {
+            cursor: input.cursor,
+            limit: mailboxMessagePageSize,
+          };
+          const page = yield* (
+            input.query === undefined
+              ? repository.listMessages({
+                  mailboxId: input.mailboxId,
+                  filters,
+                  page: pageRequest,
+                })
+              : repository.searchMessages({
+                  mailboxId: input.mailboxId,
+                  query: input.query,
+                  filters,
+                  page: pageRequest,
+                })
+          ).pipe(Effect.mapError(mapRepositoryError));
           const invalidItem = page.items.some(
             (message) =>
               message.mailboxId !== input.mailboxId ||
@@ -257,7 +314,6 @@ export const MailboxMessageReadingLive = Layer.effect(
           }
 
           return yield* Schema.decodeUnknownEffect(MailboxMessageListResult)({
-            hasMore: page.nextCursor !== undefined,
             items: page.items.map((message) => ({
               activityAt: message.activityAt,
               direction: message.direction,
@@ -271,6 +327,7 @@ export const MailboxMessageReadingLive = Layer.effect(
               subject: message.subject,
               threadId: message.threadId,
             })),
+            nextCursor: page.nextCursor,
           }).pipe(Effect.mapError((cause) => readingError("storage", cause)));
         }),
       openThread: (input) =>

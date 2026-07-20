@@ -6,7 +6,7 @@ import {
   RenameMailboxCommand,
 } from "../mailboxes/administration";
 import {
-  MailboxMessageView,
+  MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "../mailboxes/message-reading";
 import { websiteBackend } from "./backend";
@@ -15,7 +15,9 @@ export type { DevEmailInboxResult } from "./dev-email-backend";
 
 const bootstrapInput = Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand);
 const renameInput = Schema.decodeUnknownSync(RenameMailboxCommand);
-const mailboxMessageViewInput = Schema.decodeUnknownSync(MailboxMessageView);
+const mailboxMessageListInput = Schema.decodeUnknownSync(
+  MailboxMessageListInput
+);
 const openMailboxThreadInput = Schema.decodeUnknownSync(OpenMailboxThreadInput);
 
 export const bootstrapMailboxOwner = createServerFn({ method: "POST" })
@@ -37,7 +39,7 @@ export const getMailboxNavigation = createServerFn({ method: "GET" }).handler(
 );
 
 export const listMailboxMessages = createServerFn({ method: "GET" })
-  .validator(mailboxMessageViewInput)
+  .validator(mailboxMessageListInput)
   .handler(({ data }) => websiteBackend.listMailboxMessages(data));
 
 export const getMailboxThread = createServerFn({ method: "GET" })

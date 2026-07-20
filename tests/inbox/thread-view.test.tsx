@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { cleanup, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ThreadView } from "#/inbox/thread-view";
 
@@ -55,8 +55,14 @@ describe(ThreadView, () => {
   afterEach(cleanup);
 
   it("renders message and attachment content as inert text", () => {
+    const onClose = vi.fn<() => void>();
     const { container } = render(
-      <ThreadView data={thread} selection={{ label: "work" }} />
+      <ThreadView
+        data={thread}
+        filters={{ read: "unread" }}
+        onClose={onClose}
+        selection={{ label: "work" }}
+      />
     );
 
     expect(screen.getByText(maliciousText)).toBeTruthy();
@@ -71,6 +77,21 @@ describe(ThreadView, () => {
       screen
         .getByRole("link", { name: "Close conversation" })
         .getAttribute("href")
-    ).toBe("/inbox?label=work");
+    ).toBe("/inbox?label=work&read=unread");
+  });
+
+  it("closes a conversation without a document navigation", () => {
+    const onClose = vi.fn<() => void>();
+    render(
+      <ThreadView
+        data={thread}
+        filters={{ read: "unread" }}
+        onClose={onClose}
+        selection={{ label: "work" }}
+      />
+    );
+
+    screen.getByRole("link", { name: "Close conversation" }).click();
+    expect(onClose).toHaveBeenCalledOnce();
   });
 });

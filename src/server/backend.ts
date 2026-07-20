@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
 import type {
-  MailboxMessageView,
+  MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "../mailboxes/message-reading";
 import {
@@ -77,12 +77,12 @@ export const websiteBackend = {
         return yield* operations.list(incoming);
       })
     ),
-  listMailboxMessages: (view: MailboxMessageView) =>
+  listMailboxMessages: (query: MailboxMessageListInput) =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
-        return yield* operations.listMessages({ incoming, view });
+        return yield* operations.listMessages({ incoming, query });
       })
     ),
   renameMailbox: (input: {

@@ -155,8 +155,19 @@ const mapNavigationError = (
 
 const mapMessageReadingError = (
   error: MailboxMessageReadingError
-): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
-  error.reason === "not-found"
+): Effect.Effect<
+  never,
+  AuthBadRequestError | AuthInternalError | AuthNotFoundError
+> => {
+  if (error.reason === "invalid-input") {
+    return Effect.fail(
+      new AuthBadRequestError({
+        code: "bad_request",
+        message: "Invalid mailbox message query",
+      })
+    );
+  }
+  return error.reason === "not-found"
     ? Effect.fail(
         new AuthNotFoundError({
           code: "not_found",
@@ -164,6 +175,7 @@ const mapMessageReadingError = (
         })
       )
     : Effect.fail(internalError());
+};
 
 const mapHttpErrors = <A, R>(
   effect: Effect.Effect<A, MailboxHandlerError, R>
@@ -211,6 +223,19 @@ export const MailboxGroupLive = HttpApiBuilder.group(
       .handle("getNavigation", () => navigation.getCurrent.pipe(mapHttpErrors))
       .handle("listMessages", ({ params, query }) =>
         Effect.gen(function* () {
+          const filters = {
+            cursor: query.cursor,
+            hasAttachment:
+              query.attachment === undefined
+                ? undefined
+                : query.attachment === "true",
+            query: query.q,
+            read: query.read === undefined ? undefined : query.read === "true",
+            starred:
+              query.starred === undefined
+                ? undefined
+                : query.starred === "true",
+          };
           const view =
             query.folder === undefined
               ? query.label === undefined
@@ -219,11 +244,13 @@ export const MailboxGroupLive = HttpApiBuilder.group(
                   )
                 : {
                     _tag: "Label" as const,
+                    ...filters,
                     labelId: query.label,
                     mailboxId: params.mailboxId,
                   }
               : {
                   _tag: "Folder" as const,
+                  ...filters,
                   folderId: query.folder,
                   mailboxId: params.mailboxId,
                 };

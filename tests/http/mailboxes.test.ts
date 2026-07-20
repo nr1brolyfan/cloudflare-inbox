@@ -48,6 +48,7 @@ import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authoriza
 import {
   MailboxMessageListResult,
   MailboxMessageReading,
+  MailboxMessageReadingError,
   MailboxThreadResult,
 } from "#/mailboxes/message-reading";
 import {
@@ -115,7 +116,6 @@ const mailboxNavigation = Schema.decodeUnknownSync(MailboxNavigationResult)({
   labels: [],
 });
 const mailboxMessages = Schema.decodeUnknownSync(MailboxMessageListResult)({
-  hasMore: false,
   items: [
     {
       activityAt: 2000,
@@ -281,8 +281,81 @@ describe("protected mailbox API", () => {
 
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({
-        hasMore: false,
         items: [{ id: "message-1", threadId: "thread-1" }],
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("decodes mailbox search, filters, and cursor before the use case", async () => {
+    let listInput: unknown;
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      MailboxMessageReading.of({
+        listView: (input) => {
+          listInput = input;
+          return Effect.succeed(mailboxMessages);
+        },
+        openThread: () => Effect.succeed(mailboxThread),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/messages?label=work&q=quarterly+report&read=false&starred=true&attachment=true&cursor=page-2",
+          "GET"
+        )
+      );
+
+      expect(response.status).toBe(200);
+      expect(listInput).toMatchObject({
+        _tag: "Label",
+        cursor: "page-2",
+        hasAttachment: true,
+        labelId: "work",
+        mailboxId: "primary",
+        query: "quarterly report",
+        read: false,
+        starred: true,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("returns bad request for an invalid message cursor", async () => {
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      MailboxMessageReading.of({
+        listView: () =>
+          Effect.fail(
+            new MailboxMessageReadingError({
+              message: "Mailbox message query is invalid",
+              reason: "invalid-input",
+            })
+          ),
+        openThread: () => Effect.succeed(mailboxThread),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/messages?folder=inbox&cursor=tampered",
+          "GET"
+        )
+      );
+
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toMatchObject({
+        code: "bad_request",
+        message: "Invalid mailbox message query",
       });
     } finally {
       await dispose();

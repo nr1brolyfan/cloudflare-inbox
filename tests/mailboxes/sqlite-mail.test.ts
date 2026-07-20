@@ -478,14 +478,32 @@ describe("Mailbox mail data SQLite", () => {
             )
           )
         );
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(message)
+          .set({ deletedAt: 300, updatedAt: 300 })
+          .where(eq(message.id, "m2"));
+        const staleCursor = failure(
+          yield* Effect.result(
+            searchMessages(
+              Schema.decodeUnknownSync(SearchMessagesInput)({
+                mailboxId,
+                query: "body",
+                page: { limit: 1, cursor: first.nextCursor },
+              })
+            )
+          )
+        );
 
         expect({
           first: first.items.map((item) => item.id),
           next: next.items.map((item) => item.id),
+          staleCursor: staleCursor.reason,
           wrongQuery: wrongQuery.reason,
         }).toStrictEqual({
           first: ["m2"],
           next: ["m1"],
+          staleCursor: "validation",
           wrongQuery: "validation",
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive()))

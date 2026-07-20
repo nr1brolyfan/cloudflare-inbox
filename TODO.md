@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **64/109 (59%)**
+- Postęp zadań: **65/109 (60%)**
 - Ukończone etapy: **4/11**
 - Aktualny etap: **7. Inbox UI i bezpieczne renderowanie**
-- Aktualne zadanie: **Search, filtry i paginacja**
+- Aktualne zadanie: **Read, star, archive i trash**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -18,7 +18,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 4   | Permissions i control plane           | DONE        | 10/10  |
 | 5   | MailboxDO i domena pocztowa           | DONE        | 9/9    |
 | 6   | Inbound email                         | DONE        | 9/9    |
-| 7   | Inbox UI i bezpieczne renderowanie    | CURRENT     | 3/9    |
+| 7   | Inbox UI i bezpieczne renderowanie    | CURRENT     | 4/9    |
 | 8   | Reguły automatyczne                   | TODO        | 0/6    |
 | 9   | Drafty i outbound                     | TODO        | 0/9    |
 | 10  | AI                                    | TODO        | 0/6    |
@@ -123,8 +123,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Zbudować responsywny mailbox shell.
 - [x] Dodać nawigację folderów i labels.
 - [x] Dodać listę wiadomości i widok wątku.
-- [ ] CURRENT Dodać search, filtry i paginację.
-- [ ] Dodać read, star, archive i trash.
+- [x] Dodać search, filtry i paginację.
+- [ ] CURRENT Dodać read, star, archive i trash.
 - [ ] Egzekwować autoryzację i stany odmowy w server functions.
 - [ ] Renderować HTML wyłącznie w sandboxie z restrykcyjnym CSP.
 - [ ] Blokować remote images oraz bezpiecznie obsługiwać links i CID.

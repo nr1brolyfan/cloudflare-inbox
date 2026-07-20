@@ -9,9 +9,12 @@ import { describe, expect, it } from "vitest";
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
 import { FolderId } from "#/mailboxes/core";
+import { MailboxDomainError } from "#/mailboxes/errors";
 import {
   MailboxMessageReading,
   MailboxMessageReadingLive,
+  MailboxMessageListInput,
+  MailboxMessageListResult,
   MailboxMessageView,
   MailboxThreadResult,
   OpenMailboxThreadInput,
@@ -89,7 +92,8 @@ const repositoryWith = (
   getMessage: MailboxRepositoryService["getMessage"] = () =>
     thread.messages[0] === undefined
       ? Effect.die(new Error("Thread fixture has no anchor message"))
-      : Effect.succeed(thread.messages[0])
+      : Effect.succeed(thread.messages[0]),
+  searchMessages: MailboxRepositoryService["searchMessages"] = unused
 ) =>
   MailboxRepository.of({
     addMessageLabel: unused,
@@ -117,7 +121,7 @@ const repositoryWith = (
     renameLabel: unused,
     resendOutbound: unused,
     scheduleOutbound: unused,
-    searchMessages: unused,
+    searchMessages,
     setMessageRead: unused,
     setMessageStarred: unused,
     updateDraft: unused,
@@ -205,22 +209,21 @@ describe("mailbox message reading", () => {
       }),
       (reading) => reading.listView(view)
     );
-    const encoded = Schema.encodeSync(
-      Schema.Struct({
-        items: Schema.Array(Schema.Unknown),
-        hasMore: Schema.Boolean,
-      })
-    )(result);
+    const encoded = Schema.encodeSync(MailboxMessageListResult)(result);
 
     expect({
       calls,
-      hasMore: result.hasMore,
+      nextCursor: result.nextCursor,
       input: repositoryInput,
       item: result.items[0],
     }).toMatchObject({
       calls: ["authorize:primary", "list"],
-      hasMore: true,
-      input: { filters: { folderId: "inbox" }, mailboxId: "primary" },
+      nextCursor: "next-page",
+      input: {
+        filters: { folderId: "inbox" },
+        mailboxId: "primary",
+        page: { limit: 25 },
+      },
       item: { id: "message-1", threadId: "thread-1" },
     });
     expect(JSON.stringify(encoded)).not.toMatch(/mailboxId|version|size/u);
@@ -246,6 +249,70 @@ describe("mailbox message reading", () => {
     expect(repositoryInput).toMatchObject({
       filters: { labelIds: ["work"] },
       mailboxId: "primary",
+      page: { limit: 25 },
+    });
+  });
+
+  it("searches within the selected view and forwards filters and cursor", async () => {
+    let repositoryInput: unknown;
+    const input = Schema.decodeUnknownSync(MailboxMessageListInput)({
+      _tag: "Folder",
+      cursor: "search-page-2",
+      folderId: "inbox",
+      hasAttachment: true,
+      mailboxId: "primary",
+      query: "quarterly report",
+      read: false,
+      starred: true,
+    });
+
+    await runReading(
+      authorizationWith(({ resource }) => Effect.succeed(resource)),
+      repositoryWith(undefined, undefined, undefined, (searchInput) => {
+        repositoryInput = searchInput;
+        return Effect.succeed(page);
+      }),
+      (reading) => reading.listView(input)
+    );
+
+    expect(repositoryInput).toMatchObject({
+      filters: {
+        folderId: "inbox",
+        hasAttachment: true,
+        read: false,
+        starred: true,
+      },
+      mailboxId: "primary",
+      page: { cursor: "search-page-2", limit: 25 },
+      query: "quarterly report",
+    });
+  });
+
+  it("maps invalid repository cursors to an invalid query error", async () => {
+    const input = Schema.decodeUnknownSync(MailboxMessageListInput)({
+      _tag: "Folder",
+      cursor: "tampered-cursor",
+      folderId: "inbox",
+      mailboxId: "primary",
+    });
+
+    await expect(
+      runReading(
+        authorizationWith(({ resource }) => Effect.succeed(resource)),
+        repositoryWith(() =>
+          Effect.fail(
+            new MailboxDomainError({
+              message: "Message cursor is invalid",
+              operation: "list-messages",
+              reason: "validation",
+            })
+          )
+        ),
+        (reading) => reading.listView(input)
+      )
+    ).rejects.toMatchObject({
+      _tag: "MailboxMessageReadingError",
+      reason: "invalid-input",
     });
   });
 

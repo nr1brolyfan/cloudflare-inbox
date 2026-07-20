@@ -228,8 +228,18 @@ export const MessageSnippet = Schema.String.pipe(
 );
 export type MessageSnippet = Schema.Schema.Type<typeof MessageSnippet>;
 
+export const hasSearchableMessageTerm = (value: string) =>
+  /[\p{L}\p{N}]/u.test(value);
+
 export const SearchQuery = Schema.Trim.pipe(
-  Schema.check(Schema.isLengthBetween(1, 500)),
+  Schema.check(
+    Schema.isLengthBetween(1, 500),
+    Schema.makeFilter<string>((value) =>
+      hasSearchableMessageTerm(value)
+        ? undefined
+        : "must contain a searchable letter or number"
+    )
+  ),
   Schema.brand("cloudflare-inbox/SearchQuery")
 );
 export type SearchQuery = Schema.Schema.Type<typeof SearchQuery>;
