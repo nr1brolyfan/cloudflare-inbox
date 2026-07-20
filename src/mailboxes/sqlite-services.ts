@@ -1641,8 +1641,8 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
         "Message cursor does not match this query"
       );
     }
-    const limit = input.page?.limit ?? 50;
     const remaining = filtered.slice(startIndex);
+    const limit = input.page?.limit ?? 50;
     const items = remaining.slice(0, limit).map(({ summary }) => summary);
     const last = items.at(-1);
     return Schema.decodeUnknownSync(MessagePage)({
@@ -1696,13 +1696,42 @@ const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
     if (Result.isFailure(decodedCursor)) {
       return yield* decodedCursor.failure;
     }
-    const rows = yield* db
-      .select()
+    const threadPredicate = and(
+      eq(message.threadId, input.threadId),
+      isNull(message.deletedAt)
+    );
+    const rows =
+      input.page === undefined
+        ? yield* db
+            .select()
+            .from(message)
+            .where(threadPredicate)
+            .orderBy(desc(message.activityAt), desc(message.id))
+            .limit(50)
+            .pipe(
+              Effect.map((latest) => {
+                const chronological: typeof latest = [];
+                for (let index = latest.length - 1; index >= 0; index -= 1) {
+                  const row = latest[index];
+                  if (row !== undefined) {
+                    chronological.push(row);
+                  }
+                }
+                return chronological;
+              })
+            )
+        : yield* db
+            .select()
+            .from(message)
+            .where(threadPredicate)
+            .orderBy(asc(message.activityAt), asc(message.id));
+    const [stats] = yield* db
+      .select({
+        messageCount: count(message.id),
+        unreadCount: sql<number>`coalesce(sum(case when ${message.read} = 0 then 1 else 0 end), 0)`,
+      })
       .from(message)
-      .where(
-        and(eq(message.threadId, input.threadId), isNull(message.deletedAt))
-      )
-      .orderBy(asc(message.activityAt), asc(message.id));
+      .where(threadPredicate);
     const all = yield* Effect.all(
       rows.map((row) => readMessageDetailRow(db, row, mailboxId))
     );
@@ -1729,8 +1758,8 @@ const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
       mailboxId,
       subject: all.at(-1)?.subject,
       participants,
-      messageCount: all.length,
-      unreadCount: all.filter((item) => !item.read).length,
+      messageCount: stats?.messageCount,
+      unreadCount: stats?.unreadCount,
       latestActivityAt: all.at(-1)?.activityAt,
     });
     const cursor = decodedCursor.success;
@@ -1740,6 +1769,8 @@ const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
         : item.activityAt > cursor.activityAt ||
           (item.activityAt === cursor.activityAt && item.id > cursor.id)
     );
+    // Opening a thread prioritizes its latest replies while explicit cursor
+    // pagination retains the existing chronological forward traversal.
     const limit = input.page?.limit ?? 50;
     const messages = remaining.slice(0, limit);
     const last = messages.at(-1);
@@ -1747,7 +1778,9 @@ const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
       thread,
       messages,
       nextCursor:
-        remaining.length > limit && last !== undefined
+        input.page !== undefined &&
+        remaining.length > limit &&
+        last !== undefined
           ? encodeCursor({
               mailboxId,
               scope: `thread:${input.threadId}:asc`,

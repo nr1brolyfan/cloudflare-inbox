@@ -46,6 +46,11 @@ import { MailboxRecordSchema } from "#/mailboxes/core";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import {
+  MailboxMessageListResult,
+  MailboxMessageReading,
+  MailboxThreadResult,
+} from "#/mailboxes/message-reading";
+import {
   MailboxNavigation,
   MailboxNavigationError,
   MailboxNavigationResult,
@@ -109,6 +114,48 @@ const mailboxNavigation = Schema.decodeUnknownSync(MailboxNavigationResult)({
   ],
   labels: [],
 });
+const mailboxMessages = Schema.decodeUnknownSync(MailboxMessageListResult)({
+  hasMore: false,
+  items: [
+    {
+      activityAt: 2000,
+      direction: "inbound",
+      hasAttachments: false,
+      id: "message-1",
+      read: false,
+      recipients: [{ address: "owner@example.test" }],
+      sender: { address: "sender@example.test", displayName: "Sender" },
+      snippet: "Plain text preview",
+      starred: false,
+      subject: "Hello",
+      threadId: "thread-1",
+    },
+  ],
+});
+const mailboxThread = Schema.decodeUnknownSync(MailboxThreadResult)({
+  hasMore: false,
+  messages: [
+    {
+      activityAt: 2000,
+      attachments: [],
+      cc: [],
+      direction: "inbound",
+      hasHtmlBody: true,
+      id: "message-1",
+      read: false,
+      sender: { address: "sender@example.test", displayName: "Sender" },
+      textBody: "Plain text body",
+      to: [{ address: "owner@example.test" }],
+    },
+  ],
+  thread: {
+    id: "thread-1",
+    latestActivityAt: 2000,
+    messageCount: 1,
+    subject: "Hello",
+    unreadCount: 1,
+  },
+});
 
 const makeAdministration = (
   overrides: Partial<MailboxAdministrationService> = {}
@@ -132,6 +179,10 @@ const makeHandler = (
     Effect.succeed(validatedSession),
   navigation: MailboxNavigation = MailboxNavigation.of({
     getCurrent: Effect.succeed(mailboxNavigation),
+  }),
+  messageReading: MailboxMessageReading = MailboxMessageReading.of({
+    listView: () => Effect.succeed(mailboxMessages),
+    openThread: () => Effect.succeed(mailboxThread),
   })
 ) => {
   const requestAuthLive = Layer.mergeAll(
@@ -161,6 +212,7 @@ const makeHandler = (
       Layer.mergeAll(
         Layer.succeed(MailboxAdministration, administration),
         Layer.succeed(MailboxNavigation, navigation),
+        Layer.succeed(MailboxMessageReading, messageReading),
         Layer.succeed(
           InboundReplay,
           InboundReplay.of({
@@ -219,6 +271,87 @@ const mailboxRequest = (
 };
 
 describe("protected mailbox API", () => {
+  it("returns the selected mailbox message view", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/primary/messages?folder=inbox", "GET")
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        hasMore: false,
+        items: [{ id: "message-1", threadId: "thread-1" }],
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("returns a plain-text mailbox thread projection", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/threads/thread-1?folder=inbox&message=message-1",
+          "GET"
+        )
+      );
+      const body = await response.json();
+
+      expect({ body, status: response.status }).toMatchObject({
+        body: {
+          messages: [
+            {
+              hasHtmlBody: true,
+              id: "message-1",
+              textBody: "Plain text body",
+            },
+          ],
+          thread: { id: "thread-1" },
+        },
+        status: 200,
+      });
+      expect(JSON.stringify(body)).not.toContain("htmlBody");
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("rejects an ambiguous mailbox message view before the use case", async () => {
+    let reads = 0;
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      () => Effect.succeed(validatedSession),
+      undefined,
+      MailboxMessageReading.of({
+        listView: () => {
+          reads += 1;
+          return Effect.succeed(mailboxMessages);
+        },
+        openThread: () => Effect.succeed(mailboxThread),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/messages?folder=inbox&label=work",
+          "GET"
+        )
+      );
+
+      expect({ reads, status: response.status }).toStrictEqual({
+        reads: 0,
+        status: 400,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
   it("returns authorized mailbox navigation", async () => {
     const { dispose, handler } = makeHandler(makeAdministration());
 

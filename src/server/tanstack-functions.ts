@@ -5,12 +5,18 @@ import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
+import {
+  MailboxMessageView,
+  OpenMailboxThreadInput,
+} from "../mailboxes/message-reading";
 import { websiteBackend } from "./backend";
 
 export type { DevEmailInboxResult } from "./dev-email-backend";
 
 const bootstrapInput = Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand);
 const renameInput = Schema.decodeUnknownSync(RenameMailboxCommand);
+const mailboxMessageViewInput = Schema.decodeUnknownSync(MailboxMessageView);
+const openMailboxThreadInput = Schema.decodeUnknownSync(OpenMailboxThreadInput);
 
 export const bootstrapMailboxOwner = createServerFn({ method: "POST" })
   .validator(bootstrapInput)
@@ -29,6 +35,14 @@ export const getDevEmailInboxStatus = createServerFn({
 export const getMailboxNavigation = createServerFn({ method: "GET" }).handler(
   () => websiteBackend.getMailboxNavigation()
 );
+
+export const listMailboxMessages = createServerFn({ method: "GET" })
+  .validator(mailboxMessageViewInput)
+  .handler(({ data }) => websiteBackend.listMailboxMessages(data));
+
+export const getMailboxThread = createServerFn({ method: "GET" })
+  .validator(openMailboxThreadInput)
+  .handler(({ data }) => websiteBackend.getMailboxThread(data));
 
 export const listDevEmails = createServerFn({ method: "GET" }).handler(() =>
   websiteBackend.listDevEmails()

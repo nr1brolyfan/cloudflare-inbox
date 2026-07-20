@@ -3,6 +3,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import type {
+  MailboxMessageView,
+  OpenMailboxThreadInput,
+} from "../mailboxes/message-reading";
 import {
   DevEmailOperations,
   DevEmailOperationsLive,
@@ -57,12 +61,28 @@ export const websiteBackend = {
         return yield* operations.getNavigation(incoming);
       })
     ),
+  getMailboxThread: (query: OpenMailboxThreadInput) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.getThread({ incoming, query });
+      })
+    ),
   listDevEmails: () =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* DevEmailOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.list(incoming);
+      })
+    ),
+  listMailboxMessages: (view: MailboxMessageView) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.listMessages({ incoming, view });
       })
     ),
   renameMailbox: (input: {

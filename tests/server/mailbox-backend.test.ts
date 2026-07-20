@@ -1,7 +1,12 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import {
+  MailboxMessageView,
+  OpenMailboxThreadInput,
+} from "#/mailboxes/message-reading";
 import type { MailboxBackendOperationsShape } from "#/server/mailbox-backend";
 import {
   MailboxBackendOperations,
@@ -31,6 +36,48 @@ const navigation = {
   ],
   labels: [],
 } as const;
+const messages = {
+  hasMore: false,
+  items: [
+    {
+      activityAt: 2000,
+      direction: "inbound",
+      hasAttachments: false,
+      id: "message-1",
+      read: false,
+      recipients: [{ address: "owner@example.test" }],
+      sender: { address: "sender@example.test" },
+      snippet: "Preview",
+      starred: false,
+      subject: "Hello",
+      threadId: "thread-1",
+    },
+  ],
+} as const;
+const thread = {
+  hasMore: false,
+  messages: [
+    {
+      activityAt: 2000,
+      attachments: [],
+      cc: [],
+      direction: "inbound",
+      hasHtmlBody: false,
+      id: "message-1",
+      read: false,
+      sender: { address: "sender@example.test" },
+      textBody: "Body",
+      to: [{ address: "owner@example.test" }],
+    },
+  ],
+  thread: {
+    id: "thread-1",
+    latestActivityAt: 2000,
+    messageCount: 1,
+    subject: "Hello",
+    unreadCount: 1,
+  },
+} as const;
 
 const runForward = <A>(
   fetch: (request: Request) => Promise<Response>,
@@ -55,6 +102,71 @@ const runForward = <A>(
   );
 
 describe("Website mailbox Backend forwarding", () => {
+  it("encodes mailbox message label views with URLSearchParams", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const view = Schema.decodeUnknownSync(MailboxMessageView)({
+      _tag: "Label",
+      labelId: "work/urgent ?",
+      mailboxId: "team/primary",
+    });
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(messages));
+      },
+      (operations) => operations.listMessages({ incoming, view })
+    );
+
+    expect(result).toStrictEqual({ messages, ok: true });
+    expect(
+      forwarded === undefined
+        ? undefined
+        : {
+            cookie: forwarded.headers.get("cookie"),
+            method: forwarded.method,
+            path: new URL(forwarded.url).pathname,
+            search: new URL(forwarded.url).search,
+          }
+    ).toStrictEqual({
+      cookie: "__Host-session=session-a.secret",
+      method: "GET",
+      path: "/api/mailboxes/team%2Fprimary/messages",
+      search: "?label=work%2Furgent+%3F",
+    });
+  });
+
+  it("encodes thread path segments and validates the response", async () => {
+    let path: string | undefined;
+    let search: string | undefined;
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(OpenMailboxThreadInput)({
+      _tag: "Folder",
+      folderId: "inbox",
+      mailboxId: "team/primary",
+      messageId: "message-1",
+      threadId: "thread/one ?",
+    });
+    const result = await runForward(
+      (request) => {
+        const url = new URL(request.url);
+        const { pathname, search: queryString } = url;
+        path = pathname;
+        search = queryString;
+        return Promise.resolve(Response.json(thread));
+      },
+      (operations) => operations.getThread({ incoming, query })
+    );
+
+    expect({ path, result, search }).toStrictEqual({
+      path: "/api/mailboxes/team%2Fprimary/threads/thread%2Fone%20%3F",
+      result: { ok: true, thread },
+      search: "?folder=inbox&message=message-1",
+    });
+  });
+
   it("forwards and validates the current mailbox navigation read", async () => {
     let forwarded: Request | undefined;
     const incoming = new Request("https://inbox.test/_server", {

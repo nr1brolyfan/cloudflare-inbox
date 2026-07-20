@@ -103,7 +103,9 @@ const authorizationWith = (
     requireDraftCreate: unusedAuthorization,
     requireExport: unusedAuthorization,
     requireFolder: unusedAuthorization,
+    requireFolderMessageRead: unusedAuthorization,
     requireMailbox,
+    requireMailboxMessageRead: unusedAuthorization,
     requireMessage: unusedAuthorization,
     requireRuleManage: unusedAuthorization,
   });

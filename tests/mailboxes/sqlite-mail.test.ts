@@ -616,6 +616,70 @@ describe("Mailbox mail data SQLite", () => {
     );
   });
 
+  it("returns the latest bounded thread page when pagination is not requested", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const db = yield* MailboxDatabase;
+        yield* db.insert(message).values(
+          Array.from({ length: 51 }, (_, index) => ({
+            activityAt: index,
+            bccJson: "[]",
+            ccJson: "[]",
+            createdAt: index,
+            direction: "inbound" as const,
+            folderId: "inbox",
+            id: `message-${String(index).padStart(2, "0")}`,
+            needsReply: 0,
+            read: 1,
+            receivedAt: index,
+            recipientsJson: '[{"address":"owner@example.com"}]',
+            referencesJson: "[]",
+            senderJson: '{"address":"sender@example.com"}',
+            size: 10,
+            snippet: `Message ${index}`,
+            starred: 0,
+            subject: `Message ${index}`,
+            textBody: `Body ${index}`,
+            threadId: "long-thread",
+            toJson: '[{"address":"owner@example.com"}]',
+            updatedAt: index,
+          }))
+        );
+
+        const complete = yield* getThread(
+          Schema.decodeUnknownSync(GetThreadInput)({
+            mailboxId,
+            threadId: "long-thread",
+          })
+        );
+        const paged = yield* getThread(
+          Schema.decodeUnknownSync(GetThreadInput)({
+            mailboxId,
+            page: {},
+            threadId: "long-thread",
+          })
+        );
+
+        expect({
+          first: complete.messages[0]?.id,
+          last: complete.messages.at(-1)?.id,
+          length: complete.messages.length,
+          nextCursor: complete.nextCursor,
+        }).toStrictEqual({
+          first: "message-01",
+          last: "message-50",
+          length: 50,
+          nextCursor: undefined,
+        });
+        expect({
+          length: paged.messages.length,
+          nextCursor: typeof paged.nextCursor,
+        }).toStrictEqual({ length: 50, nextCursor: "string" });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
   it("applies message CAS, no-op versioning, moves, and labels", async () => {
     const runtime = makeRuntime();
     await Effect.runPromise(

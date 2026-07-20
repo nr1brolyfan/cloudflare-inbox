@@ -21,6 +21,8 @@ import type {
 } from "../mailboxes/errors";
 import { InboundReplay } from "../mailboxes/inbound";
 import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
+import type { MailboxMessageReadingError } from "../mailboxes/message-reading";
+import { MailboxMessageReading } from "../mailboxes/message-reading";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
 import { MailboxNavigation } from "../mailboxes/navigation";
 import { BackendHttpApi } from "./api";
@@ -117,6 +119,7 @@ type MailboxHandlerError =
   | MailAuthorizationError
   | MailboxAdministrationError
   | MailboxNavigationError
+  | MailboxMessageReadingError
   | MailboxDomainError
   | MailboxRepositoryError
   | WorkflowStartError;
@@ -150,12 +153,25 @@ const mapNavigationError = (
       )
     : Effect.fail(internalError());
 
+const mapMessageReadingError = (
+  error: MailboxMessageReadingError
+): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
+  error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Mailbox message content not found",
+        })
+      )
+    : Effect.fail(internalError());
+
 const mapHttpErrors = <A, R>(
   effect: Effect.Effect<A, MailboxHandlerError, R>
 ) =>
   mapAuthGuardErrors(effect).pipe(
     Effect.catchTag("MailboxAdministrationError", mapAdministrationError),
     Effect.catchTag("MailboxNavigationError", mapNavigationError),
+    Effect.catchTag("MailboxMessageReadingError", mapMessageReadingError),
     Effect.catchTag("MailboxDomainError", mapInboundDomainError),
     Effect.catchTags({
       MailboxRepositoryError: () => Effect.fail(internalError()),
@@ -182,6 +198,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
   Effect.fn("backend.http.mailbox_group")(function* (handlers) {
     const administration = yield* MailboxAdministration;
     const navigation = yield* MailboxNavigation;
+    const messageReading = yield* MailboxMessageReading;
     const replayAuthorization = yield* InboundReplayAuthorization;
     const inboundReplay = yield* InboundReplay;
 
@@ -192,6 +209,52 @@ export const MailboxGroupLive = HttpApiBuilder.group(
           .pipe(mapHttpErrors)
       )
       .handle("getNavigation", () => navigation.getCurrent.pipe(mapHttpErrors))
+      .handle("listMessages", ({ params, query }) =>
+        Effect.gen(function* () {
+          const view =
+            query.folder === undefined
+              ? query.label === undefined
+                ? yield* Effect.die(
+                    new Error("Message view query invariant failed")
+                  )
+                : {
+                    _tag: "Label" as const,
+                    labelId: query.label,
+                    mailboxId: params.mailboxId,
+                  }
+              : {
+                  _tag: "Folder" as const,
+                  folderId: query.folder,
+                  mailboxId: params.mailboxId,
+                };
+          return yield* messageReading.listView(view);
+        }).pipe(mapHttpErrors)
+      )
+      .handle("getThread", ({ params, query }) =>
+        Effect.gen(function* () {
+          const view =
+            query.folder === undefined
+              ? query.label === undefined
+                ? yield* Effect.die(
+                    new Error("Thread view query invariant failed")
+                  )
+                : {
+                    _tag: "Label" as const,
+                    labelId: query.label,
+                    mailboxId: params.mailboxId,
+                    messageId: query.message,
+                    threadId: params.threadId,
+                  }
+              : {
+                  _tag: "Folder" as const,
+                  folderId: query.folder,
+                  mailboxId: params.mailboxId,
+                  messageId: query.message,
+                  threadId: params.threadId,
+                };
+          return yield* messageReading.openThread(view);
+        }).pipe(mapHttpErrors)
+      )
       .handle("rename", ({ params, payload }) =>
         administration
           .rename({

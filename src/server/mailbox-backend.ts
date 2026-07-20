@@ -8,6 +8,14 @@ import * as Schema from "effect/Schema";
 import type { MailboxPublicError } from "../http/mailbox-contract";
 import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import { MailboxRecordSchema } from "../mailboxes/core";
+import type {
+  MailboxMessageView,
+  OpenMailboxThreadInput,
+} from "../mailboxes/message-reading";
+import {
+  MailboxMessageListResult,
+  MailboxThreadResult,
+} from "../mailboxes/message-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import { BackendClient } from "./website-platform";
 
@@ -27,6 +35,20 @@ export type MailboxServerResult =
 export type MailboxNavigationServerResult =
   | {
       readonly navigation: Schema.Codec.Encoded<typeof MailboxNavigationResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxMessageListServerResult =
+  | {
+      readonly messages: Schema.Codec.Encoded<typeof MailboxMessageListResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxThreadServerResult =
+  | {
+      readonly thread: Schema.Codec.Encoded<typeof MailboxThreadResult>;
       readonly ok: true;
     }
   | MailboxServerErrorResult;
@@ -120,6 +142,14 @@ export interface MailboxBackendOperationsShape {
   readonly getNavigation: (
     incoming: Request
   ) => Effect.Effect<MailboxNavigationServerResult>;
+  readonly getThread: (input: {
+    readonly incoming: Request;
+    readonly query: OpenMailboxThreadInput;
+  }) => Effect.Effect<MailboxThreadServerResult>;
+  readonly listMessages: (input: {
+    readonly incoming: Request;
+    readonly view: MailboxMessageView;
+  }) => Effect.Effect<MailboxMessageListServerResult>;
   readonly rename: (input: {
     readonly displayName: string;
     readonly incoming: Request;
@@ -261,6 +291,70 @@ export const MailboxBackendOperationsLive = Layer.effect(
               : invalidBackendResponse();
           })
         ),
+      getThread: ({ incoming, query }) =>
+        forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.thread",
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/threads/${encodeURIComponent(query.threadId)}?${
+            query._tag === "Folder"
+              ? new URLSearchParams({
+                  folder: query.folderId,
+                  message: query.messageId,
+                }).toString()
+              : new URLSearchParams({
+                  label: query.labelId,
+                  message: query.messageId,
+                }).toString()
+          }`,
+        }).pipe(
+          Effect.map((result): MailboxThreadServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(MailboxThreadResult)(
+              result.body
+            );
+            return Exit.isSuccess(decoded)
+              ? {
+                  ok: true,
+                  thread: Schema.encodeSync(MailboxThreadResult)(decoded.value),
+                }
+              : invalidBackendResponse();
+          })
+        ),
+      listMessages: ({ incoming, view }) => {
+        const query = new URLSearchParams();
+        if (view._tag === "Folder") {
+          query.set("folder", view.folderId);
+        } else {
+          query.set("label", view.labelId);
+        }
+
+        return forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.messages",
+          path: `/api/mailboxes/${encodeURIComponent(view.mailboxId)}/messages?${query.toString()}`,
+        }).pipe(
+          Effect.map((result): MailboxMessageListServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(MailboxMessageListResult)(
+              result.body
+            );
+            return Exit.isSuccess(decoded)
+              ? {
+                  messages: Schema.encodeSync(MailboxMessageListResult)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        );
+      },
       rename: ({ displayName, incoming, mailboxId }) =>
         forwardRequest({
           incoming,

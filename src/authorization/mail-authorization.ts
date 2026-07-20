@@ -23,6 +23,17 @@ export type MessageAction = Schema.Schema.Type<typeof MessageAction>;
 export const DraftAction = Schema.Literals(["edit", "send"]);
 export type DraftAction = Schema.Schema.Type<typeof DraftAction>;
 
+export type MailboxMessageReadAccess =
+  | {
+      readonly _tag: "MailboxMessageRead";
+      readonly mailboxId: Resources.TrustedMailboxLocation["mailboxId"];
+    }
+  | {
+      readonly _tag: "FolderMessageRead";
+      readonly folderId: Resources.TrustedFolderLocation["folderId"];
+      readonly mailboxId: Resources.TrustedFolderLocation["mailboxId"];
+    };
+
 export type MailAuthorizationError =
   | AuthPolicy.AuthorizationError
   | AuthPermission.PermissionCheckError
@@ -67,8 +78,17 @@ export interface MailAuthorization {
     Resources.TrustedFolderLocation,
     Resources.MailResourceResolveError
   >;
+  readonly requireFolderMessageRead: (input: {
+    readonly resource: Resources.FolderRef;
+  }) => MailPolicy<
+    MailboxMessageReadAccess,
+    Resources.MailResourceResolveError
+  >;
   readonly requireMailbox: (input: {
     readonly action: MailboxAction;
+    readonly resource: Resources.MailboxRef;
+  }) => MailPolicy<Resources.TrustedMailboxLocation>;
+  readonly requireMailboxMessageRead: (input: {
     readonly resource: Resources.MailboxRef;
   }) => MailPolicy<Resources.TrustedMailboxLocation>;
   readonly requireMessage: (input: {
@@ -268,6 +288,32 @@ export const MailAuthorizationLive = Layer.effect(
             ).pipe(Effect.as(location))
           )
         ),
+      requireFolderMessageRead: ({ resource }) =>
+        resolveFolder(resource).pipe(
+          Effect.flatMap((location) => {
+            const mailboxAccess: MailboxMessageReadAccess = {
+              _tag: "MailboxMessageRead",
+              mailboxId: location.mailboxId,
+            };
+            const folderAccess: MailboxMessageReadAccess = {
+              _tag: "FolderMessageRead",
+              folderId: location.folderId,
+              mailboxId: location.mailboxId,
+            };
+            return requirePermission(
+              MailPermission.messageRead,
+              mailboxScope(location.mailboxId)
+            ).pipe(
+              Effect.as(mailboxAccess),
+              Effect.catchTag("AuthorizationError", () =>
+                requirePermission(
+                  MailPermission.folderRead,
+                  folderScope(location.mailboxId, location.folderId)
+                ).pipe(Effect.as(folderAccess))
+              )
+            );
+          })
+        ),
       requireMailbox: ({ action, resource }) => {
         const location = resource;
         return requirePermission(
@@ -275,6 +321,11 @@ export const MailAuthorizationLive = Layer.effect(
           mailboxScope(location.mailboxId)
         ).pipe(Effect.as(location));
       },
+      requireMailboxMessageRead: ({ resource }) =>
+        requirePermission(
+          MailPermission.messageRead,
+          mailboxScope(resource.mailboxId)
+        ).pipe(Effect.as(resource)),
       requireMessage: ({ action, resource }) =>
         resolveMessage(resource).pipe(
           Effect.flatMap((location) =>

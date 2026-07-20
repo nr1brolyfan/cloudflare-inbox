@@ -22,14 +22,22 @@ import {
   RenameMailboxCommand,
 } from "../mailboxes/administration";
 import {
+  FolderId,
   InboundIngestId,
+  LabelId,
   MailboxId,
   MailboxRecordSchema,
+  MessageId,
+  ThreadId,
 } from "../mailboxes/core";
 import {
   InboundProcessingResult,
   ReplayInboundInput,
 } from "../mailboxes/inbound";
+import {
+  MailboxMessageListResult,
+  MailboxThreadResult,
+} from "../mailboxes/message-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
@@ -37,6 +45,31 @@ const InboundReplayParams = Schema.Struct({
   mailboxId: MailboxId,
   inboundIngestId: InboundIngestId,
 });
+const MailboxThreadParams = Schema.Struct({
+  mailboxId: MailboxId,
+  threadId: ThreadId,
+});
+export const MailboxMessageViewQuery = Schema.Struct({
+  folder: Schema.optional(FolderId),
+  label: Schema.optional(LabelId),
+}).check(
+  Schema.makeFilter((query) =>
+    (query.folder === undefined) === (query.label === undefined)
+      ? "exactly one folder or label is required"
+      : undefined
+  )
+);
+export const MailboxThreadViewQuery = Schema.Struct({
+  folder: Schema.optional(FolderId),
+  label: Schema.optional(LabelId),
+  message: MessageId,
+}).check(
+  Schema.makeFilter((query) =>
+    (query.folder === undefined) === (query.label === undefined)
+      ? "exactly one folder or label is required"
+      : undefined
+  )
+);
 const MailboxErrors = [
   AuthBadRequestError,
   AuthUnauthenticatedError,
@@ -71,6 +104,28 @@ export const GetMailboxNavigationEndpoint = HttpApiEndpoint.get(
   }
 );
 
+export const ListMailboxMessagesEndpoint = HttpApiEndpoint.get(
+  "listMessages",
+  "/api/mailboxes/:mailboxId/messages",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    query: MailboxMessageViewQuery,
+    success: MailboxMessageListResult,
+  }
+);
+
+export const GetMailboxThreadEndpoint = HttpApiEndpoint.get(
+  "getThread",
+  "/api/mailboxes/:mailboxId/threads/:threadId",
+  {
+    error: MailboxErrors,
+    params: MailboxThreadParams,
+    query: MailboxThreadViewQuery,
+    success: MailboxThreadResult,
+  }
+);
+
 export const RenameMailboxEndpoint = HttpApiEndpoint.patch(
   "rename",
   "/api/mailboxes/:mailboxId",
@@ -100,7 +155,9 @@ export const ReplayInboundEndpoint = HttpApiEndpoint.post(
 export class MailboxGroup extends HttpApiGroup.make("mailboxes")
   .add(
     BootstrapOwnerEndpoint,
+    GetMailboxThreadEndpoint,
     GetMailboxNavigationEndpoint,
+    ListMailboxMessagesEndpoint,
     RenameMailboxEndpoint,
     ReplayInboundEndpoint
   )

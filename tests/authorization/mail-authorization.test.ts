@@ -230,6 +230,52 @@ describe("mail authorization policies", () => {
     }
   );
 
+  it("requires mailbox-scoped message read for collection and thread access", async () => {
+    const fixture = makePermissions([
+      mailboxPermission(MailPermission.messageRead),
+    ]);
+    const location = await runAuthorization(
+      makeResolver(),
+      fixture.service,
+      (authorization) =>
+        authorization.requireMailboxMessageRead({ resource: mailboxRef })
+    );
+
+    expect(location).toStrictEqual({
+      _tag: "Mailbox",
+      mailboxId: "mailbox-a",
+    });
+    expect(fixture.checks).toMatchObject([
+      {
+        permission: MailPermission.messageRead,
+        scope: { id: "mailbox-a", type: "mailbox" },
+        subject: principal,
+      },
+    ]);
+  });
+
+  it("allows a message collection through its trusted folder scope", async () => {
+    const fixture = makePermissions([
+      folderPermission(MailPermission.folderRead),
+    ]);
+    const access = await runAuthorization(
+      makeResolver(),
+      fixture.service,
+      (authorization) =>
+        authorization.requireFolderMessageRead({ resource: folderRef })
+    );
+
+    expect(access).toStrictEqual({
+      _tag: "FolderMessageRead",
+      folderId: "folder-a",
+      mailboxId: "mailbox-a",
+    });
+    expect(fixture.checks.map(({ permission }) => permission)).toStrictEqual([
+      MailPermission.messageRead,
+      MailPermission.folderRead,
+    ]);
+  });
+
   it("uses resolved mailbox authority as a folder fallback", async () => {
     const fixture = makePermissions([
       mailboxPermission(MailPermission.mailboxModify),

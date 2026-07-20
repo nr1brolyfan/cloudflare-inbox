@@ -1,8 +1,14 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  skipToken,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import * as Schema from "effect/Schema";
 import {
   ArrowLeft,
+  CircleAlert,
   Inbox as InboxIcon,
   LoaderCircle,
   RotateCcw,
@@ -15,20 +21,42 @@ import {
   currentSessionForQuery,
 } from "../auth/client";
 import { MailboxShell } from "../inbox/mailbox-shell";
-import { FolderId, LabelId } from "../mailboxes/core";
-import { getMailboxNavigation } from "../server/tanstack-functions";
+import type { MailboxViewSelection } from "../inbox/mailbox-view-links";
+import { mailboxViewHref } from "../inbox/mailbox-view-links";
+import { MessageList } from "../inbox/message-list";
+import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
+import { FolderId, LabelId, MessageId, ThreadId } from "../mailboxes/core";
+import {
+  MailboxMessageView,
+  OpenMailboxThreadInput,
+} from "../mailboxes/message-reading";
+import type { MailboxNavigationResult } from "../mailboxes/navigation";
+import {
+  getMailboxNavigation,
+  getMailboxThread,
+  listMailboxMessages,
+} from "../server/tanstack-functions";
 
 const InboxSearch = Schema.Struct({
   folder: Schema.optional(FolderId),
   label: Schema.optional(LabelId),
+  message: Schema.optional(MessageId),
+  thread: Schema.optional(ThreadId),
 }).check(
-  Schema.makeFilter((search) =>
-    search.folder === undefined || search.label === undefined
+  Schema.makeFilter((search) => {
+    if (search.folder !== undefined && search.label !== undefined) {
+      return "folder and label cannot be selected together";
+    }
+    return (search.thread === undefined) === (search.message === undefined)
       ? undefined
-      : "folder and label cannot be selected together"
-  )
+      : "thread and message must be selected together";
+  })
 );
 const decodeInboxSearch = Schema.decodeUnknownSync(InboxSearch);
+const decodeMailboxMessageView = Schema.decodeUnknownSync(MailboxMessageView);
+const decodeOpenMailboxThread = Schema.decodeUnknownSync(
+  OpenMailboxThreadInput
+);
 const mailboxNavigationQueryKey = ["mailbox", "navigation"] as const;
 
 const resolveNavigationSelection = (
@@ -58,7 +86,7 @@ function MailboxUnavailable({
   onRetry,
   status,
 }: {
-  readonly onRetry: () => void;
+  readonly onRetry?: () => void;
   readonly status: number;
 }) {
   const denied = status === 403;
@@ -86,7 +114,7 @@ function MailboxUnavailable({
           {detail}
         </p>
         <div className="mt-7 flex flex-wrap justify-center gap-3">
-          {!denied && !missing ? (
+          {!denied && !missing && onRetry ? (
             <button
               type="button"
               onClick={onRetry}
@@ -104,6 +132,276 @@ function MailboxUnavailable({
         </div>
       </section>
     </main>
+  );
+}
+
+function SignInRequired() {
+  return (
+    <main className="flex min-h-dvh items-center justify-center px-5 py-10">
+      <section className="island-shell w-full max-w-md rounded-[2rem] p-8 text-center sm:p-10">
+        <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[var(--sand)] text-[var(--palm)]">
+          <InboxIcon size={26} />
+        </span>
+        <p className="island-kicker mt-7">Private workspace</p>
+        <h1 className="display-title mt-2 text-3xl font-bold">
+          Sign in to open your inbox
+        </h1>
+        <p className="mt-3 text-sm leading-6 text-[var(--sea-ink-soft)]">
+          Your mailbox is available only after the current session is verified.
+        </p>
+        <Link
+          to="/"
+          className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-white no-underline hover:text-white"
+        >
+          <ArrowLeft size={17} /> Return to sign in
+        </Link>
+      </section>
+    </main>
+  );
+}
+
+function WorkspaceStatus({
+  backHref,
+  detail,
+  onRetry,
+  title,
+}: {
+  readonly backHref?: string;
+  readonly detail: string;
+  readonly onRetry?: () => void;
+  readonly title: string;
+}) {
+  return (
+    <section className="flex min-h-80 flex-1 items-center justify-center bg-white/48 px-6 text-center">
+      <div className="max-w-sm">
+        <CircleAlert
+          className="mx-auto text-[var(--sea-ink-soft)] opacity-35"
+          size={34}
+        />
+        <p className="mt-4 text-sm font-extrabold">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--sea-ink-soft)]">
+          {detail}
+        </p>
+        {onRetry ? (
+          <button
+            type="button"
+            onClick={onRetry}
+            className="mt-5 inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-xs font-extrabold"
+          >
+            <RotateCcw size={14} /> Try again
+          </button>
+        ) : null}
+        {backHref ? (
+          <a
+            href={backHref}
+            className="mt-3 inline-flex items-center gap-2 rounded-xl px-4 py-2.5 text-xs font-extrabold lg:hidden"
+          >
+            <ArrowLeft size={14} /> Back to messages
+          </a>
+        ) : null}
+      </div>
+    </section>
+  );
+}
+
+function ConversationPane({
+  mailboxId,
+  messageId,
+  selection,
+  sessionId,
+  threadId,
+}: {
+  readonly mailboxId: string;
+  readonly messageId?: string;
+  readonly selection: MailboxViewSelection;
+  readonly sessionId: string;
+  readonly threadId?: string;
+}) {
+  const view = decodeMailboxMessageView(
+    selection.folder === undefined
+      ? { _tag: "Label", labelId: selection.label, mailboxId }
+      : { _tag: "Folder", folderId: selection.folder, mailboxId }
+  );
+  const threadInput =
+    threadId === undefined || messageId === undefined
+      ? undefined
+      : decodeOpenMailboxThread({ ...view, messageId, threadId });
+  const thread = useQuery({
+    queryFn:
+      threadInput === undefined
+        ? skipToken
+        : () => getMailboxThread({ data: threadInput }),
+    queryKey: [
+      "mailbox",
+      "thread",
+      sessionId,
+      mailboxId,
+      view._tag,
+      view._tag === "Folder" ? view.folderId : view.labelId,
+      messageId,
+      threadId,
+    ],
+    retry: false,
+  });
+
+  if (threadId === undefined) {
+    return <NoThreadSelected />;
+  }
+  if (thread.isLoading) {
+    return (
+      <div className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
+        <LoaderCircle
+          aria-label="Loading conversation"
+          className="animate-spin"
+        />
+      </div>
+    );
+  }
+  if (thread.error || !thread.data?.ok) {
+    const missing = thread.data?.ok === false && thread.data.status === 404;
+    return (
+      <WorkspaceStatus
+        backHref={mailboxViewHref(selection)}
+        title={missing ? "Conversation not found" : "Conversation unavailable"}
+        detail={
+          missing
+            ? "This conversation may have been removed or moved."
+            : "The conversation could not be loaded."
+        }
+        onRetry={missing ? undefined : () => void thread.refetch()}
+      />
+    );
+  }
+
+  return <ThreadView data={thread.data.thread} selection={selection} />;
+}
+
+function MailboxWorkspace({
+  mailboxId,
+  messageId,
+  selection,
+  sessionId,
+  threadId,
+}: {
+  readonly mailboxId: string;
+  readonly messageId?: string;
+  readonly selection: MailboxViewSelection;
+  readonly sessionId: string;
+  readonly threadId?: string;
+}) {
+  const view = decodeMailboxMessageView(
+    selection.folder === undefined
+      ? { _tag: "Label", labelId: selection.label, mailboxId }
+      : { _tag: "Folder", folderId: selection.folder, mailboxId }
+  );
+  const messages = useQuery({
+    queryFn: () => listMailboxMessages({ data: view }),
+    queryKey: [
+      "mailbox",
+      "messages",
+      sessionId,
+      mailboxId,
+      view._tag,
+      view._tag === "Folder" ? view.folderId : view.labelId,
+    ],
+    retry: false,
+  });
+
+  if (messages.isLoading) {
+    return (
+      <div className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
+        <LoaderCircle aria-label="Loading messages" className="animate-spin" />
+      </div>
+    );
+  }
+
+  if (messages.error || !messages.data?.ok) {
+    const denied = messages.data?.ok === false && messages.data.status === 403;
+    return (
+      <WorkspaceStatus
+        title={
+          denied ? "Message access denied" : "Messages could not be loaded"
+        }
+        detail={
+          denied
+            ? "Your session does not include mailbox message read access."
+            : "The message service is temporarily unavailable."
+        }
+        onRetry={denied ? undefined : () => void messages.refetch()}
+      />
+    );
+  }
+
+  return (
+    <div className="grid h-full min-h-0 lg:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)]">
+      <MessageList
+        data={messages.data.messages}
+        selectedThreadId={threadId}
+        selection={selection}
+      />
+      <ConversationPane
+        mailboxId={mailboxId}
+        messageId={messageId}
+        selection={selection}
+        sessionId={sessionId}
+        threadId={threadId}
+      />
+    </div>
+  );
+}
+
+function AuthenticatedInbox({
+  data,
+  isSigningOut,
+  onSignOut,
+  search,
+  sessionId,
+  userId,
+}: {
+  readonly data: Schema.Codec.Encoded<typeof MailboxNavigationResult>;
+  readonly isSigningOut: boolean;
+  readonly onSignOut: () => void;
+  readonly search: Schema.Schema.Type<typeof InboxSearch>;
+  readonly sessionId: string;
+  readonly userId: string;
+}) {
+  const { folders, labels, mailbox } = data;
+  const { selectedFolder, selectedLabel } = resolveNavigationSelection(
+    folders,
+    labels,
+    search
+  );
+  const selection: MailboxViewSelection | undefined =
+    selectedLabel === undefined
+      ? selectedFolder === undefined
+        ? undefined
+        : { folder: selectedFolder.id }
+      : { label: selectedLabel.id };
+
+  if (selection === undefined) {
+    return <MailboxUnavailable status={404} />;
+  }
+
+  return (
+    <MailboxShell
+      folders={folders}
+      labels={labels}
+      mailboxName={mailbox.displayName}
+      principalLabel={userId}
+      selectedFolderId={selectedFolder?.id}
+      selectedLabelId={selectedLabel?.id}
+      viewTitle={selectedLabel?.name ?? selectedFolder?.name ?? "Inbox"}
+      isSigningOut={isSigningOut}
+      onSignOut={onSignOut}
+    >
+      <MailboxWorkspace
+        mailboxId={mailbox.id}
+        messageId={search.message}
+        selection={selection}
+        sessionId={sessionId}
+        threadId={search.thread}
+      />
+    </MailboxShell>
   );
 }
 
@@ -144,29 +442,7 @@ function InboxRoute() {
   }
 
   if (!session.data) {
-    return (
-      <main className="flex min-h-dvh items-center justify-center px-5 py-10">
-        <section className="island-shell w-full max-w-md rounded-[2rem] p-8 text-center sm:p-10">
-          <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[var(--sand)] text-[var(--palm)]">
-            <InboxIcon size={26} />
-          </span>
-          <p className="island-kicker mt-7">Private workspace</p>
-          <h1 className="display-title mt-2 text-3xl font-bold">
-            Sign in to open your inbox
-          </h1>
-          <p className="mt-3 text-sm leading-6 text-[var(--sea-ink-soft)]">
-            Your mailbox is available only after the current session is
-            verified.
-          </p>
-          <Link
-            to="/"
-            className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-white no-underline hover:text-white"
-          >
-            <ArrowLeft size={17} /> Return to sign in
-          </Link>
-        </section>
-      </main>
-    );
+    return <SignInRequired />;
   }
 
   if (navigation.error || !navigation.data?.ok) {
@@ -179,64 +455,14 @@ function InboxRoute() {
     );
   }
 
-  const { folders, labels, mailbox } = navigation.data.navigation;
-  const { selectedFolder, selectedLabel } = resolveNavigationSelection(
-    folders,
-    labels,
-    search
-  );
-  const selectedFolderId = selectedFolder?.id;
-  const selectedLabelId = selectedLabel?.id;
-  const viewTitle = selectedLabel?.name ?? selectedFolder?.name ?? "Inbox";
-
   return (
-    <MailboxShell
-      folders={folders}
-      labels={labels}
-      mailboxName={mailbox.displayName}
-      principalLabel={session.data.userId}
-      selectedFolderId={selectedFolderId}
-      selectedLabelId={selectedLabelId}
-      viewTitle={viewTitle}
+    <AuthenticatedInbox
+      data={navigation.data.navigation}
       isSigningOut={logout.isPending}
       onSignOut={() => logout.mutate()}
-    >
-      <section className="flex min-h-full items-center justify-center p-5 sm:p-8 lg:p-12">
-        <div className="relative w-full max-w-3xl overflow-hidden rounded-[2rem] border border-[var(--line)] bg-white/62 p-7 shadow-[0_18px_50px_rgba(23,58,64,0.08)] sm:p-11">
-          <div className="absolute -top-24 -right-20 size-64 rounded-full bg-[var(--lagoon)]/12 blur-2xl" />
-          <div className="relative">
-            <span className="flex size-12 items-center justify-center rounded-2xl bg-[var(--sand)] text-[var(--palm)]">
-              <InboxIcon size={23} />
-            </span>
-            <p className="island-kicker mt-7">Mailbox workspace</p>
-            <h2 className="display-title mt-2 max-w-xl text-3xl font-bold tracking-tight sm:text-4xl">
-              Your inbox has a place to land.
-            </h2>
-            <p className="mt-4 max-w-xl text-sm leading-7 text-[var(--sea-ink-soft)] sm:text-base">
-              Folder and label navigation is connected to your mailbox. Message
-              lists and conversations will fill this view without changing its
-              edge-secured session boundary.
-            </p>
-            <div className="mt-8 grid gap-3 sm:grid-cols-3">
-              {["Directory connected", "Message list", "Conversation view"].map(
-                (label, index) => (
-                  <div
-                    key={label}
-                    className="rounded-2xl border border-[var(--line)] bg-[var(--foam)]/72 p-4"
-                  >
-                    <span className="text-[0.62rem] font-extrabold tracking-[0.14em] text-[var(--palm)] uppercase">
-                      0{index + 1}
-                    </span>
-                    <p className="mt-2 text-xs font-extrabold sm:text-sm">
-                      {label}
-                    </p>
-                  </div>
-                )
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
-    </MailboxShell>
+      search={search}
+      sessionId={session.data.sessionId}
+      userId={session.data.userId}
+    />
   );
 }

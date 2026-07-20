@@ -265,7 +265,10 @@ export type GetMessageInput = Schema.Schema.Type<typeof GetMessageInput>;
 export const GetMessageResult = MessageDetailSchema;
 export type GetMessageResult = Schema.Schema.Type<typeof GetMessageResult>;
 
-/** Returns messages in chronological order: activityAt ASC, id ASC. */
+/**
+ * Returns messages in chronological order: activityAt ASC, id ASC.
+ * Omitting page returns the latest 50; an explicit page traverses from oldest.
+ */
 export const GetThreadInput = Schema.Struct({
   mailboxId: MailboxId,
   threadId: ThreadId,

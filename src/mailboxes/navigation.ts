@@ -53,7 +53,13 @@ export const MailboxNavigationResult = Schema.Struct({
   mailbox: MailboxNavigationMailbox,
   folders: Schema.Array(MailboxNavigationFolderSchema),
   labels: Schema.Array(MailboxNavigationLabel),
-});
+}).check(
+  Schema.makeFilter((navigation) =>
+    navigation.folders.some((folder) => folder.kind === "inbox")
+      ? undefined
+      : "mailbox navigation must contain an inbox folder"
+  )
+);
 export type MailboxNavigationResult = Schema.Schema.Type<
   typeof MailboxNavigationResult
 >;
