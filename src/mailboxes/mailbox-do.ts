@@ -23,7 +23,10 @@ import {
   MailboxOutboundAlarmSchedulerLive,
 } from "./outbound-alarm-live";
 import { OutboundDraftAttachmentR2ReadClient } from "./outbound-draft-attachment-reader-r2-live";
-import { MailboxOutboundLifecycleStoreSqliteLive } from "./outbound-lifecycle-store-sqlite-live";
+import {
+  MailboxOutboundLifecycleStore,
+  MailboxOutboundLifecycleStoreSqliteLive,
+} from "./outbound-lifecycle-store-sqlite-live";
 import { mailboxSchemaVersion } from "./sqlite-migrations";
 import { mailboxSchemaMigration } from "./sqlite-schema";
 import {
@@ -50,9 +53,11 @@ const mailboxDoImplementation = Effect.gen(function* () {
   const handler = yield* MailboxDoHandler;
   const outboundAlarm = yield* MailboxOutboundAlarmScheduler;
   const outboundAlarmDispatch = yield* MailboxOutboundAlarmDispatch;
+  const outboundLifecycle = yield* MailboxOutboundLifecycleStore;
 
   yield* resourceIndex.initialize;
   yield* directoryStore.initialize;
+  yield* outboundLifecycle.recoverStaleSending;
   yield* outboundAlarm.reconcile;
 
   return {
@@ -203,6 +208,7 @@ const mailboxDoLive = Effect.gen(function* () {
         MailboxSqliteLive,
         MailboxHandlerLive,
         MailboxOutboundAlarmLive,
+        outboundLifecycleLive,
         outboundAlarmDispatchLive
       )
     )

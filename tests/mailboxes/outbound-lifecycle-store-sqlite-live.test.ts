@@ -9,6 +9,9 @@ import {
   MailboxOutboundLifecycleStore,
   MailboxOutboundLifecycleStoreSqliteLive,
   OutboundDeliveryClaim,
+  outboundRetryDelayMillis,
+  outboundRetryMaxDelayMillis,
+  outboundSendingStaleTimeoutMillis,
 } from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
 import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
 import { MailboxDatabase, MailboxRuntime } from "#/mailboxes/sqlite-services";
@@ -181,6 +184,105 @@ describe("outbound lifecycle SQLite store", () => {
           .from(outboundDelivery)
           .where(eq(outboundDelivery.id, "delivery-1"));
         expect(["sending", "cancelled"]).toContain(row?.status);
+      }).pipe(Effect.provide(lifecycleLive(() => 1000)))
+    );
+  });
+
+  it("caps deterministic exponential retry delay", () => {
+    expect([
+      outboundRetryDelayMillis(1),
+      outboundRetryDelayMillis(2),
+      outboundRetryDelayMillis(3),
+      outboundRetryDelayMillis(100),
+    ]).toStrictEqual([30_000, 60_000, 120_000, outboundRetryMaxDelayMillis]);
+  });
+
+  it("recovers only stale exact sending claims and is idempotent", async () => {
+    let now = 1000 + outboundSendingStaleTimeoutMillis - 1;
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("delivery-1", 1000);
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(outboundDelivery)
+          .set({
+            attemptCount: 1,
+            status: "sending",
+            updatedAt: 1000,
+            version: 2,
+          })
+          .where(eq(outboundDelivery.id, "delivery-1"));
+        const store = yield* MailboxOutboundLifecycleStore;
+
+        expect(yield* store.recoverStaleSending).toBe(0);
+        now += 1;
+        expect(yield* store.recoverStaleSending).toBe(1);
+        expect(yield* store.recoverStaleSending).toBe(0);
+        const [row] = yield* db
+          .select()
+          .from(outboundDelivery)
+          .where(eq(outboundDelivery.id, "delivery-1"));
+        expect(row).toMatchObject({
+          attemptCount: 1,
+          failureAt: null,
+          failureCode: null,
+          providerMessageId: null,
+          status: "indeterminate",
+          updatedAt: now,
+          version: 3,
+        });
+      }).pipe(Effect.provide(lifecycleLive(() => now)))
+    );
+  });
+
+  it("does not let a stale retry guard corrupt a concurrent cancellation", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("delivery-1", 1000);
+        const db = yield* MailboxDatabase;
+        const store = yield* MailboxOutboundLifecycleStore;
+        const claim = yield* store.claimDue;
+        if (claim === null) {
+          return yield* Effect.die(new Error("Expected a delivery claim"));
+        }
+
+        const [retried, cancelled] = yield* Effect.all(
+          [
+            store.retry(claim),
+            db
+              .update(outboundDelivery)
+              .set({
+                cancelledAt: 1000,
+                status: "cancelled",
+                updatedAt: 1000,
+                version: claim.version + 1,
+              })
+              .where(
+                and(
+                  eq(outboundDelivery.id, "delivery-1"),
+                  eq(outboundDelivery.status, "scheduled"),
+                  eq(outboundDelivery.version, claim.version)
+                )
+              )
+              .returning({ id: outboundDelivery.id }),
+          ],
+          { concurrency: "unbounded" }
+        );
+
+        expect(retried).toBeTruthy();
+        expect(cancelled).toHaveLength(0);
+        const [row] = yield* db
+          .select()
+          .from(outboundDelivery)
+          .where(eq(outboundDelivery.id, "delivery-1"));
+        expect(row).toMatchObject({
+          cancelledAt: null,
+          sendAt: 1000 + outboundRetryDelayMillis(1),
+          status: "scheduled",
+          version: claim.version + 1,
+        });
       }).pipe(Effect.provide(lifecycleLive(() => 1000)))
     );
   });

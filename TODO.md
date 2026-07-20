@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **83/109 (76%)**
+- Postęp zadań: **84/109 (77%)**
 - Ukończone etapy: **6/11**
 - Aktualny etap: **9. Drafty i outbound**
-- Aktualne zadanie: **Idempotency i retry outbound**
+- Aktualne zadanie: **UX błędów i potwierdzenia providera**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -20,7 +20,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 6   | Inbound email                         | DONE        | 9/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | DONE        | 9/9    |
 | 8   | Reguły automatyczne                   | DONE        | 6/6    |
-| 9   | Drafty i outbound                     | CURRENT     | 7/9    |
+| 9   | Drafty i outbound                     | CURRENT     | 8/9    |
 | 10  | AI                                    | TODO        | 0/6    |
 | 11  | Hardening i produkcja                 | TODO        | 0/11   |
 
@@ -148,8 +148,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Dodać okno undo send.
 - [x] Podłączyć Cloudflare Email Sending dla mailboxa.
 - [x] Obsłużyć statusy `scheduled`, `sending`, `accepted`, `failed`, `indeterminate`.
-- [ ] CURRENT Zapewnić idempotency i retry bez podwójnej wysyłki.
-- [ ] Dodać UX błędów i potwierdzenia dostarczenia do providera.
+- [x] Zapewnić idempotency i retry bez podwójnej wysyłki.
+- [ ] CURRENT Dodać UX błędów i potwierdzenia dostarczenia do providera.
 
 ## 10. AI
 

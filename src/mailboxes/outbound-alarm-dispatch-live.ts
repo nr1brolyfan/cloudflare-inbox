@@ -18,23 +18,30 @@ const rejectionCodes = {
   "provider-rejected": "provider_rejected",
 } as const satisfies Readonly<Record<string, OutboundFailureCode>>;
 
-const failureSettlement = (
+type FailureResolution = OutboundDeliverySettlement | "retry";
+
+const failureResolution = (
   error: MailboxOutboundDispatcherError
-): OutboundDeliverySettlement => {
+): FailureResolution => {
   switch (error._tag) {
     case "DeliveryRejectedError": {
       return { _tag: "Failed", code: rejectionCodes[error.reason] };
     }
     case "DeliveryTemporaryFailureError": {
-      // The provider explicitly declined this attempt, so a later retry is safe.
-      return { _tag: "Failed", code: "temporary_provider_failure" };
+      return "retry";
     }
     case "DeliveryProviderUnavailableError": {
-      return { _tag: "Failed", code: "provider_unavailable" };
+      return "retry";
     }
-    case "BlobStoreError":
+    case "BlobStoreError": {
+      return error.retryable
+        ? "retry"
+        : { _tag: "Failed", code: "preparation_failed" };
+    }
     case "OutboundDispatchSnapshotError": {
-      return { _tag: "Failed", code: "preparation_failed" };
+      return error.reason === "storage"
+        ? "retry"
+        : { _tag: "Failed", code: "preparation_failed" };
     }
     case "DeliveryIndeterminateError": {
       return { _tag: "Indeterminate" };
@@ -63,20 +70,25 @@ export const MailboxOutboundAlarmDispatchLive = Layer.effect(
     const scheduler = yield* MailboxOutboundAlarmScheduler;
 
     const processOne = Effect.gen(function* () {
+      yield* lifecycle.recoverStaleSending;
       const claim = yield* lifecycle.claimDue;
       if (claim === null) {
         return;
       }
 
       yield* Effect.result(dispatcher.dispatch(claim.outboundDeliveryId)).pipe(
-        Effect.flatMap((result) =>
-          Result.isFailure(result)
-            ? lifecycle.settle(claim, failureSettlement(result.failure))
-            : lifecycle.settle(claim, {
-                _tag: "Accepted",
-                providerMessageId: result.success.providerMessageId,
-              })
-        ),
+        Effect.flatMap((result) => {
+          if (Result.isSuccess(result)) {
+            return lifecycle.settle(claim, {
+              _tag: "Accepted",
+              providerMessageId: result.success.providerMessageId,
+            });
+          }
+          const resolution = failureResolution(result.failure);
+          return resolution === "retry"
+            ? lifecycle.retry(claim)
+            : lifecycle.settle(claim, resolution);
+        }),
         // Unknown failures cannot prove whether provider acceptance occurred.
         Effect.catchDefect(() =>
           lifecycle.settle(claim, { _tag: "Indeterminate" })

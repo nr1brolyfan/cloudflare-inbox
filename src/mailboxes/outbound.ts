@@ -209,6 +209,7 @@ export const OutboundDeliverySchema = OutboundDelivery.check(
 const transitions = {
   scheduled: new Set<OutboundDeliveryStatus>(["sending", "cancelled"]),
   sending: new Set<OutboundDeliveryStatus>([
+    "scheduled",
     "accepted",
     "failed",
     "indeterminate",

@@ -9,6 +9,7 @@ import {
   MailboxOutboundAlarmSchedulerLive,
   outboundAlarmRetryMillis,
 } from "#/mailboxes/outbound-alarm-live";
+import { outboundSendingStaleTimeoutMillis } from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
 import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
 import { MailboxDatabase, MailboxRuntime } from "#/mailboxes/sqlite-services";
 
@@ -59,7 +60,8 @@ const seedDelivery = (
   sendAt: number,
   options: {
     readonly deletedAt?: number;
-    readonly status?: "accepted" | "cancelled" | "scheduled";
+    readonly status?: "accepted" | "cancelled" | "scheduled" | "sending";
+    readonly updatedAt?: number;
   } = {}
 ) =>
   Effect.gen(function* () {
@@ -76,7 +78,7 @@ const seedDelivery = (
       messageId,
       sendAt,
       status: options.status ?? "scheduled",
-      updatedAt: 0,
+      updatedAt: options.updatedAt ?? 0,
     });
   });
 
@@ -187,4 +189,25 @@ describe("Mailbox outbound alarm scheduler", () => {
       }).pipe(Effect.provide(makeSchedulerLive(stale.service, () => 1000)))
     );
   }, 15_000);
+
+  it("arms recovery for a fresh sending claim without stealing it", async () => {
+    const alarm = makeAlarmStorage();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("sending", 1000, {
+          status: "sending",
+          updatedAt: 1200,
+        });
+        const scheduler = yield* MailboxOutboundAlarmScheduler;
+        expect(yield* scheduler.nextScheduledAt).toBe(
+          1200 + outboundSendingStaleTimeoutMillis
+        );
+        yield* scheduler.reconcile;
+        expect(alarm.scheduledAt).toBe(
+          1200 + outboundSendingStaleTimeoutMillis
+        );
+      }).pipe(Effect.provide(makeSchedulerLive(alarm.service, () => 2000)))
+    );
+  });
 });

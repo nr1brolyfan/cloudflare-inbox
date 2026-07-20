@@ -1,9 +1,10 @@
 import * as Cloudflare from "alchemy/Cloudflare";
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { outboundSendingStaleTimeoutMillis } from "./outbound-lifecycle-store-sqlite-live";
 import { outboundDelivery } from "./sqlite-schema";
 import { MailboxDatabase, MailboxRuntime } from "./sqlite-services";
 
@@ -48,21 +49,41 @@ export const MailboxOutboundAlarmSchedulerLive = Layer.effect(
     const db = yield* MailboxDatabase;
     const runtime = yield* MailboxRuntime;
     const alarmStorage = yield* MailboxAlarmStorage;
-    const nextScheduledAt = db
-      .select({ sendAt: outboundDelivery.sendAt })
-      .from(outboundDelivery)
-      .where(
-        and(
-          eq(outboundDelivery.status, "scheduled"),
-          isNull(outboundDelivery.deletedAt)
+    const nextScheduledAt = Effect.all([
+      db
+        .select({ scheduledAt: outboundDelivery.sendAt })
+        .from(outboundDelivery)
+        .where(
+          and(
+            eq(outboundDelivery.status, "scheduled"),
+            isNull(outboundDelivery.deletedAt)
+          )
         )
-      )
-      .orderBy(asc(outboundDelivery.sendAt), asc(outboundDelivery.id))
-      .limit(1)
-      .pipe(
-        Effect.map((rows) => rows[0]?.sendAt ?? null),
-        Effect.orDie
-      );
+        .orderBy(asc(outboundDelivery.sendAt), asc(outboundDelivery.id))
+        .limit(1),
+      db
+        .select({
+          scheduledAt: sql<number>`${outboundDelivery.updatedAt} + ${outboundSendingStaleTimeoutMillis}`,
+        })
+        .from(outboundDelivery)
+        .where(
+          and(
+            eq(outboundDelivery.status, "sending"),
+            isNull(outboundDelivery.deletedAt)
+          )
+        )
+        .orderBy(asc(outboundDelivery.updatedAt), asc(outboundDelivery.id))
+        .limit(1),
+    ]).pipe(
+      Effect.map(([scheduled, sending]) => {
+        const candidates = [
+          scheduled[0]?.scheduledAt,
+          sending[0]?.scheduledAt,
+        ].filter((value): value is number => value !== undefined);
+        return candidates.length === 0 ? null : Math.min(...candidates);
+      }),
+      Effect.orDie
+    );
 
     return MailboxOutboundAlarmScheduler.of({
       nextScheduledAt,

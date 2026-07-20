@@ -5,6 +5,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
+  BlobStoreError,
   DeliveryIndeterminateError,
   DeliveryProviderUnavailableError,
   DeliveryRejectedError,
@@ -21,8 +22,14 @@ import {
   MailboxOutboundAlarmScheduler,
   MailboxOutboundAlarmSchedulerLive,
 } from "#/mailboxes/outbound-alarm-live";
+import { OutboundDispatchSnapshotError } from "#/mailboxes/outbound-dispatch-snapshot";
 import { OutboundProviderAcceptance } from "#/mailboxes/outbound-email-provider";
-import { MailboxOutboundLifecycleStoreSqliteLive } from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
+import {
+  MailboxOutboundLifecycleStoreSqliteLive,
+  outboundRetryDelayMillis,
+  outboundRetryMaxAttempts,
+  outboundSendingStaleTimeoutMillis,
+} from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
 import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
 import { MailboxDatabase, MailboxRuntime } from "#/mailboxes/sqlite-services";
 
@@ -91,7 +98,8 @@ const testLive = (
 };
 
 const runOutcome = (
-  dispatch: Dispatcher["dispatch"]
+  dispatch: Dispatcher["dispatch"],
+  invocations = 1
 ): Promise<Readonly<Record<string, unknown>>> => {
   let reconciliations = 0;
   let providerCalls = 0;
@@ -100,7 +108,9 @@ const runOutcome = (
       yield* setup;
       yield* seedDelivery("delivery-1");
       const alarm = yield* MailboxOutboundAlarmDispatch;
-      yield* alarm.handle;
+      for (let invocation = 0; invocation < invocations; invocation += 1) {
+        yield* alarm.handle;
+      }
       const db = yield* MailboxDatabase;
       const [row] = yield* db
         .select()
@@ -180,40 +190,45 @@ describe("outbound alarm dispatch", () => {
     ["recipient-suppressed", "recipient_suppressed"],
     ["provider-rejected", "provider_rejected"],
   ] as const)("maps permanent rejection %s precisely", async (reason, code) => {
-    const row = await runOutcome(() =>
-      Effect.fail(new DeliveryRejectedError({ message: "Rejected", reason }))
+    const row = await runOutcome(
+      () =>
+        Effect.fail(new DeliveryRejectedError({ message: "Rejected", reason })),
+      2
     );
     expect(row).toMatchObject({
       attemptCount: 1,
       failureAt: 1200,
       failureCode: code,
       providerCalls: 1,
-      reconciliations: 1,
+      reconciliations: 2,
       status: "failed",
       version: 3,
     });
   });
 
   it("persists indeterminate provider outcomes without retrying", async () => {
-    const row = await runOutcome(() =>
-      Effect.fail(
-        new DeliveryIndeterminateError({
-          cause: new Error("Connection closed"),
-          message: "Unknown acceptance",
-        })
-      )
+    const row = await runOutcome(
+      () =>
+        Effect.fail(
+          new DeliveryIndeterminateError({
+            cause: new Error("Connection closed"),
+            message: "Unknown acceptance",
+          })
+        ),
+      2
     );
     expect(row).toMatchObject({
       attemptCount: 1,
       failureAt: null,
       failureCode: null,
       providerCalls: 1,
+      reconciliations: 2,
       status: "indeterminate",
       version: 3,
     });
   });
 
-  it("persists known temporary failure as explicitly safe to retry", async () => {
+  it("requeues a known temporary failure with deterministic backoff", async () => {
     const row = await runOutcome(() =>
       Effect.fail(
         new DeliveryTemporaryFailureError({
@@ -223,14 +238,17 @@ describe("outbound alarm dispatch", () => {
       )
     );
     expect(row).toMatchObject({
-      failureAt: 1200,
-      failureCode: "temporary_provider_failure",
+      attemptCount: 1,
+      failureAt: null,
+      failureCode: null,
       providerCalls: 1,
-      status: "failed",
+      sendAt: 1200 + outboundRetryDelayMillis(1),
+      status: "scheduled",
+      version: 3,
     });
   });
 
-  it("settles an unavailable development provider without an alarm loop", async () => {
+  it("safely retries an unavailable provider", async () => {
     const row = await runOutcome(() =>
       Effect.fail(
         new DeliveryProviderUnavailableError({
@@ -240,11 +258,186 @@ describe("outbound alarm dispatch", () => {
       )
     );
     expect(row).toMatchObject({
-      failureAt: 1200,
-      failureCode: "provider_unavailable",
+      attemptCount: 1,
+      failureAt: null,
+      failureCode: null,
       providerCalls: 1,
-      status: "failed",
+      sendAt: 1200 + outboundRetryDelayMillis(1),
+      status: "scheduled",
     });
+  });
+
+  it.each([true, false])(
+    "retries blob preparation only when retryable is %s",
+    async (retryable) => {
+      const row = await runOutcome(() =>
+        Effect.fail(
+          new BlobStoreError({
+            cause: new Error("R2 read failed"),
+            message: "Attachment preparation failed",
+            objectType: "attachment",
+            operation: "read",
+            retryable,
+          })
+        )
+      );
+      expect(row).toMatchObject(
+        retryable
+          ? {
+              failureAt: null,
+              failureCode: null,
+              status: "scheduled",
+            }
+          : {
+              failureAt: 1200,
+              failureCode: "preparation_failed",
+              status: "failed",
+            }
+      );
+    }
+  );
+
+  it.each([
+    ["storage", "scheduled", null],
+    ["not-found", "failed", "preparation_failed"],
+    ["invalid-snapshot", "failed", "preparation_failed"],
+  ] as const)(
+    "classifies snapshot preparation reason %s",
+    async (reason, status, failureCode) => {
+      const row = await runOutcome((outboundDeliveryId) =>
+        Effect.fail(
+          new OutboundDispatchSnapshotError({
+            message: "Snapshot preparation failed",
+            outboundDeliveryId,
+            reason,
+          })
+        )
+      );
+      expect(row).toMatchObject({ failureCode, status });
+    }
+  );
+
+  it("uses increasing bounded delays and fails after the maximum attempts", async () => {
+    let calls = 0;
+    let now = 1200;
+    let reconciliations = 0;
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("delivery-1");
+        const alarm = yield* MailboxOutboundAlarmDispatch;
+        const db = yield* MailboxDatabase;
+
+        for (
+          let attempt = 1;
+          attempt <= outboundRetryMaxAttempts;
+          attempt += 1
+        ) {
+          yield* alarm.handle;
+          const [row] = yield* db
+            .select()
+            .from(outboundDelivery)
+            .where(eq(outboundDelivery.id, "delivery-1"));
+          expect(calls).toBe(attempt);
+          expect(row?.attemptCount).toBe(attempt);
+
+          if (attempt === outboundRetryMaxAttempts) {
+            expect(row).toMatchObject({
+              failureAt: now,
+              failureCode: "retry_exhausted",
+              status: "failed",
+            });
+            continue;
+          }
+
+          const expectedSendAt = now + outboundRetryDelayMillis(attempt);
+          expect(row).toMatchObject({
+            failureAt: null,
+            failureCode: null,
+            sendAt: expectedSendAt,
+            status: "scheduled",
+          });
+          yield* alarm.handle;
+          expect(calls).toBe(attempt);
+          now = expectedSendAt;
+        }
+      }).pipe(
+        Effect.provide(
+          testLive(
+            MailboxOutboundDispatcher.of({
+              dispatch: () => {
+                calls += 1;
+                return Effect.fail(
+                  new DeliveryTemporaryFailureError({
+                    cause: new Error("Rate limited"),
+                    message: "Try later",
+                  })
+                );
+              },
+            }),
+            () => now,
+            () => {
+              reconciliations += 1;
+            }
+          )
+        )
+      )
+    );
+    expect(reconciliations).toBe(outboundRetryMaxAttempts * 2 - 1);
+  });
+
+  it("recovers stale sending before processing at most one due delivery", async () => {
+    let calls = 0;
+    let reconciliations = 0;
+    const now = 1000 + outboundSendingStaleTimeoutMillis;
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("stale");
+        yield* seedDelivery("due-a");
+        yield* seedDelivery("due-b");
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(outboundDelivery)
+          .set({
+            attemptCount: 1,
+            status: "sending",
+            updatedAt: 1000,
+            version: 2,
+          })
+          .where(eq(outboundDelivery.id, "stale"));
+
+        const alarm = yield* MailboxOutboundAlarmDispatch;
+        yield* alarm.handle;
+        const rows = yield* db
+          .select({ id: outboundDelivery.id, status: outboundDelivery.status })
+          .from(outboundDelivery);
+        expect(rows).toStrictEqual(
+          expect.arrayContaining([
+            { id: "stale", status: "indeterminate" },
+            { id: "due-a", status: "accepted" },
+            { id: "due-b", status: "scheduled" },
+          ])
+        );
+        expect(calls).toBe(1);
+      }).pipe(
+        Effect.provide(
+          testLive(
+            MailboxOutboundDispatcher.of({
+              dispatch: () => {
+                calls += 1;
+                return Effect.succeed(acceptance);
+              },
+            }),
+            () => now,
+            () => {
+              reconciliations += 1;
+            }
+          )
+        )
+      )
+    );
+    expect(reconciliations).toBe(1);
   });
 
   it("maps an unknown dispatch defect to indeterminate", async () => {

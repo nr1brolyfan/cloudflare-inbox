@@ -135,6 +135,7 @@ describe("mail lifecycle statuses", () => {
   it.each([
     ["scheduled", "sending", true],
     ["scheduled", "cancelled", true],
+    ["sending", "scheduled", true],
     ["sending", "accepted", true],
     ["sending", "indeterminate", true],
     ["accepted", "delivered", true],
