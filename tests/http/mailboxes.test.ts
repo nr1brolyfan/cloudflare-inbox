@@ -287,6 +287,7 @@ const makeHandler = (
   messageReading: MailboxMessageReading = MailboxMessageReading.of({
     listView: () => Effect.succeed(mailboxMessages),
     openThread: () => Effect.succeed(mailboxThread),
+    readMessage: () => Effect.die("Unexpected message read"),
   }),
   messageActions: MailboxMessageActions = MailboxMessageActions.of({
     execute: () => Effect.succeed(mailboxMessageAction),
@@ -726,6 +727,7 @@ describe("protected mailbox API", () => {
           return Effect.succeed(mailboxMessages);
         },
         openThread: () => Effect.succeed(mailboxThread),
+        readMessage: () => Effect.die("Unexpected message read"),
       })
     );
 
@@ -767,6 +769,7 @@ describe("protected mailbox API", () => {
             })
           ),
         openThread: () => Effect.succeed(mailboxThread),
+        readMessage: () => Effect.die("Unexpected message read"),
       })
     );
 
@@ -831,6 +834,7 @@ describe("protected mailbox API", () => {
           return Effect.succeed(mailboxMessages);
         },
         openThread: () => Effect.succeed(mailboxThread),
+        readMessage: () => Effect.die("Unexpected message read"),
       })
     );
 

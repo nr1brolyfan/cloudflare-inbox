@@ -15,9 +15,11 @@ import {
   MailboxMessageReadingLive,
   MailboxMessageListInput,
   MailboxMessageListResult,
+  MailboxMessageReadResult,
   MailboxMessageView,
   MailboxThreadResult,
   OpenMailboxThreadInput,
+  ReadMailboxMessageInput,
 } from "#/mailboxes/message-reading";
 import { GetThreadResult, MessagePage } from "#/mailboxes/messages";
 import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
@@ -80,6 +82,13 @@ const thread = Schema.decodeUnknownSync(GetThreadResult)({
     unreadCount: 1,
   },
 });
+const getThreadFixtureMessage = () => {
+  const [message] = thread.messages;
+  if (message === undefined) {
+    throw new Error("Thread fixture has no anchor message");
+  }
+  return message;
+};
 const unused = () => Effect.die(new Error("Unexpected repository operation"));
 const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
@@ -354,6 +363,91 @@ describe("mailbox message reading", () => {
     expect(reads).toBe(0);
   });
 
+  it("authorizes before reading one message and projects no HTML or attachment metadata", async () => {
+    const calls: string[] = [];
+    const input = Schema.decodeUnknownSync(ReadMailboxMessageInput)({
+      _tag: "Label",
+      labelId: "work",
+      mailboxId: "primary",
+      messageId: "message-1",
+    });
+    const result = await runReading(
+      authorizationWith(({ resource }) => {
+        calls.push(`authorize:${resource.mailboxId}`);
+        return Effect.succeed(resource);
+      }),
+      repositoryWith(undefined, undefined, (repositoryInput) => {
+        calls.push("get-message");
+        expect(repositoryInput).toStrictEqual({
+          mailboxId: "primary",
+          messageId: "message-1",
+        });
+        return Effect.succeed(getThreadFixtureMessage());
+      }),
+      (reading) => reading.readMessage(input)
+    );
+    const encoded = Schema.encodeSync(MailboxMessageReadResult)(result);
+
+    expect(calls).toStrictEqual(["authorize:primary", "get-message"]);
+    expect(encoded).toMatchObject({
+      hasAttachments: true,
+      hasHtmlBody: true,
+      id: "message-1",
+      textBody: "Plain text body",
+    });
+    expect(JSON.stringify(encoded)).not.toMatch(
+      /tracker\.test|mimeType|invoice\.pdf|attachment-1/u
+    );
+  });
+
+  it("does not read message storage after authorization denial", async () => {
+    let reads = 0;
+    const input = Schema.decodeUnknownSync(ReadMailboxMessageInput)({
+      _tag: "Folder",
+      folderId: "inbox",
+      mailboxId: "primary",
+      messageId: "message-1",
+    });
+
+    await expect(
+      runReading(
+        authorizationWith(() =>
+          Effect.fail(
+            new AuthPolicy.AuthorizationError({
+              reason: "missing-permission",
+            })
+          )
+        ),
+        repositoryWith(undefined, undefined, () => {
+          reads += 1;
+          return Effect.succeed(getThreadFixtureMessage());
+        }),
+        (reading) => reading.readMessage(input)
+      )
+    ).rejects.toMatchObject({ reason: "missing-permission" });
+    expect(reads).toBe(0);
+  });
+
+  it("does not read a message outside the selected label", async () => {
+    const input = Schema.decodeUnknownSync(ReadMailboxMessageInput)({
+      _tag: "Label",
+      labelId: "finance",
+      mailboxId: "primary",
+      messageId: "message-1",
+    });
+
+    await expect(
+      runReading(
+        authorizationWith(({ resource }) => Effect.succeed(resource)),
+        repositoryWith(),
+        (reading) => reading.readMessage(input)
+      )
+    ).rejects.toMatchObject({
+      _tag: "MailboxMessageReadingError",
+      reason: "not-found",
+    });
+  });
+
   it("projects thread text and metadata without exposing raw HTML", async () => {
     const input = Schema.decodeUnknownSync(OpenMailboxThreadInput)({
       _tag: "Folder",
@@ -477,6 +571,36 @@ describe("mailbox message reading", () => {
       _tag: "MailboxMessageReadingError",
       reason: "not-found",
     });
+  });
+
+  it("does not load a thread when its anchor belongs to another thread", async () => {
+    let threadReads = 0;
+    const input = Schema.decodeUnknownSync(OpenMailboxThreadInput)({
+      _tag: "Label",
+      labelId: "work",
+      mailboxId: "primary",
+      messageId: "message-1",
+      threadId: "thread-other",
+    });
+
+    await expect(
+      runReading(
+        authorizationWith(({ resource }) => Effect.succeed(resource)),
+        repositoryWith(
+          undefined,
+          () => {
+            threadReads += 1;
+            return Effect.succeed(thread);
+          },
+          () => Effect.succeed(getThreadFixtureMessage())
+        ),
+        (reading) => reading.openThread(input)
+      )
+    ).rejects.toMatchObject({
+      _tag: "MailboxMessageReadingError",
+      reason: "not-found",
+    });
+    expect(threadReads).toBe(0);
   });
 
   it("rejects a repository page outside the selected folder", async () => {

@@ -38,6 +38,7 @@ const modelControlledIdentityFields = new Set([
   "mailboxId",
   "operationId",
   "permissions",
+  "principalId",
   "sessionId",
   "userId",
 ]);

@@ -49,6 +49,7 @@ export type MailboxMessageView = Schema.Schema.Type<typeof MailboxMessageView>;
 const MailboxMessageQueryFields = {
   cursor: Schema.optional(Cursor),
   hasAttachment: Schema.optional(Schema.Boolean),
+  limit: Schema.optional(PageSize),
   query: Schema.optional(SearchQuery),
   read: Schema.optional(Schema.Boolean),
   starred: Schema.optional(Schema.Boolean),
@@ -90,6 +91,24 @@ export const OpenMailboxThreadInput = Schema.Union([
 ]);
 export type OpenMailboxThreadInput = Schema.Schema.Type<
   typeof OpenMailboxThreadInput
+>;
+
+export const ReadMailboxMessageInput = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Folder"),
+    mailboxId: MailboxId,
+    folderId: FolderId,
+    messageId: MessageId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Label"),
+    mailboxId: MailboxId,
+    labelId: LabelId,
+    messageId: MessageId,
+  }),
+]);
+export type ReadMailboxMessageInput = Schema.Schema.Type<
+  typeof ReadMailboxMessageInput
 >;
 
 export class MailboxMessageListItem extends Schema.Class<MailboxMessageListItem>(
@@ -141,6 +160,22 @@ export class MailboxThreadMessage extends Schema.Class<MailboxThreadMessage>(
   textBody: Schema.optional(Schema.String),
   hasHtmlBody: Schema.Boolean,
   attachments: Schema.Array(MailboxThreadAttachment),
+}) {}
+
+export class MailboxMessageReadResult extends Schema.Class<MailboxMessageReadResult>(
+  "cloudflare-inbox/MailboxMessageReadResult"
+)({
+  id: MessageId,
+  threadId: ThreadId,
+  direction: MessageDirection,
+  subject: MessageSubject,
+  sender: Schema.optional(MailAddress),
+  to: Schema.Array(MailAddress),
+  cc: Schema.Array(MailAddress),
+  activityAt: UnixMillis,
+  textBody: Schema.optional(Schema.String),
+  hasHtmlBody: Schema.Boolean,
+  hasAttachments: Schema.Boolean,
 }) {}
 
 const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)));
@@ -208,6 +243,13 @@ export interface MailboxMessageReading {
     input: OpenMailboxThreadInput
   ) => Effect.Effect<
     MailboxThreadResult,
+    MailAuthorizationError | MailboxMessageReadingError,
+    CurrentPrincipal
+  >;
+  readonly readMessage: (
+    input: ReadMailboxMessageInput
+  ) => Effect.Effect<
+    MailboxMessageReadResult,
     MailAuthorizationError | MailboxMessageReadingError,
     CurrentPrincipal
   >;
@@ -286,7 +328,7 @@ export const MailboxMessageReadingLive = Layer.effect(
           };
           const pageRequest = {
             cursor: input.cursor,
-            limit: mailboxMessagePageSize,
+            limit: input.limit ?? mailboxMessagePageSize,
           };
           const page = yield* (
             input.query === undefined
@@ -438,6 +480,52 @@ export const MailboxMessageReadingLive = Layer.effect(
               subject: projectedThread.subject,
               unreadCount: projectedThread.unreadCount,
             },
+          }).pipe(Effect.mapError((cause) => readingError("storage", cause)));
+        }),
+      readMessage: (input) =>
+        Effect.gen(function* () {
+          const access = yield* requireRead(input);
+          if (access._tag === "FolderMessageRead") {
+            const location = yield* authorization.requireMessage({
+              action: "read",
+              resource: {
+                _tag: "Message",
+                mailboxId: input.mailboxId,
+                messageId: input.messageId,
+              },
+            });
+            if (location.folderId !== access.folderId) {
+              return yield* readingError("not-found");
+            }
+          }
+          const message = yield* repository
+            .getMessage({
+              mailboxId: input.mailboxId,
+              messageId: input.messageId,
+            })
+            .pipe(Effect.mapError(mapRepositoryError));
+          const belongsToView =
+            message.mailboxId === input.mailboxId &&
+            message.id === input.messageId &&
+            (input._tag === "Folder"
+              ? message.folderId === input.folderId
+              : message.labelIds.includes(input.labelId));
+          if (!belongsToView) {
+            return yield* readingError("not-found");
+          }
+
+          return yield* Schema.decodeUnknownEffect(MailboxMessageReadResult)({
+            activityAt: message.activityAt,
+            cc: message.cc,
+            direction: message.direction,
+            hasAttachments: message.hasAttachments,
+            hasHtmlBody: message.htmlBody !== undefined,
+            id: message.id,
+            sender: message.sender,
+            subject: message.subject,
+            textBody: message.textBody,
+            threadId: message.threadId,
+            to: message.to,
           }).pipe(Effect.mapError((cause) => readingError("storage", cause)));
         }),
     });

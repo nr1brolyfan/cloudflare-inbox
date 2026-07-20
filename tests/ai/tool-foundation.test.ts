@@ -164,6 +164,7 @@ describe("AI tool protocol schemas", () => {
     "permissions",
     "allowlist",
     "operationId",
+    "principalId",
   ])("rejects model-controlled identity field %s at any depth", (field) => {
     expect(() =>
       Schema.decodeUnknownSync(AiToolArguments)({
