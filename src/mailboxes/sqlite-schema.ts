@@ -301,6 +301,11 @@ export const attachment = sqliteTable(
       { onUpdate: "cascade", onDelete: "restrict" }
     ),
     sourceIndex: integer("source_index"),
+    contentSha256: text("content_sha256"),
+    draftAttachmentId: text("draft_attachment_id").references(
+      () => draftAttachment.id,
+      { onUpdate: "restrict", onDelete: "restrict" }
+    ),
     disposition: text("disposition", { enum: ["attachment", "inline"] })
       .notNull()
       .default("attachment"),
@@ -329,6 +334,14 @@ export const attachment = sqliteTable(
       sql`(${t.inboundIngestId} is null and ${t.sourceIndex} is null) or (${t.inboundIngestId} is not null and ${t.sourceIndex} is not null and ${t.sourceIndex} >= 0)`
     ),
     check(
+      "attachment_draft_source_check",
+      sql`(${t.draftAttachmentId} is null and ${t.contentSha256} is null) or (${t.draftAttachmentId} is not null and ${t.contentSha256} is not null and length(${t.contentSha256}) = 64 and ${t.contentSha256} not glob '*[^a-f0-9]*')`
+    ),
+    check(
+      "attachment_source_exclusivity_check",
+      sql`${t.inboundIngestId} is null or ${t.draftAttachmentId} is null`
+    ),
+    check(
       "attachment_disposition_check",
       sql`${t.disposition} in ('attachment', 'inline')`
     ),
@@ -336,6 +349,9 @@ export const attachment = sqliteTable(
     uniqueIndex("attachment_inbound_source_uidx")
       .on(t.inboundIngestId, t.sourceIndex)
       .where(sql`inbound_ingest_id is not null`),
+    index("attachment_draft_attachment_id_idx")
+      .on(t.draftAttachmentId, t.id)
+      .where(sql`draft_attachment_id is not null`),
   ]
 );
 
@@ -905,6 +921,10 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
       from: r.attachment.inboundIngestId,
       to: r.inboundProcessing.id,
     }),
+    draftAttachment: r.one.draftAttachment({
+      from: r.attachment.draftAttachmentId,
+      to: r.draftAttachment.id,
+    }),
   },
   draft: {
     attachments: r.many.draftAttachment({
@@ -917,6 +937,10 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
       from: r.draftAttachment.draftId,
       to: r.draft.id,
       optional: false,
+    }),
+    messageAttachments: r.many.attachment({
+      from: r.draftAttachment.id,
+      to: r.attachment.draftAttachmentId,
     }),
   },
   asyncRuleJob: {

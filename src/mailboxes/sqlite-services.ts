@@ -3827,22 +3827,30 @@ const scheduleOutbound = (
           StringList,
           sourceDraft.attachmentIdsJson
         );
-        const attachments = yield* Effect.all(
-          attachmentIds.map((attachmentId) =>
-            tx
-              .select()
-              .from(attachment)
-              .where(
-                and(
-                  eq(attachment.id, attachmentId),
-                  isNull(attachment.deletedAt)
-                )
-              )
-              .limit(1)
-              .pipe(Effect.map((rows) => rows[0]))
-          )
+        const uniqueAttachmentIds = new Set(attachmentIds);
+        const storedAttachments =
+          attachmentIds.length === 0
+            ? []
+            : yield* tx
+                .select()
+                .from(draftAttachment)
+                .where(
+                  and(
+                    eq(draftAttachment.draftId, input.draftId),
+                    eq(draftAttachment.status, "stored"),
+                    inArray(draftAttachment.id, attachmentIds)
+                  )
+                );
+        const attachmentById = new Map(
+          storedAttachments.map((item) => [item.id, item] as const)
         );
-        if (attachments.some((item) => item === undefined)) {
+        const attachments = attachmentIds.map((id) => attachmentById.get(id));
+        if (
+          uniqueAttachmentIds.size !== attachmentIds.length ||
+          attachments.some(
+            (item) => item === undefined || item.contentSha256 === null
+          )
+        ) {
           return yield* new MailboxDomainError({
             operation: "schedule-outbound",
             reason: "validation",
@@ -3856,6 +3864,11 @@ const scheduleOutbound = (
         const deliveryId = runtime.randomId();
         const threadId = sourceDraft.threadId ?? runtime.randomId();
         const body = sourceDraft.textBody ?? "";
+        const htmlBody = sourceDraft.htmlBody ?? "";
+        const snapshotSize =
+          new TextEncoder().encode(body).byteLength +
+          new TextEncoder().encode(htmlBody).byteLength +
+          storedAttachments.reduce((total, item) => total + item.size, 0);
         yield* tx.insert(message).values({
           id: messageId,
           folderId: "scheduled",
@@ -3866,7 +3879,7 @@ const scheduleOutbound = (
           recipientsJson: JSON.stringify(recipients),
           snippet: body.slice(0, 500),
           activityAt: input.sendAt,
-          size: body.length,
+          size: snapshotSize,
           referencesJson: "[]",
           toJson: sourceDraft.toJson,
           ccJson: sourceDraft.ccJson,
@@ -3878,17 +3891,21 @@ const scheduleOutbound = (
           updatedAt: now,
         });
         for (const source of attachments) {
-          if (source !== undefined) {
-            yield* tx.insert(attachment).values({
-              id: runtime.randomId(),
-              messageId,
-              fileName: source.fileName,
-              mimeType: source.mimeType,
-              size: source.size,
-              contentId: source.contentId,
-              disposition: source.disposition,
-            });
+          if (source === undefined || source.contentSha256 === null) {
+            return yield* Effect.die(
+              new Error("Validated draft attachment snapshot is missing")
+            );
           }
+          yield* tx.insert(attachment).values({
+            contentSha256: source.contentSha256,
+            disposition: "attachment",
+            draftAttachmentId: source.id,
+            fileName: source.fileName,
+            id: runtime.randomId(),
+            messageId,
+            mimeType: source.mimeType,
+            size: source.size,
+          });
         }
         const [deliveryRow] = yield* tx
           .insert(outboundDelivery)
@@ -4118,6 +4135,39 @@ const resendOutbound = (
         if (sourceMessage === undefined) {
           return yield* Effect.die("Outbound source message is missing");
         }
+        const sourceAttachments = yield* tx
+          .select()
+          .from(attachment)
+          .where(
+            and(
+              eq(attachment.messageId, source.messageId),
+              isNull(attachment.deletedAt)
+            )
+          );
+        const attachmentsAvailable = sourceAttachments.every(
+          (sourceAttachment) => {
+            const inboundSource =
+              sourceAttachment.inboundIngestId !== null &&
+              sourceAttachment.sourceIndex !== null &&
+              sourceAttachment.draftAttachmentId === null &&
+              sourceAttachment.contentSha256 === null;
+            const draftSource =
+              sourceAttachment.inboundIngestId === null &&
+              sourceAttachment.sourceIndex === null &&
+              sourceAttachment.draftAttachmentId !== null &&
+              sourceAttachment.contentSha256 !== null;
+            return inboundSource || draftSource;
+          }
+        );
+        if (!attachmentsAvailable) {
+          return yield* new MailboxDomainError({
+            operation: "resend-outbound",
+            reason: "invalid-state",
+            message: "Outbound snapshot contains an unavailable attachment",
+            resourceType: "outbound",
+            resourceId: input.outboundDeliveryId,
+          });
+        }
 
         const now = runtime.now();
         const messageId = runtime.randomId();
@@ -4150,15 +4200,6 @@ const resendOutbound = (
           createdAt: now,
           updatedAt: now,
         });
-        const sourceAttachments = yield* tx
-          .select()
-          .from(attachment)
-          .where(
-            and(
-              eq(attachment.messageId, source.messageId),
-              isNull(attachment.deletedAt)
-            )
-          );
         for (const sourceAttachment of sourceAttachments) {
           yield* tx.insert(attachment).values({
             id: runtime.randomId(),
@@ -4167,7 +4208,11 @@ const resendOutbound = (
             mimeType: sourceAttachment.mimeType,
             size: sourceAttachment.size,
             contentId: sourceAttachment.contentId,
+            contentSha256: sourceAttachment.contentSha256,
             disposition: sourceAttachment.disposition,
+            draftAttachmentId: sourceAttachment.draftAttachmentId,
+            inboundIngestId: sourceAttachment.inboundIngestId,
+            sourceIndex: sourceAttachment.sourceIndex,
           });
         }
         const [deliveryRow] = yield* tx

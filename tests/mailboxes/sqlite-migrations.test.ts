@@ -64,6 +64,7 @@ describe("MailboxDO migrations", () => {
         { version: 7, applied_at: expect.any(String) },
         { version: 8, applied_at: expect.any(String) },
         { version: 9, applied_at: expect.any(String) },
+        { version: 10, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -102,6 +103,30 @@ describe("MailboxDO migrations", () => {
           )
           .run()
       ).toThrow("CHECK constraint failed");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("adds immutable draft attachment locators to message snapshots", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+      expect(
+        database
+          .prepare("PRAGMA table_info(attachment)")
+          .all()
+          .map((row) => row.name)
+      ).toStrictEqual(
+        expect.arrayContaining(["content_sha256", "draft_attachment_id"])
+      );
+      expect(
+        database
+          .prepare("PRAGMA index_list(attachment)")
+          .all()
+          .map((row) => row.name)
+      ).toContain("attachment_draft_attachment_id_idx");
     } finally {
       database.close();
     }

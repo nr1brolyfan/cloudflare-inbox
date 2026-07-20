@@ -477,6 +477,20 @@ const migrations = [
         ON draft_attachment(draft_id, status, expires_at, id)`,
     ],
   },
+  {
+    version: 10,
+    statements: [
+      `ALTER TABLE attachment ADD COLUMN content_sha256 TEXT CHECK (
+        content_sha256 IS NULL OR (length(content_sha256) = 64 AND content_sha256 NOT GLOB '*[^a-f0-9]*')
+      )`,
+      `ALTER TABLE attachment ADD COLUMN draft_attachment_id TEXT REFERENCES draft_attachment(id) ON UPDATE RESTRICT ON DELETE RESTRICT CHECK (
+        (draft_attachment_id IS NULL AND content_sha256 IS NULL) OR
+        (draft_attachment_id IS NOT NULL AND content_sha256 IS NOT NULL AND inbound_ingest_id IS NULL)
+      )`,
+      `CREATE INDEX attachment_draft_attachment_id_idx
+        ON attachment(draft_attachment_id, id) WHERE draft_attachment_id IS NOT NULL`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

@@ -43,6 +43,7 @@ import { MailboxRepository } from "#/mailboxes/repository";
 import {
   attachment,
   draft,
+  draftAttachment,
   folder,
   label,
   message,
@@ -1092,6 +1093,186 @@ describe("Mailbox mail data SQLite", () => {
           },
           listed: { items: [] },
           replacement: { status: "reserved" },
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("creates an immutable outbound attachment snapshot from stored uploads", async () => {
+    const runtime = makeRuntime();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const db = yield* MailboxDatabase;
+        const created = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "snapshot-draft",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              htmlBody: "é",
+              subject: "Snapshot",
+              textBody: "Body",
+              to: [{ address: "to@example.com" }],
+            },
+          })
+        );
+        const reserved = yield* reserveDraftAttachment(
+          Schema.decodeUnknownSync(ReserveDraftAttachmentCommand)({
+            draftId: created.id,
+            fileName: "brief.pdf",
+            mailboxId,
+            mimeType: "application/pdf",
+            operationId: "snapshot-reserve",
+            size: 3,
+          })
+        );
+        const completed = yield* completeDraftAttachment(
+          Schema.decodeUnknownSync(CompleteDraftAttachmentInput)({
+            attachmentId: reserved.id,
+            contentSha256: "a".repeat(64),
+            draftId: created.id,
+            mailboxId,
+          })
+        );
+        const scheduled = yield* scheduleOutbound(
+          Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            draftId: created.id,
+            expectedVersion: completed.draftVersion,
+            mailboxId,
+            operationId: "snapshot-schedule",
+            sendAt: 1000,
+          })
+        );
+        const [messageBefore] = yield* db
+          .select({ size: message.size })
+          .from(message)
+          .where(eq(message.id, scheduled.delivery.messageId));
+        const [snapshotBefore] = yield* db
+          .select()
+          .from(attachment)
+          .where(eq(attachment.messageId, scheduled.delivery.messageId));
+        yield* db
+          .update(draftAttachment)
+          .set({ fileName: "changed.pdf" })
+          .where(eq(draftAttachment.id, reserved.id));
+        yield* db
+          .update(outboundDelivery)
+          .set({
+            failureAt: 1000,
+            failureCode: "provider_rejected",
+            status: "failed",
+          })
+          .where(eq(outboundDelivery.id, scheduled.delivery.id));
+        const resent = yield* resendOutbound(
+          Schema.decodeUnknownSync(ResendOutboundInput)({
+            acknowledgeDuplicateRisk: true,
+            expectedVersion: 1,
+            mailboxId,
+            operationId: "snapshot-resend",
+            outboundDeliveryId: scheduled.delivery.id,
+          })
+        );
+        const [snapshotAfter] = yield* db
+          .select()
+          .from(attachment)
+          .where(eq(attachment.messageId, scheduled.delivery.messageId));
+        const [resendSnapshot] = yield* db
+          .select()
+          .from(attachment)
+          .where(eq(attachment.messageId, resent.delivery.messageId));
+
+        expect({
+          messageBefore,
+          resendSnapshot,
+          snapshotAfter,
+          snapshotBefore,
+        }).toMatchObject({
+          messageBefore: { size: 9 },
+          resendSnapshot: {
+            contentSha256: "a".repeat(64),
+            draftAttachmentId: reserved.id,
+            fileName: "brief.pdf",
+          },
+          snapshotAfter: {
+            contentSha256: "a".repeat(64),
+            draftAttachmentId: reserved.id,
+            fileName: "brief.pdf",
+            mimeType: "application/pdf",
+            size: 3,
+          },
+          snapshotBefore: {
+            contentSha256: "a".repeat(64),
+            draftAttachmentId: reserved.id,
+            fileName: "brief.pdf",
+          },
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("rejects resending a legacy snapshot without a blob locator", async () => {
+    const runtime = makeRuntime();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const db = yield* MailboxDatabase;
+        const created = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "legacy-locator-draft",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              subject: "Legacy",
+              to: [{ address: "to@example.com" }],
+            },
+          })
+        );
+        const scheduled = yield* scheduleOutbound(
+          Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            draftId: created.id,
+            expectedVersion: 1,
+            mailboxId,
+            operationId: "legacy-locator-schedule",
+            sendAt: 1000,
+          })
+        );
+        yield* db.insert(attachment).values({
+          fileName: "legacy.bin",
+          id: "legacy-snapshot-attachment",
+          messageId: scheduled.delivery.messageId,
+          mimeType: "application/octet-stream",
+          size: 3,
+        });
+        yield* db
+          .update(outboundDelivery)
+          .set({
+            failureAt: 1000,
+            failureCode: "provider_rejected",
+            status: "failed",
+          })
+          .where(eq(outboundDelivery.id, scheduled.delivery.id));
+        const result = failure(
+          yield* Effect.result(
+            resendOutbound(
+              Schema.decodeUnknownSync(ResendOutboundInput)({
+                acknowledgeDuplicateRisk: true,
+                expectedVersion: 1,
+                mailboxId,
+                operationId: "legacy-locator-resend",
+                outboundDeliveryId: scheduled.delivery.id,
+              })
+            )
+          )
+        );
+
+        expect(result).toMatchObject({
+          operation: "resend-outbound",
+          reason: "invalid-state",
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
