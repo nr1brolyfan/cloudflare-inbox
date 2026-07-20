@@ -61,6 +61,8 @@ describe("MailboxDO migrations", () => {
         { version: 4, applied_at: expect.any(String) },
         { version: 5, applied_at: expect.any(String) },
         { version: 6, applied_at: expect.any(String) },
+        { version: 7, applied_at: expect.any(String) },
+        { version: 8, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -80,12 +82,18 @@ describe("MailboxDO migrations", () => {
         database
           .prepare(
             `SELECT name FROM sqlite_schema
-              WHERE type = 'table' AND name IN ('inbound_processing', 'label', 'mailbox_operation')
+              WHERE type = 'table' AND name IN ('inbound_processing', 'label', 'mailbox_operation', 'rule_application', 'rule_evaluation')
               ORDER BY name`
           )
           .all()
           .map((row) => row.name)
-      ).toStrictEqual(["inbound_processing", "label", "mailbox_operation"]);
+      ).toStrictEqual([
+        "inbound_processing",
+        "label",
+        "mailbox_operation",
+        "rule_application",
+        "rule_evaluation",
+      ]);
       expect(() =>
         database
           .prepare(
@@ -93,6 +101,50 @@ describe("MailboxDO migrations", () => {
           )
           .run()
       ).toThrow("CHECK constraint failed");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("expands persisted rules for evaluation and history", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+
+      expect(
+        database
+          .prepare("PRAGMA table_info(filter_rule)")
+          .all()
+          .map((row) => row.name)
+      ).toStrictEqual([
+        "id",
+        "version",
+        "deleted_at",
+        "name",
+        "enabled",
+        "priority",
+        "conditions_json",
+        "actions_json",
+        "stop_processing",
+        "created_at",
+        "updated_at",
+        "ai_instruction",
+      ]);
+      expect(
+        database
+          .prepare(
+            "SELECT name FROM sqlite_schema WHERE type = 'table' AND name = 'async_rule_job'"
+          )
+          .all()
+          .map((row) => row.name)
+      ).toStrictEqual(["async_rule_job"]);
+      expect(
+        database
+          .prepare("PRAGMA table_info(inbound_processing)")
+          .all()
+          .map((row) => row.name)
+      ).toContain("async_rule_job_id");
     } finally {
       database.close();
     }
@@ -192,6 +244,62 @@ describe("MailboxDO migrations", () => {
     }
   });
 
+  it("enforces idempotent rule history keys and payload constraints", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+      database.exec(`
+        INSERT INTO folder (id, name, kind, created_at, updated_at)
+          VALUES ('inbox', 'Inbox', 'inbox', 0, 0);
+        INSERT INTO message (id, folder_id) VALUES ('message-1', 'inbox');
+        INSERT INTO inbound_processing
+          (id, status, message_id, request_key, attempt_count, created_at, updated_at, version)
+          VALUES ('ingest-1', 'ready', 'message-1', '{}', 1, 0, 0, 1);
+        INSERT INTO filter_rule (id) VALUES ('rule-1');
+        INSERT INTO rule_evaluation
+          (inbound_ingest_id, message_id, engine_version, evaluated_at)
+          VALUES ('ingest-1', 'message-1', 1, 0);
+        INSERT INTO rule_application
+          (inbound_ingest_id, message_id, rule_id, rule_version, action_index, action_json, outcome, applied_at)
+          VALUES ('ingest-1', 'message-1', 'rule-1', 1, 0, '{"_tag":"SetRead","read":true}', 'applied', 0);
+      `);
+
+      expect(() =>
+        database
+          .prepare(
+            `INSERT INTO rule_application
+              (inbound_ingest_id, message_id, rule_id, rule_version, action_index, action_json, outcome, applied_at)
+              VALUES ('ingest-1', 'message-1', 'rule-1', 1, 0, '{"_tag":"SetRead","read":true}', 'applied', 0)`
+          )
+          .run()
+      ).toThrow("UNIQUE constraint failed");
+      expect(() =>
+        database
+          .prepare(
+            `INSERT INTO rule_application
+              (inbound_ingest_id, message_id, rule_id, rule_version, action_index, action_json, outcome, applied_at)
+              VALUES ('ingest-1', 'message-1', 'rule-1', 1, 1, '[]', 'applied', 0)`
+          )
+          .run()
+      ).toThrow("CHECK constraint failed");
+      expect(() =>
+        database
+          .prepare("UPDATE filter_rule SET priority = -1 WHERE id = 'rule-1'")
+          .run()
+      ).toThrow("CHECK constraint failed");
+      expect(() =>
+        database
+          .prepare(
+            "UPDATE filter_rule SET stop_processing = 1, ai_instruction = 'Classify this message' WHERE id = 'rule-1'"
+          )
+          .run()
+      ).toThrow("CHECK constraint failed");
+    } finally {
+      database.close();
+    }
+  });
+
   it("is idempotent when the database is already current", () => {
     const database = new DatabaseSync(":memory:");
     const storage = makeStorage(database);
@@ -229,7 +337,7 @@ describe("MailboxDO migrations", () => {
           .prepare(
             `SELECT name FROM sqlite_schema
               WHERE type = 'table'
-                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule', 'inbound_processing', 'label', 'mailbox_operation', 'message_label', 'message_search', 'outbound_delivery')
+                AND name IN ('mailbox_metadata', 'folder', 'message', 'attachment', 'draft', 'filter_rule', 'inbound_processing', 'label', 'mailbox_operation', 'message_label', 'message_search', 'outbound_delivery', 'rule_application', 'rule_evaluation')
               ORDER BY name`
           )
           .all()
@@ -247,6 +355,8 @@ describe("MailboxDO migrations", () => {
         "message_label",
         "message_search",
         "outbound_delivery",
+        "rule_application",
+        "rule_evaluation",
       ]);
     } finally {
       database.close();
@@ -318,6 +428,7 @@ describe("MailboxDO migrations", () => {
         ) STRICT;
         INSERT INTO folder (id) VALUES ('legacy');
         INSERT INTO message (id, folder_id) VALUES ('message-1', 'legacy');
+        INSERT INTO filter_rule (id, version) VALUES ('legacy-rule', 3);
       `);
 
       expect(applyMailboxMigrations(storage)).toBe(mailboxSchemaVersion);
@@ -338,6 +449,22 @@ describe("MailboxDO migrations", () => {
           .prepare("SELECT read FROM message WHERE id = 'message-1'")
           .get(),
       }).toStrictEqual({ read: 0 });
+      expect({
+        ...database
+          .prepare(
+            "SELECT id, version, name, enabled, priority, stop_processing, created_at, updated_at FROM filter_rule WHERE id = 'legacy-rule'"
+          )
+          .get(),
+      }).toStrictEqual({
+        id: "legacy-rule",
+        version: 3,
+        name: "Migrated rule",
+        enabled: 0,
+        priority: 0,
+        stop_processing: 0,
+        created_at: 0,
+        updated_at: 0,
+      });
     } finally {
       database.close();
     }

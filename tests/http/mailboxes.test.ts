@@ -43,13 +43,18 @@ import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "#/mailboxes/administration";
-import { MailboxRecordSchema } from "#/mailboxes/core";
+import { MailboxInlineAttachmentReading } from "#/mailboxes/attachment-reading";
+import { MailboxRecordSchema, MimeType } from "#/mailboxes/core";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import {
   MailboxMessageActionResult,
   MailboxMessageActions,
 } from "#/mailboxes/message-actions";
+import {
+  MailboxMessageHtmlReading,
+  MailboxMessageHtmlResult,
+} from "#/mailboxes/message-html";
 import {
   MailboxMessageListResult,
   MailboxMessageReading,
@@ -172,6 +177,13 @@ const mailboxThread = Schema.decodeUnknownSync(MailboxThreadResult)({
     unreadCount: 1,
   },
 });
+const mailboxMessageHtml = Schema.decodeUnknownSync(MailboxMessageHtmlResult)({
+  _tag: "Folder",
+  document: "<html><body><p>Hello</p></body></html>",
+  folderId: "inbox",
+  mailboxId: "primary",
+  messageId: "message-1",
+});
 
 const makeAdministration = (
   overrides: Partial<MailboxAdministrationService> = {}
@@ -202,7 +214,19 @@ const makeHandler = (
   }),
   messageActions: MailboxMessageActions = MailboxMessageActions.of({
     execute: () => Effect.succeed(mailboxMessageAction),
-  })
+  }),
+  messageHtml: MailboxMessageHtmlReading = MailboxMessageHtmlReading.of({
+    get: () => Effect.succeed(mailboxMessageHtml),
+  }),
+  inlineAttachments: MailboxInlineAttachmentReading = MailboxInlineAttachmentReading.of(
+    {
+      get: () =>
+        Effect.succeed({
+          bytes: new Uint8Array([1, 2, 3]),
+          mimeType: Schema.decodeUnknownSync(MimeType)("image/png"),
+        }),
+    }
+  )
 ) => {
   const requestAuthLive = Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
@@ -233,6 +257,8 @@ const makeHandler = (
         Layer.succeed(MailboxNavigation, navigation),
         Layer.succeed(MailboxMessageReading, messageReading),
         Layer.succeed(MailboxMessageActions, messageActions),
+        Layer.succeed(MailboxMessageHtmlReading, messageHtml),
+        Layer.succeed(MailboxInlineAttachmentReading, inlineAttachments),
         Layer.succeed(
           InboundReplay,
           InboundReplay.of({
@@ -291,6 +317,54 @@ const mailboxRequest = (
 };
 
 describe("protected mailbox API", () => {
+  it("returns an independently authorized inline attachment", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/messages/message-1/attachments/attachment-1/inline?folder=inbox",
+          "GET"
+        )
+      );
+
+      expect({
+        contentDisposition: response.headers.get("content-disposition"),
+        contentLength: response.headers.get("content-length"),
+        contentType: response.headers.get("content-type"),
+        status: response.status,
+      }).toStrictEqual({
+        contentDisposition: "inline",
+        contentLength: "3",
+        contentType: "image/png",
+        status: 200,
+      });
+      await expect(response.arrayBuffer()).resolves.toStrictEqual(
+        new Uint8Array([1, 2, 3]).buffer
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("returns independently authorized sandboxed message HTML", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/messages/message-1/html?folder=inbox",
+          "GET"
+        )
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toStrictEqual(mailboxMessageHtml);
+    } finally {
+      await dispose();
+    }
+  });
+
   it("executes a versioned mailbox message action", async () => {
     let actionCommand: unknown;
     const { dispose, handler } = makeHandler(

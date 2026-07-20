@@ -119,4 +119,36 @@ describe(MailboxShell, () => {
       screen.queryByRole("dialog", { name: "Mailbox navigation" })
     ).toBeNull();
   });
+
+  it("keeps mailbox content visible during a failed sign-out", () => {
+    const signOut = vi.fn<() => void>();
+    render(
+      <MailboxShell
+        folders={folders}
+        labels={labels}
+        mailboxName="Primary Inbox"
+        principalLabel="user-123"
+        isSigningOut
+        onSignOut={signOut}
+        selectedFolderId="inbox"
+        signOutError="Sign out failed. Try again."
+        viewTitle="Inbox"
+      >
+        <p>Workspace content</p>
+      </MailboxShell>
+    );
+
+    const button = screen.getByRole("button", { name: "Sign out" });
+    expect({
+      alert: screen.getByRole("alert").textContent,
+      content: Boolean(screen.getByText("Workspace content")),
+      disabled: button.hasAttribute("disabled"),
+    }).toStrictEqual({
+      alert: "Sign out failed. Try again.",
+      content: true,
+      disabled: true,
+    });
+    fireEvent.click(button);
+    expect(signOut).not.toHaveBeenCalled();
+  });
 });

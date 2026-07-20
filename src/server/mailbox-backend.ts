@@ -7,9 +7,13 @@ import * as Schema from "effect/Schema";
 
 import type { MailboxPublicError } from "../http/mailbox-contract";
 import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
+import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
+import { isSafeInlineImageMimeType } from "../mailboxes/attachment-reading";
 import { MailboxRecordSchema } from "../mailboxes/core";
 import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import { MailboxMessageActionResult } from "../mailboxes/message-actions";
+import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
+import { MailboxMessageHtmlResult } from "../mailboxes/message-html";
 import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -21,10 +25,12 @@ import {
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import { BackendClient } from "./website-platform";
 
+export type MailboxPublicStatus = 400 | 401 | 403 | 404 | 409 | 500 | 502;
+
 export interface MailboxServerErrorResult {
   readonly error: MailboxPublicError;
   readonly ok: false;
-  readonly status: number;
+  readonly status: MailboxPublicStatus;
 }
 
 export type MailboxServerResult =
@@ -44,6 +50,21 @@ export type MailboxNavigationServerResult =
 export type MailboxMessageListServerResult =
   | {
       readonly messages: Schema.Codec.Encoded<typeof MailboxMessageListResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxMessageHtmlServerResult =
+  | {
+      readonly html: Schema.Codec.Encoded<typeof MailboxMessageHtmlResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxInlineAttachmentServerResult =
+  | {
+      readonly bytes: Uint8Array;
+      readonly mimeType: string;
       readonly ok: true;
     }
   | MailboxServerErrorResult;
@@ -132,13 +153,17 @@ const invalidBackendResponse = (): MailboxServerErrorResult => ({
   status: 502,
 });
 
-const policyDeniedMessage = (body: object) => {
+const policyDeniedMessage = (body: object, operation: string) => {
   if (!("message" in body) || typeof body.message !== "string") {
     return publicErrors.policy_denied.message;
   }
 
-  return body.message === "Mailbox owner account required" ||
-    body.message === "Complete account verification and sign in again"
+  const administrativeOperation =
+    operation === "website.mailbox.bootstrap" ||
+    operation === "website.mailbox.rename";
+  return administrativeOperation &&
+    (body.message === "Mailbox owner account required" ||
+      body.message === "Complete account verification and sign in again")
     ? body.message
     : publicErrors.policy_denied.message;
 };
@@ -173,6 +198,14 @@ export interface MailboxBackendOperationsShape {
   readonly getNavigation: (
     incoming: Request
   ) => Effect.Effect<MailboxNavigationServerResult>;
+  readonly getMessageHtml: (input: {
+    readonly incoming: Request;
+    readonly query: MailboxMessageHtmlInput;
+  }) => Effect.Effect<MailboxMessageHtmlServerResult>;
+  readonly getInlineAttachment: (input: {
+    readonly incoming: Request;
+    readonly query: MailboxInlineAttachmentInput;
+  }) => Effect.Effect<MailboxInlineAttachmentServerResult>;
   readonly getThread: (input: {
     readonly incoming: Request;
     readonly query: OpenMailboxThreadInput;
@@ -198,6 +231,49 @@ export const MailboxBackendOperationsLive = Layer.effect(
   MailboxBackendOperations,
   Effect.gen(function* () {
     const backend = yield* BackendClient;
+    const forwardErrorResponse = (
+      response: Response,
+      operation: string
+    ): Effect.Effect<MailboxServerErrorResult> =>
+      Effect.gen(function* () {
+        const bodyOption = yield* Effect.tryPromise(() => response.json()).pipe(
+          Effect.option
+        );
+        if (Option.isNone(bodyOption)) {
+          return invalidBackendResponse();
+        }
+        const decodedError = Schema.decodeUnknownExit(
+          Schema.toCodecJson(MailboxPublicErrorSchema)
+        )(bodyOption.value);
+        if (
+          Exit.isFailure(decodedError) ||
+          !isPublicErrorCode(decodedError.value.code)
+        ) {
+          return invalidBackendResponse();
+        }
+
+        const encodedError = yield* Schema.encodeEffect(
+          MailboxPublicErrorSchema
+        )(decodedError.value).pipe(Effect.orDie);
+        const definition = publicErrors[encodedError.code];
+        const message =
+          encodedError.code === "policy_denied"
+            ? policyDeniedMessage(encodedError, operation)
+            : operationErrorMessage(encodedError.code, operation);
+        const sanitizedError = yield* Schema.decodeUnknownEffect(
+          MailboxPublicErrorSchema
+        )({ ...encodedError, message }).pipe(
+          Effect.flatMap(Schema.encodeEffect(MailboxPublicErrorSchema)),
+          Effect.orDie
+        );
+        return response.status === definition.status
+          ? {
+              error: sanitizedError,
+              ok: false,
+              status: definition.status,
+            }
+          : invalidBackendResponse();
+      });
     const forwardRequest = (
       input: ForwardMailboxRequestInput
     ): Effect.Effect<ForwardMailboxResult> =>
@@ -225,51 +301,73 @@ export const MailboxBackendOperationsLive = Layer.effect(
             method: input.method,
           })
         );
+        if (!response.ok) {
+          return yield* forwardErrorResponse(response, input.operation);
+        }
         const bodyOption = yield* Effect.tryPromise(() => response.json()).pipe(
           Effect.option
         );
+        return Option.isSome(bodyOption)
+          ? { body: bodyOption.value, ok: true }
+          : invalidBackendResponse();
+      });
 
-        if (Option.isNone(bodyOption)) {
-          return invalidBackendResponse();
+    const forwardInlineAttachment = (
+      query: MailboxInlineAttachmentInput,
+      incoming: Request
+    ): Effect.Effect<MailboxInlineAttachmentServerResult> =>
+      Effect.gen(function* () {
+        const headers = new Headers();
+        for (const name of forwardedHeaderNames) {
+          const value = incoming.headers.get(name);
+          if (value !== null) {
+            headers.set(name, value);
+          }
         }
-        const body = bodyOption.value;
-
-        if (response.ok) {
-          return { body, ok: true };
+        const search = new URLSearchParams();
+        if (query._tag === "Folder") {
+          search.set("folder", query.folderId);
+        } else {
+          search.set("label", query.labelId);
         }
-
-        const decodedError = Schema.decodeUnknownExit(MailboxPublicErrorSchema)(
-          body
+        const path = `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/messages/${encodeURIComponent(query.messageId)}/attachments/${encodeURIComponent(query.attachmentId)}/inline?${search.toString()}`;
+        const response = yield* backend.fetch(
+          "website.mailbox.inline_attachment",
+          new Request(new URL(path, incoming.url), { headers })
         );
+        if (!response.ok) {
+          return yield* forwardErrorResponse(
+            response,
+            "website.mailbox.inline_attachment"
+          );
+        }
+
+        const mimeType = response.headers.get("content-type");
+        const encodedLength = response.headers.get("content-length");
+        const contentLength =
+          encodedLength === null ? Number.NaN : Number(encodedLength);
         if (
-          Exit.isFailure(decodedError) ||
-          !isPublicErrorCode(decodedError.value.code)
+          mimeType === null ||
+          !isSafeInlineImageMimeType(mimeType) ||
+          !Number.isSafeInteger(contentLength) ||
+          contentLength < 0
         ) {
           return invalidBackendResponse();
         }
-
-        const publicError = decodedError.value;
-        const encodedError = yield* Schema.encodeEffect(
-          MailboxPublicErrorSchema
-        )(publicError).pipe(Effect.orDie);
-        const definition = publicErrors[encodedError.code];
-        const message =
-          encodedError.code === "policy_denied"
-            ? policyDeniedMessage(encodedError)
-            : operationErrorMessage(encodedError.code, input.operation);
-        const sanitizedError = yield* Schema.decodeUnknownEffect(
-          MailboxPublicErrorSchema
-        )({ ...encodedError, message }).pipe(
-          Effect.flatMap(Schema.encodeEffect(MailboxPublicErrorSchema)),
-          Effect.orDie
-        );
-        return response.status === definition.status
-          ? {
-              error: sanitizedError,
-              ok: false,
-              status: response.status,
-            }
-          : invalidBackendResponse();
+        const bufferOption = yield* Effect.tryPromise(() =>
+          response.arrayBuffer()
+        ).pipe(Effect.option);
+        if (
+          Option.isNone(bufferOption) ||
+          bufferOption.value.byteLength !== contentLength
+        ) {
+          return invalidBackendResponse();
+        }
+        return {
+          bytes: new Uint8Array(bufferOption.value),
+          mimeType,
+          ok: true,
+        };
       });
 
     return MailboxBackendOperations.of({
@@ -306,7 +404,7 @@ export const MailboxBackendOperationsLive = Layer.effect(
               return result;
             }
             const decoded = Schema.decodeUnknownExit(
-              MailboxMessageActionResult
+              Schema.toCodecJson(MailboxMessageActionResult)
             )(result.body);
             return Exit.isSuccess(decoded) &&
               decoded.value.id === command.messageId
@@ -332,9 +430,9 @@ export const MailboxBackendOperationsLive = Layer.effect(
             if (!result.ok) {
               return result;
             }
-            const decoded = Schema.decodeUnknownExit(MailboxRecordSchema)(
-              result.body
-            );
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxRecordSchema)
+            )(result.body);
             return Exit.isSuccess(decoded)
               ? {
                   mailbox: Schema.encodeSync(MailboxRecordSchema)(
@@ -356,9 +454,9 @@ export const MailboxBackendOperationsLive = Layer.effect(
             if (!result.ok) {
               return result;
             }
-            const decoded = Schema.decodeUnknownExit(MailboxNavigationResult)(
-              result.body
-            );
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxNavigationResult)
+            )(result.body);
             return Exit.isSuccess(decoded)
               ? {
                   navigation: Schema.encodeSync(MailboxNavigationResult)(
@@ -369,6 +467,49 @@ export const MailboxBackendOperationsLive = Layer.effect(
               : invalidBackendResponse();
           })
         ),
+      getInlineAttachment: ({ incoming, query }) =>
+        forwardInlineAttachment(query, incoming),
+      getMessageHtml: ({ incoming, query }) => {
+        const search = new URLSearchParams();
+        if (query._tag === "Folder") {
+          search.set("folder", query.folderId);
+        } else {
+          search.set("label", query.labelId);
+        }
+        return forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.message_html",
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/messages/${encodeURIComponent(query.messageId)}/html?${search.toString()}`,
+        }).pipe(
+          Effect.map((result): MailboxMessageHtmlServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxMessageHtmlResult)
+            )(result.body);
+            const validIdentity =
+              Exit.isSuccess(decoded) &&
+              decoded.value._tag === query._tag &&
+              decoded.value.mailboxId === query.mailboxId &&
+              decoded.value.messageId === query.messageId &&
+              (query._tag === "Folder"
+                ? decoded.value._tag === "Folder" &&
+                  decoded.value.folderId === query.folderId
+                : decoded.value._tag === "Label" &&
+                  decoded.value.labelId === query.labelId);
+            return validIdentity && Exit.isSuccess(decoded)
+              ? {
+                  html: Schema.encodeSync(MailboxMessageHtmlResult)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        );
+      },
       getThread: ({ incoming, query }) =>
         forwardRequest({
           incoming,
@@ -390,10 +531,11 @@ export const MailboxBackendOperationsLive = Layer.effect(
             if (!result.ok) {
               return result;
             }
-            const decoded = Schema.decodeUnknownExit(MailboxThreadResult)(
-              result.body
-            );
-            return Exit.isSuccess(decoded)
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxThreadResult)
+            )(result.body);
+            return Exit.isSuccess(decoded) &&
+              decoded.value.thread.id === query.threadId
               ? {
                   ok: true,
                   thread: Schema.encodeSync(MailboxThreadResult)(decoded.value),
@@ -434,9 +576,9 @@ export const MailboxBackendOperationsLive = Layer.effect(
             if (!result.ok) {
               return result;
             }
-            const decoded = Schema.decodeUnknownExit(MailboxMessageListResult)(
-              result.body
-            );
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxMessageListResult)
+            )(result.body);
             return Exit.isSuccess(decoded)
               ? {
                   messages: Schema.encodeSync(MailboxMessageListResult)(
@@ -460,9 +602,9 @@ export const MailboxBackendOperationsLive = Layer.effect(
             if (!result.ok) {
               return result;
             }
-            const decoded = Schema.decodeUnknownExit(MailboxRecordSchema)(
-              result.body
-            );
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxRecordSchema)
+            )(result.body);
             return Exit.isSuccess(decoded)
               ? {
                   mailbox: Schema.encodeSync(MailboxRecordSchema)(

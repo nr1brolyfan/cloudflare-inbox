@@ -183,4 +183,143 @@ describe(MessageList, () => {
       "Enter at least one letter or number"
     );
   });
+
+  it("renders distinct empty states for views and active filters", () => {
+    const props = {
+      data: { items: [] },
+      isLoadingMore: false,
+      loadMoreFailed: false,
+      onLoadMore: vi.fn<() => void>(),
+      onMessageAction:
+        vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >(),
+      onOpenMessage: vi.fn<(threadId: string, messageId: string) => void>(),
+      onQueryChange: vi.fn<(state: MailboxMessageQueryState) => void>(),
+      selection: { folder: "inbox" } as const,
+    };
+    const { rerender } = render(<MessageList {...props} filters={{}} />);
+
+    expect(screen.getByText("No messages here")).toBeTruthy();
+    rerender(
+      <MessageList {...props} filters={{ query: "quarterly report" }} />
+    );
+    expect(screen.getByText("No matching messages")).toBeTruthy();
+  });
+
+  it("keeps loaded messages visible with retryable pagination and action errors", () => {
+    const onLoadMore = vi.fn<() => void>();
+    const onRetryAction = vi.fn<() => void>();
+    render(
+      <MessageList
+        actionError="The message action could not be completed."
+        data={messages}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed
+        onLoadMore={onLoadMore}
+        onMessageAction={vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >()}
+        onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
+        onRetryAction={onRetryAction}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    expect({
+      actionError: screen.getByRole("alert").textContent,
+      messageVisible: Boolean(screen.getByText("Second subject")),
+      pageError: Boolean(
+        screen.getByText("More messages could not be loaded.")
+      ),
+    }).toMatchObject({
+      actionError: expect.stringContaining("could not be completed"),
+      messageVisible: true,
+      pageError: true,
+    });
+    for (const retry of screen.getAllByRole("button", { name: "Try again" })) {
+      fireEvent.click(retry);
+    }
+    expect({
+      actionRetries: onRetryAction.mock.calls.length,
+      pageRetries: onLoadMore.mock.calls.length,
+    }).toStrictEqual({ actionRetries: 1, pageRetries: 1 });
+  });
+
+  it("disables every pending row and uses configured system folder ids", () => {
+    const configured = {
+      ...messages,
+      items: [
+        messages.items[0],
+        { ...messages.items[1], folderId: "all-mail" },
+      ],
+    };
+    render(
+      <MessageList
+        archiveFolderId="all-mail"
+        data={configured}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onMessageAction={vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >()}
+        onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
+        pendingMessageIds={new Set(["message-b"])}
+        selection={{ folder: "inbox" }}
+        trashFolderId="deleted-items"
+      />
+    );
+
+    const archiveButtons = screen.getAllByRole("button", {
+      name: "Archive message",
+    });
+    const starButtons = screen.getAllByRole("button", { name: /star/iu });
+    expect({
+      archiveDisabledInTarget: archiveButtons[1]?.hasAttribute("disabled"),
+      archivePending: archiveButtons[0]?.hasAttribute("disabled"),
+      otherRowEnabled: starButtons.at(-1)?.hasAttribute("disabled"),
+      pendingIndicator: Boolean(screen.getByLabelText("Updating message")),
+    }).toStrictEqual({
+      archiveDisabledInTarget: true,
+      archivePending: true,
+      otherRowEnabled: false,
+      pendingIndicator: true,
+    });
+  });
+
+  it("keeps saved results visible after a background refresh failure", () => {
+    const onRetryRefresh = vi.fn<() => void>();
+    render(
+      <MessageList
+        data={messages}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onMessageAction={vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >()}
+        onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
+        onRetryRefresh={onRetryRefresh}
+        refreshFailed
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    expect({
+      alert: screen.getByRole("alert").textContent,
+      messageVisible: Boolean(screen.getByText("Second subject")),
+    }).toMatchObject({
+      alert: expect.stringContaining("Showing saved results"),
+      messageVisible: true,
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(onRetryRefresh).toHaveBeenCalledOnce();
+  });
 });

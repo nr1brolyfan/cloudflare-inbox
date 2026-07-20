@@ -123,6 +123,11 @@ const expectedMailDataMetadata = {
     kind: "read",
     responseTag: "DraftFound",
   },
+  GetAttachmentBlob: {
+    operation: "get-attachment",
+    kind: "read",
+    responseTag: "AttachmentBlobFound",
+  },
   UpdateDraft: {
     operation: "update-draft",
     kind: "write",

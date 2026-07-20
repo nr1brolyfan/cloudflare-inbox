@@ -1,12 +1,14 @@
 import type * as Schema from "effect/Schema";
-import { ArrowLeft, FileText, MailOpen, Paperclip } from "lucide-react";
+import { ArrowLeft, MailOpen, Paperclip } from "lucide-react";
+import { useState } from "react";
 
 import type { MailboxThreadResult } from "../mailboxes/message-reading";
 import type {
   MailboxMessageQueryState,
   MailboxViewSelection,
 } from "./mailbox-view-links";
-import { mailboxViewHref } from "./mailbox-view-links";
+import { mailboxMessageHtmlHref, mailboxViewHref } from "./mailbox-view-links";
+import { SandboxedMessageHtml } from "./sandboxed-message-html";
 
 type ThreadData = Schema.Codec.Encoded<typeof MailboxThreadResult>;
 
@@ -44,15 +46,79 @@ const byteSize = (size: number) => {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+function MessageBody({
+  authorLabel,
+  hasHtmlBody,
+  htmlSrc,
+  onPreviewAccessFailure,
+  textBody,
+}: {
+  readonly authorLabel: string;
+  readonly hasHtmlBody: boolean;
+  readonly htmlSrc: string;
+  readonly onPreviewAccessFailure?: (status: 401 | 403) => void;
+  readonly textBody?: string;
+}) {
+  const [showHtml, setShowHtml] = useState(
+    textBody === undefined && hasHtmlBody
+  );
+
+  return (
+    <>
+      {textBody !== undefined && hasHtmlBody ? (
+        <fieldset className="mb-4 flex gap-2 border-0 p-0">
+          <legend className="sr-only">Message body format</legend>
+          <button
+            type="button"
+            aria-pressed={!showHtml}
+            onClick={() => setShowHtml(false)}
+            className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-bold"
+          >
+            Plain text
+          </button>
+          <button
+            type="button"
+            aria-pressed={showHtml}
+            onClick={() => setShowHtml(true)}
+            className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-bold"
+          >
+            Sandboxed HTML
+          </button>
+        </fieldset>
+      ) : null}
+
+      {showHtml ? (
+        <SandboxedMessageHtml
+          onAccessFailure={onPreviewAccessFailure}
+          src={htmlSrc}
+          title={`Sandboxed HTML message from ${authorLabel}`}
+        />
+      ) : textBody === undefined ? (
+        <p className="text-sm text-[var(--sea-ink-soft)] italic">
+          This message has no readable text body.
+        </p>
+      ) : (
+        <pre className="font-sans text-sm leading-7 whitespace-pre-wrap text-[var(--sea-ink)]">
+          {textBody}
+        </pre>
+      )}
+    </>
+  );
+}
+
 export function ThreadView({
   data,
   filters,
+  mailboxId,
   onClose,
+  onPreviewAccessFailure,
   selection,
 }: {
   readonly data: ThreadData;
   readonly filters: MailboxMessageQueryState;
+  readonly mailboxId: string;
   readonly onClose: () => void;
+  readonly onPreviewAccessFailure?: (status: 401 | 403) => void;
   readonly selection: MailboxViewSelection;
 }) {
   return (
@@ -122,23 +188,17 @@ export function ThreadView({
               </header>
 
               <div className="px-4 py-5 sm:px-6 sm:py-6">
-                {message.textBody === undefined ? (
-                  message.hasHtmlBody ? (
-                    <div className="flex items-start gap-3 rounded-xl border border-[var(--line)] bg-[var(--foam)] p-4 text-sm text-[var(--sea-ink-soft)]">
-                      <FileText className="mt-0.5 shrink-0" size={17} />
-                      This message has an HTML body. Secure preview is not
-                      available yet.
-                    </div>
-                  ) : (
-                    <p className="text-sm text-[var(--sea-ink-soft)] italic">
-                      This message has no readable text body.
-                    </p>
-                  )
-                ) : (
-                  <pre className="font-sans text-sm leading-7 whitespace-pre-wrap text-[var(--sea-ink)]">
-                    {message.textBody}
-                  </pre>
-                )}
+                <MessageBody
+                  authorLabel={messageAuthor(message)}
+                  hasHtmlBody={message.hasHtmlBody}
+                  htmlSrc={mailboxMessageHtmlHref(
+                    mailboxId,
+                    message.id,
+                    selection
+                  )}
+                  onPreviewAccessFailure={onPreviewAccessFailure}
+                  textBody={message.textBody}
+                />
 
                 {message.attachments.length > 0 ? (
                   <div className="mt-6 border-t border-[var(--line)] pt-4">

@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ThreadView } from "#/inbox/thread-view";
+import { NoThreadSelected, ThreadView } from "#/inbox/thread-view";
 
 const maliciousText =
   '<script>window.pwned = true</script><img onerror="pwn()">';
@@ -60,6 +60,7 @@ describe(ThreadView, () => {
       <ThreadView
         data={thread}
         filters={{ read: "unread" }}
+        mailboxId="primary"
         onClose={onClose}
         selection={{ label: "work" }}
       />
@@ -68,11 +69,18 @@ describe(ThreadView, () => {
     expect(screen.getByText(maliciousText)).toBeTruthy();
     expect(screen.getByText('<img src=x onerror="pwn()">.txt')).toBeTruthy();
     expect(container.querySelector("script, img")).toBeNull();
-    expect(
-      screen.getByText(
-        "This message has an HTML body. Secure preview is not available yet."
-      )
-    ).toBeTruthy();
+    const iframe = screen.getByTitle(
+      "Sandboxed HTML message from sender@example.test"
+    );
+    expect({
+      referrerPolicy: iframe.getAttribute("referrerpolicy"),
+      sandbox: iframe.getAttribute("sandbox"),
+      src: iframe.getAttribute("src"),
+    }).toStrictEqual({
+      referrerPolicy: "no-referrer",
+      sandbox: "allow-popups allow-popups-to-escape-sandbox allow-same-origin",
+      src: "/api/mailboxes/primary/messages/message-2/html?label=work",
+    });
     expect(
       screen
         .getByRole("link", { name: "Close conversation" })
@@ -86,6 +94,7 @@ describe(ThreadView, () => {
       <ThreadView
         data={thread}
         filters={{ read: "unread" }}
+        mailboxId="primary"
         onClose={onClose}
         selection={{ label: "work" }}
       />
@@ -93,5 +102,80 @@ describe(ThreadView, () => {
 
     screen.getByRole("link", { name: "Close conversation" }).click();
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("renders the no-conversation-selected empty state", () => {
+    render(<NoThreadSelected />);
+
+    expect(screen.getByText("Choose a message")).toBeTruthy();
+  });
+
+  it("offers an iframe retry after a preview network failure", () => {
+    render(
+      <ThreadView
+        data={thread}
+        filters={{}}
+        mailboxId="primary"
+        onClose={vi.fn<() => void>()}
+        selection={{ folder: "inbox" }}
+      />
+    );
+    const iframe = screen.getByTitle(
+      "Sandboxed HTML message from sender@example.test"
+    );
+
+    const previewDocument = (iframe as HTMLIFrameElement).contentDocument;
+    if (previewDocument === null) {
+      throw new Error("Expected iframe document");
+    }
+    const previewRoot = previewDocument.createElement("html");
+    previewRoot.dataset["previewStatus"] = "502";
+    previewDocument.append(previewRoot);
+    fireEvent.load(iframe);
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Secure HTML preview could not be loaded"
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(iframe.getAttribute("src")).toContain("previewRetry=1");
+  });
+
+  it("reports authoritative preview access failures to the parent", () => {
+    const onPreviewAccessFailure = vi.fn<(status: 401 | 403) => void>();
+    render(
+      <ThreadView
+        data={thread}
+        filters={{}}
+        mailboxId="primary"
+        onClose={vi.fn<() => void>()}
+        onPreviewAccessFailure={onPreviewAccessFailure}
+        selection={{ folder: "inbox" }}
+      />
+    );
+    const iframe = screen.getByTitle(
+      "Sandboxed HTML message from sender@example.test"
+    );
+    if (!(iframe instanceof HTMLIFrameElement)) {
+      throw new Error("Expected iframe element");
+    }
+    const previewDocument = iframe.contentDocument;
+    if (previewDocument === null) {
+      throw new Error("Expected iframe document");
+    }
+    const previewRoot = previewDocument.createElement("html");
+    previewRoot.dataset["previewStatus"] = "401";
+    previewRoot.dataset["previewAccessFailure"] = "401";
+    previewDocument.append(previewRoot);
+
+    fireEvent.load(iframe);
+
+    expect({
+      ariaHidden: iframe.getAttribute("aria-hidden"),
+      callback: onPreviewAccessFailure.mock.calls,
+      inert: iframe.hasAttribute("inert"),
+    }).toStrictEqual({
+      ariaHidden: "true",
+      callback: [[401]],
+      inert: true,
+    });
   });
 });

@@ -8,6 +8,7 @@ import {
   eq,
   getTableColumns,
   inArray,
+  isNotNull,
   isNull,
   sql,
 } from "drizzle-orm";
@@ -18,7 +19,9 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { AsyncRuleJob, AsyncRulePlanV1 } from "./async-rules";
 import {
+  AsyncRuleJobId,
   Cursor,
   MailAddress,
   MailboxId,
@@ -58,6 +61,7 @@ import type {
 } from "./inbound";
 import {
   AddMessageLabelInput,
+  AttachmentBlobLocation,
   AttachmentMetadata,
   MoveMessageInput,
   MessageDetailSchema,
@@ -73,6 +77,7 @@ import {
 } from "./messages";
 import type {
   GetMessageInput,
+  GetAttachmentBlobInput,
   GetThreadInput,
   ListMessagesInput,
   MessageFilters,
@@ -101,8 +106,21 @@ import type {
   MailboxResourceLookup,
   MailboxResourceLookupResult as MailboxResourceLookupResultType,
 } from "./resource-location";
+import {
+  EvaluateRulesInput,
+  RuleAction,
+  RuleActions,
+  RuleApplication,
+  RuleConditions,
+  RuleEvaluationRecord,
+  RuleSchema,
+  evaluateAsyncRuleCandidates,
+  evaluateRules,
+} from "./rules";
+import type { RuleApplicationOutcome, RuleEvaluationResult } from "./rules";
 import { applyMailboxMigrations } from "./sqlite-migrations";
 import {
+  asyncRuleJob,
   attachment,
   draft,
   filterRule,
@@ -115,6 +133,8 @@ import {
   message,
   messageLabel,
   outboundDelivery,
+  ruleApplication,
+  ruleEvaluation,
 } from "./sqlite-schema";
 
 export type MailboxDatabase = DrizzleDo.EffectSQLiteDoDatabase<
@@ -1718,6 +1738,66 @@ const getMessage = (mailboxId: MailboxId, input: GetMessageInput) =>
     return yield* readMessageDetailRow(db, row, mailboxId);
   });
 
+const getAttachmentBlob = (
+  mailboxId: MailboxId,
+  input: GetAttachmentBlobInput
+) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const [row] = yield* db
+      .select({
+        attachmentId: attachment.id,
+        contentId: attachment.contentId,
+        disposition: attachment.disposition,
+        fileName: attachment.fileName,
+        folderId: message.folderId,
+        inboundIngestId: attachment.inboundIngestId,
+        messageId: message.id,
+        mimeType: attachment.mimeType,
+        receivedAt: message.receivedAt,
+        size: attachment.size,
+        sourceIndex: attachment.sourceIndex,
+      })
+      .from(attachment)
+      .innerJoin(message, eq(message.id, attachment.messageId))
+      .innerJoin(folder, eq(folder.id, message.folderId))
+      .innerJoin(
+        inboundProcessing,
+        and(
+          eq(inboundProcessing.id, attachment.inboundIngestId),
+          eq(inboundProcessing.messageId, attachment.messageId)
+        )
+      )
+      .where(
+        and(
+          eq(attachment.id, input.attachmentId),
+          eq(attachment.messageId, input.messageId),
+          eq(attachment.disposition, "inline"),
+          eq(inboundProcessing.status, "ready"),
+          isNotNull(attachment.contentId),
+          isNotNull(attachment.inboundIngestId),
+          isNotNull(attachment.sourceIndex),
+          isNotNull(message.receivedAt),
+          isNull(attachment.deletedAt),
+          isNull(message.deletedAt),
+          isNull(folder.deletedAt)
+        )
+      )
+      .limit(1);
+    if (row === undefined) {
+      return yield* messageDomainError(
+        "get-attachment",
+        "not-found",
+        "Inline attachment was not found",
+        { resourceType: "attachment", resourceId: input.attachmentId }
+      );
+    }
+    return yield* Schema.decodeUnknownEffect(AttachmentBlobLocation)({
+      ...row,
+      mailboxId,
+    });
+  });
+
 const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
@@ -2137,6 +2217,8 @@ const makeMailboxMessageStore = (
       provideDatabase(searchMessages(mailboxId, input)),
     getMessage: (input: GetMessageInput) =>
       provideDatabase(getMessage(mailboxId, input)),
+    getAttachmentBlob: (input: GetAttachmentBlobInput) =>
+      provideDatabase(getAttachmentBlob(mailboxId, input)),
     getThread: (input: GetThreadInput) =>
       provideDatabase(getThread(mailboxId, input)),
     setMessageRead: (input: SetMessageReadInput) =>
@@ -2205,6 +2287,7 @@ const readInboundProcessingRow = (
     mailboxId,
     status: row.status,
     messageId: row.messageId ?? undefined,
+    asyncRuleJobId: row.asyncRuleJobId ?? undefined,
     failure:
       row.failureCode === null
         ? undefined
@@ -2567,12 +2650,143 @@ const commitInboundMessage = (
           ...input.message.cc,
           ...input.message.bcc,
         ];
+        const activeRuleRows = yield* tx
+          .select()
+          .from(filterRule)
+          .where(and(eq(filterRule.enabled, 1), isNull(filterRule.deletedAt)))
+          .orderBy(asc(filterRule.priority), asc(filterRule.id));
+        const rules = activeRuleRows.map((row) =>
+          Schema.decodeUnknownSync(RuleSchema)({
+            id: row.id,
+            mailboxId,
+            name: row.name,
+            enabled: row.enabled === 1,
+            priority: row.priority,
+            conditions: decodeJson(RuleConditions, row.conditionsJson),
+            actions: decodeJson(RuleActions, row.actionsJson),
+            aiInstruction: row.aiInstruction ?? undefined,
+            stopProcessing: row.stopProcessing === 1,
+            createdAt: row.createdAt,
+            updatedAt: row.updatedAt,
+            version: row.version,
+          })
+        );
+        const evaluationInput = Schema.decodeUnknownSync(EvaluateRulesInput)({
+          mailboxId,
+          message: {
+            envelopeFrom: input.envelope.envelopeFrom,
+            envelopeTo: input.envelope.envelopeTo,
+            from: input.message.sender?.address,
+            to: input.message.to.map(({ address }) => address),
+            cc: input.message.cc.map(({ address }) => address),
+            bcc: input.message.bcc.map(({ address }) => address),
+            subject: input.message.subject,
+            textBody: input.message.textBody,
+            hasAttachments: input.message.attachments.length > 0,
+          },
+          rules,
+        });
+        const evaluation = evaluateRules(evaluationInput);
+        const asyncCandidates = evaluateAsyncRuleCandidates(evaluationInput);
+        const asyncRulePlan =
+          asyncCandidates.length === 0
+            ? undefined
+            : Schema.decodeUnknownSync(AsyncRulePlanV1)({
+                formatVersion: 1,
+                baseMessageVersion: 1,
+                candidates: asyncCandidates.map((rule) => ({
+                  ruleId: rule.id,
+                  ruleVersion: rule.version,
+                  instruction: rule.aiInstruction,
+                  actions: rule.actions,
+                })),
+              });
+        const asyncRuleJobId =
+          asyncRulePlan === undefined
+            ? undefined
+            : Schema.decodeUnknownSync(AsyncRuleJobId)(input.inboundIngestId);
+        const targetFolderIds = evaluation.actions.flatMap(({ action }) =>
+          action._tag === "MoveToFolder" ? [action.folderId] : []
+        );
+        const targetLabelIds = evaluation.actions.flatMap(({ action }) =>
+          action._tag === "AddLabel" ? [action.labelId] : []
+        );
+        const activeTargetFolders =
+          targetFolderIds.length === 0
+            ? []
+            : yield* tx
+                .select({ id: folder.id })
+                .from(folder)
+                .where(
+                  and(
+                    inArray(folder.id, targetFolderIds),
+                    isNull(folder.deletedAt)
+                  )
+                );
+        const activeTargetLabels =
+          targetLabelIds.length === 0
+            ? []
+            : yield* tx
+                .select({ id: label.id })
+                .from(label)
+                .where(
+                  and(
+                    inArray(label.id, targetLabelIds),
+                    isNull(label.deletedAt)
+                  )
+                );
+        const validFolderIds = new Set(activeTargetFolders.map(({ id }) => id));
+        const validLabelIds = new Set(activeTargetLabels.map(({ id }) => id));
+        let finalFolderId = "inbox";
+        let finalRead = false;
+        let finalStarred = false;
+        const finalLabelIds = new Set<string>();
+        const applications: {
+          readonly plan: RuleEvaluationResult["actions"][number];
+          readonly outcome: RuleApplicationOutcome;
+        }[] = [];
+        for (const plan of evaluation.actions) {
+          const { action } = plan;
+          let outcome: RuleApplicationOutcome;
+          if (action._tag === "MoveToFolder") {
+            if (!validFolderIds.has(action.folderId)) {
+              outcome = "skipped_invalid_target";
+            } else if (finalFolderId === action.folderId) {
+              outcome = "noop";
+            } else {
+              finalFolderId = action.folderId;
+              outcome = "applied";
+            }
+          } else if (action._tag === "AddLabel") {
+            if (!validLabelIds.has(action.labelId)) {
+              outcome = "skipped_invalid_target";
+            } else if (finalLabelIds.has(action.labelId)) {
+              outcome = "noop";
+            } else {
+              finalLabelIds.add(action.labelId);
+              outcome = "applied";
+            }
+          } else if (action._tag === "SetRead") {
+            if (finalRead === action.read) {
+              outcome = "noop";
+            } else {
+              finalRead = action.read;
+              outcome = "applied";
+            }
+          } else if (finalStarred === action.starred) {
+            outcome = "noop";
+          } else {
+            finalStarred = action.starred;
+            outcome = "applied";
+          }
+          applications.push({ plan, outcome });
+        }
 
         yield* tx.insert(message).values({
           id: messageId,
-          folderId: "inbox",
+          folderId: finalFolderId,
           version: 1,
-          read: 0,
+          read: finalRead ? 1 : 0,
           threadId,
           direction: "inbound",
           subject: input.message.subject,
@@ -2583,7 +2797,7 @@ const commitInboundMessage = (
           recipientsJson: encodeJson(AddressList, recipients),
           snippet: inboundSnippet(input.message.textBody),
           activityAt: input.receivedAt,
-          starred: 0,
+          starred: finalStarred ? 1 : 0,
           needsReply: 0,
           size: input.envelope.rawSize,
           rfcMessageId: input.message.rfcMessageId ?? null,
@@ -2605,6 +2819,7 @@ const commitInboundMessage = (
           mailboxId,
           status: "ready",
           messageId,
+          asyncRuleJobId,
           attemptCount: existing?.attemptCount ?? 1,
           createdAt: existing?.createdAt ?? input.receivedAt,
           updatedAt: now,
@@ -2647,6 +2862,87 @@ const commitInboundMessage = (
             sourceIndex: metadata.index,
             disposition: metadata.disposition,
           });
+        }
+
+        if (finalLabelIds.size > 0) {
+          yield* tx
+            .insert(messageLabel)
+            .values(
+              [...finalLabelIds].map((labelId) => ({ messageId, labelId }))
+            );
+        }
+
+        const evaluationRecord = Schema.decodeUnknownSync(RuleEvaluationRecord)(
+          {
+            inboundIngestId: input.inboundIngestId,
+            mailboxId,
+            messageId,
+            engineVersion: 1,
+            stoppedByRuleId: evaluation.stoppedByRuleId,
+            evaluatedAt: now,
+          }
+        );
+        yield* tx.insert(ruleEvaluation).values({
+          inboundIngestId: evaluationRecord.inboundIngestId,
+          messageId: evaluationRecord.messageId,
+          engineVersion: evaluationRecord.engineVersion,
+          stoppedByRuleId: evaluationRecord.stoppedByRuleId ?? null,
+          evaluatedAt: evaluationRecord.evaluatedAt,
+        });
+        if (applications.length > 0) {
+          yield* tx.insert(ruleApplication).values(
+            applications.map(({ outcome, plan }) => {
+              const application = Schema.decodeUnknownSync(RuleApplication)({
+                inboundIngestId: input.inboundIngestId,
+                mailboxId,
+                messageId,
+                ruleId: plan.ruleId,
+                ruleVersion: plan.ruleVersion,
+                actionIndex: plan.actionIndex,
+                action: plan.action,
+                outcome,
+                appliedAt: now,
+              });
+              return {
+                inboundIngestId: application.inboundIngestId,
+                messageId: application.messageId,
+                ruleId: application.ruleId,
+                ruleVersion: application.ruleVersion,
+                actionIndex: application.actionIndex,
+                actionJson: encodeJson(RuleAction, application.action),
+                outcome: application.outcome,
+                appliedAt: application.appliedAt,
+              };
+            })
+          );
+        }
+
+        if (asyncRulePlan !== undefined && asyncRuleJobId !== undefined) {
+          const job = Schema.decodeUnknownSync(AsyncRuleJob)({
+            id: asyncRuleJobId,
+            inboundIngestId: input.inboundIngestId,
+            mailboxId,
+            messageId,
+            plan: asyncRulePlan,
+            status: "pending",
+            createdAt: now,
+            updatedAt: now,
+            version: 1,
+          });
+          yield* tx.insert(asyncRuleJob).values({
+            id: job.id,
+            inboundIngestId: job.inboundIngestId,
+            messageId: job.messageId,
+            planJson: encodeJson(AsyncRulePlanV1, job.plan),
+            status: job.status,
+            createdAt: job.createdAt,
+            updatedAt: job.updatedAt,
+            version: job.version,
+          });
+          yield* tx
+            .update(inboundProcessing)
+            .set({ asyncRuleJobId })
+            .where(eq(inboundProcessing.id, input.inboundIngestId));
         }
 
         return result;

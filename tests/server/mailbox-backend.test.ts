@@ -3,7 +3,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { MailboxInlineAttachmentInput } from "#/mailboxes/attachment-reading";
 import { MailboxMessageActionCommand } from "#/mailboxes/message-actions";
+import { MailboxMessageHtmlInput } from "#/mailboxes/message-html";
 import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -87,6 +89,13 @@ const messageAction = {
   starred: false,
   version: 2,
 } as const;
+const messageHtml = {
+  _tag: "Label",
+  document: "<html><body><p>Hello</p></body></html>",
+  labelId: "work/urgent",
+  mailboxId: "team/primary",
+  messageId: "message/one",
+} as const;
 
 const runForward = <A>(
   fetch: (request: Request) => Promise<Response>,
@@ -111,6 +120,137 @@ const runForward = <A>(
   );
 
 describe("Website mailbox Backend forwarding", () => {
+  it("forwards and validates an inline attachment binary response", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: {
+        cookie: "__Host-session=session-a.secret",
+        origin: "https://inbox.test",
+      },
+    });
+    const query = Schema.decodeUnknownSync(MailboxInlineAttachmentInput)({
+      _tag: "Folder",
+      attachmentId: "attachment/one",
+      folderId: "inbox/team",
+      mailboxId: "team/primary",
+      messageId: "message/one",
+    });
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(
+          new Response(new Uint8Array([1, 2, 3]), {
+            headers: {
+              "content-length": "3",
+              "content-type": "image/png",
+            },
+          })
+        );
+      },
+      (operations) => operations.getInlineAttachment({ incoming, query })
+    );
+
+    expect(result).toStrictEqual({
+      bytes: new Uint8Array([1, 2, 3]),
+      mimeType: "image/png",
+      ok: true,
+    });
+    expect({
+      pathname:
+        forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
+      search:
+        forwarded === undefined ? undefined : new URL(forwarded.url).search,
+    }).toStrictEqual({
+      pathname:
+        "/api/mailboxes/team%2Fprimary/messages/message%2Fone/attachments/attachment%2Fone/inline",
+      search: "?folder=inbox%2Fteam",
+    });
+  });
+
+  it("rejects inconsistent inline attachment metadata", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(MailboxInlineAttachmentInput)({
+      _tag: "Label",
+      attachmentId: "attachment-1",
+      labelId: "work",
+      mailboxId: "primary",
+      messageId: "message-1",
+    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          new Response(new Uint8Array([1, 2, 3]), {
+            headers: {
+              "content-length": "4",
+              "content-type": "image/png",
+            },
+          })
+        ),
+      (operations) => operations.getInlineAttachment({ incoming, query })
+    );
+
+    expect(result).toMatchObject({ ok: false, status: 502 });
+  });
+
+  it("forwards an independently authorized message HTML read", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const query = Schema.decodeUnknownSync(MailboxMessageHtmlInput)({
+      _tag: "Label",
+      labelId: "work/urgent",
+      mailboxId: "team/primary",
+      messageId: "message/one",
+    });
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(messageHtml));
+      },
+      (operations) => operations.getMessageHtml({ incoming, query })
+    );
+
+    expect(result).toStrictEqual({ html: messageHtml, ok: true });
+    expect({
+      cookie: forwarded?.headers.get("cookie"),
+      method: forwarded?.method,
+      pathname:
+        forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
+      search:
+        forwarded === undefined ? undefined : new URL(forwarded.url).search,
+    }).toStrictEqual({
+      cookie: "__Host-session=session-a.secret",
+      method: "GET",
+      pathname: "/api/mailboxes/team%2Fprimary/messages/message%2Fone/html",
+      search: "?label=work%2Furgent",
+    });
+  });
+
+  it("rejects message HTML returned for a different view identity", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(MailboxMessageHtmlInput)({
+      _tag: "Folder",
+      folderId: "inbox",
+      mailboxId: "primary",
+      messageId: "message-1",
+    });
+    const result = await runForward(
+      () => Promise.resolve(Response.json(messageHtml)),
+      (operations) => operations.getMessageHtml({ incoming, query })
+    );
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "AuthInternalError",
+        code: "internal_error",
+        message: "Invalid Backend response",
+      },
+      ok: false,
+      status: 502,
+    });
+  });
+
   it("forwards a message action with encoded path identity", async () => {
     let forwarded: Request | undefined;
     const incoming = new Request("https://inbox.test/_server", {
@@ -191,6 +331,32 @@ describe("Website mailbox Backend forwarding", () => {
     });
   });
 
+  it("decodes nullable optional fields from Backend JSON responses", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(MailboxMessageListInput)({
+      _tag: "Folder",
+      folderId: "inbox",
+      mailboxId: "primary",
+    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json({
+            items: [{ ...messages.items[0], sender: null }],
+            nextCursor: null,
+          })
+        ),
+      (operations) => operations.listMessages({ incoming, query })
+    );
+    expect(result).toStrictEqual({
+      messages: {
+        items: [{ ...messages.items[0], sender: undefined }],
+        nextCursor: undefined,
+      },
+      ok: true,
+    });
+  });
+
   it("encodes thread path segments and validates the response", async () => {
     let path: string | undefined;
     let search: string | undefined;
@@ -202,21 +368,50 @@ describe("Website mailbox Backend forwarding", () => {
       messageId: "message-1",
       threadId: "thread/one ?",
     });
+    const responseThread = {
+      ...thread,
+      thread: { ...thread.thread, id: query.threadId },
+    };
     const result = await runForward(
       (request) => {
         const url = new URL(request.url);
         const { pathname, search: queryString } = url;
         path = pathname;
         search = queryString;
-        return Promise.resolve(Response.json(thread));
+        return Promise.resolve(Response.json(responseThread));
       },
       (operations) => operations.getThread({ incoming, query })
     );
 
     expect({ path, result, search }).toStrictEqual({
       path: "/api/mailboxes/team%2Fprimary/threads/thread%2Fone%20%3F",
-      result: { ok: true, thread },
+      result: { ok: true, thread: responseThread },
       search: "?folder=inbox&message=message-1",
+    });
+  });
+
+  it("rejects a thread response for a different requested thread", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(OpenMailboxThreadInput)({
+      _tag: "Folder",
+      folderId: "inbox",
+      mailboxId: "primary",
+      messageId: "message-1",
+      threadId: "thread-requested",
+    });
+    const result = await runForward(
+      () => Promise.resolve(Response.json(thread)),
+      (operations) => operations.getThread({ incoming, query })
+    );
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "AuthInternalError",
+        code: "internal_error",
+        message: "Invalid Backend response",
+      },
+      ok: false,
+      status: 502,
     });
   });
 
@@ -375,6 +570,39 @@ describe("Website mailbox Backend forwarding", () => {
 
     expect(result).toStrictEqual({ error, ok: false, status: 403 });
     expect(requests).toBe(1);
+  });
+
+  it("does not expose administration denial messages to mailbox reads", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(MailboxMessageListInput)({
+      _tag: "Folder",
+      folderId: "inbox",
+      mailboxId: "primary",
+    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json(
+            {
+              _tag: "AuthPolicyDeniedError",
+              code: "policy_denied",
+              message: "Mailbox owner account required",
+            },
+            { status: 403 }
+          )
+        ),
+      (operations) => operations.listMessages({ incoming, query })
+    );
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "AuthPolicyDeniedError",
+        code: "policy_denied",
+        message: "Mailbox operation denied",
+      },
+      ok: false,
+      status: 403,
+    });
   });
 
   it("replaces malformed Backend responses with a generic gateway error", async () => {

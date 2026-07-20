@@ -5,6 +5,7 @@ import {
   authClient,
   authErrorMessage,
   authSessionQueryKey,
+  clearMailboxReadDenial,
 } from "../../auth/client";
 import {
   CompletionShell,
@@ -31,6 +32,7 @@ function MagicLinkCompletion() {
       if (result.type !== "authenticated") {
         return;
       }
+      clearMailboxReadDenial(queryClient);
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
       await navigate({ to: "/" });
     },

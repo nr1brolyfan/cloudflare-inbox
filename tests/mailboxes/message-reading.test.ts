@@ -108,6 +108,7 @@ const repositoryWith = (
     findFolderLocation: unused,
     findMessageLocation: unused,
     findRuleLocation: unused,
+    getAttachmentBlob: unused,
     getDraft: unused,
     getMessage,
     getOutboundDelivery: unused,

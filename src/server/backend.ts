@@ -3,7 +3,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
 import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
+import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
 import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -69,6 +71,25 @@ export const websiteBackend = {
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.getNavigation(incoming);
       })
+    ),
+  getMailboxInlineAttachment: (
+    query: MailboxInlineAttachmentInput,
+    incoming: Request
+  ) =>
+    websiteRuntime.runPromise(
+      MailboxBackendOperations.pipe(
+        Effect.flatMap((operations) =>
+          operations.getInlineAttachment({ incoming, query })
+        )
+      )
+    ),
+  getMailboxMessageHtml: (query: MailboxMessageHtmlInput, incoming: Request) =>
+    websiteRuntime.runPromise(
+      MailboxBackendOperations.pipe(
+        Effect.flatMap((operations) =>
+          operations.getMessageHtml({ incoming, query })
+        )
+      )
     ),
   getMailboxThread: (query: OpenMailboxThreadInput) =>
     websiteRuntime.runPromise(

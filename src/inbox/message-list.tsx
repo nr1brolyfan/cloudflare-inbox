@@ -26,6 +26,7 @@ import { mailboxViewHref } from "./mailbox-view-links";
 type MessageListData = Schema.Codec.Encoded<typeof MailboxMessageListResult>;
 export type MessageListItemData = MessageListData["items"][number];
 export type MessageRowAction = "archive" | "read" | "star" | "trash";
+const noPendingMessageIds: ReadonlySet<string> = new Set();
 
 const messageDate = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
@@ -164,16 +165,20 @@ function MessageSearchControls({
 }
 
 function MessageActionButtons({
+  archiveFolderId,
   message,
   onAction,
   pending,
+  trashFolderId,
 }: {
+  readonly archiveFolderId?: string;
   readonly message: MessageListItemData;
   readonly onAction: (
     action: MessageRowAction,
     message: MessageListItemData
   ) => void;
   readonly pending: boolean;
+  readonly trashFolderId?: string;
 }) {
   return (
     <div className="flex items-center justify-end gap-1 border-t border-[var(--line)]/70 px-3 py-1.5">
@@ -204,7 +209,7 @@ function MessageActionButtons({
       </button>
       <button
         type="button"
-        disabled={pending || message.folderId === "archive"}
+        disabled={pending || message.folderId === archiveFolderId}
         onClick={() => onAction("archive", message)}
         aria-label="Archive message"
         className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-30"
@@ -213,7 +218,7 @@ function MessageActionButtons({
       </button>
       <button
         type="button"
-        disabled={pending || message.folderId === "trash"}
+        disabled={pending || message.folderId === trashFolderId}
         onClick={() => onAction("trash", message)}
         aria-label="Move message to trash"
         className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-red-50 hover:text-red-700 disabled:opacity-30"
@@ -226,23 +231,36 @@ function MessageActionButtons({
 
 export function MessageList({
   actionError,
+  actionErrors,
+  archiveFolderId,
   data,
   filters,
   isLoadingMore,
+  isRefreshing = false,
   loadMoreFailed,
   onLoadMore,
   onMessageAction,
   onOpenMessage,
   onQueryChange,
   onRetryAction,
-  pendingMessageId,
+  onRetryRefresh,
+  pendingMessageIds = noPendingMessageIds,
+  refreshFailed = false,
   selectedThreadId,
   selection,
+  trashFolderId,
 }: {
   readonly actionError?: string;
+  readonly actionErrors?: readonly {
+    readonly handleRetry?: () => void;
+    readonly messageId: string;
+    readonly text: string;
+  }[];
+  readonly archiveFolderId?: string;
   readonly data: MessageListData;
   readonly filters: MailboxMessageQueryState;
   readonly isLoadingMore: boolean;
+  readonly isRefreshing?: boolean;
   readonly loadMoreFailed: boolean;
   readonly onLoadMore: () => void;
   readonly onMessageAction: (
@@ -252,11 +270,25 @@ export function MessageList({
   readonly onOpenMessage: (threadId: string, messageId: string) => void;
   readonly onQueryChange: (state: MailboxMessageQueryState) => void;
   readonly onRetryAction?: () => void;
-  readonly pendingMessageId?: string;
+  readonly onRetryRefresh?: () => void;
+  readonly pendingMessageIds?: ReadonlySet<string>;
+  readonly refreshFailed?: boolean;
   readonly selectedThreadId?: string;
   readonly selection: MailboxViewSelection;
+  readonly trashFolderId?: string;
 }) {
   const hasActiveFilters = hasActiveMailboxFilters(filters);
+  const displayedActionErrors =
+    actionErrors ??
+    (actionError === undefined
+      ? []
+      : [
+          {
+            handleRetry: onRetryAction,
+            messageId: "action",
+            text: actionError,
+          },
+        ]);
 
   return (
     <section
@@ -271,28 +303,55 @@ export function MessageList({
           <span className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]">
             {data.items.length}
           </span>
+          {isRefreshing ? (
+            <LoaderCircle
+              aria-label="Refreshing messages"
+              className="animate-spin text-[var(--sea-ink-soft)]"
+              size={14}
+            />
+          ) : null}
         </div>
         <MessageSearchControls
           filters={filters}
           onQueryChange={onQueryChange}
         />
-        {actionError === undefined ? null : (
+        {displayedActionErrors.map((failure) => (
           <div
+            key={failure.messageId}
             role="alert"
             className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-[0.68rem] font-bold text-red-700"
           >
-            <span className="flex-1">{actionError}</span>
-            {onRetryAction === undefined ? null : (
+            <span className="flex-1">{failure.text}</span>
+            {failure.handleRetry === undefined ? null : (
               <button
                 type="button"
-                onClick={onRetryAction}
+                onClick={failure.handleRetry}
                 className="rounded-md bg-white px-2 py-1 text-red-800"
               >
                 Try again
               </button>
             )}
           </div>
-        )}
+        ))}
+        {refreshFailed ? (
+          <div
+            role="alert"
+            className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[0.68rem] font-bold text-amber-900"
+          >
+            <span className="flex-1">
+              Messages could not be refreshed. Showing saved results.
+            </span>
+            {onRetryRefresh === undefined ? null : (
+              <button
+                type="button"
+                onClick={onRetryRefresh}
+                className="rounded-md bg-white px-2 py-1"
+              >
+                Try again
+              </button>
+            )}
+          </div>
+        ) : null}
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-2 sm:p-3">
@@ -400,9 +459,11 @@ export function MessageList({
                     </div>
                   </a>
                   <MessageActionButtons
+                    archiveFolderId={archiveFolderId}
                     message={message}
                     onAction={onMessageAction}
-                    pending={pendingMessageId === message.id}
+                    pending={pendingMessageIds.has(message.id)}
+                    trashFolderId={trashFolderId}
                   />
                 </article>
               );

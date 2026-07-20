@@ -9,12 +9,15 @@ import {
 } from "@effect-auth/core/HttpApi";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
 import type { MailboxAdministrationError } from "../mailboxes/administration";
 import { MailboxAdministration } from "../mailboxes/administration";
+import type { MailboxInlineAttachmentError } from "../mailboxes/attachment-reading";
+import { MailboxInlineAttachmentReading } from "../mailboxes/attachment-reading";
 import type {
   MailboxDomainError,
   MailboxRepositoryError,
@@ -24,6 +27,8 @@ import { InboundReplay } from "../mailboxes/inbound";
 import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
 import type { MailboxMessageActionError } from "../mailboxes/message-actions";
 import { MailboxMessageActions } from "../mailboxes/message-actions";
+import type { MailboxMessageHtmlError } from "../mailboxes/message-html";
+import { MailboxMessageHtmlReading } from "../mailboxes/message-html";
 import type { MailboxMessageReadingError } from "../mailboxes/message-reading";
 import { MailboxMessageReading } from "../mailboxes/message-reading";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
@@ -124,6 +129,8 @@ type MailboxHandlerError =
   | MailboxNavigationError
   | MailboxMessageReadingError
   | MailboxMessageActionError
+  | MailboxMessageHtmlError
+  | MailboxInlineAttachmentError
   | MailboxDomainError
   | MailboxRepositoryError
   | WorkflowStartError;
@@ -224,6 +231,30 @@ const mapMessageActionError = (
   }
 };
 
+const mapMessageHtmlError = (
+  error: MailboxMessageHtmlError
+): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
+  error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Mailbox message HTML not found",
+        })
+      )
+    : Effect.fail(internalError());
+
+const mapInlineAttachmentError = (
+  error: MailboxInlineAttachmentError
+): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
+  error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Inline message attachment not found",
+        })
+      )
+    : Effect.fail(internalError());
+
 const mapResourceResolveError = (
   error: MailResourceResolveError
 ): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
@@ -244,6 +275,8 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxNavigationError", mapNavigationError),
     Effect.catchTag("MailboxMessageReadingError", mapMessageReadingError),
     Effect.catchTag("MailboxMessageActionError", mapMessageActionError),
+    Effect.catchTag("MailboxMessageHtmlError", mapMessageHtmlError),
+    Effect.catchTag("MailboxInlineAttachmentError", mapInlineAttachmentError),
     Effect.catchTag("MailboxDomainError", mapInboundDomainError),
     Effect.catchTags({
       MailboxRepositoryError: () => Effect.fail(internalError()),
@@ -270,6 +303,8 @@ export const MailboxGroupLive = HttpApiBuilder.group(
     const navigation = yield* MailboxNavigation;
     const messageReading = yield* MailboxMessageReading;
     const messageActions = yield* MailboxMessageActions;
+    const messageHtml = yield* MailboxMessageHtmlReading;
+    const inlineAttachments = yield* MailboxInlineAttachmentReading;
     const replayAuthorization = yield* InboundReplayAuthorization;
     const inboundReplay = yield* InboundReplay;
 
@@ -289,6 +324,64 @@ export const MailboxGroupLive = HttpApiBuilder.group(
           .pipe(mapHttpErrors)
       )
       .handle("getNavigation", () => navigation.getCurrent.pipe(mapHttpErrors))
+      .handle("getInlineAttachment", ({ params, query }) =>
+        Effect.gen(function* () {
+          const view =
+            query.folder === undefined
+              ? query.label === undefined
+                ? yield* Effect.die(
+                    new Error("Inline attachment view query invariant failed")
+                  )
+                : {
+                    _tag: "Label" as const,
+                    attachmentId: params.attachmentId,
+                    labelId: query.label,
+                    mailboxId: params.mailboxId,
+                    messageId: params.messageId,
+                  }
+              : {
+                  _tag: "Folder" as const,
+                  attachmentId: params.attachmentId,
+                  folderId: query.folder,
+                  mailboxId: params.mailboxId,
+                  messageId: params.messageId,
+                };
+          const content = yield* inlineAttachments.get(view);
+          return HttpServerResponse.uint8Array(content.bytes, {
+            contentType: content.mimeType,
+            headers: {
+              "cache-control": "private, no-store",
+              "content-disposition": "inline",
+              "content-length": String(content.bytes.byteLength),
+              "referrer-policy": "no-referrer",
+              "x-content-type-options": "nosniff",
+            },
+          });
+        }).pipe(mapHttpErrors)
+      )
+      .handle("getMessageHtml", ({ params, query }) =>
+        Effect.gen(function* () {
+          const view =
+            query.folder === undefined
+              ? query.label === undefined
+                ? yield* Effect.die(
+                    new Error("Message HTML view query invariant failed")
+                  )
+                : {
+                    _tag: "Label" as const,
+                    labelId: query.label,
+                    mailboxId: params.mailboxId,
+                    messageId: params.messageId,
+                  }
+              : {
+                  _tag: "Folder" as const,
+                  folderId: query.folder,
+                  mailboxId: params.mailboxId,
+                  messageId: params.messageId,
+                };
+          return yield* messageHtml.get(view);
+        }).pipe(mapHttpErrors)
+      )
       .handle("listMessages", ({ params, query }) =>
         Effect.gen(function* () {
           const filters = {

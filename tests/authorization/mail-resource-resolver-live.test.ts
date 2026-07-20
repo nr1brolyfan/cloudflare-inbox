@@ -44,6 +44,7 @@ const resolverWith = (
               findFolderLocation: unused,
               findMessageLocation,
               findRuleLocation: unused,
+              getAttachmentBlob: unusedDirectory,
               getDraft: unusedDirectory,
               getMessage: unusedDirectory,
               getOutboundDelivery: unusedDirectory,

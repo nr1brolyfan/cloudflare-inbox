@@ -77,6 +77,7 @@ const encodeMailDataResult = <A, E extends { readonly _tag: string }>(
     })
   );
 
+// oxlint-disable-next-line eslint/complexity -- exhaustive typed RPC dispatcher
 const executeMailDataRequest = (
   request: MailDataRpcRequestType,
   stores: MailboxMessageStore &
@@ -104,6 +105,13 @@ const executeMailDataRequest = (
         request,
         stores.getMessage(request.input),
         (value) => ({ _tag: "MessageFound", value })
+      );
+    }
+    case "GetAttachmentBlob": {
+      return encodeMailDataResult(
+        request,
+        stores.getAttachmentBlob(request.input),
+        (value) => ({ _tag: "AttachmentBlobFound", value })
       );
     }
     case "GetThread": {

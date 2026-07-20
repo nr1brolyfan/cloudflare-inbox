@@ -222,6 +222,10 @@ export const inboundProcessing = sqliteTable(
         onUpdate: "cascade",
         onDelete: "restrict",
       }),
+    asyncRuleJobId: text("async_rule_job_id").references(
+      (): AnySQLiteColumn => asyncRuleJob.id,
+      { onUpdate: "cascade", onDelete: "restrict" }
+    ),
     requestKey: text("request_key").notNull(),
     failureCode: text("failure_code"),
     failureAt: integer("failure_at"),
@@ -266,6 +270,13 @@ export const inboundProcessing = sqliteTable(
       sql`${t.updatedAt} >= ${t.createdAt}`
     ),
     check("inbound_processing_version_check", sql`${t.version} >= 1`),
+    check(
+      "inbound_processing_async_rule_job_check",
+      sql`${t.asyncRuleJobId} is null or ${t.status} = 'ready'`
+    ),
+    uniqueIndex("inbound_processing_async_rule_job_uidx")
+      .on(t.asyncRuleJobId)
+      .where(sql`async_rule_job_id is not null`),
   ]
 );
 
@@ -375,6 +386,21 @@ export const filterRule = sqliteTable(
     id: text("id").primaryKey(),
     version: integer("version").notNull().default(1),
     deletedAt: integer("deleted_at"),
+    name: text("name").notNull().default("Migrated rule"),
+    enabled: integer("enabled").notNull().default(0),
+    priority: integer("priority").notNull().default(0),
+    conditionsJson: text("conditions_json")
+      .notNull()
+      .default(
+        '{"match":"all","items":[{"_tag":"HasAttachment","value":false}]}'
+      ),
+    actionsJson: text("actions_json")
+      .notNull()
+      .default('[{"_tag":"SetRead","read":false}]'),
+    stopProcessing: integer("stop_processing").notNull().default(0),
+    createdAt: integer("created_at").notNull().default(0),
+    updatedAt: integer("updated_at").notNull().default(0),
+    aiInstruction: text("ai_instruction"),
   },
   (t) => [
     check(
@@ -385,6 +411,174 @@ export const filterRule = sqliteTable(
     check(
       "filter_rule_deleted_at_check",
       sql`${t.deletedAt} is null or ${t.deletedAt} >= 0`
+    ),
+    check(
+      "filter_rule_name_check",
+      sql`length(${t.name}) between 1 and 200 and ${t.name} = trim(${t.name})`
+    ),
+    check("filter_rule_enabled_check", sql`${t.enabled} in (0, 1)`),
+    check(
+      "filter_rule_priority_check",
+      sql`${t.priority} between 0 and 1000000`
+    ),
+    check(
+      "filter_rule_conditions_json_check",
+      sql`json_valid(${t.conditionsJson}) and json_type(${t.conditionsJson}) = 'object'`
+    ),
+    check(
+      "filter_rule_actions_json_check",
+      sql`json_valid(${t.actionsJson}) and json_type(${t.actionsJson}) = 'array'`
+    ),
+    check(
+      "filter_rule_stop_processing_check",
+      sql`${t.stopProcessing} in (0, 1)`
+    ),
+    check("filter_rule_created_at_check", sql`${t.createdAt} >= 0`),
+    check(
+      "filter_rule_updated_at_check",
+      sql`${t.updatedAt} >= ${t.createdAt}`
+    ),
+    check(
+      "filter_rule_ai_instruction_check",
+      sql`${t.aiInstruction} is null or (length(${t.aiInstruction}) between 1 and 2000 and ${t.aiInstruction} = trim(${t.aiInstruction}) and ${t.stopProcessing} = 0)`
+    ),
+    index("filter_rule_active_priority_idx")
+      .on(t.priority, t.id)
+      .where(sql`enabled = 1 and deleted_at is null`),
+  ]
+);
+
+export const asyncRuleJob = sqliteTable(
+  "async_rule_job",
+  {
+    id: text("id").primaryKey(),
+    inboundIngestId: text("inbound_ingest_id")
+      .notNull()
+      .unique()
+      .references(() => inboundProcessing.id, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    messageId: text("message_id")
+      .notNull()
+      .unique()
+      .references(() => message.id, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    planJson: text("plan_json").notNull(),
+    status: text("status", {
+      enum: ["pending", "running", "completed", "failed"],
+    })
+      .notNull()
+      .default("pending"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    check(
+      "async_rule_job_id_check",
+      sql`length(${t.id}) between 1 and 128 and ${t.id} = trim(${t.id})`
+    ),
+    check(
+      "async_rule_job_plan_json_check",
+      sql`json_valid(${t.planJson}) and json_type(${t.planJson}) = 'object'`
+    ),
+    check(
+      "async_rule_job_status_check",
+      sql`${t.status} in ('pending', 'running', 'completed', 'failed')`
+    ),
+    check("async_rule_job_created_at_check", sql`${t.createdAt} >= 0`),
+    check(
+      "async_rule_job_updated_at_check",
+      sql`${t.updatedAt} >= ${t.createdAt}`
+    ),
+    check("async_rule_job_version_check", sql`${t.version} >= 1`),
+    index("async_rule_job_status_updated_idx").on(t.status, t.updatedAt, t.id),
+  ]
+);
+
+export const ruleEvaluation = sqliteTable(
+  "rule_evaluation",
+  {
+    inboundIngestId: text("inbound_ingest_id")
+      .primaryKey()
+      .references(() => inboundProcessing.id, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    messageId: text("message_id")
+      .notNull()
+      .unique()
+      .references(() => message.id, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    engineVersion: integer("engine_version").notNull(),
+    stoppedByRuleId: text("stopped_by_rule_id").references(
+      () => filterRule.id,
+      { onUpdate: "cascade", onDelete: "restrict" }
+    ),
+    evaluatedAt: integer("evaluated_at").notNull(),
+  },
+  (t) => [
+    check("rule_evaluation_engine_version_check", sql`${t.engineVersion} = 1`),
+    check("rule_evaluation_evaluated_at_check", sql`${t.evaluatedAt} >= 0`),
+  ]
+);
+
+export const ruleApplication = sqliteTable(
+  "rule_application",
+  {
+    inboundIngestId: text("inbound_ingest_id")
+      .notNull()
+      .references(() => ruleEvaluation.inboundIngestId, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    messageId: text("message_id")
+      .notNull()
+      .references(() => message.id, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    ruleId: text("rule_id")
+      .notNull()
+      .references(() => filterRule.id, {
+        onUpdate: "cascade",
+        onDelete: "restrict",
+      }),
+    ruleVersion: integer("rule_version").notNull(),
+    actionIndex: integer("action_index").notNull(),
+    actionJson: text("action_json").notNull(),
+    outcome: text("outcome", {
+      enum: ["applied", "noop", "skipped_invalid_target"],
+    }).notNull(),
+    appliedAt: integer("applied_at").notNull(),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.inboundIngestId, t.ruleId, t.ruleVersion, t.actionIndex],
+    }),
+    check("rule_application_rule_version_check", sql`${t.ruleVersion} >= 1`),
+    check(
+      "rule_application_action_index_check",
+      sql`${t.actionIndex} between 0 and 19`
+    ),
+    check(
+      "rule_application_action_json_check",
+      sql`json_valid(${t.actionJson}) and json_type(${t.actionJson}) = 'object'`
+    ),
+    check(
+      "rule_application_outcome_check",
+      sql`${t.outcome} in ('applied', 'noop', 'skipped_invalid_target')`
+    ),
+    check("rule_application_applied_at_check", sql`${t.appliedAt} >= 0`),
+    index("rule_application_rule_applied_idx").on(
+      t.ruleId,
+      t.appliedAt,
+      t.messageId
     ),
   ]
 );
@@ -563,9 +757,12 @@ export const mailboxSchema = {
   folder,
   message,
   inboundProcessing,
+  asyncRuleJob,
   attachment,
   draft,
   filterRule,
+  ruleEvaluation,
+  ruleApplication,
   label,
   mailboxOperation,
   messageLabel,
@@ -605,6 +802,14 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
       from: r.message.id,
       to: r.outboundDelivery.messageId,
     }),
+    ruleEvaluation: r.one.ruleEvaluation({
+      from: r.message.id,
+      to: r.ruleEvaluation.messageId,
+    }),
+    ruleApplications: r.many.ruleApplication({
+      from: r.message.id,
+      to: r.ruleApplication.messageId,
+    }),
   },
   inboundProcessing: {
     message: r.one.message({
@@ -614,6 +819,14 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
     attachments: r.many.attachment({
       from: r.inboundProcessing.id,
       to: r.attachment.inboundIngestId,
+    }),
+    ruleEvaluation: r.one.ruleEvaluation({
+      from: r.inboundProcessing.id,
+      to: r.ruleEvaluation.inboundIngestId,
+    }),
+    asyncRuleJob: r.one.asyncRuleJob({
+      from: r.inboundProcessing.asyncRuleJobId,
+      to: r.asyncRuleJob.id,
     }),
   },
   attachment: {
@@ -627,6 +840,18 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
       to: r.inboundProcessing.id,
     }),
   },
+  asyncRuleJob: {
+    inboundProcessing: r.one.inboundProcessing({
+      from: r.asyncRuleJob.inboundIngestId,
+      to: r.inboundProcessing.id,
+      optional: false,
+    }),
+    message: r.one.message({
+      from: r.asyncRuleJob.messageId,
+      to: r.message.id,
+      optional: false,
+    }),
+  },
   label: {
     messageLabels: r.many.messageLabel({
       from: r.label.id,
@@ -635,6 +860,53 @@ export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({
     messages: r.many.message({
       from: r.label.id.through(r.messageLabel.labelId),
       to: r.message.id.through(r.messageLabel.messageId),
+    }),
+  },
+  filterRule: {
+    evaluationsStopped: r.many.ruleEvaluation({
+      from: r.filterRule.id,
+      to: r.ruleEvaluation.stoppedByRuleId,
+    }),
+    applications: r.many.ruleApplication({
+      from: r.filterRule.id,
+      to: r.ruleApplication.ruleId,
+    }),
+  },
+  ruleEvaluation: {
+    inboundProcessing: r.one.inboundProcessing({
+      from: r.ruleEvaluation.inboundIngestId,
+      to: r.inboundProcessing.id,
+      optional: false,
+    }),
+    message: r.one.message({
+      from: r.ruleEvaluation.messageId,
+      to: r.message.id,
+      optional: false,
+    }),
+    stoppedByRule: r.one.filterRule({
+      from: r.ruleEvaluation.stoppedByRuleId,
+      to: r.filterRule.id,
+    }),
+    applications: r.many.ruleApplication({
+      from: r.ruleEvaluation.inboundIngestId,
+      to: r.ruleApplication.inboundIngestId,
+    }),
+  },
+  ruleApplication: {
+    evaluation: r.one.ruleEvaluation({
+      from: r.ruleApplication.inboundIngestId,
+      to: r.ruleEvaluation.inboundIngestId,
+      optional: false,
+    }),
+    message: r.one.message({
+      from: r.ruleApplication.messageId,
+      to: r.message.id,
+      optional: false,
+    }),
+    rule: r.one.filterRule({
+      from: r.ruleApplication.ruleId,
+      to: r.filterRule.id,
+      optional: false,
     }),
   },
   messageLabel: {

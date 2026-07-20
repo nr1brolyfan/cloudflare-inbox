@@ -17,6 +17,8 @@ import { Route as AuthCompletePasswordResetRouteImport } from './routes/auth-com
 import { Route as AuthCompleteMagicLinkRouteImport } from './routes/auth-complete/magic-link'
 import { Route as AuthCompleteEmailVerificationRouteImport } from './routes/auth-complete/email-verification'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/html'
+import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
 
 const InboxRoute = InboxRouteImport.update({
   id: '/inbox',
@@ -60,6 +62,20 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute =
+  ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport.update({
+    id: '/api/mailboxes/$mailboxId/messages/$messageId/html',
+    path: '/api/mailboxes/$mailboxId/messages/$messageId/html',
+    getParentRoute: () => rootRouteImport,
+  } as any)
+const ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute =
+  ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport.update(
+    {
+      id: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline',
+      path: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline',
+      getParentRoute: () => rootRouteImport,
+    } as any,
+  )
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -70,6 +86,8 @@ export interface FileRoutesByFullPath {
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -80,6 +98,8 @@ export interface FileRoutesByTo {
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -91,6 +111,8 @@ export interface FileRoutesById {
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -103,6 +125,8 @@ export interface FileRouteTypes {
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/html'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -113,6 +137,8 @@ export interface FileRouteTypes {
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/html'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   id:
     | '__root__'
     | '/'
@@ -123,6 +149,8 @@ export interface FileRouteTypes {
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/html'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -134,6 +162,8 @@ export interface RootRouteChildren {
   AuthCompleteMagicLinkRoute: typeof AuthCompleteMagicLinkRoute
   AuthCompletePasswordResetRoute: typeof AuthCompletePasswordResetRoute
   AuthSplatRoute: typeof AuthSplatRoute
+  ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
+  ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -194,6 +224,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mailboxes/$mailboxId/messages/$messageId/html': {
+      id: '/api/mailboxes/$mailboxId/messages/$messageId/html'
+      path: '/api/mailboxes/$mailboxId/messages/$messageId/html'
+      fullPath: '/api/mailboxes/$mailboxId/messages/$messageId/html'
+      preLoaderRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': {
+      id: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
+      path: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
+      fullPath: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
+      preLoaderRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -206,6 +250,10 @@ const rootRouteChildren: RootRouteChildren = {
   AuthCompleteMagicLinkRoute: AuthCompleteMagicLinkRoute,
   AuthCompletePasswordResetRoute: AuthCompletePasswordResetRoute,
   AuthSplatRoute: AuthSplatRoute,
+  ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute:
+    ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute,
+  ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute:
+    ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

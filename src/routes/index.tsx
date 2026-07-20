@@ -17,6 +17,7 @@ import {
   authErrorMessage,
   authSessionQueryKey,
   clearCachedAuthSession,
+  clearMailboxReadDenial,
   currentSessionForQuery,
   emailIdentity,
 } from "../auth/client";
@@ -70,6 +71,7 @@ function Home() {
     }
 
     setNotice(undefined);
+    clearMailboxReadDenial(queryClient);
     await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
   };
 
@@ -122,6 +124,11 @@ function Home() {
   });
   const mailboxBootstrap = useMutation({
     mutationFn: () => bootstrapMailboxOwner({ data: { displayName: "Inbox" } }),
+    onSuccess: async (result) => {
+      if (!result.ok && result.status === 401) {
+        await clearCachedAuthSession(queryClient);
+      }
+    },
     retry: false,
   });
 
@@ -328,6 +335,10 @@ function SignedIn({
   onBootstrap: () => void;
   onLogout: () => void;
 }) {
+  const mailboxExists =
+    bootstrapResult?.ok === false && bootstrapResult.status === 409;
+  const mailboxKnown = bootstrapResult?.ok === true || mailboxExists;
+
   return (
     <div>
       <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800">
@@ -338,8 +349,8 @@ function SignedIn({
         You are signed in.
       </h2>
       <p className="mt-4 text-sm leading-6 text-[var(--sea-ink-soft)]">
-        Your private mailbox workspace is ready. Session principal:{" "}
-        <code>{userId.slice(0, 12)}...</code>
+        Mailbox access is verified when you open the workspace. Session
+        principal: <code>{userId.slice(0, 12)}...</code>
       </p>
       <div className="mt-6">
         {bootstrapResult?.ok ? (
@@ -351,13 +362,17 @@ function SignedIn({
               Open the responsive workspace to continue to your mailbox.
             </p>
           </div>
+        ) : mailboxExists ? (
+          <Notice>
+            A primary inbox already exists. Open it to verify your access.
+          </Notice>
         ) : bootstrapResult ? (
           <ErrorNotice>{bootstrapResult.error.message}</ErrorNotice>
         ) : bootstrapError ? (
           <ErrorNotice>Mailbox setup request failed. Try again.</ErrorNotice>
         ) : null}
       </div>
-      {bootstrapResult?.ok ? null : (
+      {mailboxKnown ? null : (
         <button
           type="button"
           onClick={onBootstrap}
@@ -372,7 +387,7 @@ function SignedIn({
           Create primary inbox
         </button>
       )}
-      {bootstrapResult?.ok ? (
+      {mailboxKnown ? (
         <Link
           to="/inbox"
           className="mt-8 flex w-fit items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white no-underline shadow-lg hover:-translate-y-0.5 hover:text-white"

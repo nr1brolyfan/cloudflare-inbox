@@ -1,0 +1,195 @@
+import { UserId } from "@effect-auth/core/Identifiers";
+import * as AuthPermission from "@effect-auth/core/Permission";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import { describe, expect, it } from "vitest";
+
+import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
+import {
+  MailboxInlineAttachmentInput,
+  MailboxInlineAttachmentReading,
+  MailboxInlineAttachmentReadingLive,
+} from "#/mailboxes/attachment-reading";
+import { FolderId } from "#/mailboxes/core";
+import { InboundAttachmentBlobReader } from "#/mailboxes/inbound-attachment-reader-r2-live";
+import { AttachmentBlobLocation, GetMessageResult } from "#/mailboxes/messages";
+import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
+import { MailboxRepository } from "#/mailboxes/repository";
+
+const message = Schema.decodeUnknownSync(GetMessageResult)({
+  activityAt: 1000,
+  attachments: [
+    {
+      contentId: "image-1",
+      disposition: "inline",
+      fileName: "image.png",
+      id: "attachment-1",
+      messageId: "message-1",
+      mimeType: "image/png",
+      size: 3,
+    },
+  ],
+  bcc: [],
+  cc: [],
+  direction: "inbound",
+  folderId: "inbox",
+  hasAttachments: true,
+  id: "message-1",
+  labelIds: ["work"],
+  mailboxId: "primary",
+  read: false,
+  receivedAt: 1000,
+  recipients: [{ address: "owner@example.test" }],
+  references: [],
+  size: 3,
+  snippet: "Preview",
+  starred: false,
+  subject: "Hello",
+  threadId: "thread-1",
+  to: [{ address: "owner@example.test" }],
+  version: 1,
+});
+const blobLocation = Schema.decodeUnknownSync(AttachmentBlobLocation)({
+  attachmentId: "attachment-1",
+  contentId: "image-1",
+  disposition: "inline",
+  fileName: "image.png",
+  folderId: "inbox",
+  inboundIngestId: "ingest-1",
+  mailboxId: "primary",
+  messageId: "message-1",
+  mimeType: "image/png",
+  receivedAt: 1000,
+  size: 3,
+  sourceIndex: 0,
+});
+const folderId = Schema.decodeUnknownSync(FolderId)("inbox");
+const unused = () => Effect.die(new Error("Unexpected repository operation"));
+const unusedAuthorization = () =>
+  Effect.die(new Error("Unexpected authorization operation"));
+
+const repository = MailboxRepository.of({
+  addMessageLabel: unused,
+  cancelOutboundDelivery: unused,
+  createDraft: unused,
+  createFolder: unused,
+  createLabel: unused,
+  deleteFolder: unused,
+  deleteLabel: unused,
+  findAttachmentLocation: unused,
+  findDraftLocation: unused,
+  findFolderLocation: unused,
+  findMessageLocation: unused,
+  findRuleLocation: unused,
+  getAttachmentBlob: () => Effect.succeed(blobLocation),
+  getDraft: unused,
+  getMessage: () => Effect.succeed(message),
+  getOutboundDelivery: unused,
+  getThread: unused,
+  listFolders: unused,
+  listLabels: unused,
+  listMessages: unused,
+  moveMessage: unused,
+  removeMessageLabel: unused,
+  renameFolder: unused,
+  renameLabel: unused,
+  resendOutbound: unused,
+  scheduleOutbound: unused,
+  searchMessages: unused,
+  setMessageRead: unused,
+  setMessageStarred: unused,
+  updateDraft: unused,
+}) satisfies MailboxRepositoryService;
+
+const authorization = MailAuthorization.of({
+  requireAttachmentRead: () =>
+    Effect.succeed({
+      _tag: "Attachment" as const,
+      attachmentId: blobLocation.attachmentId,
+      folderId,
+      mailboxId: blobLocation.mailboxId,
+      messageId: blobLocation.messageId,
+    }),
+  requireAttachmentUpload: unusedAuthorization,
+  requireDraft: unusedAuthorization,
+  requireDraftCreate: unusedAuthorization,
+  requireExport: unusedAuthorization,
+  requireFolder: unusedAuthorization,
+  requireFolderMessageRead: ({ resource }) =>
+    Effect.succeed({
+      _tag: "FolderMessageRead" as const,
+      folderId: resource.folderId,
+      mailboxId: resource.mailboxId,
+    }),
+  requireMailbox: unusedAuthorization,
+  requireMailboxMessageRead: ({ resource }) => Effect.succeed(resource),
+  requireMessage: ({ resource }) => Effect.succeed({ ...resource, folderId }),
+  requireRuleManage: unusedAuthorization,
+}) satisfies MailAuthorizationService;
+
+const runRead = (input: unknown) =>
+  Effect.runPromise(
+    Schema.decodeUnknownEffect(MailboxInlineAttachmentInput)(input).pipe(
+      Effect.flatMap((decoded) =>
+        MailboxInlineAttachmentReading.pipe(
+          Effect.flatMap((reading) => reading.get(decoded))
+        )
+      ),
+      Effect.provide(
+        MailboxInlineAttachmentReadingLive.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(MailAuthorization, authorization),
+              Layer.succeed(MailboxRepository, repository),
+              Layer.succeed(
+                InboundAttachmentBlobReader,
+                InboundAttachmentBlobReader.of({
+                  read: () => Effect.succeed(new Uint8Array([1, 2, 3])),
+                })
+              )
+            )
+          )
+        )
+      ),
+      Effect.provideService(
+        AuthPermission.CurrentPrincipal,
+        AuthPermission.CurrentPrincipal.of(
+          AuthPermission.PermissionSubject.user(UserId("user-a"))
+        )
+      )
+    )
+  );
+
+describe("mailbox inline attachment reading", () => {
+  it("loads bytes only after matching view and attachment authorization", async () => {
+    await expect(
+      runRead({
+        _tag: "Folder",
+        attachmentId: "attachment-1",
+        folderId: "inbox",
+        mailboxId: "primary",
+        messageId: "message-1",
+      })
+    ).resolves.toStrictEqual({
+      bytes: new Uint8Array([1, 2, 3]),
+      mimeType: "image/png",
+    });
+  });
+
+  it("conceals an attachment outside the selected label", async () => {
+    await expect(
+      runRead({
+        _tag: "Label",
+        attachmentId: "attachment-1",
+        labelId: "other",
+        mailboxId: "primary",
+        messageId: "message-1",
+      })
+    ).rejects.toMatchObject({
+      _tag: "MailboxInlineAttachmentError",
+      reason: "not-found",
+    });
+  });
+});

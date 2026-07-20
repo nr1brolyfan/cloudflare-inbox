@@ -4,10 +4,12 @@ import * as Schema from "effect/Schema";
 import {
   AttachmentId,
   ByteSize,
+  ContentId,
   Cursor,
   EmailAddress,
   FileName,
   FolderId,
+  InboundIngestId,
   LabelId,
   MailAddress,
   MailboxId,
@@ -35,7 +37,7 @@ export class AttachmentMetadata extends Schema.Class<AttachmentMetadata>(
   fileName: FileName,
   mimeType: MimeType,
   size: ByteSize,
-  contentId: Schema.optional(Schema.String),
+  contentId: Schema.optional(ContentId),
   disposition: Schema.Literals(["attachment", "inline"]),
 }) {}
 
@@ -264,6 +266,34 @@ export type GetMessageInput = Schema.Schema.Type<typeof GetMessageInput>;
 
 export const GetMessageResult = MessageDetailSchema;
 export type GetMessageResult = Schema.Schema.Type<typeof GetMessageResult>;
+
+export const GetAttachmentBlobInput = Schema.Struct({
+  attachmentId: AttachmentId,
+  mailboxId: MailboxId,
+  messageId: MessageId,
+});
+export type GetAttachmentBlobInput = Schema.Schema.Type<
+  typeof GetAttachmentBlobInput
+>;
+
+/** Private storage locator returned only across the MailboxDO boundary. */
+export const AttachmentBlobLocation = Schema.Struct({
+  attachmentId: AttachmentId,
+  contentId: ContentId,
+  disposition: Schema.Literal("inline"),
+  fileName: FileName,
+  folderId: FolderId,
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  messageId: MessageId,
+  mimeType: MimeType,
+  receivedAt: UnixMillis,
+  size: ByteSize,
+  sourceIndex: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
+});
+export type AttachmentBlobLocation = Schema.Schema.Type<
+  typeof AttachmentBlobLocation
+>;
 
 /**
  * Returns messages in chronological order: activityAt ASC, id ASC.

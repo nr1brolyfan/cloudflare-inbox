@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **66/109 (61%)**
-- Ukończone etapy: **4/11**
-- Aktualny etap: **7. Inbox UI i bezpieczne renderowanie**
-- Aktualne zadanie: **Autoryzacja i stany odmowy w server functions**
+- Postęp zadań: **76/109 (70%)**
+- Ukończone etapy: **6/11**
+- Aktualny etap: **9. Drafty i outbound**
+- Aktualne zadanie: **Draft editor**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -18,9 +18,9 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 4   | Permissions i control plane           | DONE        | 10/10  |
 | 5   | MailboxDO i domena pocztowa           | DONE        | 9/9    |
 | 6   | Inbound email                         | DONE        | 9/9    |
-| 7   | Inbox UI i bezpieczne renderowanie    | CURRENT     | 5/9    |
-| 8   | Reguły automatyczne                   | TODO        | 0/6    |
-| 9   | Drafty i outbound                     | TODO        | 0/9    |
+| 7   | Inbox UI i bezpieczne renderowanie    | DONE        | 9/9    |
+| 8   | Reguły automatyczne                   | DONE        | 6/6    |
+| 9   | Drafty i outbound                     | CURRENT     | 0/9    |
 | 10  | AI                                    | TODO        | 0/6    |
 | 11  | Hardening i produkcja                 | TODO        | 0/11   |
 
@@ -125,23 +125,23 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Dodać listę wiadomości i widok wątku.
 - [x] Dodać search, filtry i paginację.
 - [x] Dodać read, star, archive i trash.
-- [ ] CURRENT Egzekwować autoryzację i stany odmowy w server functions.
-- [ ] Renderować HTML wyłącznie w sandboxie z restrykcyjnym CSP.
-- [ ] Blokować remote images oraz bezpiecznie obsługiwać links i CID.
-- [ ] Dodać loading, empty, error i optimistic update states.
+- [x] Egzekwować autoryzację i stany odmowy w server functions.
+- [x] Renderować HTML wyłącznie w sandboxie z restrykcyjnym CSP.
+- [x] Blokować remote images oraz bezpiecznie obsługiwać links i CID.
+- [x] Dodać loading, empty, error i optimistic update states.
 
 ## 8. Reguły automatyczne
 
-- [ ] Zdefiniować model reguł z `priority` i warunkami.
-- [ ] Zaimplementować deterministyczną ewaluację.
-- [ ] Dodać akcje folder, label, read i star.
-- [ ] Obsłużyć `stopProcessing`.
-- [ ] Zapisywać idempotentną historię zastosowań.
-- [ ] Uruchamiać reguły AI asynchronicznie, bez blokowania inboundu.
+- [x] Zdefiniować model reguł z `priority` i warunkami.
+- [x] Zaimplementować deterministyczną ewaluację.
+- [x] Dodać akcje folder, label, read i star.
+- [x] Obsłużyć `stopProcessing`.
+- [x] Zapisywać idempotentną historię zastosowań.
+- [x] Uruchamiać reguły AI asynchronicznie, bez blokowania inboundu.
 
 ## 9. Drafty i outbound
 
-- [ ] Zbudować draft editor.
+- [ ] CURRENT Zbudować draft editor.
 - [ ] Dodać attachment upload reservations.
 - [ ] Tworzyć immutable send snapshot.
 - [ ] Planować wysyłkę alarmem MailboxDO.

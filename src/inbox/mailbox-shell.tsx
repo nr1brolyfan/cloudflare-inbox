@@ -48,6 +48,7 @@ interface MailboxShellProps {
   readonly principalLabel: string;
   readonly selectedFolderId?: string;
   readonly selectedLabelId?: string;
+  readonly signOutError?: string;
   readonly viewTitle: string;
 }
 
@@ -68,6 +69,7 @@ function MailboxNavigation({
   principalLabel,
   selectedFolderId,
   selectedLabelId,
+  signOutError,
 }: MailboxNavigationProps) {
   return (
     <div className="flex h-full flex-col bg-[var(--sea-ink)] text-white">
@@ -225,6 +227,14 @@ function MailboxNavigation({
             )}
           </button>
         </div>
+        {signOutError === undefined ? null : (
+          <p
+            role="alert"
+            className="mt-2 px-2 text-[0.68rem] font-bold text-red-200"
+          >
+            {signOutError}
+          </p>
+        )}
       </div>
     </div>
   );
@@ -240,6 +250,7 @@ export function MailboxShell({
   principalLabel,
   selectedFolderId,
   selectedLabelId,
+  signOutError,
   viewTitle,
 }: MailboxShellProps) {
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -272,6 +283,7 @@ export function MailboxShell({
             principalLabel={principalLabel}
             selectedFolderId={selectedFolderId}
             selectedLabelId={selectedLabelId}
+            signOutError={signOutError}
           />
         </aside>
 
@@ -299,6 +311,7 @@ export function MailboxShell({
                 principalLabel={principalLabel}
                 selectedFolderId={selectedFolderId}
                 selectedLabelId={selectedLabelId}
+                signOutError={signOutError}
               />
             </dialog>
           </div>

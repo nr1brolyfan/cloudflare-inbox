@@ -7,6 +7,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { RawMessagesBucket } from "../infra/resources";
+import {
+  AsyncRuleWorkflowClient,
+  AsyncRuleWorkflowStarterLive,
+} from "../mailboxes/async-rule-workflow-starter-live";
+import { AsyncRuleWorkflowStarter } from "../mailboxes/async-rules";
+import type { AsyncRuleJobId } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
 import type {
   BlobStoreError,
@@ -47,6 +53,7 @@ import {
   InboundRawMessageReaderR2Live,
 } from "../mailboxes/inbound-raw-message-reader-r2-live";
 import { MailboxDO } from "../mailboxes/mailbox-do";
+import AsyncRuleWorkflow from "./async-rule-workflow";
 
 const encodedManifest = (manifest: ParsedInboundMessageV1Type) =>
   JSON.stringify(Schema.encodeSync(ParsedInboundMessageV1)(manifest));
@@ -414,7 +421,28 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
       })
     );
 
+    const dispatchAsyncRules = (jobId: AsyncRuleJobId | undefined) =>
+      jobId === undefined
+        ? Effect.void
+        : Cloudflare.Workflows.task(
+            "start-async-rule-workflow-v1",
+            AsyncRuleWorkflowStarter.pipe(
+              Effect.flatMap((starter) =>
+                starter.start({
+                  formatVersion: 1,
+                  jobId,
+                  mailboxId: params.mailboxId,
+                })
+              ),
+              // The durable pending job remains available for reconciliation.
+              Effect.result,
+              Effect.asVoid
+            ),
+            mailboxStateTaskConfig
+          );
+
     if (Exit.isSuccess(processing) && processing.value._tag === "Completed") {
+      yield* dispatchAsyncRules(processing.value.value.asyncRuleJobId);
       return yield* Schema.decodeUnknownEffect(InboundWorkflowResultV1)({
         formatVersion: 1,
         inboundIngestId: params.inboundIngestId,
@@ -451,6 +479,7 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
       failed.value.status === "ready" &&
       failed.value.messageId !== undefined
     ) {
+      yield* dispatchAsyncRules(failed.value.asyncRuleJobId);
       return yield* Schema.decodeUnknownEffect(InboundWorkflowResultV1)({
         formatVersion: 1,
         inboundIngestId: params.inboundIngestId,
@@ -468,6 +497,7 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
 export const inboundWorkflowImplementation = Effect.gen(function* () {
   const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
   const mailboxDataPlane = yield* MailboxDO;
+  const asyncRuleWorkflow = yield* AsyncRuleWorkflow;
   const rawMessageClientLive = Layer.succeed(
     InboundRawMessageR2Client,
     InboundRawMessageR2Client.of({
@@ -523,6 +553,16 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
   const inboundProcessingRecorderLive = InboundProcessingRecorderDoLive.pipe(
     Layer.provide(mailboxDoNamespaceLive)
   );
+  const asyncRuleWorkflowClientLive = Layer.succeed(
+    AsyncRuleWorkflowClient,
+    AsyncRuleWorkflowClient.of({
+      create: (options) => asyncRuleWorkflow.create(options),
+      get: (instanceId) => asyncRuleWorkflow.get(instanceId),
+    })
+  );
+  const asyncRuleWorkflowStarterLive = AsyncRuleWorkflowStarterLive.pipe(
+    Layer.provide(asyncRuleWorkflowClientLive)
+  );
   const mimeParserLive = InboundMimeParserPostalMimeLive.pipe(
     Layer.provide(InboundMimeParserConfigLive)
   );
@@ -536,7 +576,8 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
     attachmentExtractorLive,
     attachmentStoreLive,
     inboundCommitterLive,
-    inboundProcessingRecorderLive
+    inboundProcessingRecorderLive,
+    asyncRuleWorkflowStarterLive
   );
   const program = yield* inboundWorkflowProgram;
 

@@ -26,6 +26,7 @@ import {
 } from "../infra/resources";
 import { EmailAddress } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
+import { InboundAttachmentR2ReadClient } from "../mailboxes/inbound-attachment-reader-r2-live";
 import {
   InboundEmailIngressLive,
   InboundEmailIngressRuntimeLive,
@@ -129,9 +130,37 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         get: (instanceId) => inboundWorkflow.get(instanceId),
       })
     );
+    const attachmentReadClientLive = Layer.succeed(
+      InboundAttachmentR2ReadClient,
+      InboundAttachmentR2ReadClient.of({
+        get: (key) =>
+          rawMessages.get(key).pipe(
+            Effect.provide(RuntimeContext.phantom),
+            Effect.map((object) => {
+              if (object === null) {
+                return null;
+              }
+              const checksum = object.checksums.sha256;
+              return {
+                arrayBuffer: object.arrayBuffer,
+                contentType: object.httpMetadata?.contentType,
+                customMetadata: object.customMetadata ?? {},
+                sha256:
+                  checksum === undefined
+                    ? undefined
+                    : [...new Uint8Array(checksum)]
+                        .map((byte) => byte.toString(16).padStart(2, "0"))
+                        .join(""),
+                size: object.size,
+              };
+            })
+          ),
+      })
+    );
     const workerServicesLive = Layer.mergeAll(
       authRuntimeConfigLive,
       workflowClientLive,
+      attachmentReadClientLive,
       Layer.succeed(
         MailboxAdministrationConfig,
         MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })

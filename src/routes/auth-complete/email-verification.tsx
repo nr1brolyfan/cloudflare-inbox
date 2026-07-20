@@ -5,6 +5,7 @@ import {
   authClient,
   authErrorMessage,
   authSessionQueryKey,
+  clearMailboxReadDenial,
 } from "../../auth/client";
 import {
   CompletionShell,
@@ -28,6 +29,7 @@ function EmailVerificationCompletion() {
       }),
     retry: false,
     onSuccess: async () => {
+      clearMailboxReadDenial(queryClient);
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
       await navigate({ to: "/" });
     },

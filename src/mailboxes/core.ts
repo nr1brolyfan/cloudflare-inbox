@@ -49,6 +49,11 @@ export type DraftId = Schema.Schema.Type<typeof DraftId>;
 export const RuleId = ResourceId.pipe(Schema.brand("cloudflare-inbox/RuleId"));
 export type RuleId = Schema.Schema.Type<typeof RuleId>;
 
+export const AsyncRuleJobId = ResourceId.pipe(
+  Schema.brand("cloudflare-inbox/AsyncRuleJobId")
+);
+export type AsyncRuleJobId = Schema.Schema.Type<typeof AsyncRuleJobId>;
+
 export const OutboundDeliveryId = ResourceId.pipe(
   Schema.brand("cloudflare-inbox/OutboundDeliveryId")
 );
@@ -133,6 +138,20 @@ export const LabelName = DisplayNameText.pipe(
   Schema.brand("cloudflare-inbox/LabelName")
 );
 export type LabelName = Schema.Schema.Type<typeof LabelName>;
+
+export const RuleName = DisplayNameText.pipe(
+  Schema.brand("cloudflare-inbox/RuleName")
+);
+export type RuleName = Schema.Schema.Type<typeof RuleName>;
+
+export const RulePriority = Schema.Int.pipe(
+  Schema.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(1_000_000)
+  ),
+  Schema.brand("cloudflare-inbox/RulePriority")
+);
+export type RulePriority = Schema.Schema.Type<typeof RulePriority>;
 
 export const EmailAddress = Schema.Trimmed.pipe(
   Schema.check(

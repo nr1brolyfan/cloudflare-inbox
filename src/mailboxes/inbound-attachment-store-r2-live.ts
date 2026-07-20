@@ -99,9 +99,20 @@ const storeError = (
 const metadataBytes = (attachment: ExtractedInboundAttachmentV1) =>
   new TextEncoder().encode(
     JSON.stringify(
-      Schema.encodeSync(ParsedInboundAttachmentV1)(attachment.metadata)
+      Schema.encodeSync(ParsedInboundAttachmentV1)(
+        Schema.decodeUnknownSync(ParsedInboundAttachmentV1)({
+          ...attachment.metadata,
+          fileName: attachment.metadata.fileName ?? "attachment",
+        })
+      )
     )
   );
+
+export const inboundAttachmentObjectKey = (
+  inboundIngestId: string,
+  sourceIndex: number
+) =>
+  `inbound/${inboundIngestId}/attachments/${String(sourceIndex).padStart(6, "0")}.bin`;
 
 const objectMatches = (
   object: InboundAttachmentR2Object,
@@ -135,9 +146,10 @@ const storeAttachment = (
         Effect.mapError((cause) => storeError("write", cause)),
         Effect.catchDefect((cause) => Effect.fail(storeError("write", cause)))
       );
-    const key = `inbound/${input.inboundIngestId}/attachments/${String(
+    const key = inboundAttachmentObjectKey(
+      input.inboundIngestId,
       attachment.metadata.index
-    ).padStart(6, "0")}.bin`;
+    );
     const customMetadata = {
       "attachment-index": String(attachment.metadata.index),
       "attachment-metadata-sha256": metadataSha256,

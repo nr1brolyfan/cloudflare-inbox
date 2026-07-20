@@ -33,6 +33,8 @@ import {
 } from "./inbound";
 import {
   AddMessageLabelInput,
+  AttachmentBlobLocation,
+  GetAttachmentBlobInput,
   GetMessageInput,
   GetMessageResult,
   GetThreadInput,
@@ -69,6 +71,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "delete-label",
     "list-messages",
     "search-messages",
+    "get-attachment",
     "get-message",
     "get-thread",
     "mutate-message",
@@ -99,6 +102,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
       "folder",
       "label",
       "message",
+      "attachment",
       "thread",
       "draft",
       "inbound",
@@ -204,6 +208,10 @@ export const MailDataRpcRequest = Schema.Union([
     input: SearchMessagesInput,
   }),
   Schema.Struct({ _tag: Schema.Literal("GetMessage"), input: GetMessageInput }),
+  Schema.Struct({
+    _tag: Schema.Literal("GetAttachmentBlob"),
+    input: GetAttachmentBlobInput,
+  }),
   Schema.Struct({ _tag: Schema.Literal("GetThread"), input: GetThreadInput }),
   Schema.Struct({
     _tag: Schema.Literal("SetMessageRead"),
@@ -274,6 +282,10 @@ export const MailDataRpcResponse = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("MessageFound"),
     value: GetMessageResult,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("AttachmentBlobFound"),
+    value: AttachmentBlobLocation,
   }),
   Schema.Struct({
     _tag: Schema.Literal("ThreadFound"),
@@ -387,6 +399,11 @@ export const mailDataRequestMetadataByTag = {
     operation: "get-message",
     kind: "read",
     responseTag: "MessageFound",
+  },
+  GetAttachmentBlob: {
+    operation: "get-attachment",
+    kind: "read",
+    responseTag: "AttachmentBlobFound",
   },
   GetThread: {
     operation: "get-thread",

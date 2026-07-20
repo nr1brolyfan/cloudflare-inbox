@@ -5,6 +5,7 @@ import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
+  AsyncRuleJobId,
   AttemptCount,
   ByteSize,
   ContentId,
@@ -69,6 +70,7 @@ export class InboundProcessing extends Schema.Class<InboundProcessing>(
   mailboxId: MailboxId,
   status: InboundProcessingStatus,
   messageId: Schema.optional(MessageId),
+  asyncRuleJobId: Schema.optional(AsyncRuleJobId),
   failure: Schema.optional(InboundProcessingFailure),
   attemptCount: AttemptCount,
   createdAt: UnixMillis,
@@ -86,6 +88,12 @@ export const InboundProcessingSchema = InboundProcessing.check(
       (processing.messageId !== undefined)
     ) {
       return "messageId must be present exactly when inbound processing is ready";
+    }
+    if (
+      processing.asyncRuleJobId !== undefined &&
+      processing.status !== "ready"
+    ) {
+      return "asyncRuleJobId may be present only when inbound processing is ready";
     }
     if (
       processing.failure !== undefined &&

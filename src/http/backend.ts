@@ -28,7 +28,9 @@ import {
   MailboxAdministrationRuntimeLive,
 } from "../control-plane/mailbox-administration-live";
 import { MailboxNavigationLive } from "../control-plane/mailbox-navigation-live";
+import { MailboxInlineAttachmentReadingLive } from "../mailboxes/attachment-reading";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
+import { InboundAttachmentBlobReaderR2WithRuntimeLive } from "../mailboxes/inbound-attachment-reader-r2-live";
 import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
 import {
   InboundReplayLive,
@@ -36,6 +38,7 @@ import {
 } from "../mailboxes/inbound-replay-do-live";
 import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
 import { MailboxMessageActionsLive } from "../mailboxes/message-actions";
+import { MailboxMessageHtmlReadingLive } from "../mailboxes/message-html";
 import { MailboxMessageReadingLive } from "../mailboxes/message-reading";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendHttpApi } from "./api";
@@ -110,6 +113,18 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxMessageActionsLive = MailboxMessageActionsLive.pipe(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
+    const mailboxMessageHtmlLive = MailboxMessageHtmlReadingLive.pipe(
+      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+    );
+    const mailboxInlineAttachmentLive = MailboxInlineAttachmentReadingLive.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          mailAuthorizationLive,
+          mailboxRepositoryLive,
+          InboundAttachmentBlobReaderR2WithRuntimeLive
+        )
+      )
+    );
     const inboundReplayLive = InboundReplayLive.pipe(
       Layer.provide(
         Layer.merge(
@@ -125,6 +140,8 @@ const BackendRoutesLive = Layer.unwrap(
           mailboxNavigationLive,
           mailboxMessageReadingLive,
           mailboxMessageActionsLive,
+          mailboxMessageHtmlLive,
+          mailboxInlineAttachmentLive,
           InboundReplayAuthorizationLive.pipe(
             Layer.provide(mailAuthorizationLive)
           ),

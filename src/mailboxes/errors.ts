@@ -2,6 +2,7 @@
 import * as Data from "effect/Data";
 
 import type {
+  AsyncRuleJobId,
   InboundIngestId,
   OperationId,
   OutboundDeliveryId,
@@ -61,6 +62,7 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "delete-label"
     | "list-messages"
     | "search-messages"
+    | "get-attachment"
     | "get-message"
     | "get-thread"
     | "mutate-message"
@@ -89,6 +91,7 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "folder"
     | "label"
     | "message"
+    | "attachment"
     | "thread"
     | "draft"
     | "inbound"
@@ -153,8 +156,12 @@ export class RuleEvaluationError extends Data.TaggedError(
 }> {}
 
 export class WorkflowStartError extends Data.TaggedError("WorkflowStartError")<{
-  readonly workflow: "inbound" | "outbound";
-  readonly instanceId: InboundIngestId | OperationId | OutboundDeliveryId;
+  readonly workflow: "async-rules" | "inbound" | "outbound";
+  readonly instanceId:
+    | AsyncRuleJobId
+    | InboundIngestId
+    | OperationId
+    | OutboundDeliveryId;
   readonly message: string;
   readonly cause: unknown;
 }> {}

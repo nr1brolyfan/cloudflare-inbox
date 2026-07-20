@@ -1,4 +1,4 @@
-import { count, eq } from "drizzle-orm";
+import { asc, count, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
@@ -15,10 +15,16 @@ import {
   ReplayInboundInput,
 } from "#/mailboxes/inbound";
 import {
+  asyncRuleJob,
   attachment,
+  filterRule,
   folder,
   inboundProcessing,
+  label,
   message,
+  messageLabel,
+  ruleApplication,
+  ruleEvaluation,
 } from "#/mailboxes/sqlite-schema";
 import {
   MailboxDatabase,
@@ -110,6 +116,109 @@ const initializeInbox = MailboxDatabase.pipe(
       kind: "inbox",
       name: "Inbox",
       updatedAt: 0,
+    })
+  )
+);
+
+const initializeRuleFixtures = MailboxDatabase.pipe(
+  Effect.flatMap((db) =>
+    Effect.gen(function* () {
+      yield* db.insert(folder).values({
+        createdAt: 0,
+        id: "archive",
+        kind: "archive",
+        name: "Archive",
+        updatedAt: 0,
+      });
+      yield* db.insert(label).values({
+        createdAt: 0,
+        id: "important",
+        name: "Important",
+        updatedAt: 0,
+      });
+      yield* db.insert(filterRule).values([
+        {
+          id: "rule-organize",
+          name: "Organize hello",
+          enabled: 1,
+          priority: 10,
+          conditionsJson: JSON.stringify({
+            match: "all",
+            items: [
+              {
+                _tag: "Text",
+                field: "subject",
+                operator: "contains",
+                value: "hello",
+              },
+            ],
+          }),
+          actionsJson: JSON.stringify([
+            { _tag: "MoveToFolder", folderId: "archive" },
+            { _tag: "AddLabel", labelId: "important" },
+            { _tag: "SetRead", read: true },
+          ]),
+          stopProcessing: 0,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        {
+          id: "rule-stop",
+          name: "Star attachments",
+          enabled: 1,
+          priority: 20,
+          conditionsJson: JSON.stringify({
+            match: "all",
+            items: [{ _tag: "HasAttachment", value: true }],
+          }),
+          actionsJson: JSON.stringify([
+            { _tag: "AddLabel", labelId: "important" },
+            { _tag: "AddLabel", labelId: "missing" },
+            { _tag: "SetStarred", starred: true },
+          ]),
+          stopProcessing: 1,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        {
+          id: "rule-after-stop",
+          name: "Must not run",
+          enabled: 1,
+          priority: 30,
+          conditionsJson: JSON.stringify({
+            match: "all",
+            items: [{ _tag: "HasAttachment", value: true }],
+          }),
+          actionsJson: JSON.stringify([{ _tag: "SetRead", read: false }]),
+          stopProcessing: 0,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        {
+          id: "rule-ai",
+          name: "Classify escalation",
+          enabled: 1,
+          priority: 15,
+          conditionsJson: JSON.stringify({
+            match: "all",
+            items: [
+              {
+                _tag: "Text",
+                field: "subject",
+                operator: "contains",
+                value: "hello",
+              },
+            ],
+          }),
+          actionsJson: JSON.stringify([
+            { _tag: "AddLabel", labelId: "important" },
+          ]),
+          aiInstruction: "Decide whether this is an urgent escalation",
+          stopProcessing: 0,
+          createdAt: 0,
+          updatedAt: 0,
+        },
+      ]);
     })
   )
 );
@@ -426,16 +535,35 @@ describe("MailboxDO SQLite inbound commit", () => {
             mailboxId,
             messageId: first.messageId,
           });
-          const [[messageCount], [attachmentCount], [processingCount]] =
-            yield* Effect.all([
-              db.select({ value: count() }).from(message),
-              db.select({ value: count() }).from(attachment),
-              db.select({ value: count() }).from(inboundProcessing),
-            ]);
+          const attachmentId = detail.attachments[0]?.id;
+          if (attachmentId === undefined) {
+            return yield* Effect.die("Expected committed attachment ID");
+          }
+          const blob = yield* store.getAttachmentBlob({
+            attachmentId,
+            mailboxId,
+            messageId: first.messageId,
+          });
+          const [
+            [messageCount],
+            [attachmentCount],
+            [processingCount],
+            [evaluationCount],
+            [applicationCount],
+          ] = yield* Effect.all([
+            db.select({ value: count() }).from(message),
+            db.select({ value: count() }).from(attachment),
+            db.select({ value: count() }).from(inboundProcessing),
+            db.select({ value: count() }).from(ruleEvaluation),
+            db.select({ value: count() }).from(ruleApplication),
+          ]);
           return {
+            applicationCount: applicationCount?.value,
             attachmentCount: attachmentCount?.value,
             callsAfterFirst,
+            blob,
             detail,
+            evaluationCount: evaluationCount?.value,
             first,
             messageCount: messageCount?.value,
             processingCount: processingCount?.value,
@@ -447,8 +575,23 @@ describe("MailboxDO SQLite inbound commit", () => {
     );
 
     expect(outcome).toMatchObject({
+      applicationCount: 0,
       attachmentCount: 1,
       callsAfterFirst: 3,
+      blob: {
+        attachmentId: "generated-3",
+        contentId: "image-1",
+        disposition: "inline",
+        fileName: "image.png",
+        folderId: "inbox",
+        inboundIngestId: "ingest-1",
+        mailboxId: "mailbox-a",
+        messageId: "generated-2",
+        mimeType: "image/png",
+        receivedAt: 2000,
+        size: 3,
+        sourceIndex: 0,
+      },
       detail: {
         attachments: [
           {
@@ -465,6 +608,7 @@ describe("MailboxDO SQLite inbound commit", () => {
         snippet: "Hello from inbound",
         threadId: "generated-1",
       },
+      evaluationCount: 1,
       first: {
         id: "ingest-1",
         messageId: "generated-2",
@@ -478,6 +622,231 @@ describe("MailboxDO SQLite inbound commit", () => {
         status: "ready",
       },
       totalCalls: 3,
+    });
+  });
+
+  it("atomically applies deterministic rules and records idempotent history", async () => {
+    const runtime = makeRuntime();
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* initializeRuleFixtures;
+          const first = yield* commit();
+          const replay = yield* commit();
+          const db = yield* MailboxDatabase;
+          if (first.messageId === undefined) {
+            return yield* Effect.die("Expected committed message ID");
+          }
+          const [messageRow] = yield* db
+            .select({
+              folderId: message.folderId,
+              read: message.read,
+              starred: message.starred,
+              version: message.version,
+            })
+            .from(message)
+            .where(eq(message.id, first.messageId));
+          const labels = yield* db
+            .select({ labelId: messageLabel.labelId })
+            .from(messageLabel)
+            .where(eq(messageLabel.messageId, first.messageId));
+          const evaluations = yield* db.select().from(ruleEvaluation);
+          const jobs = yield* db.select().from(asyncRuleJob);
+          const applications = yield* db
+            .select({
+              actionIndex: ruleApplication.actionIndex,
+              actionJson: ruleApplication.actionJson,
+              outcome: ruleApplication.outcome,
+              ruleId: ruleApplication.ruleId,
+              ruleVersion: ruleApplication.ruleVersion,
+            })
+            .from(ruleApplication)
+            .orderBy(
+              asc(ruleApplication.ruleId),
+              asc(ruleApplication.actionIndex)
+            );
+          return {
+            applications: applications.map(
+              ({ actionJson, ...application }) => ({
+                ...application,
+                action: JSON.parse(actionJson),
+              })
+            ),
+            evaluations,
+            first,
+            jobs: jobs.map(({ planJson, ...job }) => ({
+              ...job,
+              plan: JSON.parse(planJson),
+            })),
+            labels,
+            messageRow,
+            replay,
+          };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(outcome).toMatchObject({
+      applications: [
+        {
+          ruleId: "rule-organize",
+          ruleVersion: 1,
+          actionIndex: 0,
+          action: { _tag: "MoveToFolder", folderId: "archive" },
+          outcome: "applied",
+        },
+        {
+          ruleId: "rule-organize",
+          actionIndex: 1,
+          action: { _tag: "AddLabel", labelId: "important" },
+          outcome: "applied",
+        },
+        {
+          ruleId: "rule-organize",
+          actionIndex: 2,
+          action: { _tag: "SetRead", read: true },
+          outcome: "applied",
+        },
+        {
+          ruleId: "rule-stop",
+          actionIndex: 0,
+          action: { _tag: "AddLabel", labelId: "important" },
+          outcome: "noop",
+        },
+        {
+          ruleId: "rule-stop",
+          actionIndex: 1,
+          action: { _tag: "AddLabel", labelId: "missing" },
+          outcome: "skipped_invalid_target",
+        },
+        {
+          ruleId: "rule-stop",
+          actionIndex: 2,
+          action: { _tag: "SetStarred", starred: true },
+          outcome: "applied",
+        },
+      ],
+      evaluations: [
+        {
+          engineVersion: 1,
+          inboundIngestId: "ingest-1",
+          messageId: "generated-2",
+          stoppedByRuleId: "rule-stop",
+        },
+      ],
+      first: { messageId: "generated-2", status: "ready" },
+      jobs: [
+        {
+          id: "ingest-1",
+          inboundIngestId: "ingest-1",
+          messageId: "generated-2",
+          status: "pending",
+          version: 1,
+          plan: {
+            formatVersion: 1,
+            baseMessageVersion: 1,
+            candidates: [
+              {
+                ruleId: "rule-ai",
+                ruleVersion: 1,
+                instruction: "Decide whether this is an urgent escalation",
+                actions: [{ _tag: "AddLabel", labelId: "important" }],
+              },
+            ],
+          },
+        },
+      ],
+      labels: [{ labelId: "important" }],
+      messageRow: { folderId: "archive", read: 1, starred: 1, version: 1 },
+      replay: { messageId: "generated-2", status: "ready" },
+    });
+  });
+
+  it("rolls back the inbound commit when rule history cannot persist", async () => {
+    const runtime = makeRuntime();
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* initializeRuleFixtures;
+          const db = yield* MailboxDatabase;
+          yield* db.$client.unsafe(
+            "CREATE TRIGGER reject_rule_history BEFORE INSERT ON rule_application BEGIN SELECT RAISE(ABORT, 'forced failure'); END"
+          );
+          const result = yield* Effect.result(commit());
+          const [
+            [messageCount],
+            [processingCount],
+            [labelCount],
+            [evaluationCount],
+            [applicationCount],
+            [jobCount],
+          ] = yield* Effect.all([
+            db.select({ value: count() }).from(message),
+            db.select({ value: count() }).from(inboundProcessing),
+            db.select({ value: count() }).from(messageLabel),
+            db.select({ value: count() }).from(ruleEvaluation),
+            db.select({ value: count() }).from(ruleApplication),
+            db.select({ value: count() }).from(asyncRuleJob),
+          ]);
+          return {
+            applicationCount: applicationCount?.value,
+            evaluationCount: evaluationCount?.value,
+            failed: Result.isFailure(result),
+            jobCount: jobCount?.value,
+            labelCount: labelCount?.value,
+            messageCount: messageCount?.value,
+            processingCount: processingCount?.value,
+          };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(outcome).toStrictEqual({
+      applicationCount: 0,
+      evaluationCount: 0,
+      failed: true,
+      jobCount: 0,
+      labelCount: 0,
+      messageCount: 0,
+      processingCount: 0,
+    });
+  });
+
+  it("rolls back ready state when an async rule job cannot persist", async () => {
+    const runtime = makeRuntime();
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* initializeRuleFixtures;
+          const db = yield* MailboxDatabase;
+          yield* db.$client.unsafe(
+            "CREATE TRIGGER reject_async_rule_job BEFORE INSERT ON async_rule_job BEGIN SELECT RAISE(ABORT, 'forced failure'); END"
+          );
+          const result = yield* Effect.result(commit());
+          const [[messageCount], [processingCount], [jobCount]] =
+            yield* Effect.all([
+              db.select({ value: count() }).from(message),
+              db.select({ value: count() }).from(inboundProcessing),
+              db.select({ value: count() }).from(asyncRuleJob),
+            ]);
+          return {
+            failed: Result.isFailure(result),
+            jobCount: jobCount?.value,
+            messageCount: messageCount?.value,
+            processingCount: processingCount?.value,
+          };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(outcome).toStrictEqual({
+      failed: true,
+      jobCount: 0,
+      messageCount: 0,
+      processingCount: 0,
     });
   });
 

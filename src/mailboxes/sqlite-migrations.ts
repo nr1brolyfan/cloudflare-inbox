@@ -384,6 +384,76 @@ const migrations = [
         WHERE rfc_message_id IS NOT NULL`,
     ],
   },
+  {
+    version: 7,
+    statements: [
+      `ALTER TABLE filter_rule ADD COLUMN name TEXT NOT NULL DEFAULT 'Migrated rule' CHECK (
+        length(name) BETWEEN 1 AND 200 AND name = trim(name)
+      )`,
+      `ALTER TABLE filter_rule ADD COLUMN enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1))`,
+      `ALTER TABLE filter_rule ADD COLUMN priority INTEGER NOT NULL DEFAULT 0 CHECK (priority BETWEEN 0 AND 1000000)`,
+      `ALTER TABLE filter_rule ADD COLUMN conditions_json TEXT NOT NULL DEFAULT '{"match":"all","items":[{"_tag":"HasAttachment","value":false}]}' CHECK (
+        json_valid(conditions_json) AND json_type(conditions_json) = 'object'
+      )`,
+      `ALTER TABLE filter_rule ADD COLUMN actions_json TEXT NOT NULL DEFAULT '[{"_tag":"SetRead","read":false}]' CHECK (
+        json_valid(actions_json) AND json_type(actions_json) = 'array'
+      )`,
+      `ALTER TABLE filter_rule ADD COLUMN stop_processing INTEGER NOT NULL DEFAULT 0 CHECK (stop_processing IN (0, 1))`,
+      `ALTER TABLE filter_rule ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0 CHECK (created_at >= 0)`,
+      `ALTER TABLE filter_rule ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0 CHECK (updated_at >= created_at)`,
+      `CREATE INDEX filter_rule_active_priority_idx
+        ON filter_rule(priority, id) WHERE enabled = 1 AND deleted_at IS NULL`,
+      `CREATE TABLE rule_evaluation (
+        inbound_ingest_id TEXT PRIMARY KEY NOT NULL REFERENCES inbound_processing(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        message_id TEXT NOT NULL UNIQUE REFERENCES message(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        engine_version INTEGER NOT NULL CHECK (engine_version = 1),
+        stopped_by_rule_id TEXT REFERENCES filter_rule(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        evaluated_at INTEGER NOT NULL CHECK (evaluated_at >= 0)
+      ) WITHOUT ROWID, STRICT`,
+      `CREATE TABLE rule_application (
+        inbound_ingest_id TEXT NOT NULL REFERENCES rule_evaluation(inbound_ingest_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        message_id TEXT NOT NULL REFERENCES message(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        rule_id TEXT NOT NULL REFERENCES filter_rule(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        rule_version INTEGER NOT NULL CHECK (rule_version >= 1),
+        action_index INTEGER NOT NULL CHECK (action_index BETWEEN 0 AND 19),
+        action_json TEXT NOT NULL CHECK (json_valid(action_json) AND json_type(action_json) = 'object'),
+        outcome TEXT NOT NULL CHECK (outcome IN ('applied', 'noop', 'skipped_invalid_target')),
+        applied_at INTEGER NOT NULL CHECK (applied_at >= 0),
+        PRIMARY KEY (inbound_ingest_id, rule_id, rule_version, action_index)
+      ) WITHOUT ROWID, STRICT`,
+      `CREATE INDEX rule_application_rule_applied_idx
+        ON rule_application(rule_id, applied_at, message_id)`,
+    ],
+  },
+  {
+    version: 8,
+    statements: [
+      `ALTER TABLE filter_rule ADD COLUMN ai_instruction TEXT CHECK (
+        ai_instruction IS NULL OR (
+          length(ai_instruction) BETWEEN 1 AND 2000 AND
+          ai_instruction = trim(ai_instruction) AND
+          stop_processing = 0
+        )
+      )`,
+      `CREATE TABLE async_rule_job (
+        id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128 AND id = trim(id)),
+        inbound_ingest_id TEXT NOT NULL UNIQUE REFERENCES inbound_processing(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        message_id TEXT NOT NULL UNIQUE REFERENCES message(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+        plan_json TEXT NOT NULL CHECK (json_valid(plan_json) AND json_type(plan_json) = 'object'),
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'running', 'completed', 'failed')),
+        created_at INTEGER NOT NULL CHECK (created_at >= 0),
+        updated_at INTEGER NOT NULL CHECK (updated_at >= created_at),
+        version INTEGER NOT NULL DEFAULT 1 CHECK (version >= 1)
+      ) STRICT`,
+      `ALTER TABLE inbound_processing ADD COLUMN async_rule_job_id TEXT REFERENCES async_rule_job(id) ON UPDATE CASCADE ON DELETE RESTRICT CHECK (
+        async_rule_job_id IS NULL OR status = 'ready'
+      )`,
+      `CREATE UNIQUE INDEX inbound_processing_async_rule_job_uidx
+        ON inbound_processing(async_rule_job_id) WHERE async_rule_job_id IS NOT NULL`,
+      `CREATE INDEX async_rule_job_status_updated_idx
+        ON async_rule_job(status, updated_at, id)`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

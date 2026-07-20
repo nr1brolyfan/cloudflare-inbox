@@ -2,10 +2,12 @@ import {
   skipToken,
   useInfiniteQuery,
   useMutation,
+  useMutationState,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
   ArrowLeft,
@@ -14,13 +16,22 @@ import {
   LoaderCircle,
   RotateCcw,
 } from "lucide-react";
+import { useRef, useState } from "react";
 
 import {
   authClient,
   authSessionQueryKey,
   clearCachedAuthSession,
   currentSessionForQuery,
+  handleMailboxReadDenial,
+  mailboxReadDenialQueryKey,
 } from "../auth/client";
+import {
+  mailboxMessageActionMutationKey,
+  projectPendingMessageActions,
+  projectPendingThreadActions,
+  reconcileMailboxMessageActionCaches,
+} from "../inbox/mailbox-query-state";
 import { MailboxShell } from "../inbox/mailbox-shell";
 import type {
   MailboxMessageQueryState,
@@ -80,6 +91,9 @@ const decodeMailboxMessageAction = Schema.decodeUnknownSync(
 );
 const decodeOpenMailboxThread = Schema.decodeUnknownSync(
   OpenMailboxThreadInput
+);
+const decodeMailboxMessageActionOption = Schema.decodeUnknownOption(
+  MailboxMessageActionCommand
 );
 const mailboxNavigationQueryKey = ["mailbox", "navigation"] as const;
 
@@ -152,21 +166,98 @@ const messageActionCommand = (
 };
 
 const messageActionErrorText = (
-  failed: boolean,
-  result: { readonly ok: boolean; readonly status?: number } | undefined
+  result:
+    | {
+        readonly error?: { readonly code?: string };
+        readonly ok: boolean;
+        readonly status?: number;
+      }
+    | undefined
 ) => {
-  if (failed) {
-    return "The message action could not be completed.";
-  }
   if (result?.ok !== false) {
     return;
+  }
+  if (result.status === 401) {
+    return "Your session ended. Sign in again to change messages.";
+  }
+  if (result.error?.code === "request_rejected") {
+    return "The message action request was rejected.";
   }
   if (result.status === 403) {
     return "You do not have permission to change this message.";
   }
+  if (result.status === 404) {
+    return "The message no longer exists. Refreshing the mailbox.";
+  }
   return result.status === 409
-    ? "The message changed. Its latest state has been loaded."
+    ? "The message changed. Refreshing its latest state."
     : "The message action could not be completed.";
+};
+
+const conversationFailure = (status: number) => {
+  switch (status) {
+    case 401: {
+      return {
+        detail: "Sign in again to continue reading this mailbox.",
+        retryable: false,
+        title: "Session ended",
+      };
+    }
+    case 403: {
+      return {
+        detail: "Your session does not include access to this conversation.",
+        retryable: false,
+        title: "Conversation access denied",
+      };
+    }
+    case 404: {
+      return {
+        detail: "This conversation may have been removed or moved.",
+        retryable: false,
+        title: "Conversation not found",
+      };
+    }
+    default: {
+      return {
+        detail: "The conversation could not be loaded.",
+        retryable: true,
+        title: "Conversation unavailable",
+      };
+    }
+  }
+};
+
+const messageListFailure = (status: number) => {
+  switch (status) {
+    case 403: {
+      return {
+        detail: "Your session does not include mailbox message read access.",
+        retryable: false,
+        title: "Message access denied",
+      };
+    }
+    case 404: {
+      return {
+        detail: "This mailbox view may have been removed or changed.",
+        retryable: false,
+        title: "Messages not found",
+      };
+    }
+    case 400: {
+      return {
+        detail: "Change the search or filters and try again.",
+        retryable: true,
+        title: "Message query is invalid",
+      };
+    }
+    default: {
+      return {
+        detail: "The message service is temporarily unavailable.",
+        retryable: true,
+        title: "Messages could not be loaded",
+      };
+    }
+  }
 };
 
 const resolveNavigationSelection = (
@@ -193,32 +284,45 @@ export const Route = createFileRoute("/inbox")({
 });
 
 function MailboxUnavailable({
+  context = "mailbox",
   onRetry,
   status,
 }: {
+  readonly context?: "mailbox" | "session";
   readonly onRetry?: () => void;
   readonly status: number;
 }) {
+  const sessionFailure = context === "session";
   const denied = status === 403;
   const missing = status === 404;
-  const title = denied
-    ? "You cannot open this mailbox"
-    : missing
-      ? "No mailbox is ready yet"
-      : "We could not load your mailbox";
-  const detail = denied
-    ? "Your session is valid, but it does not include mailbox read access."
-    : missing
-      ? "Return home to create or activate your primary mailbox."
-      : "The mailbox service returned an invalid or unavailable response.";
+  const title = sessionFailure
+    ? "We could not verify your session"
+    : denied
+      ? "You cannot open this mailbox"
+      : missing
+        ? "No mailbox is ready yet"
+        : "We could not load your mailbox";
+  const detail = sessionFailure
+    ? "The session service is unavailable. Retry before signing in again."
+    : denied
+      ? "Your session is valid, but it does not include mailbox read access."
+      : missing
+        ? "Return home to create or activate your primary mailbox."
+        : "The mailbox service returned an invalid or unavailable response.";
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-5 py-10">
-      <section className="island-shell w-full max-w-lg rounded-[2rem] p-8 text-center sm:p-10">
+      <section
+        role="alert"
+        aria-live="polite"
+        className="island-shell w-full max-w-lg rounded-[2rem] p-8 text-center sm:p-10"
+      >
         <span className="mx-auto flex size-14 items-center justify-center rounded-2xl bg-[var(--sand)] text-[var(--palm)]">
           <InboxIcon size={26} />
         </span>
-        <p className="island-kicker mt-7">Mailbox unavailable</p>
+        <p className="island-kicker mt-7">
+          {sessionFailure ? "Session unavailable" : "Mailbox unavailable"}
+        </p>
         <h1 className="display-title mt-2 text-3xl font-bold">{title}</h1>
         <p className="mt-3 text-sm leading-6 text-[var(--sea-ink-soft)]">
           {detail}
@@ -284,7 +388,11 @@ function WorkspaceStatus({
   readonly title: string;
 }) {
   return (
-    <section className="flex min-h-80 flex-1 items-center justify-center bg-white/48 px-6 text-center">
+    <section
+      role="alert"
+      aria-live="polite"
+      className="flex min-h-80 flex-1 items-center justify-center bg-white/48 px-6 text-center"
+    >
       <div className="max-w-sm">
         <CircleAlert
           className="mx-auto text-[var(--sea-ink-soft)] opacity-35"
@@ -334,6 +442,7 @@ function ConversationPane({
   mailboxId,
   messageId,
   onClose,
+  pendingActions,
   selection,
   sessionId,
   threadId,
@@ -342,10 +451,14 @@ function ConversationPane({
   readonly mailboxId: string;
   readonly messageId?: string;
   readonly onClose: () => void;
+  readonly pendingActions: readonly Schema.Schema.Type<
+    typeof MailboxMessageActionCommand
+  >[];
   readonly selection: MailboxViewSelection;
   readonly sessionId: string;
   readonly threadId?: string;
 }) {
+  const queryClient = useQueryClient();
   const view = decodeMailboxMessageView(
     selection.folder === undefined
       ? { _tag: "Label", labelId: selection.label, mailboxId }
@@ -359,7 +472,11 @@ function ConversationPane({
     queryFn:
       threadInput === undefined
         ? skipToken
-        : () => getMailboxThread({ data: threadInput }),
+        : async () => {
+            const result = await getMailboxThread({ data: threadInput });
+            await handleMailboxReadDenial(queryClient, result);
+            return result;
+          },
     queryKey: [
       "mailbox",
       "thread",
@@ -378,58 +495,75 @@ function ConversationPane({
   }
   if (thread.isLoading) {
     return (
-      <div className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
+      <output className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
         <LoaderCircle
           aria-label="Loading conversation"
           className="animate-spin"
         />
-      </div>
+      </output>
     );
   }
   if (thread.error || !thread.data?.ok) {
-    const missing = thread.data?.ok === false && thread.data.status === 404;
+    const status = thread.data?.ok === false ? thread.data.status : 502;
+    const failure = conversationFailure(status);
     return (
       <WorkspaceStatus
         backHref={mailboxViewHref(selection, undefined, undefined, filters)}
         onBack={onClose}
-        title={missing ? "Conversation not found" : "Conversation unavailable"}
-        detail={
-          missing
-            ? "This conversation may have been removed or moved."
-            : "The conversation could not be loaded."
-        }
-        onRetry={missing ? undefined : () => void thread.refetch()}
+        title={failure.title}
+        detail={failure.detail}
+        onRetry={failure.retryable ? () => void thread.refetch() : undefined}
       />
     );
   }
 
   return (
     <ThreadView
-      data={thread.data.thread}
+      data={projectPendingThreadActions(thread.data.thread, pendingActions)}
       filters={filters}
+      mailboxId={mailboxId}
       onClose={onClose}
+      onPreviewAccessFailure={(status) => {
+        if (status === 401) {
+          void clearCachedAuthSession(queryClient);
+        } else {
+          void handleMailboxReadDenial(queryClient, { ok: false, status });
+        }
+      }}
       selection={selection}
     />
   );
 }
 
 function MailboxWorkspace({
+  archiveFolderId,
   filters,
   mailboxId,
   messageId,
   selection,
   sessionId,
+  trashFolderId,
   threadId,
 }: {
+  readonly archiveFolderId?: string;
   readonly filters: MailboxMessageQueryState;
   readonly mailboxId: string;
   readonly messageId?: string;
   readonly selection: MailboxViewSelection;
   readonly sessionId: string;
+  readonly trashFolderId?: string;
   readonly threadId?: string;
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const pendingMessageLocks = useRef(new Set<string>());
+  const [actionFailures, setActionFailures] = useState<
+    readonly {
+      readonly command: Schema.Schema.Type<typeof MailboxMessageActionCommand>;
+      readonly retryable: boolean;
+      readonly text: string;
+    }[]
+  >([]);
   const view = decodeMailboxMessageView(
     selection.folder === undefined
       ? { _tag: "Label", labelId: selection.label, mailboxId }
@@ -448,6 +582,7 @@ function MailboxWorkspace({
           starred: filters.starred,
         }),
       });
+      await handleMailboxReadDenial(queryClient, result);
       if (!result.ok) {
         throw new MailboxMessagesRequestError(result.status);
       }
@@ -469,34 +604,103 @@ function MailboxWorkspace({
     getNextPageParam: (lastPage) => lastPage.nextCursor,
     retry: false,
   });
+  const actionMutationKey = [
+    ...mailboxMessageActionMutationKey,
+    sessionId,
+    mailboxId,
+  ] as const;
+  const pendingActions = useMutationState<
+    Schema.Schema.Type<typeof MailboxMessageActionCommand> | undefined
+  >({
+    filters: { mutationKey: actionMutationKey, status: "pending" },
+    select: (mutation) =>
+      Option.getOrUndefined(
+        decodeMailboxMessageActionOption(mutation.state.variables)
+      ),
+  }).filter(
+    (
+      command
+    ): command is Schema.Schema.Type<typeof MailboxMessageActionCommand> =>
+      command !== undefined
+  );
+  const pendingMessageIds = new Set(
+    pendingActions.map((command) => command.messageId)
+  );
+  const clearActionFailure = (failedMessageId: string) =>
+    setActionFailures((current) =>
+      current.filter((failure) => failure.command.messageId !== failedMessageId)
+    );
+  const recordActionFailure = (
+    command: Schema.Schema.Type<typeof MailboxMessageActionCommand>,
+    text: string,
+    retryable: boolean
+  ) =>
+    setActionFailures((current) => [
+      ...current.filter(
+        (failure) => failure.command.messageId !== command.messageId
+      ),
+      { command, retryable, text },
+    ]);
   const messageAction = useMutation({
+    mutationKey: actionMutationKey,
     mutationFn: (
       command: Schema.Schema.Type<typeof MailboxMessageActionCommand>
     ) => actOnMailboxMessage({ data: command }),
-    onSuccess: async (result) => {
+    onSuccess: (result, command) => {
       if (!result.ok && result.status === 401) {
-        await clearCachedAuthSession(queryClient);
+        clearActionFailure(command.messageId);
+        void clearCachedAuthSession(queryClient);
         return;
       }
       if (result.ok) {
-        await queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+        clearActionFailure(command.messageId);
+        reconcileMailboxMessageActionCaches(
+          queryClient,
+          command,
+          result.action
+        );
+        void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+        return;
+      }
+      recordActionFailure(
+        command,
+        messageActionErrorText(result) ??
+          "The message action could not be completed.",
+        result.status === 500 || result.status === 502
+      );
+      if (result.status === 404 || result.status === 409) {
+        void Promise.all([
+          queryClient.resetQueries({ queryKey: ["mailbox", "messages"] }),
+          queryClient.resetQueries({ queryKey: ["mailbox", "thread"] }),
+          queryClient.invalidateQueries({
+            queryKey: ["mailbox", "navigation"],
+          }),
+        ]);
         return;
       }
       if (result.status !== 403) {
-        await queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+        void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
       }
     },
-    onError: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+    onError: (_error, command) => {
+      recordActionFailure(
+        command,
+        "The message action could not be completed.",
+        true
+      );
+      void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+    },
+    onSettled: (_result, _error, command) => {
+      pendingMessageLocks.current.delete(command.messageId);
     },
     retry: false,
   });
 
   if (messages.isLoading) {
     return (
-      <div className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
+      <output className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
         <LoaderCircle aria-label="Loading messages" className="animate-spin" />
-      </div>
+      </output>
     );
   }
 
@@ -504,57 +708,67 @@ function MailboxWorkspace({
     messages.error instanceof MailboxMessagesRequestError
       ? messages.error.status
       : undefined;
-  if (messages.data === undefined || status === 401 || status === 403) {
+  const blockingError =
+    messages.data === undefined || (messages.error !== null && status === 404);
+  if (messages.data === undefined || blockingError) {
     const errorStatus = status ?? 502;
-    const denied = errorStatus === 403;
-    const invalid = errorStatus === 400;
+    const failure = messageListFailure(errorStatus);
     return (
       <WorkspaceStatus
-        title={
-          denied
-            ? "Message access denied"
-            : invalid
-              ? "Message query is invalid"
-              : "Messages could not be loaded"
-        }
-        detail={
-          denied
-            ? "Your session does not include mailbox message read access."
-            : invalid
-              ? "Change the search or filters and try again."
-              : "The message service is temporarily unavailable."
-        }
-        onRetry={denied ? undefined : () => void messages.refetch()}
+        title={failure.title}
+        detail={failure.detail}
+        onRetry={failure.retryable ? () => void messages.refetch() : undefined}
       />
     );
   }
 
   const { pages } = messages.data;
   const lastPage = pages.at(-1);
-  const data = {
-    items: pages.flatMap((page) => page.items),
-    nextCursor: lastPage?.nextCursor,
-  };
-  const actionError = messageActionErrorText(
-    messageAction.error !== null,
-    messageAction.data
+  const data = projectPendingMessageActions(
+    {
+      items: pages.flatMap((page) => page.items),
+      nextCursor: lastPage?.nextCursor,
+    },
+    pendingActions,
+    selection,
+    filters,
+    { archiveFolderId, trashFolderId }
   );
+  const submitMessageAction = (
+    command: Schema.Schema.Type<typeof MailboxMessageActionCommand>
+  ) => {
+    if (
+      pendingMessageLocks.current.has(command.messageId) ||
+      pendingMessageIds.has(command.messageId)
+    ) {
+      return;
+    }
+    messageAction.reset();
+    clearActionFailure(command.messageId);
+    pendingMessageLocks.current.add(command.messageId);
+    messageAction.mutate(command);
+  };
   const executeMessageAction = (
     action: MessageRowAction,
     message: (typeof data.items)[number]
-  ) => {
-    messageAction.reset();
-    messageAction.mutate(messageActionCommand(action, mailboxId, message));
-  };
+  ) => submitMessageAction(messageActionCommand(action, mailboxId, message));
 
   return (
     <div className="grid h-full min-h-0 lg:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)]">
       <MessageList
         key={JSON.stringify(filters)}
-        actionError={actionError}
+        actionErrors={actionFailures.map((failure) => ({
+          handleRetry: failure.retryable
+            ? () => submitMessageAction(failure.command)
+            : undefined,
+          messageId: failure.command.messageId,
+          text: failure.text,
+        }))}
+        archiveFolderId={archiveFolderId}
         data={data}
         filters={filters}
         isLoadingMore={messages.isFetchingNextPage}
+        isRefreshing={messages.isFetching && !messages.isFetchingNextPage}
         loadMoreFailed={messages.isFetchNextPageError}
         onLoadMore={() => void messages.fetchNextPage()}
         onMessageAction={executeMessageAction}
@@ -573,18 +787,16 @@ function MailboxWorkspace({
             search: inboxSearchFor(selection, state),
           })
         }
-        onRetryAction={
-          messageAction.error !== null && messageAction.variables !== undefined
-            ? () => messageAction.mutate(messageAction.variables)
-            : undefined
-        }
-        pendingMessageId={
-          messageAction.isPending
-            ? messageAction.variables?.messageId
-            : undefined
-        }
+        onRetryRefresh={() => void messages.refetch()}
+        pendingMessageIds={pendingMessageIds}
         selectedThreadId={threadId}
         selection={selection}
+        refreshFailed={
+          messages.data !== undefined &&
+          messages.error !== null &&
+          !messages.isFetchNextPageError
+        }
+        trashFolderId={trashFolderId}
       />
       <ConversationPane
         filters={filters}
@@ -596,6 +808,7 @@ function MailboxWorkspace({
             search: inboxSearchFor(selection, filters),
           })
         }
+        pendingActions={pendingActions}
         selection={selection}
         sessionId={sessionId}
         threadId={threadId}
@@ -608,6 +821,7 @@ function AuthenticatedInbox({
   data,
   isSigningOut,
   onSignOut,
+  signOutError,
   search,
   sessionId,
   userId,
@@ -615,6 +829,7 @@ function AuthenticatedInbox({
   readonly data: Schema.Codec.Encoded<typeof MailboxNavigationResult>;
   readonly isSigningOut: boolean;
   readonly onSignOut: () => void;
+  readonly signOutError?: string;
   readonly search: Schema.Schema.Type<typeof InboxSearch>;
   readonly sessionId: string;
   readonly userId: string;
@@ -641,6 +856,10 @@ function AuthenticatedInbox({
     read: search.read,
     starred: search.starred === "true" || undefined,
   };
+  const archiveFolderId = folders.find(
+    (folder) => folder.kind === "archive"
+  )?.id;
+  const trashFolderId = folders.find((folder) => folder.kind === "trash")?.id;
 
   return (
     <MailboxShell
@@ -653,14 +872,17 @@ function AuthenticatedInbox({
       viewTitle={selectedLabel?.name ?? selectedFolder?.name ?? "Inbox"}
       isSigningOut={isSigningOut}
       onSignOut={onSignOut}
+      signOutError={signOutError}
     >
       <MailboxWorkspace
+        archiveFolderId={archiveFolderId}
         filters={filters}
         mailboxId={mailbox.id}
         messageId={search.message}
         selection={selection}
         sessionId={sessionId}
         threadId={search.thread}
+        trashFolderId={trashFolderId}
       />
     </MailboxShell>
   );
@@ -670,14 +892,25 @@ function InboxRoute() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const queryClient = useQueryClient();
+  const mailboxDenial = useQuery<{ readonly status: 403 }>({
+    queryFn: skipToken,
+    queryKey: mailboxReadDenialQueryKey,
+  });
   const session = useQuery({
     queryKey: authSessionQueryKey,
     queryFn: ({ signal }) => currentSessionForQuery(signal),
     retry: false,
   });
   const navigation = useQuery({
-    enabled: session.data !== null && session.data !== undefined,
-    queryFn: () => getMailboxNavigation(),
+    enabled:
+      session.data !== null &&
+      session.data !== undefined &&
+      mailboxDenial.data?.status !== 403,
+    queryFn: async () => {
+      const result = await getMailboxNavigation();
+      await handleMailboxReadDenial(queryClient, result);
+      return result;
+    },
     queryKey: [
       ...mailboxNavigationQueryKey,
       session.data?.userId,
@@ -696,14 +929,28 @@ function InboxRoute() {
 
   if (session.isLoading || (session.data && navigation.isLoading)) {
     return (
-      <main className="flex min-h-dvh items-center justify-center text-[var(--sea-ink-soft)]">
+      <output className="flex min-h-dvh items-center justify-center text-[var(--sea-ink-soft)]">
         <LoaderCircle aria-label="Loading mailbox" className="animate-spin" />
-      </main>
+      </output>
+    );
+  }
+
+  if (session.error) {
+    return (
+      <MailboxUnavailable
+        context="session"
+        status={502}
+        onRetry={() => void session.refetch()}
+      />
     );
   }
 
   if (!session.data) {
     return <SignInRequired />;
+  }
+
+  if (mailboxDenial.data?.status === 403) {
+    return <MailboxUnavailable status={403} />;
   }
 
   if (navigation.error || !navigation.data?.ok) {
@@ -721,6 +968,9 @@ function InboxRoute() {
       data={navigation.data.navigation}
       isSigningOut={logout.isPending}
       onSignOut={() => logout.mutate()}
+      signOutError={
+        logout.error === null ? undefined : "Sign out failed. Try again."
+      }
       search={search}
       sessionId={session.data.sessionId}
       userId={session.data.userId}

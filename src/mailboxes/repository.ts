@@ -35,6 +35,8 @@ import type {
 import type { MailboxDomainError, MailboxRepositoryError } from "./errors";
 import type {
   AddMessageLabelInput,
+  AttachmentBlobLocation,
+  GetAttachmentBlobInput,
   GetMessageInput,
   GetMessageResult,
   GetThreadInput,
@@ -122,6 +124,12 @@ export interface MailboxRepository {
     readonly mailboxId: MailboxId;
     readonly ruleId: RuleId;
   }) => Effect.Effect<Option.Option<RuleLocation>, MailboxRepositoryError>;
+  readonly getAttachmentBlob: (
+    input: GetAttachmentBlobInput
+  ) => Effect.Effect<
+    AttachmentBlobLocation,
+    MailboxDomainError | MailboxRepositoryError
+  >;
   readonly getDraft: (
     input: GetDraftInput
   ) => Effect.Effect<DraftResult, MailboxDomainError | MailboxRepositoryError>;

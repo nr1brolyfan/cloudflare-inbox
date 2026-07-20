@@ -4,11 +4,14 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { AsyncRuleWorkflowStarter } from "#/mailboxes/async-rules";
+import type { AsyncRuleWorkflowStarter as AsyncRuleWorkflowStarterShape } from "#/mailboxes/async-rules";
 import {
   BlobStoreError,
   MailboxDomainError,
   MailboxRepositoryError,
   MimeParseError,
+  WorkflowStartError,
 } from "#/mailboxes/errors";
 import type {
   InboundAttachmentStore as InboundAttachmentStoreShape,
@@ -60,6 +63,12 @@ const committedProcessing = Schema.decodeUnknownSync(InboundProcessingSchema)({
   updatedAt: 2000,
   version: 1,
 });
+const committedProcessingWithAsyncRules = Schema.decodeUnknownSync(
+  InboundProcessingSchema
+)({
+  ...Schema.encodeSync(InboundProcessingSchema)(committedProcessing),
+  asyncRuleJobId: "ingest-1",
+});
 
 const recordProcessing: InboundProcessingRecorderShape["record"] = (input) =>
   Effect.succeed(
@@ -110,7 +119,8 @@ const runWorkflow = (
   commit: InboundMessageCommitterShape["commit"] = () =>
     Effect.succeed(committedProcessing),
   record: InboundProcessingRecorderShape["record"] = recordProcessing,
-  taskConfigs: unknown[] = []
+  taskConfigs: unknown[] = [],
+  startAsyncRules: AsyncRuleWorkflowStarterShape["start"] = () => Effect.void
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -157,6 +167,10 @@ const runWorkflow = (
           Layer.succeed(
             InboundProcessingRecorder,
             InboundProcessingRecorder.of({ record })
+          ),
+          Layer.succeed(
+            AsyncRuleWorkflowStarter,
+            AsyncRuleWorkflowStarter.of({ start: startAsyncRules })
           )
         )
       )
@@ -218,6 +232,41 @@ describe("inbound Workflow", () => {
         },
       ])
     );
+  });
+
+  it("dispatches AI rules after ready without failing inbound", async () => {
+    const stepNames: string[] = [];
+    const starts: unknown[] = [];
+
+    const result = await runWorkflow(
+      validInput,
+      "ingest-1",
+      stepNames,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => Effect.succeed(committedProcessingWithAsyncRules),
+      undefined,
+      [],
+      (params) => {
+        starts.push(params);
+        return Effect.fail(
+          new WorkflowStartError({
+            cause: "unavailable",
+            instanceId: params.jobId,
+            message: "Unavailable",
+            workflow: "async-rules",
+          })
+        );
+      }
+    );
+
+    expect(result).toMatchObject({ messageId: "message-1", status: "ready" });
+    expect(starts).toStrictEqual([
+      { formatVersion: 1, jobId: "ingest-1", mailboxId: "primary" },
+    ]);
+    expect(stepNames.at(-1)).toBe("start-async-rule-workflow-v1");
   });
 
   it("fences replay checkpoints and commit with the prepared attempt", async () => {

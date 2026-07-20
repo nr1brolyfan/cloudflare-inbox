@@ -511,6 +511,16 @@ export const MailboxRepositoryDoLive = Layer.effect(
                 : mailDataProtocolError(response, false)
           )
         ),
+      getAttachmentBlob: (input) =>
+        executeMailData({ _tag: "GetAttachmentBlob", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "AttachmentBlobFound"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
       getMessage: (input) =>
         executeMailData({ _tag: "GetMessage", input }).pipe(
           Effect.flatMap((response) =>

@@ -23,6 +23,7 @@ import {
 } from "../mailboxes/administration";
 import {
   Cursor,
+  AttachmentId,
   FolderId,
   InboundIngestId,
   LabelId,
@@ -40,6 +41,7 @@ import {
   MailboxMessageActionPayload,
   MailboxMessageActionResult,
 } from "../mailboxes/message-actions";
+import { MailboxMessageHtmlResult } from "../mailboxes/message-html";
 import {
   MailboxMessageListResult,
   MailboxThreadResult,
@@ -56,6 +58,11 @@ const MailboxThreadParams = Schema.Struct({
   threadId: ThreadId,
 });
 const MailboxMessageParams = Schema.Struct({
+  mailboxId: MailboxId,
+  messageId: MessageId,
+});
+const MailboxInlineAttachmentParams = Schema.Struct({
+  attachmentId: AttachmentId,
   mailboxId: MailboxId,
   messageId: MessageId,
 });
@@ -141,6 +148,28 @@ export const ActOnMailboxMessageEndpoint = HttpApiEndpoint.patch(
   }
 );
 
+export const GetMailboxMessageHtmlEndpoint = HttpApiEndpoint.get(
+  "getMessageHtml",
+  "/api/mailboxes/:mailboxId/messages/:messageId/html",
+  {
+    error: MailboxErrors,
+    params: MailboxMessageParams,
+    query: MailboxMessageViewQuery,
+    success: MailboxMessageHtmlResult,
+  }
+);
+
+export const GetMailboxInlineAttachmentEndpoint = HttpApiEndpoint.get(
+  "getInlineAttachment",
+  "/api/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/inline",
+  {
+    error: MailboxErrors,
+    params: MailboxInlineAttachmentParams,
+    query: MailboxMessageViewQuery,
+    success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
+  }
+);
+
 export const GetMailboxThreadEndpoint = HttpApiEndpoint.get(
   "getThread",
   "/api/mailboxes/:mailboxId/threads/:threadId",
@@ -183,6 +212,8 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     ActOnMailboxMessageEndpoint,
     BootstrapOwnerEndpoint,
     GetMailboxThreadEndpoint,
+    GetMailboxInlineAttachmentEndpoint,
+    GetMailboxMessageHtmlEndpoint,
     GetMailboxNavigationEndpoint,
     ListMailboxMessagesEndpoint,
     RenameMailboxEndpoint,

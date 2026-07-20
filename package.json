@@ -43,6 +43,7 @@
     "effect": "4.0.0-beta.98",
     "effect-qb": "4.0.0-beta.98",
     "lucide-react": "^0.577.0",
+    "parse5": "8.0.1",
     "postal-mime": "2.7.5",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
