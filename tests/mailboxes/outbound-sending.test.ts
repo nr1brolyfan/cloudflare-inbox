@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
+import { MailAddress } from "#/mailboxes/core";
 import { MailboxDomainError } from "#/mailboxes/errors";
 import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import {
@@ -18,6 +19,8 @@ import {
 } from "#/mailboxes/outbound-sending";
 import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
 import { MailboxRepository } from "#/mailboxes/repository";
+import type { MailboxSenderIdentity as MailboxSenderIdentityService } from "#/mailboxes/sender-identity";
+import { MailboxSenderIdentity } from "#/mailboxes/sender-identity";
 
 const scheduledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
   attemptCount: 0,
@@ -40,6 +43,10 @@ const cancelledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
 const scheduledResult = Schema.decodeUnknownSync(SendMailboxDraftResult)({
   delivery: scheduledDelivery,
   serverNow: 1000,
+});
+const sender = Schema.decodeUnknownSync(MailAddress)({
+  address: "Owner@example.test",
+  displayName: "Owner",
 });
 const unused = () => Effect.die(new Error("Unexpected repository operation"));
 const unusedAuthorization = () =>
@@ -107,6 +114,7 @@ const authorizationWith = (
 
 const runSending = <A>(
   authorization: MailAuthorizationService,
+  senderIdentity: MailboxSenderIdentityService,
   repository: MailboxRepositoryService,
   use: (
     service: MailboxOutboundSending
@@ -118,8 +126,9 @@ const runSending = <A>(
       Effect.provide(
         MailboxOutboundSendingLive.pipe(
           Layer.provide(
-            Layer.merge(
+            Layer.mergeAll(
               Layer.succeed(MailAuthorization, authorization),
+              Layer.succeed(MailboxSenderIdentity, senderIdentity),
               Layer.succeed(MailboxRepository, repository)
             )
           )
@@ -151,6 +160,12 @@ describe("mailbox outbound sending", () => {
           return Effect.succeed(resource);
         },
       }),
+      MailboxSenderIdentity.of({
+        resolve: () => {
+          calls.push("resolve-sender");
+          return Effect.succeed(sender);
+        },
+      }),
       repositoryWith({
         scheduleOutbound: (input) => {
           calls.push("schedule");
@@ -161,8 +176,12 @@ describe("mailbox outbound sending", () => {
       (service) => service.send(command)
     );
 
-    expect(calls).toStrictEqual(["authorize-send", "schedule"]);
-    expect(repositoryInput).toStrictEqual(command);
+    expect(calls).toStrictEqual([
+      "authorize-send",
+      "resolve-sender",
+      "schedule",
+    ]);
+    expect(repositoryInput).toStrictEqual({ ...command, sender });
     expect(repositoryInput).not.toHaveProperty("sendAt");
     expect(result).toMatchObject({
       delivery: { id: "delivery-1", mailboxId: "primary" },
@@ -186,6 +205,7 @@ describe("mailbox outbound sending", () => {
           return Effect.succeed(resource);
         },
       }),
+      MailboxSenderIdentity.of({ resolve: () => Effect.succeed(sender) }),
       repositoryWith({
         cancelOutboundDelivery: (input) => {
           calls.push("cancel");
@@ -220,6 +240,7 @@ describe("mailbox outbound sending", () => {
     });
     const conflict = await runSending(
       authorization,
+      MailboxSenderIdentity.of({ resolve: () => Effect.succeed(sender) }),
       repositoryWith({
         cancelOutboundDelivery: () =>
           Effect.fail(
@@ -236,6 +257,7 @@ describe("mailbox outbound sending", () => {
     );
     const mismatch = await runSending(
       authorization,
+      MailboxSenderIdentity.of({ resolve: () => Effect.succeed(sender) }),
       repositoryWith({
         cancelOutboundDelivery: () =>
           Effect.succeed(

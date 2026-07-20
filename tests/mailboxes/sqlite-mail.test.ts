@@ -5,7 +5,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxId } from "#/mailboxes/core";
+import { MailAddress, MailboxId } from "#/mailboxes/core";
 import {
   MailboxDoNamespace,
   MailboxRegistry,
@@ -70,6 +70,10 @@ import {
 } from "../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
+const sender = Schema.decodeUnknownSync(MailAddress)({
+  address: "sender@example.com",
+  displayName: "Sender",
+});
 
 const makeRuntime = () => {
   let next = 0;
@@ -1147,6 +1151,7 @@ describe("Mailbox mail data SQLite", () => {
             expectedVersion: completed.draftVersion,
             mailboxId,
             operationId: "snapshot-schedule",
+            sender,
           })
         );
         const [messageBefore] = yield* db
@@ -1241,6 +1246,7 @@ describe("Mailbox mail data SQLite", () => {
             expectedVersion: 1,
             mailboxId,
             operationId: "legacy-locator-schedule",
+            sender,
           })
         );
         yield* db.insert(attachment).values({
@@ -1325,6 +1331,7 @@ describe("Mailbox mail data SQLite", () => {
           expectedVersion: 1,
           mailboxId,
           operationId: "alarm-schedule",
+          sender,
         });
         const scheduled = Schema.decodeUnknownSync(MailDataRpcResponse)(
           yield* handler.executeMailData({
@@ -1372,6 +1379,7 @@ describe("Mailbox mail data SQLite", () => {
               expectedVersion: 1,
               mailboxId,
               operationId: "alarm-resend-source",
+              sender,
             }),
           })
         );
@@ -1413,7 +1421,7 @@ describe("Mailbox mail data SQLite", () => {
     );
   });
 
-  it("replays scheduling and cancellation exactly across the undo deadline", async () => {
+  it("replays scheduling across sender changes and the undo deadline", async () => {
     let now = 1000;
     const runtime = {
       ...makeRuntime(),
@@ -1422,6 +1430,7 @@ describe("Mailbox mail data SQLite", () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         yield* setup;
+        const db = yield* MailboxDatabase;
         const created = yield* createDraft(
           Schema.decodeUnknownSync(CreateDraftInput)({
             mailboxId,
@@ -1441,10 +1450,23 @@ describe("Mailbox mail data SQLite", () => {
           draftId: created.id,
           expectedVersion: 1,
           operationId: "schedule-op",
+          sender,
         });
         const scheduled = yield* scheduleOutbound(scheduleInput);
         now = scheduled.delivery.sendAt + 1000;
-        const replay = yield* scheduleOutbound(scheduleInput);
+        const replay = yield* scheduleOutbound(
+          Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...scheduleInput,
+            sender: {
+              address: "new-sender@example.com",
+              displayName: "New Sender",
+            },
+          })
+        );
+        const [messageSnapshot] = yield* db
+          .select({ senderJson: message.senderJson })
+          .from(message)
+          .where(eq(message.id, scheduled.delivery.messageId));
         const found = yield* getOutboundDelivery(
           Schema.decodeUnknownSync(GetOutboundDeliveryInput)({
             mailboxId,
@@ -1524,6 +1546,7 @@ describe("Mailbox mail data SQLite", () => {
           cancelReplay,
           staleCancel,
           invalidState,
+          messageSnapshot,
         }).toMatchObject({
           scheduled: {
             serverNow: 1000,
@@ -1538,6 +1561,10 @@ describe("Mailbox mail data SQLite", () => {
           cancelReplay: { status: "cancelled", version: 2 },
           staleCancel: { reason: "version-conflict", actualVersion: 2 },
           invalidState: { reason: "invalid-state" },
+          messageSnapshot: {
+            senderJson:
+              '{"address":"sender@example.com","displayName":"Sender"}',
+          },
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
@@ -1571,6 +1598,7 @@ describe("Mailbox mail data SQLite", () => {
             draftId: created.id,
             expectedVersion: 1,
             operationId: "deadline-schedule",
+            sender,
           })
         );
         const cancelAt = (operationId: string) =>
@@ -1640,6 +1668,35 @@ describe("Mailbox mail data SQLite", () => {
                 draftId: empty.id,
                 expectedVersion: 1,
                 operationId: "invalid-schedule",
+                sender,
+              })
+            )
+          )
+        );
+        const crowded = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "crowded-draft",
+            content: {
+              to: Array.from({ length: 51 }, (_, index) => ({
+                address: `recipient-${index}@example.com`,
+              })),
+              cc: [],
+              bcc: [],
+              subject: "Too many recipients",
+              attachmentIds: [],
+            },
+          })
+        );
+        const tooManyRecipients = failure(
+          yield* Effect.result(
+            scheduleOutbound(
+              Schema.decodeUnknownSync(ScheduleOutboundInput)({
+                mailboxId,
+                draftId: crowded.id,
+                expectedVersion: 1,
+                operationId: "crowded-schedule",
+                sender,
               })
             )
           )
@@ -1663,8 +1720,13 @@ describe("Mailbox mail data SQLite", () => {
             draftId: eligible.id,
             expectedVersion: 1,
             operationId: "source-schedule",
+            sender,
           })
         );
+        const [sourceMessage] = yield* db
+          .select({ senderJson: message.senderJson })
+          .from(message)
+          .where(eq(message.id, source.delivery.messageId));
         const sourceState = failure(
           yield* Effect.result(
             resendOutbound(
@@ -1695,13 +1757,21 @@ describe("Mailbox mail data SQLite", () => {
         });
         const resent = yield* resendOutbound(resendInput);
         const replay = yield* resendOutbound(resendInput);
+        const [resentMessage] = yield* db
+          .select({ senderJson: message.senderJson })
+          .from(message)
+          .where(eq(message.id, resent.delivery.messageId));
         expect({
           invalid: invalid.reason,
+          tooManyRecipients: tooManyRecipients.reason,
           sourceState,
           resent,
           replay,
+          resentMessage,
+          sourceMessage,
         }).toMatchObject({
           invalid: "validation",
+          tooManyRecipients: "validation",
           sourceState: { reason: "invalid-state" },
           resent: {
             sourceDeliveryId: source.delivery.id,
@@ -1712,6 +1782,14 @@ describe("Mailbox mail data SQLite", () => {
             },
           },
           replay: { delivery: { id: resent.delivery.id } },
+          resentMessage: {
+            senderJson:
+              '{"address":"sender@example.com","displayName":"Sender"}',
+          },
+          sourceMessage: {
+            senderJson:
+              '{"address":"sender@example.com","displayName":"Sender"}',
+          },
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
@@ -1749,6 +1827,7 @@ describe("Mailbox mail data SQLite", () => {
               draftId: created.id,
               expectedVersion: 1,
               operationId: "rollback-schedule",
+              sender,
             })
           )
         );

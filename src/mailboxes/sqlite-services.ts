@@ -26,6 +26,7 @@ import { AsyncRuleJob, AsyncRulePlanV1 } from "./async-rules";
 import {
   AsyncRuleJobId,
   Cursor,
+  DraftId,
   MailAddress,
   MailboxId,
   MessageId,
@@ -109,11 +110,14 @@ import {
   OutboundFailureCode,
   ResendOutboundInput,
   ResendOutboundResult,
-  ScheduleOutboundInput,
   ScheduleOutboundResult,
+  outboundMaxRecipientCount,
   outboundUndoWindowMillis,
 } from "./outbound";
-import type { GetOutboundDeliveryInput } from "./outbound";
+import type {
+  GetOutboundDeliveryInput,
+  ScheduleOutboundInput,
+} from "./outbound";
 import {
   AttachmentLocation,
   DraftLocation,
@@ -3747,6 +3751,13 @@ const getOutboundDelivery = (
     return readOutboundDeliveryRow(row, mailboxId);
   });
 
+const ScheduleOutboundRequestIdentity = Schema.Struct({
+  mailboxId: MailboxId,
+  draftId: DraftId,
+  expectedVersion: Version,
+  operationId: OperationId,
+});
+
 const scheduleOutbound = (
   mailboxId: MailboxId,
   input: ScheduleOutboundInput,
@@ -3758,7 +3769,12 @@ const scheduleOutbound = (
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
         const requestKey = JSON.stringify(
-          Schema.encodeSync(ScheduleOutboundInput)(input)
+          Schema.encodeSync(ScheduleOutboundRequestIdentity)({
+            mailboxId: input.mailboxId,
+            draftId: input.draftId,
+            expectedVersion: input.expectedVersion,
+            operationId: input.operationId,
+          })
         );
         const previous = yield* operations.replay(
           input.operationId,
@@ -3816,6 +3832,15 @@ const scheduleOutbound = (
             resourceId: input.draftId,
           });
         }
+        if (recipients.length > outboundMaxRecipientCount) {
+          return yield* new MailboxDomainError({
+            operation: "schedule-outbound",
+            reason: "validation",
+            message: `At most ${outboundMaxRecipientCount} recipients are allowed`,
+            resourceType: "draft",
+            resourceId: input.draftId,
+          });
+        }
         const attachmentIds = decodeJson(
           StringList,
           sourceDraft.attachmentIdsJson
@@ -3869,6 +3894,7 @@ const scheduleOutbound = (
           direction: "outbound",
           outboundDeliveryId: deliveryId,
           subject: sourceDraft.subject,
+          senderJson: encodeJson(MailAddress, input.sender),
           recipientsJson: JSON.stringify(recipients),
           snippet: body.slice(0, 500),
           activityAt: sendAt,

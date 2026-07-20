@@ -28,6 +28,7 @@ import {
   MailboxAdministrationRuntimeLive,
 } from "../control-plane/mailbox-administration-live";
 import { MailboxNavigationLive } from "../control-plane/mailbox-navigation-live";
+import { MailboxSenderIdentityLive } from "../control-plane/mailbox-sender-identity-live";
 import { MailboxInlineAttachmentReadingLive } from "../mailboxes/attachment-reading";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
 import { DraftAttachmentBlobStoreR2WithRuntimeLive } from "../mailboxes/draft-attachment-store-r2-live";
@@ -121,7 +122,13 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
     const mailboxOutboundSendingLive = MailboxOutboundSendingLive.pipe(
-      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+      Layer.provide(
+        Layer.mergeAll(
+          mailAuthorizationLive,
+          mailboxRepositoryLive,
+          MailboxSenderIdentityLive
+        )
+      )
     );
     const mailboxDraftAttachmentsLive = MailboxDraftAttachmentsLive.pipe(
       Layer.provide(

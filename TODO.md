@@ -5,10 +5,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 ## Status
 
 - Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **81/109 (74%)**
+- Postęp zadań: **82/109 (75%)**
 - Ukończone etapy: **6/11**
 - Aktualny etap: **9. Drafty i outbound**
-- Aktualne zadanie: **Cloudflare Email Sending dla mailboxa**
+- Aktualne zadanie: **Statusy outbound delivery**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
@@ -20,7 +20,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 6   | Inbound email                         | DONE        | 9/9    |
 | 7   | Inbox UI i bezpieczne renderowanie    | DONE        | 9/9    |
 | 8   | Reguły automatyczne                   | DONE        | 6/6    |
-| 9   | Drafty i outbound                     | CURRENT     | 5/9    |
+| 9   | Drafty i outbound                     | CURRENT     | 6/9    |
 | 10  | AI                                    | TODO        | 0/6    |
 | 11  | Hardening i produkcja                 | TODO        | 0/11   |
 
@@ -146,8 +146,8 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Tworzyć immutable send snapshot.
 - [x] Planować wysyłkę alarmem MailboxDO.
 - [x] Dodać okno undo send.
-- [ ] CURRENT Podłączyć Cloudflare Email Sending dla mailboxa.
-- [ ] Obsłużyć statusy `scheduled`, `sending`, `accepted`, `failed`, `indeterminate`.
+- [x] Podłączyć Cloudflare Email Sending dla mailboxa.
+- [ ] CURRENT Obsłużyć statusy `scheduled`, `sending`, `accepted`, `failed`, `indeterminate`.
 - [ ] Zapewnić idempotency i retry bez podwójnej wysyłki.
 - [ ] Dodać UX błędów i potwierdzenia dostarczenia do providera.
 

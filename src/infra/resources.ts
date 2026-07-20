@@ -7,3 +7,5 @@ export const ControlPlaneDatabase = Cloudflare.D1.Database("ControlPlane", {
 export const RawMessagesBucket = Cloudflare.R2.Bucket("RawMessages");
 
 export const AuthEmailSender = Cloudflare.Email.SendEmail("AuthEmail");
+
+export const MailboxEmailSender = Cloudflare.Email.SendEmail("MailboxEmail");

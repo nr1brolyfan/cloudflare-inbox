@@ -4,6 +4,7 @@ import * as Schema from "effect/Schema";
 import {
   AttemptCount,
   DraftId,
+  MailAddress,
   MailboxId,
   MessageId,
   OperationId,
@@ -13,6 +14,7 @@ import {
 } from "./core";
 
 export const outboundUndoWindowMillis = 10_000;
+export const outboundMaxRecipientCount = 50;
 
 export const OutboundDeliveryStatus = Schema.Literals([
   "scheduled",
@@ -222,6 +224,7 @@ export const ScheduleOutboundInput = Schema.Struct({
   draftId: DraftId,
   expectedVersion: Version,
   operationId: OperationId,
+  sender: MailAddress,
 });
 export type ScheduleOutboundInput = Schema.Schema.Type<
   typeof ScheduleOutboundInput

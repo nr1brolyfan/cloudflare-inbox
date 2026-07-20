@@ -2,6 +2,7 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { MailAddress } from "#/mailboxes/core";
 import {
   canTransitionInbound,
   InboundProcessingSchema,
@@ -87,6 +88,10 @@ describe("mail lifecycle statuses", () => {
       draftId: "draft-1",
       expectedVersion: 1,
       operationId: "schedule-1",
+      sender: Schema.decodeUnknownSync(MailAddress)({
+        address: "sender@example.com",
+        displayName: "Sender",
+      }),
       sendAt: 1,
     });
 
@@ -96,6 +101,10 @@ describe("mail lifecycle statuses", () => {
       draftId: "draft-1",
       expectedVersion: 1,
       operationId: "schedule-1",
+      sender: Schema.decodeUnknownSync(MailAddress)({
+        address: "sender@example.com",
+        displayName: "Sender",
+      }),
     });
   });
 

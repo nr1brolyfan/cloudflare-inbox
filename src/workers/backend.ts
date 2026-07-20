@@ -22,8 +22,14 @@ import { DevEmailConfig } from "../http/dev-emails";
 import {
   AuthEmailSender,
   ControlPlaneDatabase as ControlPlaneDatabaseResource,
+  MailboxEmailSender,
   RawMessagesBucket,
 } from "../infra/resources";
+import {
+  CloudflareOutboundEmailProviderLive,
+  MailboxEmailSendBindingClient,
+  MailboxEmailSendClientLive,
+} from "../mailboxes/cloudflare-email-sending-live";
 import { EmailAddress } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
 import type { DraftAttachmentR2Object } from "../mailboxes/draft-attachment-store-r2-live";
@@ -40,6 +46,8 @@ import {
   InboundWorkflowStarterLive,
 } from "../mailboxes/inbound-workflow-starter-live";
 import { MailboxDO } from "../mailboxes/mailbox-do";
+import { OutboundDraftAttachmentR2ReadClient } from "../mailboxes/outbound-draft-attachment-reader-r2-live";
+import { OutboundEmailProviderUnavailableLive } from "../mailboxes/outbound-email-provider";
 import {
   BackendObservabilityConfig,
   BackendObservabilityLive,
@@ -106,6 +114,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const inboundWorkflow = yield* InboundWorkflow;
     const emailRouting = yield* EmailRoutingEventSource;
     const isDevelopment = yield* ALCHEMY_DEV;
+    const mailboxEmailSendBinding = isDevelopment
+      ? undefined
+      : yield* Cloudflare.Email.Send(MailboxEmailSender);
     const otlpBaseUrl = isDevelopment
       ? Option.getOrUndefined(
           yield* Config.option(Config.string("OTEL_EXPORTER_OTLP_ENDPOINT"))
@@ -195,11 +206,52 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           ),
       })
     );
+    const outboundAttachmentReadClientLive = Layer.succeed(
+      OutboundDraftAttachmentR2ReadClient,
+      OutboundDraftAttachmentR2ReadClient.of({
+        get: (key) =>
+          rawMessages.get(key).pipe(
+            Effect.provide(RuntimeContext.phantom),
+            Effect.map((object) => {
+              if (object === null) {
+                return null;
+              }
+              const checksum = object.checksums.sha256;
+              return {
+                arrayBuffer: object.arrayBuffer,
+                contentType: object.httpMetadata?.contentType,
+                customMetadata: object.customMetadata ?? {},
+                sha256:
+                  checksum === undefined
+                    ? undefined
+                    : [...new Uint8Array(checksum)]
+                        .map((byte) => byte.toString(16).padStart(2, "0"))
+                        .join(""),
+                size: object.size,
+              };
+            })
+          ),
+      })
+    );
+    const mailboxOutboundProviderLive =
+      mailboxEmailSendBinding === undefined
+        ? OutboundEmailProviderUnavailableLive
+        : CloudflareOutboundEmailProviderLive.pipe(
+            Layer.provide(MailboxEmailSendClientLive),
+            Layer.provide(
+              Layer.succeed(
+                MailboxEmailSendBindingClient,
+                mailboxEmailSendBinding
+              )
+            )
+          );
     const workerServicesLive = Layer.mergeAll(
       authRuntimeConfigLive,
       workflowClientLive,
       attachmentReadClientLive,
       draftAttachmentClientLive,
+      outboundAttachmentReadClientLive,
+      mailboxOutboundProviderLive,
       Layer.succeed(
         MailboxAdministrationConfig,
         MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })

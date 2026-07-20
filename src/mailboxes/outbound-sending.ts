@@ -18,6 +18,8 @@ import { MailboxDomainError } from "./errors";
 import type { MailboxRepositoryError } from "./errors";
 import { OutboundDeliverySchema, ScheduleOutboundResult } from "./outbound";
 import { MailboxRepository } from "./repository";
+import { MailboxSenderIdentity } from "./sender-identity";
+import type { MailboxSenderIdentityError } from "./sender-identity";
 
 export const SendMailboxDraftCommand = Schema.Struct({
   mailboxId: MailboxId,
@@ -122,6 +124,13 @@ const mapRepositoryError = (
     : sendingError(operation, "storage", error);
 };
 
+const mapSenderIdentityError = (error: MailboxSenderIdentityError) =>
+  sendingError(
+    "send",
+    error.reason === "not-found" ? "invalid-input" : "storage",
+    error
+  );
+
 const verifyMailboxIdentity = (
   operation: MailboxOutboundSendingError["operation"],
   mailboxId: MailboxId,
@@ -142,6 +151,7 @@ export const MailboxOutboundSendingLive = Layer.effect(
   Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
     const repository = yield* MailboxRepository;
+    const senderIdentity = yield* MailboxSenderIdentity;
 
     return MailboxOutboundSending.of({
       send: (command) =>
@@ -154,8 +164,11 @@ export const MailboxOutboundSendingLive = Layer.effect(
               mailboxId: command.mailboxId,
             },
           });
+          const sender = yield* senderIdentity
+            .resolve(command.mailboxId)
+            .pipe(Effect.mapError(mapSenderIdentityError));
           const result = yield* repository
-            .scheduleOutbound(command)
+            .scheduleOutbound({ ...command, sender })
             .pipe(
               Effect.mapError((error) => mapRepositoryError("send", error))
             );
