@@ -35,11 +35,15 @@ export type AiToolName = Schema.Schema.Type<typeof AiToolName>;
 
 const modelControlledIdentityFields = new Set([
   "allowlist",
+  "confirmation",
+  "initiator",
   "mailboxId",
   "operationId",
   "permissions",
   "principalId",
+  "provenance",
   "sessionId",
+  "source",
   "userId",
 ]);
 

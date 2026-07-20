@@ -2,6 +2,7 @@ import * as AuthPermission from "@effect-auth/core/Permission";
 import * as AuthPolicy from "@effect-auth/core/Policy";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -36,6 +37,7 @@ import type {
 } from "#/mailboxes/draft-editing";
 import { MailboxMessageReading } from "#/mailboxes/message-reading";
 import type { MailboxMessageReading as MailboxMessageReadingService } from "#/mailboxes/message-reading";
+import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 
 const trustedScope = Schema.decodeUnknownSync(CurrentAiToolScopeSchema)({
   mailboxId: "mailbox-trusted",
@@ -193,12 +195,16 @@ describe("mail create draft tool", () => {
   it("creates through draft editing with the ambient principal and mailbox", async () => {
     let command: CreateMailboxDraftCommand | undefined;
     let principalId: string | undefined;
+    let provenance: unknown;
     const result = await Effect.runPromise(
       execute(
         makeCall("mail_create_draft", createArguments),
         editingWith((input) =>
           Effect.gen(function* () {
             const principal = yield* AuthPermission.CurrentPrincipal;
+            provenance = Option.getOrUndefined(
+              yield* Effect.serviceOption(CurrentMailboxOperationProvenance)
+            );
             principalId = principal.id;
             command = input;
             return draft;
@@ -209,7 +215,16 @@ describe("mail create draft tool", () => {
     );
     const output = successOutput(result);
 
-    expect(principalId).toBe("authorized-user");
+    expect({ principalId, provenance }).toMatchObject({
+      principalId: "authorized-user",
+      provenance: {
+        _tag: "AiToolExecution",
+        callId: "call-mail-create-draft",
+        mailboxId: "mailbox-trusted",
+        runId: "run-create-draft",
+        toolName: "mail_create_draft",
+      },
+    });
     expect(command).toMatchObject({
       content: {
         bcc: [{ address: "audit@example.test" }],
@@ -303,35 +318,39 @@ describe("mail create draft tool", () => {
     expect(storageCalls).toBe(0);
   });
 
-  it.each(["mailboxId", "operationId"])(
-    "rejects forged %s authority before draft editing",
-    async (field) => {
-      let creates = 0;
-      const valid = makeCall("mail_create_draft", createArguments);
-      const forged = {
-        ...valid,
-        arguments: { ...valid.arguments, [field]: "attacker" },
-      } as unknown as AiToolCall;
-      const error = await Effect.runPromise(
-        execute(
-          forged,
-          editingWith(() => {
-            creates += 1;
-            return Effect.succeed(draft);
-          })
-        ).pipe(Effect.flip)
-      );
+  it.each([
+    "mailboxId",
+    "operationId",
+    "source",
+    "provenance",
+    "confirmation",
+    "initiator",
+  ])("rejects forged %s authority before draft editing", async (field) => {
+    let creates = 0;
+    const valid = makeCall("mail_create_draft", createArguments);
+    const forged = {
+      ...valid,
+      arguments: { ...valid.arguments, [field]: "attacker" },
+    } as unknown as AiToolCall;
+    const error = await Effect.runPromise(
+      execute(
+        forged,
+        editingWith(() => {
+          creates += 1;
+          return Effect.succeed(draft);
+        })
+      ).pipe(Effect.flip)
+    );
 
-      expect(error).toMatchObject({
-        _tag: "AiToolProtocolError",
-        reason: "forbidden-arguments",
-      });
-      expect({ audits: auditRecords.length, creates }).toStrictEqual({
-        audits: 0,
-        creates: 0,
-      });
-    }
-  );
+    expect(error).toMatchObject({
+      _tag: "AiToolProtocolError",
+      reason: "forbidden-arguments",
+    });
+    expect({ audits: auditRecords.length, creates }).toStrictEqual({
+      audits: 0,
+      creates: 0,
+    });
+  });
 
   it.each(["sender", "attachments", "attachmentIds", "sendAt", "sendNow"])(
     "rejects model-controlled outbound field %s",

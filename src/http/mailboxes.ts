@@ -7,6 +7,7 @@ import {
   AuthPolicyDeniedError,
   mapAuthGuardErrors,
 } from "@effect-auth/core/HttpApi";
+import { CurrentActor, CurrentSession } from "@effect-auth/core/Sessions";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -37,6 +38,10 @@ import type { MailboxMessageReadingError } from "../mailboxes/message-reading";
 import { MailboxMessageReading } from "../mailboxes/message-reading";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
 import { MailboxNavigation } from "../mailboxes/navigation";
+import {
+  CurrentMailboxOperationProvenance,
+  ExplicitUserAction,
+} from "../mailboxes/operation-provenance";
 import type { MailboxOutboundDeliveryReadingError } from "../mailboxes/outbound-delivery-reading";
 import { MailboxOutboundDeliveryReading } from "../mailboxes/outbound-delivery-reading";
 import type { MailboxOutboundSendingError } from "../mailboxes/outbound-sending";
@@ -318,7 +323,16 @@ const mapOutboundSendingError = (
   | AuthConflictError
   | AuthInternalError
   | AuthNotFoundError
+  | AuthPolicyDeniedError
 > => {
+  if (error.reason === "user-action-required") {
+    return Effect.fail(
+      new AuthPolicyDeniedError({
+        code: "policy_denied",
+        message: "Explicit user action required to send mail",
+      })
+    );
+  }
   if (error.reason === "invalid-input") {
     return Effect.fail(
       new AuthBadRequestError({
@@ -622,7 +636,34 @@ export const MailboxGroupLive = HttpApiBuilder.group(
         draftEditing.update({ ...params, ...payload }).pipe(mapHttpErrors)
       )
       .handle("sendDraft", ({ params, payload }) =>
-        outboundSending.send({ ...params, ...payload }).pipe(mapHttpErrors)
+        Effect.gen(function* () {
+          const actor = yield* CurrentActor;
+          const session = yield* CurrentSession;
+          const command = { ...params, ...payload };
+          const provenance = new ExplicitUserAction({
+            action: "send-draft",
+            actor: {
+              sessionId: actor.sessionId,
+              userId: actor.userId,
+            },
+            expectedVersion: command.expectedVersion,
+            mailboxId: command.mailboxId,
+            operationId: command.operationId,
+            resource: { _tag: "Draft", draftId: command.draftId },
+            session: {
+              sessionId: session.sessionId,
+              userId: session.userId,
+            },
+          });
+          return yield* outboundSending
+            .send(command)
+            .pipe(
+              Effect.provideService(
+                CurrentMailboxOperationProvenance,
+                provenance
+              )
+            );
+        }).pipe(mapHttpErrors)
       )
       .handle("undoSend", ({ params, payload }) =>
         outboundSending.undo({ ...params, ...payload }).pipe(mapHttpErrors)

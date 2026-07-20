@@ -1,4 +1,4 @@
-import { UserId } from "@effect-auth/core/Identifiers";
+import { SessionId, UserId } from "@effect-auth/core/Identifiers";
 import * as AuthPermission from "@effect-auth/core/Permission";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -7,8 +7,21 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { MailAddress } from "#/mailboxes/core";
+import {
+  DraftId,
+  MailAddress,
+  MailboxId,
+  OperationId,
+  Version,
+} from "#/mailboxes/core";
 import { MailboxDomainError } from "#/mailboxes/errors";
+import {
+  AiToolExecution,
+  CurrentMailboxOperationProvenance,
+  ExplicitUserAction,
+  SystemExecution,
+} from "#/mailboxes/operation-provenance";
+import type { MailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import {
   MailboxOutboundSending,
@@ -118,30 +131,58 @@ const runSending = <A>(
   repository: MailboxRepositoryService,
   use: (
     service: MailboxOutboundSending
-  ) => Effect.Effect<A, unknown, AuthPermission.CurrentPrincipal>
-) =>
-  Effect.runPromise(
-    MailboxOutboundSending.pipe(
-      Effect.flatMap(use),
-      Effect.provide(
-        MailboxOutboundSendingLive.pipe(
-          Layer.provide(
-            Layer.mergeAll(
-              Layer.succeed(MailAuthorization, authorization),
-              Layer.succeed(MailboxSenderIdentity, senderIdentity),
-              Layer.succeed(MailboxRepository, repository)
-            )
+  ) => Effect.Effect<A, unknown, AuthPermission.CurrentPrincipal>,
+  provenance?: MailboxOperationProvenance
+) => {
+  const effect = MailboxOutboundSending.pipe(
+    Effect.flatMap(use),
+    Effect.provide(
+      MailboxOutboundSendingLive.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            Layer.succeed(MailAuthorization, authorization),
+            Layer.succeed(MailboxSenderIdentity, senderIdentity),
+            Layer.succeed(MailboxRepository, repository)
           )
         )
-      ),
-      Effect.provideService(
-        AuthPermission.CurrentPrincipal,
-        AuthPermission.CurrentPrincipal.of(
-          AuthPermission.PermissionSubject.user(UserId("user-a"))
-        )
+      )
+    ),
+    Effect.provideService(
+      AuthPermission.CurrentPrincipal,
+      AuthPermission.CurrentPrincipal.of(
+        AuthPermission.PermissionSubject.user(UserId("user-a"))
       )
     )
   );
+  return Effect.runPromise(
+    provenance === undefined
+      ? effect
+      : effect.pipe(
+          Effect.provideService(CurrentMailboxOperationProvenance, provenance)
+        )
+  );
+};
+
+const explicitSend = (
+  command: Schema.Schema.Type<typeof SendMailboxDraftCommand>,
+  overrides: Partial<ConstructorParameters<typeof ExplicitUserAction>[0]> = {}
+) =>
+  new ExplicitUserAction({
+    action: "send-draft",
+    actor: {
+      sessionId: SessionId("session-a"),
+      userId: UserId("user-a"),
+    },
+    expectedVersion: command.expectedVersion,
+    mailboxId: command.mailboxId,
+    operationId: command.operationId,
+    resource: { _tag: "Draft", draftId: command.draftId },
+    session: {
+      sessionId: SessionId("session-a"),
+      userId: UserId("user-a"),
+    },
+    ...overrides,
+  });
 
 describe("mailbox outbound sending", () => {
   it("authorizes the existing draft before scheduling without a sendAt", async () => {
@@ -173,7 +214,8 @@ describe("mailbox outbound sending", () => {
           return Effect.succeed(scheduledResult);
         },
       }),
-      (service) => service.send(command)
+      (service) => service.send(command),
+      explicitSend(command)
     );
 
     expect(calls).toStrictEqual([
@@ -181,13 +223,120 @@ describe("mailbox outbound sending", () => {
       "resolve-sender",
       "schedule",
     ]);
-    expect(repositoryInput).toStrictEqual({ ...command, sender });
+    expect(repositoryInput).toStrictEqual({
+      ...command,
+      confirmation: "explicit-user-action",
+      sender,
+    });
     expect(repositoryInput).not.toHaveProperty("sendAt");
     expect(result).toMatchObject({
       delivery: { id: "delivery-1", mailboxId: "primary" },
       serverNow: 1000,
     });
   });
+
+  it.each([
+    ["missing", undefined],
+    [
+      "AI",
+      Schema.decodeUnknownSync(AiToolExecution)({
+        _tag: "AiToolExecution",
+        callId: "call-a",
+        mailboxId: "primary",
+        runId: "run-a",
+        toolName: "mail_create_draft",
+      }),
+    ],
+    ["system", new SystemExecution({ operation: "automatic-retry" })],
+  ] as const)(
+    "rejects %s provenance before authorization, sender, or storage",
+    async (_, provenance) => {
+      const calls: string[] = [];
+      const command = Schema.decodeUnknownSync(SendMailboxDraftCommand)({
+        draftId: "draft-1",
+        expectedVersion: 3,
+        mailboxId: "primary",
+        operationId: "operation-send",
+      });
+      const error = await runSending(
+        authorizationWith({
+          requireDraft: ({ resource }) => {
+            calls.push("authorize");
+            return Effect.succeed(resource);
+          },
+        }),
+        MailboxSenderIdentity.of({
+          resolve: () => {
+            calls.push("sender");
+            return Effect.succeed(sender);
+          },
+        }),
+        repositoryWith({
+          scheduleOutbound: () => {
+            calls.push("storage");
+            return Effect.succeed(scheduledResult);
+          },
+        }),
+        (service) => service.send(command).pipe(Effect.flip),
+        provenance
+      );
+
+      expect(error).toMatchObject({
+        _tag: "MailboxOutboundSendingError",
+        operation: "send",
+        reason: "user-action-required",
+      });
+      expect(calls).toStrictEqual([]);
+    }
+  );
+
+  it.each([
+    { mailboxId: Schema.decodeUnknownSync(MailboxId)("other") },
+    { expectedVersion: Schema.decodeUnknownSync(Version)(4) },
+    {
+      operationId: Schema.decodeUnknownSync(OperationId)("other-operation"),
+    },
+    {
+      resource: {
+        _tag: "Draft" as const,
+        draftId: Schema.decodeUnknownSync(DraftId)("other-draft"),
+      },
+    },
+    {
+      actor: {
+        sessionId: SessionId("session-a"),
+        userId: UserId("user-b"),
+      },
+    },
+  ])(
+    "rejects mismatched explicit provenance before effects",
+    async (mismatch) => {
+      let calls = 0;
+      const command = Schema.decodeUnknownSync(SendMailboxDraftCommand)({
+        draftId: "draft-1",
+        expectedVersion: 3,
+        mailboxId: "primary",
+        operationId: "operation-send",
+      });
+      const error = await runSending(
+        authorizationWith({
+          requireDraft: ({ resource }) => {
+            calls += 1;
+            return Effect.succeed(resource);
+          },
+        }),
+        MailboxSenderIdentity.of({ resolve: () => Effect.succeed(sender) }),
+        repositoryWith({
+          scheduleOutbound: () => Effect.succeed(scheduledResult),
+        }),
+        (service) => service.send(command).pipe(Effect.flip),
+        explicitSend(command, mismatch)
+      );
+
+      expect(error).toMatchObject({ reason: "user-action-required" });
+      expect(calls).toBe(0);
+    }
+  );
 
   it("requires mailbox-scoped send capabilities before cancellation", async () => {
     const calls: string[] = [];

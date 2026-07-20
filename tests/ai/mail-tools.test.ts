@@ -454,40 +454,46 @@ describe("read-only mail tool executor", () => {
     }
   });
 
-  it.each(["mailboxId", "principalId", "sessionId", "operationId"])(
-    "rejects forged %s authority before dispatch or audit",
-    async (field) => {
-      let reads = 0;
-      const valid = makeCall("mail_read", {
-        messageId: "message-1",
-        view: { folderId: "inbox" },
-      });
-      const forged = {
-        ...valid,
-        arguments: { ...valid.arguments, [field]: "attacker" },
-      } as unknown as AiToolCall;
-      const error = await Effect.runPromise(
-        execute(
-          forged,
-          readingWith({
-            readMessage: () => {
-              reads += 1;
-              return Effect.succeed(readResult);
-            },
-          })
-        ).pipe(Effect.flip)
-      );
+  it.each([
+    "mailboxId",
+    "principalId",
+    "sessionId",
+    "operationId",
+    "source",
+    "provenance",
+    "confirmation",
+    "initiator",
+  ])("rejects forged %s authority before dispatch or audit", async (field) => {
+    let reads = 0;
+    const valid = makeCall("mail_read", {
+      messageId: "message-1",
+      view: { folderId: "inbox" },
+    });
+    const forged = {
+      ...valid,
+      arguments: { ...valid.arguments, [field]: "attacker" },
+    } as unknown as AiToolCall;
+    const error = await Effect.runPromise(
+      execute(
+        forged,
+        readingWith({
+          readMessage: () => {
+            reads += 1;
+            return Effect.succeed(readResult);
+          },
+        })
+      ).pipe(Effect.flip)
+    );
 
-      expect(error).toMatchObject({
-        _tag: "AiToolProtocolError",
-        reason: "forbidden-arguments",
-      });
-      expect({ audits: auditRecords.length, reads }).toStrictEqual({
-        audits: 0,
-        reads: 0,
-      });
-    }
-  );
+    expect(error).toMatchObject({
+      _tag: "AiToolProtocolError",
+      reason: "forbidden-arguments",
+    });
+    expect({ audits: auditRecords.length, reads }).toStrictEqual({
+      audits: 0,
+      reads: 0,
+    });
+  });
 
   it.each(["unknown_tool", "send", "send_email", "create_draft"])(
     "fails closed for unknown or mutating name %s",

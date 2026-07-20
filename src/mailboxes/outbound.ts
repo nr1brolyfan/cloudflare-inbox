@@ -237,7 +237,17 @@ export const canTransitionOutbound = (
 ): boolean =>
   (from === "scheduled" && to === "scheduled") || transitions[from].has(to);
 
+export const OutboundOperationConfirmation = Schema.Literals([
+  "explicit-user-action",
+  "ai-tool-execution",
+  "system-execution",
+]);
+export type OutboundOperationConfirmation = Schema.Schema.Type<
+  typeof OutboundOperationConfirmation
+>;
+
 export const ScheduleOutboundInput = Schema.Struct({
+  confirmation: OutboundOperationConfirmation,
   mailboxId: MailboxId,
   draftId: DraftId,
   expectedVersion: Version,
@@ -275,6 +285,7 @@ export type CancelOutboundDeliveryInput = Schema.Schema.Type<
 >;
 
 export const ResendOutboundInput = Schema.Struct({
+  confirmation: OutboundOperationConfirmation,
   mailboxId: MailboxId,
   outboundDeliveryId: OutboundDeliveryId,
   expectedVersion: Version,

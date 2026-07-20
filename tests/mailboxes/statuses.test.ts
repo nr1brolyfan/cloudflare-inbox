@@ -84,6 +84,7 @@ const messageDetail = (overrides: Readonly<Record<string, unknown>> = {}) => ({
 describe("mail lifecycle statuses", () => {
   it("defines the fixed undo-send scheduling policy", () => {
     const input = Schema.decodeUnknownSync(ScheduleOutboundInput)({
+      confirmation: "explicit-user-action",
       mailboxId: "primary",
       draftId: "draft-1",
       expectedVersion: 1,
@@ -97,6 +98,7 @@ describe("mail lifecycle statuses", () => {
 
     expect(outboundUndoWindowMillis).toBe(10_000);
     expect(input).toStrictEqual({
+      confirmation: "explicit-user-action",
       mailboxId: "primary",
       draftId: "draft-1",
       expectedVersion: 1,
@@ -312,6 +314,7 @@ describe("mail lifecycle statuses", () => {
   it("requires explicit duplicate-risk acknowledgement for resend", () => {
     expect([
       decodes(ResendOutboundInput, {
+        confirmation: "explicit-user-action",
         mailboxId: "primary",
         outboundDeliveryId: "delivery-1",
         expectedVersion: 2,
@@ -319,6 +322,7 @@ describe("mail lifecycle statuses", () => {
         acknowledgeDuplicateRisk: true,
       }),
       decodes(ResendOutboundInput, {
+        confirmation: "explicit-user-action",
         mailboxId: "primary",
         outboundDeliveryId: "delivery-1",
         expectedVersion: 2,

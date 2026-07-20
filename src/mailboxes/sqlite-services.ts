@@ -3769,6 +3769,15 @@ const scheduleOutbound = (
     const db = yield* MailboxDatabase;
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        if (input.confirmation !== "explicit-user-action") {
+          return yield* new MailboxDomainError({
+            operation: "schedule-outbound",
+            reason: "validation",
+            message: "Explicit user confirmation is required",
+            resourceType: "draft",
+            resourceId: input.draftId,
+          });
+        }
         const requestKey = JSON.stringify(
           Schema.encodeSync(ScheduleOutboundRequestIdentity)({
             mailboxId: input.mailboxId,
@@ -4103,6 +4112,15 @@ const resendOutbound = (
     const db = yield* MailboxDatabase;
     return yield* db.transaction((tx) =>
       Effect.gen(function* () {
+        if (input.confirmation !== "explicit-user-action") {
+          return yield* new MailboxDomainError({
+            operation: "resend-outbound",
+            reason: "validation",
+            message: "Explicit user confirmation is required",
+            resourceType: "outbound",
+            resourceId: input.outboundDeliveryId,
+          });
+        }
         const requestKey = JSON.stringify(
           Schema.encodeSync(ResendOutboundInput)(input)
         );

@@ -1,5 +1,6 @@
 import { eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
@@ -74,6 +75,7 @@ const sender = Schema.decodeUnknownSync(MailAddress)({
   address: "sender@example.com",
   displayName: "Sender",
 });
+const explicitConfirmation = { confirmation: "explicit-user-action" } as const;
 
 const makeRuntime = () => {
   let next = 0;
@@ -1148,6 +1150,7 @@ describe("Mailbox mail data SQLite", () => {
         );
         const scheduled = yield* scheduleOutbound(
           Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...explicitConfirmation,
             draftId: created.id,
             expectedVersion: completed.draftVersion,
             mailboxId,
@@ -1177,6 +1180,7 @@ describe("Mailbox mail data SQLite", () => {
           .where(eq(outboundDelivery.id, scheduled.delivery.id));
         const resent = yield* resendOutbound(
           Schema.decodeUnknownSync(ResendOutboundInput)({
+            ...explicitConfirmation,
             acknowledgeDuplicateRisk: true,
             expectedVersion: 1,
             mailboxId,
@@ -1243,6 +1247,7 @@ describe("Mailbox mail data SQLite", () => {
         );
         const scheduled = yield* scheduleOutbound(
           Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...explicitConfirmation,
             draftId: created.id,
             expectedVersion: 1,
             mailboxId,
@@ -1269,6 +1274,7 @@ describe("Mailbox mail data SQLite", () => {
           yield* Effect.result(
             resendOutbound(
               Schema.decodeUnknownSync(ResendOutboundInput)({
+                ...explicitConfirmation,
                 acknowledgeDuplicateRisk: true,
                 expectedVersion: 1,
                 mailboxId,
@@ -1328,6 +1334,7 @@ describe("Mailbox mail data SQLite", () => {
           })
         );
         const scheduleInput = Schema.decodeUnknownSync(ScheduleOutboundInput)({
+          ...explicitConfirmation,
           draftId: firstDraft.id,
           expectedVersion: 1,
           mailboxId,
@@ -1376,6 +1383,7 @@ describe("Mailbox mail data SQLite", () => {
           yield* handler.executeMailData({
             _tag: "ScheduleOutbound",
             input: Schema.decodeUnknownSync(ScheduleOutboundInput)({
+              ...explicitConfirmation,
               draftId: resendDraft.id,
               expectedVersion: 1,
               mailboxId,
@@ -1400,6 +1408,7 @@ describe("Mailbox mail data SQLite", () => {
           yield* handler.executeMailData({
             _tag: "ResendOutbound",
             input: Schema.decodeUnknownSync(ResendOutboundInput)({
+              ...explicitConfirmation,
               acknowledgeDuplicateRisk: true,
               expectedVersion: 1,
               mailboxId,
@@ -1447,6 +1456,7 @@ describe("Mailbox mail data SQLite", () => {
           })
         );
         const scheduleInput = Schema.decodeUnknownSync(ScheduleOutboundInput)({
+          ...explicitConfirmation,
           mailboxId,
           draftId: created.id,
           expectedVersion: 1,
@@ -1457,6 +1467,7 @@ describe("Mailbox mail data SQLite", () => {
         now = scheduled.delivery.sendAt + 1000;
         const replay = yield* scheduleOutbound(
           Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...explicitConfirmation,
             ...scheduleInput,
             sender: {
               address: "new-sender@example.com",
@@ -1571,6 +1582,87 @@ describe("Mailbox mail data SQLite", () => {
     );
   });
 
+  it("rejects missing and AI confirmations before replay or draft mutation", async () => {
+    const runtime = makeRuntime();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const db = yield* MailboxDatabase;
+        const handler = yield* MailboxDoHandler;
+        const malformed = yield* Effect.exit(
+          handler.executeMailData({
+            _tag: "ScheduleOutbound",
+            input: {
+              draftId: "draft-missing-confirmation",
+              expectedVersion: 1,
+              mailboxId,
+              operationId: "missing-confirmation",
+              sender,
+            },
+          })
+        );
+        const created = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "provenance-draft",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              subject: "Requires click",
+              to: [{ address: "to@example.com" }],
+            },
+          })
+        );
+        const input = Schema.decodeUnknownSync(ScheduleOutboundInput)({
+          ...explicitConfirmation,
+          draftId: created.id,
+          expectedVersion: created.version,
+          mailboxId,
+          operationId: "known-send-operation",
+          sender,
+        });
+        const directAi = failure(
+          yield* Effect.result(
+            scheduleOutbound({
+              ...input,
+              confirmation: "ai-tool-execution",
+            })
+          )
+        );
+        const [draftAfterAi] = yield* db
+          .select({ deletedAt: draft.deletedAt, version: draft.version })
+          .from(draft)
+          .where(eq(draft.id, created.id));
+        const deliveriesAfterAi = yield* db.select().from(outboundDelivery);
+        const sent = yield* scheduleOutbound(input);
+        const replay = yield* scheduleOutbound(input);
+        const launderedReplay = failure(
+          yield* Effect.result(
+            scheduleOutbound({
+              ...input,
+              confirmation: "ai-tool-execution",
+            })
+          )
+        );
+        const deliveries = yield* db.select().from(outboundDelivery);
+
+        expect(Exit.isFailure(malformed)).toBeTruthy();
+        expect({ directAi, draftAfterAi, deliveriesAfterAi }).toMatchObject({
+          directAi: { operation: "schedule-outbound", reason: "validation" },
+          draftAfterAi: { deletedAt: null, version: 1 },
+          deliveriesAfterAi: [],
+        });
+        expect(replay.delivery.id).toBe(sent.delivery.id);
+        expect(launderedReplay).toMatchObject({
+          operation: "schedule-outbound",
+          reason: "validation",
+        });
+        expect(deliveries).toHaveLength(1);
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
   it("rejects cancellation at and after the undo deadline", async () => {
     let now = 1000;
     const runtime = {
@@ -1595,6 +1687,7 @@ describe("Mailbox mail data SQLite", () => {
         );
         const scheduled = yield* scheduleOutbound(
           Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...explicitConfirmation,
             mailboxId,
             draftId: created.id,
             expectedVersion: 1,
@@ -1665,6 +1758,7 @@ describe("Mailbox mail data SQLite", () => {
           yield* Effect.result(
             scheduleOutbound(
               Schema.decodeUnknownSync(ScheduleOutboundInput)({
+                ...explicitConfirmation,
                 mailboxId,
                 draftId: empty.id,
                 expectedVersion: 1,
@@ -1693,6 +1787,7 @@ describe("Mailbox mail data SQLite", () => {
           yield* Effect.result(
             scheduleOutbound(
               Schema.decodeUnknownSync(ScheduleOutboundInput)({
+                ...explicitConfirmation,
                 mailboxId,
                 draftId: crowded.id,
                 expectedVersion: 1,
@@ -1717,6 +1812,7 @@ describe("Mailbox mail data SQLite", () => {
         );
         const source = yield* scheduleOutbound(
           Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...explicitConfirmation,
             mailboxId,
             draftId: eligible.id,
             expectedVersion: 1,
@@ -1732,6 +1828,7 @@ describe("Mailbox mail data SQLite", () => {
           yield* Effect.result(
             resendOutbound(
               Schema.decodeUnknownSync(ResendOutboundInput)({
+                ...explicitConfirmation,
                 mailboxId,
                 outboundDeliveryId: source.delivery.id,
                 expectedVersion: 1,
@@ -1750,6 +1847,7 @@ describe("Mailbox mail data SQLite", () => {
           })
           .where(eq(outboundDelivery.id, source.delivery.id));
         const resendInput = Schema.decodeUnknownSync(ResendOutboundInput)({
+          ...explicitConfirmation,
           mailboxId,
           outboundDeliveryId: source.delivery.id,
           expectedVersion: 1,
@@ -1758,6 +1856,14 @@ describe("Mailbox mail data SQLite", () => {
         });
         const resent = yield* resendOutbound(resendInput);
         const replay = yield* resendOutbound(resendInput);
+        const launderedResend = failure(
+          yield* Effect.result(
+            resendOutbound({
+              ...resendInput,
+              confirmation: "ai-tool-execution",
+            })
+          )
+        );
         const [resentMessage] = yield* db
           .select({ senderJson: message.senderJson })
           .from(message)
@@ -1768,6 +1874,7 @@ describe("Mailbox mail data SQLite", () => {
           sourceState,
           resent,
           replay,
+          launderedResend,
           resentMessage,
           sourceMessage,
         }).toMatchObject({
@@ -1783,6 +1890,10 @@ describe("Mailbox mail data SQLite", () => {
             },
           },
           replay: { delivery: { id: resent.delivery.id } },
+          launderedResend: {
+            operation: "resend-outbound",
+            reason: "validation",
+          },
           resentMessage: {
             senderJson:
               '{"address":"sender@example.com","displayName":"Sender"}',
@@ -1824,6 +1935,7 @@ describe("Mailbox mail data SQLite", () => {
         const result = yield* Effect.result(
           scheduleOutbound(
             Schema.decodeUnknownSync(ScheduleOutboundInput)({
+              ...explicitConfirmation,
               mailboxId,
               draftId: created.id,
               expectedVersion: 1,

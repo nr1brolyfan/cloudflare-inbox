@@ -19,6 +19,10 @@ import type {
   MailboxThreadResult,
 } from "../mailboxes/message-reading";
 import {
+  AiToolExecution,
+  CurrentMailboxOperationProvenance,
+} from "../mailboxes/operation-provenance";
+import {
   MailCreateDraftArguments,
   MailCreateDraftSuccess,
   MailReadArguments,
@@ -425,6 +429,15 @@ const mailExecutor = (
           project: (value: A) => unknown
         ) =>
           effect.pipe(
+            Effect.provideService(
+              CurrentMailboxOperationProvenance,
+              new AiToolExecution({
+                callId: call.callId,
+                mailboxId: scope.mailboxId,
+                runId: scope.runId,
+                toolName: call.name,
+              })
+            ),
             Effect.matchEffect({
               onFailure: (error) => {
                 const failure = expectedFailure(error);

@@ -24,6 +24,7 @@ import {
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -75,6 +76,7 @@ import {
   MailboxNavigationError,
   MailboxNavigationResult,
 } from "#/mailboxes/navigation";
+import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import {
   GetMailboxOutboundDeliveryResult,
@@ -82,6 +84,7 @@ import {
 } from "#/mailboxes/outbound-delivery-reading";
 import {
   MailboxOutboundSending,
+  MailboxOutboundSendingError,
   SendMailboxDraftResult,
 } from "#/mailboxes/outbound-sending";
 
@@ -417,6 +420,7 @@ const mailboxRequest = (
 describe("protected mailbox API", () => {
   it("sends, reads, and undoes with path identity", async () => {
     const commands: unknown[] = [];
+    const provenances: unknown[] = [];
     const queries: unknown[] = [];
     const { dispose, handler } = makeHandler(
       makeAdministration(),
@@ -429,10 +433,16 @@ describe("protected mailbox API", () => {
       undefined,
       undefined,
       MailboxOutboundSending.of({
-        send: (command) => {
-          commands.push(command);
-          return Effect.succeed(mailboxDraftSend);
-        },
+        send: (command) =>
+          Effect.gen(function* () {
+            commands.push(command);
+            provenances.push(
+              Option.getOrUndefined(
+                yield* Effect.serviceOption(CurrentMailboxOperationProvenance)
+              )
+            );
+            return mailboxDraftSend;
+          }),
         undo: (command) => {
           commands.push(command);
           return Effect.succeed(cancelledDelivery);
@@ -488,6 +498,18 @@ describe("protected mailbox API", () => {
           outboundDeliveryId: "delivery-1",
         },
       ]);
+      expect(provenances).toMatchObject([
+        {
+          _tag: "ExplicitUserAction",
+          action: "send-draft",
+          actor: { sessionId: "session-a", userId: "user-a" },
+          expectedVersion: 1,
+          mailboxId: "primary",
+          operationId: "operation-send",
+          resource: { _tag: "Draft", draftId: "draft-1" },
+          session: { sessionId: "session-a", userId: "user-a" },
+        },
+      ]);
       expect(queries).toStrictEqual([
         { mailboxId: "primary", outboundDeliveryId: "delivery-1" },
       ]);
@@ -508,6 +530,89 @@ describe("protected mailbox API", () => {
           serverNow: 2000,
         },
       ]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("rejects public send provenance without invoking the service", async () => {
+    let sends = 0;
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      MailboxOutboundSending.of({
+        send: () => {
+          sends += 1;
+          return Effect.succeed(mailboxDraftSend);
+        },
+        undo: () => Effect.succeed(cancelledDelivery),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/primary/drafts/draft-1/send", "POST", {
+          body: {
+            expectedVersion: 1,
+            operationId: "operation-send",
+            provenance: { _tag: "ExplicitUserAction" },
+          },
+        })
+      );
+
+      expect(response.status).toBe(400);
+      expect(sends).toBe(0);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("maps a missing explicit send action to a sanitized forbidden response", async () => {
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      MailboxOutboundSending.of({
+        send: () =>
+          Effect.fail(
+            new MailboxOutboundSendingError({
+              cause: new Error("private provenance details"),
+              message: "private mismatch",
+              operation: "send",
+              reason: "user-action-required",
+            })
+          ),
+        undo: () => Effect.succeed(cancelledDelivery),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/primary/drafts/draft-1/send", "POST", {
+          body: { expectedVersion: 1, operationId: "operation-send" },
+        })
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body).toMatchObject({
+        code: "policy_denied",
+        message: "Explicit user action required to send mail",
+      });
+      expect(JSON.stringify(body)).not.toContain("private");
     } finally {
       await dispose();
     }

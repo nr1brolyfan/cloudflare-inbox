@@ -1,4 +1,5 @@
 import type { CurrentPrincipal } from "@effect-auth/core/Permission";
+import * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -16,6 +17,7 @@ import {
 } from "./core";
 import { MailboxDomainError } from "./errors";
 import type { MailboxRepositoryError } from "./errors";
+import { CurrentMailboxOperationProvenance } from "./operation-provenance";
 import { OutboundDeliverySchema, ScheduleOutboundResult } from "./outbound";
 import { MailboxRepository } from "./repository";
 import { MailboxSenderIdentity } from "./sender-identity";
@@ -57,7 +59,12 @@ export class MailboxOutboundSendingError extends Data.TaggedError(
   readonly cause?: unknown;
   readonly message: string;
   readonly operation: "send" | "undo";
-  readonly reason: "conflict" | "invalid-input" | "not-found" | "storage";
+  readonly reason:
+    | "conflict"
+    | "invalid-input"
+    | "not-found"
+    | "storage"
+    | "user-action-required";
 }> {}
 
 export interface MailboxOutboundSending {
@@ -93,13 +100,15 @@ const sendingError = (
         ? operation === "send"
           ? "Draft changed"
           : "Outbound delivery changed"
-        : reason === "invalid-input"
-          ? "Outbound request is invalid"
-          : reason === "not-found"
-            ? operation === "send"
-              ? "Draft was not found"
-              : "Outbound delivery was not found"
-            : "Outbound operation failed",
+        : reason === "user-action-required"
+          ? "Explicit user action is required for outbound delivery"
+          : reason === "invalid-input"
+            ? "Outbound request is invalid"
+            : reason === "not-found"
+              ? operation === "send"
+                ? "Draft was not found"
+                : "Outbound delivery was not found"
+              : "Outbound operation failed",
     operation,
     reason,
   });
@@ -146,6 +155,35 @@ const verifyMailboxIdentity = (
         )
       );
 
+const requireExplicitSendAction = (command: SendMailboxDraftCommand) =>
+  Effect.gen(function* () {
+    const principal = yield* AuthPermission.CurrentPrincipal;
+    const provenance = yield* Effect.serviceOption(
+      CurrentMailboxOperationProvenance
+    );
+    if (
+      provenance._tag === "None" ||
+      provenance.value._tag !== "ExplicitUserAction"
+    ) {
+      return yield* sendingError("send", "user-action-required");
+    }
+    const action = provenance.value;
+    if (
+      principal.type !== "user" ||
+      principal.id !== action.actor.userId ||
+      action.actor.userId !== action.session.userId ||
+      action.actor.sessionId !== action.session.sessionId ||
+      action.action !== "send-draft" ||
+      action.mailboxId !== command.mailboxId ||
+      action.resource._tag !== "Draft" ||
+      action.resource.draftId !== command.draftId ||
+      action.expectedVersion !== command.expectedVersion ||
+      action.operationId !== command.operationId
+    ) {
+      return yield* sendingError("send", "user-action-required");
+    }
+  });
+
 export const MailboxOutboundSendingLive = Layer.effect(
   MailboxOutboundSending,
   Effect.gen(function* () {
@@ -156,6 +194,7 @@ export const MailboxOutboundSendingLive = Layer.effect(
     return MailboxOutboundSending.of({
       send: (command) =>
         Effect.gen(function* () {
+          yield* requireExplicitSendAction(command);
           yield* authorization.requireDraft({
             action: "send",
             resource: {
@@ -168,7 +207,11 @@ export const MailboxOutboundSendingLive = Layer.effect(
             .resolve(command.mailboxId)
             .pipe(Effect.mapError(mapSenderIdentityError));
           const result = yield* repository
-            .scheduleOutbound({ ...command, sender })
+            .scheduleOutbound({
+              ...command,
+              confirmation: "explicit-user-action",
+              sender,
+            })
             .pipe(
               Effect.mapError((error) => mapRepositoryError("send", error))
             );

@@ -231,6 +231,7 @@ export const SendMailboxDraftEndpoint = HttpApiEndpoint.post(
     payload: Schema.Struct({
       expectedVersion: SendMailboxDraftCommand.fields.expectedVersion,
       operationId: SendMailboxDraftCommand.fields.operationId,
+      provenance: Schema.optional(Schema.Never),
     }),
     success: SendMailboxDraftResult.pipe(HttpApiSchema.status(202)),
   }
