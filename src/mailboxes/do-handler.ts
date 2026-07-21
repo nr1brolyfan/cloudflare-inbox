@@ -173,6 +173,13 @@ const executeMailDataRequest = (
         (value) => ({ _tag: "DraftFound", value })
       );
     }
+    case "ListDrafts": {
+      return encodeMailDataResult(
+        request,
+        stores.listDrafts(request.input),
+        (value) => ({ _tag: "DraftsListed", value })
+      );
+    }
     case "UpdateDraft": {
       return encodeMailDataResult(
         request,

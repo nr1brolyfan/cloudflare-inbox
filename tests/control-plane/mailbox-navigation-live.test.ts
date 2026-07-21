@@ -83,6 +83,7 @@ const repositoryWith = (
     getThread: unused,
     listFolders,
     listDraftAttachments: unused,
+    listDrafts: unused,
     listLabels,
     listMessages: unused,
     moveMessage: unused,

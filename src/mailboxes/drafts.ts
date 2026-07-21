@@ -1,13 +1,17 @@
+/* oxlint-disable max-classes-per-file -- Draft detail and list projections share one domain contract. */
 import * as Schema from "effect/Schema";
 
 import {
   AttachmentId,
+  Cursor,
   DraftId,
   MailAddress,
   MailboxId,
   MessageId,
+  MessageSnippet,
   MessageSubject,
   OperationId,
+  PageSize,
   ThreadId,
   UnixMillis,
   Version,
@@ -63,6 +67,44 @@ export const GetDraftInput = Schema.Struct({
   draftId: DraftId,
 });
 export type GetDraftInput = Schema.Schema.Type<typeof GetDraftInput>;
+
+export const ListDraftsInput = Schema.Struct({
+  mailboxId: MailboxId,
+  page: Schema.optional(
+    Schema.Struct({
+      cursor: Schema.optional(Cursor),
+      limit: Schema.optional(PageSize),
+    })
+  ),
+});
+export type ListDraftsInput = Schema.Schema.Type<typeof ListDraftsInput>;
+
+const DraftRecipientPreview = Schema.Array(MailAddress).check(
+  Schema.makeFilter((recipients) =>
+    recipients.length <= 3
+      ? undefined
+      : "at most 3 recipient previews are allowed"
+  )
+);
+
+export class DraftSummary extends Schema.Class<DraftSummary>(
+  "cloudflare-inbox/DraftSummary"
+)({
+  id: DraftId,
+  mailboxId: MailboxId,
+  recipients: DraftRecipientPreview,
+  subject: MessageSubject,
+  snippet: MessageSnippet,
+  hasAttachments: Schema.Boolean,
+  updatedAt: UnixMillis,
+  version: Version,
+}) {}
+
+export const DraftPage = Schema.Struct({
+  items: Schema.Array(DraftSummary),
+  nextCursor: Schema.optional(Cursor),
+});
+export type DraftPage = Schema.Schema.Type<typeof DraftPage>;
 
 export const UpdateDraftInput = Schema.Struct({
   mailboxId: MailboxId,

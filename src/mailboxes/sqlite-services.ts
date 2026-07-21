@@ -10,6 +10,7 @@ import {
   inArray,
   isNotNull,
   isNull,
+  lt,
   lte,
   or,
   gt,
@@ -64,8 +65,14 @@ import type {
   GetDraftAttachmentInput,
   ListDraftAttachmentsInput,
 } from "./draft-attachments";
-import { CreateDraftInput, DraftSchema, UpdateDraftInput } from "./drafts";
-import type { GetDraftInput } from "./drafts";
+import {
+  CreateDraftInput,
+  DraftPage,
+  DraftSchema,
+  DraftSummary,
+  UpdateDraftInput,
+} from "./drafts";
+import type { GetDraftInput, ListDraftsInput } from "./drafts";
 import { MailboxDomainError } from "./errors";
 import {
   CommitInboundMessageV1,
@@ -410,8 +417,16 @@ const listFolders = (mailboxId: MailboxId) =>
         updatedAt: folder.updatedAt,
         version: folder.version,
         deletedAt: folder.deletedAt,
-        messageCount: count(message.id),
-        unreadCount: sql<number>`coalesce(sum(case when ${message.read} = 0 then 1 else 0 end), 0)`,
+        messageCount: sql<number>`case
+          when ${folder.kind} = 'drafts' then (
+            select count(*) from ${draft} where ${draft.deletedAt} is null
+          )
+          else count(${message.id})
+        end`,
+        unreadCount: sql<number>`case
+          when ${folder.kind} = 'drafts' then 0
+          else coalesce(sum(case when ${message.read} = 0 then 1 else 0 end), 0)
+        end`,
       })
       .from(folder)
       .leftJoin(
@@ -3202,6 +3217,120 @@ const getDraft = (mailboxId: MailboxId, input: GetDraftInput) =>
     return readDraftRow(row, mailboxId);
   });
 
+const DraftCursorPayload = Schema.Struct({
+  mailboxId: MailboxId,
+  scope: Schema.Literal("drafts-desc"),
+  updatedAt: UnixMillis,
+  id: DraftId,
+});
+
+const encodeDraftCursor = (
+  payload: Schema.Schema.Type<typeof DraftCursorPayload>
+) =>
+  Schema.decodeUnknownSync(Cursor)(
+    btoa(encodeURIComponent(JSON.stringify(payload)))
+  );
+
+const invalidDraftCursor = () =>
+  new MailboxDomainError({
+    operation: "list-drafts",
+    reason: "validation",
+    message: "Draft cursor is invalid",
+  });
+
+const decodeDraftCursor = (value: string, mailboxId: MailboxId) => {
+  const parsed = Result.try({
+    try: () => JSON.parse(decodeURIComponent(atob(value))),
+    catch: invalidDraftCursor,
+  });
+  if (Result.isFailure(parsed)) {
+    return parsed;
+  }
+  const decoded = Schema.decodeUnknownResult(DraftCursorPayload)(
+    parsed.success
+  );
+  return Result.isSuccess(decoded) && decoded.success.mailboxId === mailboxId
+    ? Result.succeed(decoded.success)
+    : Result.fail(invalidDraftCursor());
+};
+
+const listDrafts = (mailboxId: MailboxId, input: ListDraftsInput) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const decodedCursor =
+      input.page?.cursor === undefined
+        ? Result.void
+        : decodeDraftCursor(input.page.cursor, mailboxId);
+    if (Result.isFailure(decodedCursor)) {
+      return yield* decodedCursor.failure;
+    }
+    const cursor = decodedCursor.success;
+    const limit = input.page?.limit ?? 25;
+    const rows = yield* db
+      .select({
+        id: draft.id,
+        version: draft.version,
+        subject: draft.subject,
+        updatedAt: draft.updatedAt,
+        snippet: sql<string>`substr(coalesce(${draft.textBody}, ${draft.htmlBody}, ''), 1, 500)`,
+        hasAttachments: sql<number>`case when json_array_length(${draft.attachmentIdsJson}) > 0 then 1 else 0 end`,
+        toRecipient: sql<string | null>`json_extract(${draft.toJson}, '$[0]')`,
+        ccRecipient: sql<string | null>`json_extract(${draft.ccJson}, '$[0]')`,
+        bccRecipient: sql<
+          string | null
+        >`json_extract(${draft.bccJson}, '$[0]')`,
+      })
+      .from(draft)
+      .where(
+        and(
+          isNull(draft.deletedAt),
+          cursor === undefined
+            ? undefined
+            : or(
+                lt(draft.updatedAt, cursor.updatedAt),
+                and(
+                  eq(draft.updatedAt, cursor.updatedAt),
+                  lt(draft.id, cursor.id)
+                )
+              )
+        )
+      )
+      .orderBy(desc(draft.updatedAt), desc(draft.id))
+      .limit(limit + 1);
+    const pageRows = rows.slice(0, limit);
+    const items = pageRows.map((row) =>
+      Schema.decodeUnknownSync(DraftSummary)({
+        id: row.id,
+        mailboxId,
+        recipients: [
+          row.toRecipient,
+          row.ccRecipient,
+          row.bccRecipient,
+        ].flatMap((recipient) =>
+          recipient === null ? [] : [decodeJson(MailAddress, recipient)]
+        ),
+        subject: row.subject,
+        snippet: row.snippet,
+        hasAttachments: row.hasAttachments === 1,
+        updatedAt: row.updatedAt,
+        version: row.version,
+      })
+    );
+    const last = pageRows.at(-1);
+    return Schema.decodeUnknownSync(DraftPage)({
+      items,
+      nextCursor:
+        rows.length > limit && last !== undefined
+          ? encodeDraftCursor({
+              mailboxId,
+              scope: "drafts-desc",
+              updatedAt: Schema.decodeUnknownSync(UnixMillis)(last.updatedAt),
+              id: Schema.decodeUnknownSync(DraftId)(last.id),
+            })
+          : undefined,
+    });
+  });
+
 const updateDraft = (
   mailboxId: MailboxId,
   input: UpdateDraftInput,
@@ -3678,6 +3807,8 @@ const makeMailboxDraftStore = (
       provideDatabase(createDraft(mailboxId, input, runtime, operations)),
     getDraft: (input: GetDraftInput) =>
       provideDatabase(getDraft(mailboxId, input)),
+    listDrafts: (input: ListDraftsInput) =>
+      provideDatabase(listDrafts(mailboxId, input)),
     updateDraft: (input: UpdateDraftInput) =>
       provideDatabase(updateDraft(mailboxId, input, runtime, operations)),
   };

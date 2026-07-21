@@ -53,6 +53,7 @@ const resolverWith = (
               getThread: unusedDirectory,
               listFolders: unusedDirectory,
               listDraftAttachments: unusedDirectory,
+              listDrafts: unusedDirectory,
               listLabels: unusedDirectory,
               listMessages: unusedDirectory,
               searchMessages: unusedDirectory,

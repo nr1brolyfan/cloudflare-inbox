@@ -31,6 +31,7 @@ import {
   MailboxId,
   MailboxRecordSchema,
   MessageId,
+  PageSize,
   SearchQuery,
   ThreadId,
 } from "../mailboxes/core";
@@ -45,6 +46,7 @@ import {
   DraftEditorDraft,
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
+import { MailboxDraftListResult } from "../mailboxes/draft-reading";
 import {
   InboundProcessingResult,
   ReplayInboundInput,
@@ -207,6 +209,20 @@ export const GetMailboxDraftEndpoint = HttpApiEndpoint.get(
   }
 );
 
+export const ListMailboxDraftsEndpoint = HttpApiEndpoint.get(
+  "listDrafts",
+  "/api/mailboxes/:mailboxId/drafts",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    query: Schema.Struct({
+      cursor: Schema.optional(Cursor),
+      limit: Schema.optional(PageSize),
+    }),
+    success: MailboxDraftListResult,
+  }
+);
+
 export const UpdateMailboxDraftEndpoint = HttpApiEndpoint.patch(
   "updateDraft",
   "/api/mailboxes/:mailboxId/drafts/:draftId",
@@ -360,6 +376,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     GetMailboxInlineAttachmentEndpoint,
     GetMailboxMessageHtmlEndpoint,
     GetMailboxNavigationEndpoint,
+    ListMailboxDraftsEndpoint,
     ListMailboxMessagesEndpoint,
     RenameMailboxEndpoint,
     ReserveDraftAttachmentEndpoint,

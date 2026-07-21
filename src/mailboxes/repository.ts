@@ -37,8 +37,10 @@ import type {
 } from "./draft-attachments";
 import type {
   CreateDraftInput,
+  DraftPage,
   DraftResult,
   GetDraftInput,
+  ListDraftsInput,
   UpdateDraftInput,
 } from "./drafts";
 import type { MailboxDomainError, MailboxRepositoryError } from "./errors";
@@ -181,6 +183,9 @@ export interface MailboxRepository {
     DraftAttachmentList,
     MailboxDomainError | MailboxRepositoryError
   >;
+  readonly listDrafts: (
+    input: ListDraftsInput
+  ) => Effect.Effect<DraftPage, MailboxDomainError | MailboxRepositoryError>;
   readonly listLabels: (
     input: ListLabelsInput
   ) => Effect.Effect<LabelList, MailboxDomainError | MailboxRepositoryError>;

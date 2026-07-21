@@ -13,6 +13,7 @@ import type {
   GetMailboxDraftQuery,
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
+import type { MailboxDraftListInput } from "../mailboxes/draft-reading";
 import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
 import type {
@@ -151,6 +152,14 @@ export const websiteBackend = {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.listMessages({ incoming, query });
+      })
+    ),
+  listMailboxDrafts: (query: MailboxDraftListInput) =>
+    websiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.listDrafts({ incoming, query });
       })
     ),
   renameMailbox: (input: {

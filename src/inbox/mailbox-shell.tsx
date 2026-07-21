@@ -131,6 +131,14 @@ function MailboxNavigation({
             {folders.map((folder) => {
               const selected = folder.id === selectedFolderId;
               const FolderIcon = folderIconByKind[folder.kind];
+              const count =
+                folder.kind === "drafts"
+                  ? folder.messageCount
+                  : folder.unreadCount;
+              const countLabel =
+                folder.kind === "drafts"
+                  ? `${count} drafts`
+                  : `${count} unread`;
               return (
                 <a
                   key={folder.id}
@@ -141,7 +149,11 @@ function MailboxNavigation({
                     { delivery: outboundDeliveryId }
                   )}
                   aria-current={selected ? "page" : undefined}
-                  title={`${folder.messageCount} messages`}
+                  title={
+                    folder.kind === "drafts"
+                      ? `${folder.messageCount} drafts`
+                      : `${folder.messageCount} messages`
+                  }
                   className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
                     selected
                       ? "bg-white font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
@@ -152,16 +164,16 @@ function MailboxNavigation({
                     <FolderIcon size={17} strokeWidth={2} />
                   </span>
                   <span className="min-w-0 flex-1 truncate">{folder.name}</span>
-                  {folder.unreadCount > 0 ? (
+                  {count > 0 ? (
                     <span
-                      aria-label={`${folder.unreadCount} unread`}
+                      aria-label={countLabel}
                       className={`rounded-full px-2 py-0.5 text-[0.62rem] font-extrabold ${
                         selected
                           ? "bg-[var(--sand)] text-[var(--palm)]"
                           : "bg-white/10 text-white/72"
                       }`}
                     >
-                      {folder.unreadCount}
+                      {count}
                     </span>
                   ) : null}
                 </a>

@@ -11,6 +11,7 @@ import {
   GetMailboxDraftQuery,
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
+import { MailboxDraftListInput } from "../mailboxes/draft-reading";
 import { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import {
   MailboxMessageListInput,
@@ -41,6 +42,7 @@ const getMailboxDraftInput = Schema.decodeUnknownSync(GetMailboxDraftQuery);
 const updateMailboxDraftInput = Schema.decodeUnknownSync(
   UpdateMailboxDraftCommand
 );
+const mailboxDraftListInput = Schema.decodeUnknownSync(MailboxDraftListInput);
 const reserveDraftAttachmentInput = Schema.decodeUnknownSync(
   ReserveDraftAttachmentCommand
 );
@@ -95,6 +97,10 @@ export const getMailboxNavigation = createServerFn({ method: "GET" }).handler(
 export const listMailboxMessages = createServerFn({ method: "GET" })
   .validator(mailboxMessageListInput)
   .handler(({ data }) => websiteBackend.listMailboxMessages(data));
+
+export const listMailboxDrafts = createServerFn({ method: "GET" })
+  .validator(mailboxDraftListInput)
+  .handler(({ data }) => websiteBackend.listMailboxDrafts(data));
 
 export const getMailboxThread = createServerFn({ method: "GET" })
   .validator(openMailboxThreadInput)

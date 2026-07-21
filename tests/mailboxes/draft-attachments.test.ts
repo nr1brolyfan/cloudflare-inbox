@@ -69,6 +69,7 @@ const repositoryWith = (
     getOutboundDelivery: unused,
     getThread: unused,
     listDraftAttachments: unused,
+    listDrafts: unused,
     listFolders: unused,
     listLabels: unused,
     listMessages: unused,

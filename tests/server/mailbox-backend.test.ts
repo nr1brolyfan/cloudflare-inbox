@@ -9,6 +9,7 @@ import {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
 } from "#/mailboxes/draft-editing";
+import { MailboxDraftListInput } from "#/mailboxes/draft-reading";
 import { MailboxMessageActionCommand } from "#/mailboxes/message-actions";
 import { MailboxMessageHtmlInput } from "#/mailboxes/message-html";
 import {
@@ -120,6 +121,21 @@ const draft = {
   mailboxId: "team/primary",
   updatedAt: 1000,
   version: 1,
+} as const;
+const drafts = {
+  items: [
+    {
+      hasAttachments: false,
+      id: "draft/one",
+      mailboxId: "team/primary",
+      recipients: [{ address: "person@example.test" }],
+      snippet: "Draft body",
+      subject: "Quarterly update",
+      updatedAt: 1000,
+      version: 1,
+    },
+  ],
+  nextCursor: "next/page",
 } as const;
 const scheduledDelivery = {
   attemptCount: 0,
@@ -242,6 +258,55 @@ describe("Website mailbox Backend forwarding", () => {
       content: draft.content,
       operationId: "operation-create",
     });
+  });
+
+  it("forwards and validates a paginated draft summary list", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const query = Schema.decodeUnknownSync(MailboxDraftListInput)({
+      mailboxId: "team/primary",
+      page: { cursor: "page/2 ?", limit: 10 },
+    });
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(drafts));
+      },
+      (operations) => operations.listDrafts({ incoming, query })
+    );
+
+    expect(result).toStrictEqual({ drafts, ok: true });
+    expect({
+      body: forwarded?.body,
+      cookie: forwarded?.headers.get("cookie"),
+      method: forwarded?.method,
+      pathname:
+        forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
+      search:
+        forwarded === undefined ? undefined : new URL(forwarded.url).search,
+    }).toStrictEqual({
+      body: null,
+      cookie: "__Host-session=session-a.secret",
+      method: "GET",
+      pathname: "/api/mailboxes/team%2Fprimary/drafts",
+      search: "?cursor=page%2F2+%3F&limit=10",
+    });
+    expect(JSON.stringify(result)).not.toContain("textBody");
+  });
+
+  it("rejects a draft list item from another mailbox", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(MailboxDraftListInput)({
+      mailboxId: "primary",
+    });
+    const result = await runForward(
+      () => Promise.resolve(Response.json(drafts)),
+      (operations) => operations.listDrafts({ incoming, query })
+    );
+
+    expect(result).toMatchObject({ ok: false, status: 502 });
   });
 
   it("forwards send and undo payloads without path identity fields", async () => {

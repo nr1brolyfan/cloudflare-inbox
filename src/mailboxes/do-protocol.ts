@@ -28,8 +28,10 @@ import {
 } from "./draft-attachments";
 import {
   CreateDraftInput,
+  DraftPage,
   DraftResult,
   GetDraftInput,
+  ListDraftsInput,
   UpdateDraftInput,
 } from "./drafts";
 import { MailboxDomainError } from "./errors";
@@ -85,6 +87,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "get-thread",
     "mutate-message",
     "create-draft",
+    "list-drafts",
     "get-draft",
     "update-draft",
     "reserve-draft-attachment",
@@ -251,6 +254,7 @@ export const MailDataRpcRequest = Schema.Union([
     input: CreateDraftInput,
   }),
   Schema.Struct({ _tag: Schema.Literal("GetDraft"), input: GetDraftInput }),
+  Schema.Struct({ _tag: Schema.Literal("ListDrafts"), input: ListDraftsInput }),
   Schema.Struct({
     _tag: Schema.Literal("ReserveDraftAttachment"),
     input: ReserveDraftAttachmentCommand,
@@ -326,6 +330,7 @@ export const MailDataRpcResponse = Schema.Union([
   }),
   Schema.Struct({ _tag: Schema.Literal("DraftCreated"), value: DraftResult }),
   Schema.Struct({ _tag: Schema.Literal("DraftFound"), value: DraftResult }),
+  Schema.Struct({ _tag: Schema.Literal("DraftsListed"), value: DraftPage }),
   Schema.Struct({ _tag: Schema.Literal("DraftUpdated"), value: DraftResult }),
   Schema.Struct({
     _tag: Schema.Literal("DraftAttachmentReserved"),
@@ -489,6 +494,11 @@ export const mailDataRequestMetadataByTag = {
     operation: "get-draft",
     kind: "read",
     responseTag: "DraftFound",
+  },
+  ListDrafts: {
+    operation: "list-drafts",
+    kind: "read",
+    responseTag: "DraftsListed",
   },
   UpdateDraft: {
     operation: "update-draft",

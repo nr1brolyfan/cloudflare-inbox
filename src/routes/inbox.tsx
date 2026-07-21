@@ -28,6 +28,7 @@ import {
   mailboxReadDenialQueryKey,
 } from "../auth/client";
 import { DraftEditor } from "../inbox/draft-editor";
+import { DraftList } from "../inbox/draft-list";
 import {
   mailboxMessageActionMutationKey,
   projectPendingMessageActions,
@@ -68,6 +69,7 @@ import {
   DraftEditorDraft,
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
+import { MailboxDraftListInput } from "../mailboxes/draft-reading";
 import { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import {
   MailboxMessageListInput,
@@ -81,6 +83,7 @@ import {
   getMailboxOutboundDelivery,
   getMailboxDraft,
   getMailboxThread,
+  listMailboxDrafts,
   listMailboxMessages,
   actOnMailboxMessage,
   createMailboxDraft,
@@ -140,6 +143,9 @@ const decodeCreateMailboxDraft = Schema.decodeUnknownSync(
 );
 const decodeDraftEditorContent = Schema.decodeUnknownSync(DraftEditorContent);
 const decodeDraftEditorDraft = Schema.decodeUnknownSync(DraftEditorDraft);
+const decodeMailboxDraftListInput = Schema.decodeUnknownSync(
+  MailboxDraftListInput
+);
 const decodeUpdateMailboxDraft = Schema.decodeUnknownSync(
   UpdateMailboxDraftCommand
 );
@@ -160,12 +166,12 @@ const emptyDraftContent = decodeDraftEditorContent({
   to: [],
 });
 
-class MailboxMessagesRequestError extends Error {
+class MailboxRequestError extends Error {
   readonly status: number;
 
   constructor(status: number) {
-    super("Mailbox messages request failed");
-    this.name = "MailboxMessagesRequestError";
+    super("Mailbox request failed");
+    this.name = "MailboxRequestError";
     this.status = status;
   }
 }
@@ -322,6 +328,28 @@ const messageListFailure = (status: number) => {
       };
     }
   }
+};
+
+const draftListFailure = (status: number) => {
+  if (status === 403) {
+    return {
+      detail: "Your session does not include permission to edit drafts.",
+      retryable: false,
+      title: "Draft access denied",
+    };
+  }
+  if (status === 400) {
+    return {
+      detail: "The draft page cursor is no longer valid.",
+      retryable: true,
+      title: "Draft query is invalid",
+    };
+  }
+  return {
+    detail: "The draft service is temporarily unavailable.",
+    retryable: true,
+    title: "Drafts could not be loaded",
+  };
 };
 
 const resolveNavigationSelection = (
@@ -599,6 +627,88 @@ function ConversationPane({
   );
 }
 
+function DraftListWorkspace({
+  deliveryId,
+  folderId,
+  mailboxId,
+  sessionId,
+}: {
+  readonly deliveryId?: string;
+  readonly folderId: string;
+  readonly mailboxId: string;
+  readonly sessionId: string;
+}) {
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const drafts = useInfiniteQuery({
+    queryFn: async ({ pageParam }) => {
+      const result = await listMailboxDrafts({
+        data: decodeMailboxDraftListInput({
+          mailboxId,
+          page: { cursor: pageParam, limit: 25 },
+        }),
+      });
+      if (!result.ok) {
+        if (result.status === 401) {
+          await clearCachedAuthSession(queryClient);
+        }
+        throw new MailboxRequestError(result.status);
+      }
+      return result.drafts;
+    },
+    queryKey: ["mailbox", "drafts", sessionId, mailboxId],
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    retry: false,
+  });
+
+  if (drafts.isLoading) {
+    return (
+      <output className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
+        <LoaderCircle aria-label="Loading drafts" className="animate-spin" />
+      </output>
+    );
+  }
+
+  if (drafts.data === undefined) {
+    const status =
+      drafts.error instanceof MailboxRequestError ? drafts.error.status : 502;
+    const failure = draftListFailure(status);
+    return (
+      <WorkspaceStatus
+        title={failure.title}
+        detail={failure.detail}
+        onRetry={failure.retryable ? () => void drafts.refetch() : undefined}
+      />
+    );
+  }
+
+  const lastPage = drafts.data.pages.at(-1);
+  return (
+    <DraftList
+      data={{
+        items: drafts.data.pages.flatMap((page) => page.items),
+        nextCursor: lastPage?.nextCursor,
+      }}
+      deliveryId={deliveryId}
+      folderId={folderId}
+      isLoadingMore={drafts.isFetchingNextPage}
+      loadMoreFailed={drafts.isFetchNextPageError}
+      onLoadMore={() => void drafts.fetchNextPage()}
+      onOpenDraft={(draftId) =>
+        void navigate({
+          to: "/inbox",
+          search: decodeInboxSearch({
+            delivery: deliveryId,
+            draft: draftId,
+            folder: folderId,
+          }),
+        })
+      }
+    />
+  );
+}
+
 function MailboxWorkspace({
   archiveFolderId,
   filters,
@@ -648,7 +758,7 @@ function MailboxWorkspace({
       });
       await handleMailboxReadDenial(queryClient, result);
       if (!result.ok) {
-        throw new MailboxMessagesRequestError(result.status);
+        throw new MailboxRequestError(result.status);
       }
       return result.messages;
     },
@@ -769,7 +879,7 @@ function MailboxWorkspace({
   }
 
   const status =
-    messages.error instanceof MailboxMessagesRequestError
+    messages.error instanceof MailboxRequestError
       ? messages.error.status
       : undefined;
   const blockingError =
@@ -1059,8 +1169,12 @@ function DraftWorkspace({
   const save = useMutation({
     mutationFn: (command: DraftSaveCommand) =>
       "draftId" in command
-        ? updateMailboxDraft({ data: command })
-        : createMailboxDraft({ data: command }),
+        ? updateMailboxDraft({
+            data: Schema.encodeSync(UpdateMailboxDraftCommand)(command),
+          })
+        : createMailboxDraft({
+            data: Schema.encodeSync(CreateMailboxDraftCommand)(command),
+          }),
     onError: (_error, command) => {
       setSaved(false);
       setFailure({
@@ -1085,9 +1199,12 @@ function DraftWorkspace({
       }
       setFailure(undefined);
       setSaved(true);
-      void queryClient.invalidateQueries({
-        queryKey: ["mailbox", "navigation"],
-      });
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["mailbox", "navigation"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "drafts"] }),
+      ]);
       if (!("draftId" in command)) {
         onCreated(result.draft.id);
         return;
@@ -1201,9 +1318,12 @@ function DraftWorkspace({
         currentUploads.filter((upload) => upload.id !== id)
       );
       await draft.refetch();
-      void queryClient.invalidateQueries({
-        queryKey: ["mailbox", "navigation"],
-      });
+      void Promise.all([
+        queryClient.invalidateQueries({
+          queryKey: ["mailbox", "navigation"],
+        }),
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "drafts"] }),
+      ]);
     } catch (error) {
       const {
         message: uploadError,
@@ -1507,6 +1627,13 @@ function AuthenticatedInbox({
                 }),
               });
             }}
+            sessionId={sessionId}
+          />
+        ) : selectedFolder?.kind === "drafts" ? (
+          <DraftListWorkspace
+            deliveryId={search.delivery}
+            folderId={selectedFolder.id}
+            mailboxId={mailbox.id}
             sessionId={sessionId}
           />
         ) : (

@@ -592,6 +592,16 @@ export const MailboxRepositoryDoLive = Layer.effect(
                 : mailDataProtocolError(response, false)
           )
         ),
+      listDrafts: (input) =>
+        executeMailData({ _tag: "ListDrafts", input }).pipe(
+          Effect.flatMap((response) =>
+            response._tag === "DomainError"
+              ? domainFailure(response)
+              : response._tag === "DraftsListed"
+                ? Effect.succeed(response.value)
+                : mailDataProtocolError(response, false)
+          )
+        ),
       listLabels: (input) =>
         executeDirectory({ _tag: "ListLabels", input }).pipe(
           Effect.flatMap((response) => {

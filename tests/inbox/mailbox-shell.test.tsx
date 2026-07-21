@@ -8,6 +8,17 @@ import { MailboxShell } from "#/inbox/mailbox-shell";
 const folders = [
   {
     createdAt: 1000,
+    id: "drafts",
+    kind: "drafts" as const,
+    mailboxId: "primary",
+    messageCount: 3,
+    name: "Drafts",
+    unreadCount: 0,
+    updatedAt: 1000,
+    version: 1,
+  },
+  {
+    createdAt: 1000,
     id: "inbox",
     kind: "inbox" as const,
     mailboxId: "primary",
@@ -72,12 +83,23 @@ describe(MailboxShell, () => {
     expect(
       screen.getByRole("link", { name: /Inbox/u }).getAttribute("aria-current")
     ).toBe("page");
-    expect(
-      screen.getByRole("link", { name: "Archive" }).getAttribute("href")
-    ).toBe("/inbox?folder=archive&delivery=delivery-1");
-    expect(
-      screen.getByRole("link", { name: "Work & travel" }).getAttribute("href")
-    ).toBe("/inbox?label=label-work&delivery=delivery-1");
+    expect({
+      archiveHref: screen
+        .getByRole("link", { name: "Archive" })
+        .getAttribute("href"),
+      badge: Boolean(screen.getAllByLabelText("3 drafts")[0]),
+      labelHref: screen
+        .getByRole("link", { name: "Work & travel" })
+        .getAttribute("href"),
+      title: screen
+        .getAllByRole("link", { name: /Drafts/u })[0]
+        ?.getAttribute("title"),
+    }).toStrictEqual({
+      archiveHref: "/inbox?folder=archive&delivery=delivery-1",
+      badge: true,
+      labelHref: "/inbox?label=label-work&delivery=delivery-1",
+      title: "3 drafts",
+    });
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }));
     expect(signOut).toHaveBeenCalledOnce();

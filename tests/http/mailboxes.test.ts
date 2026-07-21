@@ -55,6 +55,10 @@ import {
   DraftEditorDraft,
   MailboxDraftEditing,
 } from "#/mailboxes/draft-editing";
+import {
+  MailboxDraftListResult,
+  MailboxDraftReading,
+} from "#/mailboxes/draft-reading";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import {
@@ -214,6 +218,21 @@ const mailboxDraft = Schema.decodeUnknownSync(DraftEditorDraft)({
   updatedAt: 1000,
   version: 1,
 });
+const mailboxDrafts = Schema.decodeUnknownSync(MailboxDraftListResult)({
+  items: [
+    {
+      hasAttachments: true,
+      id: "draft-1",
+      mailboxId: "primary",
+      recipients: [{ address: "recipient@example.test" }],
+      snippet: "Draft preview",
+      subject: "Draft",
+      updatedAt: 2000,
+      version: 2,
+    },
+  ],
+  nextCursor: "next-drafts",
+});
 const draftAttachment = Schema.decodeUnknownSync(
   DraftAttachmentReservationSchema
 )({
@@ -324,7 +343,10 @@ const makeHandler = (
     {
       get: () => Effect.succeed(mailboxOutboundDelivery),
     }
-  )
+  ),
+  draftReading: MailboxDraftReading = MailboxDraftReading.of({
+    list: () => Effect.succeed(mailboxDrafts),
+  })
 ) => {
   const requestAuthLive = Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
@@ -358,6 +380,7 @@ const makeHandler = (
         Layer.succeed(MailboxMessageHtmlReading, messageHtml),
         Layer.succeed(MailboxInlineAttachmentReading, inlineAttachments),
         Layer.succeed(MailboxDraftEditing, draftEditing),
+        Layer.succeed(MailboxDraftReading, draftReading),
         Layer.succeed(MailboxDraftAttachments, draftAttachments),
         Layer.succeed(MailboxOutboundSending, outboundSending),
         Layer.succeed(MailboxOutboundDeliveryReading, outboundDeliveryReading),
@@ -815,6 +838,61 @@ describe("protected mailbox API", () => {
       await expect(response.json()).resolves.toMatchObject({
         items: [{ id: "message-1", threadId: "thread-1" }],
       });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("lists bounded draft summaries with decoded pagination", async () => {
+    let input: unknown;
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      MailboxDraftReading.of({
+        list: (query) => {
+          input = query;
+          return Effect.succeed(mailboxDrafts);
+        },
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/drafts?cursor=page-2&limit=10",
+          "GET"
+        )
+      );
+      const body = await response.json();
+
+      expect({ body, input, status: response.status }).toMatchObject({
+        body: {
+          items: [
+            {
+              hasAttachments: true,
+              id: "draft-1",
+              mailboxId: "primary",
+              snippet: "Draft preview",
+            },
+          ],
+          nextCursor: "next-drafts",
+        },
+        input: {
+          mailboxId: "primary",
+          page: { cursor: "page-2", limit: 10 },
+        },
+        status: 200,
+      });
+      expect(JSON.stringify(body)).not.toContain("textBody");
     } finally {
       await dispose();
     }

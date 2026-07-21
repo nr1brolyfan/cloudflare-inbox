@@ -23,6 +23,7 @@ import {
 import {
   CreateDraftInput,
   GetDraftInput,
+  ListDraftsInput,
   UpdateDraftInput,
 } from "#/mailboxes/drafts";
 import { MailboxDomainError } from "#/mailboxes/errors";
@@ -56,6 +57,7 @@ import {
 } from "#/mailboxes/sqlite-schema";
 import {
   MailboxDatabase,
+  MailboxDirectoryStore,
   MailboxDraftStore,
   MailboxDraftAttachmentStore,
   MailboxIdentity,
@@ -122,6 +124,8 @@ const createDraft = (input: CreateDraftInput) =>
   MailboxDraftStore.pipe(Effect.flatMap((store) => store.createDraft(input)));
 const getDraft = (input: GetDraftInput) =>
   MailboxDraftStore.pipe(Effect.flatMap((store) => store.getDraft(input)));
+const listDrafts = (input: ListDraftsInput) =>
+  MailboxDraftStore.pipe(Effect.flatMap((store) => store.listDrafts(input)));
 const updateDraft = (input: UpdateDraftInput) =>
   MailboxDraftStore.pipe(Effect.flatMap((store) => store.updateDraft(input)));
 const reserveDraftAttachment = (input: ReserveDraftAttachmentCommand) =>
@@ -935,6 +939,100 @@ describe("Mailbox mail data SQLite", () => {
         expect(updated.textBody).toBeUndefined();
         expect(found.textBody).toBeUndefined();
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("lists only active bounded draft summaries with keyset pagination", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const db = yield* MailboxDatabase;
+        yield* db.insert(draft).values([
+          {
+            id: "draft-c",
+            toJson:
+              '[{"address":"to@example.com"},{"address":"hidden@example.com"}]',
+            ccJson: '[{"address":"cc@example.com"}]',
+            bccJson: '[{"address":"bcc@example.com"}]',
+            subject: "Newest",
+            textBody: "x".repeat(1_000_000),
+            attachmentIdsJson: '["attachment-1"]',
+            createdAt: 100,
+            updatedAt: 300,
+          },
+          {
+            id: "draft-b",
+            subject: "Same timestamp",
+            htmlBody: "<p>HTML preview</p>",
+            createdAt: 100,
+            updatedAt: 300,
+          },
+          {
+            id: "draft-a",
+            subject: "Older",
+            textBody: "Older preview",
+            createdAt: 100,
+            updatedAt: 200,
+          },
+          {
+            id: "draft-sent",
+            subject: "Sent",
+            textBody: "Must not be listed",
+            createdAt: 100,
+            updatedAt: 400,
+            deletedAt: 400,
+          },
+        ]);
+
+        const first = yield* listDrafts(
+          Schema.decodeUnknownSync(ListDraftsInput)({
+            mailboxId,
+            page: { limit: 2 },
+          })
+        );
+        if (first.nextCursor === undefined) {
+          return yield* Effect.die("Expected a draft cursor");
+        }
+        const second = yield* listDrafts(
+          Schema.decodeUnknownSync(ListDraftsInput)({
+            mailboxId,
+            page: { cursor: first.nextCursor, limit: 2 },
+          })
+        );
+        const folders = yield* MailboxDirectoryStore.pipe(
+          Effect.flatMap((store) => store.listFolders())
+        );
+        const draftsFolder = folders.items.find(
+          (item) => item.kind === "drafts"
+        );
+
+        expect(first.items.map((item) => item.id)).toStrictEqual([
+          "draft-c",
+          "draft-b",
+        ]);
+        expect(second.items.map((item) => item.id)).toStrictEqual(["draft-a"]);
+        expect(first.items[0]).toMatchObject({
+          hasAttachments: true,
+          mailboxId: "mailbox-a",
+          recipients: [
+            { address: "to@example.com" },
+            { address: "cc@example.com" },
+            { address: "bcc@example.com" },
+          ],
+          snippet: "x".repeat(500),
+        });
+        expect(Object.keys(first.items[0] ?? {})).toStrictEqual([
+          "id",
+          "mailboxId",
+          "recipients",
+          "subject",
+          "snippet",
+          "hasAttachments",
+          "updatedAt",
+          "version",
+        ]);
+        expect(draftsFolder).toMatchObject({ messageCount: 3, unreadCount: 0 });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });
 

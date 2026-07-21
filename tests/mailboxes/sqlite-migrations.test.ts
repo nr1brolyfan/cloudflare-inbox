@@ -66,6 +66,7 @@ describe("MailboxDO migrations", () => {
         { version: 9, applied_at: expect.any(String) },
         { version: 10, applied_at: expect.any(String) },
         { version: 11, applied_at: expect.any(String) },
+        { version: 12, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -159,6 +160,29 @@ describe("MailboxDO migrations", () => {
           )
           .run()
       ).toThrow("CHECK constraint failed");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("indexes active drafts for descending keyset listing", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+      expect(
+        database
+          .prepare("PRAGMA index_list(draft)")
+          .all()
+          .map((row) => row.name)
+      ).toContain("draft_active_updated_idx");
+      expect(
+        database
+          .prepare(
+            "SELECT sql FROM sqlite_schema WHERE type = 'index' AND name = 'draft_active_updated_idx'"
+          )
+          .get()?.sql
+      ).toContain("WHERE deleted_at IS NULL");
     } finally {
       database.close();
     }

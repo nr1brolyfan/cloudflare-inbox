@@ -23,6 +23,8 @@ import type { MailboxDraftAttachmentError } from "../mailboxes/draft-attachments
 import { MailboxDraftAttachments } from "../mailboxes/draft-attachments";
 import type { MailboxDraftEditingError } from "../mailboxes/draft-editing";
 import { MailboxDraftEditing } from "../mailboxes/draft-editing";
+import type { MailboxDraftReadingError } from "../mailboxes/draft-reading";
+import { MailboxDraftReading } from "../mailboxes/draft-reading";
 import type {
   MailboxDomainError,
   MailboxRepositoryError,
@@ -145,6 +147,7 @@ type MailboxHandlerError =
   | MailboxMessageHtmlError
   | MailboxInlineAttachmentError
   | MailboxDraftEditingError
+  | MailboxDraftReadingError
   | MailboxDraftAttachmentError
   | MailboxOutboundDeliveryReadingError
   | MailboxOutboundSendingError
@@ -276,6 +279,18 @@ const mapDraftEditingError = (
       )
     : Effect.fail(internalError());
 };
+
+const mapDraftReadingError = (
+  error: MailboxDraftReadingError
+): Effect.Effect<never, AuthBadRequestError | AuthInternalError> =>
+  error.reason === "invalid-input"
+    ? Effect.fail(
+        new AuthBadRequestError({
+          code: "bad_request",
+          message: "Invalid mailbox draft query",
+        })
+      )
+    : Effect.fail(internalError());
 
 const mapDraftAttachmentError = (
   error: MailboxDraftAttachmentError
@@ -424,6 +439,7 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxMessageHtmlError", mapMessageHtmlError),
     Effect.catchTag("MailboxInlineAttachmentError", mapInlineAttachmentError),
     Effect.catchTag("MailboxDraftEditingError", mapDraftEditingError),
+    Effect.catchTag("MailboxDraftReadingError", mapDraftReadingError),
     Effect.catchTag("MailboxDraftAttachmentError", mapDraftAttachmentError),
     Effect.catchTag(
       "MailboxOutboundDeliveryReadingError",
@@ -459,6 +475,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
     const messageHtml = yield* MailboxMessageHtmlReading;
     const inlineAttachments = yield* MailboxInlineAttachmentReading;
     const draftEditing = yield* MailboxDraftEditing;
+    const draftReading = yield* MailboxDraftReading;
     const draftAttachments = yield* MailboxDraftAttachments;
     const outboundDeliveryReading = yield* MailboxOutboundDeliveryReading;
     const outboundSending = yield* MailboxOutboundSending;
@@ -487,6 +504,14 @@ export const MailboxGroupLive = HttpApiBuilder.group(
       )
       .handle("getDraft", ({ params }) =>
         draftEditing.get(params).pipe(mapHttpErrors)
+      )
+      .handle("listDrafts", ({ params, query }) =>
+        draftReading
+          .list({
+            mailboxId: params.mailboxId,
+            page: { cursor: query.cursor, limit: query.limit },
+          })
+          .pipe(mapHttpErrors)
       )
       .handle("getOutboundDelivery", ({ params }) =>
         outboundDeliveryReading.get(params).pipe(mapHttpErrors)

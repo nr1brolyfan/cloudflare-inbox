@@ -13,6 +13,12 @@ import {
   MailboxDraftEditingLive,
   UpdateMailboxDraftCommand,
 } from "#/mailboxes/draft-editing";
+import {
+  MailboxDraftListInput,
+  MailboxDraftListResult,
+  MailboxDraftReading,
+  MailboxDraftReadingLive,
+} from "#/mailboxes/draft-reading";
 import { DraftSchema } from "#/mailboxes/drafts";
 import { MailboxDomainError } from "#/mailboxes/errors";
 import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
@@ -83,6 +89,7 @@ const repositoryWith = (
     getThread: unused,
     listFolders: unused,
     listDraftAttachments: () => Effect.succeed({ items: [] }),
+    listDrafts: unused,
     listLabels: unused,
     listMessages: unused,
     moveMessage: unused,
@@ -148,6 +155,70 @@ const runEditing = <A>(
   );
 
 describe("mailbox draft editing", () => {
+  it("authorizes collection listing with draft.create", async () => {
+    const calls: string[] = [];
+    const input = Schema.decodeUnknownSync(MailboxDraftListInput)({
+      mailboxId: "primary",
+      page: { limit: 10 },
+    });
+    const page = Schema.decodeUnknownSync(MailboxDraftListResult)({
+      items: [
+        {
+          hasAttachments: false,
+          id: "draft-1",
+          mailboxId: "primary",
+          recipients: [{ address: "person@example.test" }],
+          snippet: "Preview",
+          subject: "Draft",
+          updatedAt: 1000,
+          version: 1,
+        },
+      ],
+    });
+    const result = await Effect.runPromise(
+      MailboxDraftReading.pipe(
+        Effect.flatMap((reading) => reading.list(input)),
+        Effect.provide(
+          MailboxDraftReadingLive.pipe(
+            Layer.provide(
+              Layer.merge(
+                Layer.succeed(
+                  MailAuthorization,
+                  authorizationWith({
+                    requireDraftCreate: ({ resource }) => {
+                      calls.push(`authorize:${resource.mailboxId}`);
+                      return Effect.succeed(resource);
+                    },
+                  })
+                ),
+                Layer.succeed(
+                  MailboxRepository,
+                  repositoryWith({
+                    listDrafts: (query) => {
+                      calls.push(`list:${query.mailboxId}`);
+                      return Effect.succeed(page);
+                    },
+                  })
+                )
+              )
+            )
+          )
+        ),
+        Effect.provideService(
+          AuthPermission.CurrentPrincipal,
+          AuthPermission.CurrentPrincipal.of(
+            AuthPermission.PermissionSubject.user(UserId("user-a"))
+          )
+        )
+      )
+    );
+
+    expect({ calls, result }).toMatchObject({
+      calls: ["authorize:primary", "list:primary"],
+      result: { items: [{ id: "draft-1", snippet: "Preview" }] },
+    });
+  });
+
   it("authorizes create before storing only editor-visible content", async () => {
     const calls: string[] = [];
     let repositoryInput: unknown;

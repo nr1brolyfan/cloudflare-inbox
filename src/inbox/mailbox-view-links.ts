@@ -49,6 +49,18 @@ export const mailboxViewHref = (
   return `/inbox?${query.toString()}`;
 };
 
+export const mailboxDraftHref = (
+  folderId: string,
+  draftId: string,
+  deliveryId?: string
+) => {
+  const query = new URLSearchParams({ draft: draftId, folder: folderId });
+  if (deliveryId !== undefined) {
+    query.set("delivery", deliveryId);
+  }
+  return `/inbox?${query.toString()}`;
+};
+
 export const mailboxMessageHtmlHref = (
   mailboxId: string,
   messageId: string,

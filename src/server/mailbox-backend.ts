@@ -26,6 +26,8 @@ import type {
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
 import { DraftEditorDraft } from "../mailboxes/draft-editing";
+import type { MailboxDraftListInput } from "../mailboxes/draft-reading";
+import { MailboxDraftListResult } from "../mailboxes/draft-reading";
 import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import { MailboxMessageActionResult } from "../mailboxes/message-actions";
 import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
@@ -112,6 +114,13 @@ export type MailboxThreadServerResult =
 export type MailboxDraftServerResult =
   | {
       readonly draft: Schema.Codec.Encoded<typeof DraftEditorDraft>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxDraftListServerResult =
+  | {
+      readonly drafts: Schema.Codec.Encoded<typeof MailboxDraftListResult>;
       readonly ok: true;
     }
   | MailboxServerErrorResult;
@@ -258,6 +267,11 @@ const operationErrorMessage = (
   code: keyof typeof publicErrors,
   operation: string
 ) => {
+  if (operation === "website.mailbox.draft_list") {
+    return code === "bad_request"
+      ? "Invalid mailbox draft query"
+      : publicErrors[code].message;
+  }
   if (operation.startsWith("website.mailbox.draft")) {
     if (code === "bad_request") {
       return "Invalid draft content";
@@ -339,6 +353,10 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
     readonly query: MailboxMessageListInput;
   }) => Effect.Effect<MailboxMessageListServerResult>;
+  readonly listDrafts: (input: {
+    readonly incoming: Request;
+    readonly query: MailboxDraftListInput;
+  }) => Effect.Effect<MailboxDraftListServerResult>;
   readonly rename: (input: {
     readonly displayName: string;
     readonly incoming: Request;
@@ -800,6 +818,42 @@ export const MailboxBackendOperationsLive = Layer.effect(
             return Exit.isSuccess(decoded)
               ? {
                   messages: Schema.encodeSync(MailboxMessageListResult)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        );
+      },
+      listDrafts: ({ incoming, query }) => {
+        const search = new URLSearchParams();
+        if (query.page?.cursor !== undefined) {
+          search.set("cursor", query.page.cursor);
+        }
+        if (query.page?.limit !== undefined) {
+          search.set("limit", String(query.page.limit));
+        }
+        const suffix = search.size === 0 ? "" : `?${search.toString()}`;
+        return forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.draft_list",
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/drafts${suffix}`,
+        }).pipe(
+          Effect.map((result): MailboxDraftListServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxDraftListResult)
+            )(result.body);
+            return Exit.isSuccess(decoded) &&
+              decoded.value.items.every(
+                (draft) => draft.mailboxId === query.mailboxId
+              )
+              ? {
+                  drafts: Schema.encodeSync(MailboxDraftListResult)(
                     decoded.value
                   ),
                   ok: true,

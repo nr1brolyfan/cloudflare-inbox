@@ -92,6 +92,7 @@ const repository = MailboxRepository.of({
   getThread: unused,
   listFolders: unused,
   listDraftAttachments: unused,
+  listDrafts: unused,
   listLabels: unused,
   listMessages: unused,
   moveMessage: unused,

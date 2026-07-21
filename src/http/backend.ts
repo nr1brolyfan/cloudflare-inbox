@@ -37,6 +37,7 @@ import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
 import { DraftAttachmentBlobStoreR2WithRuntimeLive } from "../mailboxes/draft-attachment-store-r2-live";
 import { MailboxDraftAttachmentsLive } from "../mailboxes/draft-attachments";
 import { MailboxDraftEditingLive } from "../mailboxes/draft-editing";
+import { MailboxDraftReadingLive } from "../mailboxes/draft-reading";
 import { InboundAttachmentBlobReaderR2WithRuntimeLive } from "../mailboxes/inbound-attachment-reader-r2-live";
 import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
 import {
@@ -135,6 +136,9 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxDraftEditingLive = MailboxDraftEditingLive.pipe(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
+    const mailboxDraftReadingLive = MailboxDraftReadingLive.pipe(
+      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+    );
     const mailboxOutboundSendingLive = MailboxOutboundSendingLive.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -191,6 +195,7 @@ const BackendRoutesLive = Layer.unwrap(
           mailboxMessageReadingLive,
           mailboxMessageActionsLive,
           mailboxDraftEditingLive,
+          mailboxDraftReadingLive,
           mailboxOutboundDeliveryReadingLive,
           mailboxOutboundSendingLive,
           mailboxDraftAttachmentsLive,

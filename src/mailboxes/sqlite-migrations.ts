@@ -502,6 +502,13 @@ const migrations = [
       )`,
     ],
   },
+  {
+    version: 12,
+    statements: [
+      `CREATE INDEX draft_active_updated_idx
+        ON draft(updated_at DESC, id DESC) WHERE deleted_at IS NULL`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

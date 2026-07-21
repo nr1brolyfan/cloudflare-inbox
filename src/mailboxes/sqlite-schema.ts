@@ -393,6 +393,9 @@ export const draft = sqliteTable(
     ),
     check("draft_created_at_check", sql`${t.createdAt} >= 0`),
     check("draft_updated_at_check", sql`${t.updatedAt} >= ${t.createdAt}`),
+    index("draft_active_updated_idx")
+      .on(desc(t.updatedAt), desc(t.id))
+      .where(sql`deleted_at is null`),
   ]
 );
 
