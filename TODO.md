@@ -4,17 +4,17 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 ## Status
 
-- Ostatnia aktualizacja: 2026-07-20
-- Postęp zadań: **91/109 (83%)**
-- Ukończone etapy: **8/11**
+- Ostatnia aktualizacja: 2026-07-22
+- Postęp zadań: **94/97 (97%)**
+- Ukończone etapy: **9/11**
 - Aktualny etap: **11. Hardening i produkcja**
-- Aktualne zadanie: **Reconciliation jobs**
+- Aktualne zadanie: **CD i kontrola środowisk**
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |
 | 1   | Toolchain i zależności                | DONE        | 7/7    |
-| 2   | Split Worker i infrastruktura Alchemy | IN PROGRESS | 11/13  |
-| 3   | Effect-auth i sesje                   | IN PROGRESS | 15/20  |
+| 2   | Split Worker i infrastruktura Alchemy | DONE        | 13/13  |
+| 3   | Effect-auth i sesje                   | IN PROGRESS | 15/17  |
 | 4   | Permissions i control plane           | DONE        | 10/10  |
 | 5   | MailboxDO i domena pocztowa           | DONE        | 9/9    |
 | 6   | Inbound email                         | DONE        | 9/9    |
@@ -22,7 +22,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 | 8   | Reguły automatyczne                   | DONE        | 6/6    |
 | 9   | Drafty i outbound                     | DONE        | 9/9    |
 | 10  | AI                                    | DONE        | 6/6    |
-| 11  | Hardening i produkcja                 | CURRENT     | 0/11   |
+| 11  | Hardening i produkcja                 | CURRENT     | 1/2    |
 
 ### Zasady aktualizacji
 
@@ -55,8 +55,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Zapewnić stabilne porty i lokalny graf zasobów z local Alchemy state.
 - [x] Włączyć bazowe Workers Logs, native traces i lokalny OTLP do Motel.
 - [x] Utworzyć i podłączyć `MailboxDO`.
-- [ ] Utworzyć zasoby Cloudflare Workflows dla inbound/outbound.
-- [ ] Dodać Email Routing handler i mailbox sending bindings.
+- [x] Utworzyć Cloudflare Workflows dla inboundu i reguł asynchronicznych; outbound realizować alarmem MailboxDO.
+- [x] Dodać Email Routing handler oraz zadeklarować bindingi wysyłki auth i mailboxa.
+
+Produkcyjne catch-all i Email Service są śledzone w `PLAN-FIRMOWEJ-POCZTY.md` jako `INFRA-002`.
 
 ## 3. Effect-auth i sesje
 
@@ -75,10 +77,10 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - [x] Zapisywać wiadomości auth w D1 `DevEmailStore` i wystawić dev inbox.
 - [x] Użyć Cloudflare Email Sending jako transportu produkcyjnego.
 - [x] Usunąć bearer credentials z query stringów auth completion links.
-- [ ] Domknąć password sign-up wraz z identity API i wysłaniem verification.
-- [ ] Dodać passkey jako silny faktor.
-- [ ] Dodać recovery codes.
-- [ ] Dodać step-up dla operacji wrażliwych.
+- [ ] Domknąć bazowy password sign-up wraz z utworzeniem identity i wysłaniem verification.
+
+Firmowa polityka recovery-safe enrollment jest śledzona jako `SAFE-013`. Passkey i recovery codes mają kanoniczny checkbox `SAFE-002`, a step-up dla operacji wrażliwych `SAFE-001` w `PLAN-FIRMOWEJ-POCZTY.md`.
+
 - [ ] Dodać harmonogram czyszczenia wygasłych sessions i challenges.
 
 ## 4. Permissions i control plane
@@ -162,17 +164,17 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 ## 11. Hardening i produkcja
 
-- [ ] CURRENT Dodać reconciliation jobs.
-- [ ] Rozszerzyć observability o Workflows, Durable Objects, custom spans, alerty i eksport.
-- [ ] Dodać administracyjny audit trail.
-- [ ] Dodać backup danych.
-- [ ] Dodać eksport mailboxa.
-- [ ] Spisać recovery runbook.
-- [ ] Dodać CI/CD z kontrolą migracji i środowisk.
-- [ ] Skonfigurować DNS, SPF, DKIM i DMARC.
-- [ ] Przetestować częściowe awarie i retry.
-- [ ] Przetestować dostarczalność na Gmailu i Outlooku.
-- [ ] Przejść checklistę bezpieczeństwa i produkcyjnego uruchomienia.
+- Reconciliation: kanoniczne checkboxy `OBS-011` do `OBS-016` w `PLAN-FIRMOWEJ-POCZTY.md`.
+- Observability: kanoniczne checkboxy `OBS-005` do `OBS-010`.
+- Administracyjny audit trail: kanoniczny checkbox `SAFE-004`.
+- Backup i identity-preserving restore: kanoniczne checkboxy `SAFE-005` oraz `SAFE-015`.
+- Eksport mailboxa: kanoniczny checkbox `MBX-020`.
+- Recovery runbook: kanoniczny checkbox `SAFE-010`.
+- [ ] CURRENT Dodać CD i kontrolę środowisk; CI gate jest śledzony przez `SAFE-011`.
+- DNS i domain readiness, w tym SPF, DKIM i DMARC: kanoniczny checkbox `INFRA-005`.
+- [x] Przetestować częściowe awarie i retry dla ścieżek v1.
+- Dostarczalność Gmail/Outlook: kanoniczny checkbox `INFRA-011`.
+- Manualny security review i produkcyjny odbiór: kanoniczne checkboxy `TEST-017` oraz `ROLL-016`.
 
 ## Poza v1
 

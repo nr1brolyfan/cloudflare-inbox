@@ -1,0 +1,3 @@
+1. [Done] Navigation - currently we seemingly hard refresh on every navigation, and first get a whole-page loading, then inbox loading only. Takes too much time, should be instantenous, probably caching would help
+2. When logging in it shows you a "Create primary inbox" button EVEN IF you already have an inbox, so after clicking it says you already have one and shows a "Open Inbox" button. Instead we should auto redirect to the inbox upon login
+3. Consider the possibility of creating inboxes for a given email address, instead of depending on the .env value. So you'd provide "newsletter" as name and it'd create a "newsletter@szymondlugolecki.com" inbox. Is it hard to do?
