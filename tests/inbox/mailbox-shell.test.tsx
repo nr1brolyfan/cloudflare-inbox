@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { MailboxShell } from "#/inbox/mailbox-shell";
@@ -64,6 +70,12 @@ describe(MailboxShell, () => {
         mailboxName="Primary Inbox"
         principalLabel="user-123"
         isSigningOut={false}
+        onNavigate={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
+        onPrefetch={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
         onSignOut={signOut}
         outboundDeliveryId="delivery-1"
         selectedFolderId="inbox"
@@ -83,10 +95,9 @@ describe(MailboxShell, () => {
     expect(
       screen.getByRole("link", { name: /Inbox/u }).getAttribute("aria-current")
     ).toBe("page");
+    const archiveLink = screen.getByRole("link", { name: "Archive" });
     expect({
-      archiveHref: screen
-        .getByRole("link", { name: "Archive" })
-        .getAttribute("href"),
+      archiveHref: archiveLink.getAttribute("href"),
       badge: Boolean(screen.getAllByLabelText("3 drafts")[0]),
       labelHref: screen
         .getByRole("link", { name: "Work & travel" })
@@ -105,7 +116,45 @@ describe(MailboxShell, () => {
     expect(signOut).toHaveBeenCalledOnce();
   });
 
+  it("prefetches and opens mailbox views without a document navigation", () => {
+    const navigate =
+      vi.fn<(selection: { folder?: string; label?: string }) => void>();
+    const prefetch =
+      vi.fn<(selection: { folder?: string; label?: string }) => void>();
+    render(
+      <MailboxShell
+        folders={folders}
+        labels={labels}
+        mailboxName="Primary Inbox"
+        principalLabel="user-123"
+        isSigningOut={false}
+        onNavigate={navigate}
+        onPrefetch={prefetch}
+        onSignOut={vi.fn<() => void>()}
+        selectedFolderId="inbox"
+        viewTitle="Inbox"
+      >
+        <p>Workspace content</p>
+      </MailboxShell>
+    );
+
+    const archiveLink = screen.getByRole("link", { name: "Archive" });
+    fireEvent.mouseEnter(archiveLink);
+    expect(prefetch).toHaveBeenCalledExactlyOnceWith({ folder: "archive" });
+    expect(fireEvent.click(archiveLink)).toBeFalsy();
+    expect(navigate).toHaveBeenCalledExactlyOnceWith({ folder: "archive" });
+
+    const labelLink = screen.getByRole("link", { name: "Work & travel" });
+    labelLink.addEventListener("click", (event) => event.preventDefault(), {
+      once: true,
+    });
+    fireEvent.click(labelLink, { ctrlKey: true });
+    expect(navigate).toHaveBeenCalledExactlyOnceWith({ folder: "archive" });
+  });
+
   it("opens and closes the mobile navigation without leaving a hidden dialog", () => {
+    const navigate =
+      vi.fn<(selection: { folder?: string; label?: string }) => void>();
     render(
       <MailboxShell
         folders={folders}
@@ -113,6 +162,10 @@ describe(MailboxShell, () => {
         mailboxName="Primary Inbox"
         principalLabel="user-123"
         isSigningOut={false}
+        onNavigate={navigate}
+        onPrefetch={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
         onSignOut={vi.fn<() => void>()}
         selectedFolderId="inbox"
         viewTitle="Inbox"
@@ -131,11 +184,28 @@ describe(MailboxShell, () => {
     }).toStrictEqual({ dialog: null, expanded: "false" });
 
     fireEvent.click(openNavigation);
-    expect(openNavigation.getAttribute("aria-expanded")).toBe("true");
-    expect(
-      screen.getByRole("dialog", { name: "Mailbox navigation" })
-    ).toBeTruthy();
-    expect(screen.getAllByText("No labels yet")).toHaveLength(2);
+    expect({
+      dialog: Boolean(
+        screen.getByRole("dialog", { name: "Mailbox navigation" })
+      ),
+      expanded: openNavigation.getAttribute("aria-expanded"),
+      noLabels: screen.getAllByText("No labels yet").length,
+    }).toStrictEqual({ dialog: true, expanded: "true", noLabels: 2 });
+
+    fireEvent.click(
+      within(
+        screen.getByRole("dialog", { name: "Mailbox navigation" })
+      ).getByRole("link", { name: "Archive" })
+    );
+    expect({
+      dialog: screen.queryByRole("dialog", { name: "Mailbox navigation" }),
+      navigateCalls: navigate.mock.calls,
+    }).toStrictEqual({
+      dialog: null,
+      navigateCalls: [[{ folder: "archive" }]],
+    });
+
+    fireEvent.click(openNavigation);
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(
@@ -152,6 +222,12 @@ describe(MailboxShell, () => {
         mailboxName="Primary Inbox"
         principalLabel="user-123"
         isSigningOut
+        onNavigate={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
+        onPrefetch={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
         onSignOut={signOut}
         selectedFolderId="inbox"
         signOutError="Sign out failed. Try again."

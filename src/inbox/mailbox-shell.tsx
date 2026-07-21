@@ -20,6 +20,7 @@ import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
+import type { MailboxViewSelection } from "./mailbox-view-links";
 import { mailboxViewHref } from "./mailbox-view-links";
 
 type MailboxNavigationData = Schema.Codec.Encoded<
@@ -46,6 +47,8 @@ interface MailboxShellProps {
   readonly isSigningOut: boolean;
   readonly labels: readonly NavigationLabel[];
   readonly mailboxName: string;
+  readonly onNavigate: (selection: MailboxViewSelection) => void;
+  readonly onPrefetch: (selection: MailboxViewSelection) => void;
   readonly onSignOut: () => void;
   readonly outboundDeliveryId?: string;
   readonly principalLabel: string;
@@ -68,6 +71,8 @@ function MailboxNavigation({
   labels,
   mailboxName,
   onClose,
+  onNavigate,
+  onPrefetch,
   onSignOut,
   outboundDeliveryId,
   principalLabel,
@@ -154,6 +159,21 @@ function MailboxNavigation({
                       ? `${folder.messageCount} drafts`
                       : `${folder.messageCount} messages`
                   }
+                  onClick={(event) => {
+                    if (
+                      event.button === 0 &&
+                      !event.altKey &&
+                      !event.ctrlKey &&
+                      !event.metaKey &&
+                      !event.shiftKey
+                    ) {
+                      event.preventDefault();
+                      onNavigate({ folder: folder.id });
+                      onClose?.();
+                    }
+                  }}
+                  onFocus={() => onPrefetch({ folder: folder.id })}
+                  onMouseEnter={() => onPrefetch({ folder: folder.id })}
                   className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
                     selected
                       ? "bg-white font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
@@ -200,6 +220,21 @@ function MailboxNavigation({
                       { delivery: outboundDeliveryId }
                     )}
                     aria-current={selected ? "page" : undefined}
+                    onClick={(event) => {
+                      if (
+                        event.button === 0 &&
+                        !event.altKey &&
+                        !event.ctrlKey &&
+                        !event.metaKey &&
+                        !event.shiftKey
+                      ) {
+                        event.preventDefault();
+                        onNavigate({ label: label.id });
+                        onClose?.();
+                      }
+                    }}
+                    onFocus={() => onPrefetch({ label: label.id })}
+                    onMouseEnter={() => onPrefetch({ label: label.id })}
                     className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
                       selected
                         ? "bg-white font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
@@ -273,6 +308,8 @@ export function MailboxShell({
   isSigningOut,
   labels,
   mailboxName,
+  onNavigate,
+  onPrefetch,
   onSignOut,
   outboundDeliveryId,
   principalLabel,
@@ -307,6 +344,8 @@ export function MailboxShell({
             isSigningOut={isSigningOut}
             labels={labels}
             mailboxName={mailboxName}
+            onNavigate={onNavigate}
+            onPrefetch={onPrefetch}
             onSignOut={onSignOut}
             outboundDeliveryId={outboundDeliveryId}
             principalLabel={principalLabel}
@@ -336,6 +375,8 @@ export function MailboxShell({
                 labels={labels}
                 mailboxName={mailboxName}
                 onClose={() => setNavigationOpen(false)}
+                onNavigate={onNavigate}
+                onPrefetch={onPrefetch}
                 onSignOut={onSignOut}
                 outboundDeliveryId={outboundDeliveryId}
                 principalLabel={principalLabel}

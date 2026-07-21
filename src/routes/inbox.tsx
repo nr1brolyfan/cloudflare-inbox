@@ -1,4 +1,5 @@
 import {
+  infiniteQueryOptions,
   skipToken,
   useInfiniteQuery,
   useMutation,
@@ -6,6 +7,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -159,6 +161,7 @@ const decodeDraftAttachmentUploadResult = Schema.decodeUnknownSync(
   DraftAttachmentUploadResult
 );
 const mailboxNavigationQueryKey = ["mailbox", "navigation"] as const;
+const mailboxListStaleTime = 30_000;
 const emptyDraftContent = decodeDraftEditorContent({
   bcc: [],
   cc: [],
@@ -175,6 +178,88 @@ class MailboxRequestError extends Error {
     this.status = status;
   }
 }
+
+const mailboxDraftListQueryOptions = ({
+  mailboxId,
+  queryClient,
+  sessionId,
+}: {
+  readonly mailboxId: string;
+  readonly queryClient: QueryClient;
+  readonly sessionId: string;
+}) =>
+  infiniteQueryOptions({
+    queryFn: async ({ pageParam }) => {
+      const result = await listMailboxDrafts({
+        data: decodeMailboxDraftListInput({
+          mailboxId,
+          page: { cursor: pageParam, limit: 25 },
+        }),
+      });
+      if (!result.ok) {
+        if (result.status === 401) {
+          await clearCachedAuthSession(queryClient);
+        }
+        throw new MailboxRequestError(result.status);
+      }
+      return result.drafts;
+    },
+    queryKey: ["mailbox", "drafts", sessionId, mailboxId],
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    retry: false,
+    staleTime: mailboxListStaleTime,
+  });
+
+const mailboxMessageListQueryOptions = ({
+  filters,
+  mailboxId,
+  queryClient,
+  sessionId,
+  view,
+}: {
+  readonly filters: MailboxMessageQueryState;
+  readonly mailboxId: string;
+  readonly queryClient: QueryClient;
+  readonly sessionId: string;
+  readonly view: Schema.Schema.Type<typeof MailboxMessageView>;
+}) =>
+  infiniteQueryOptions({
+    queryFn: async ({ pageParam }) => {
+      const result = await listMailboxMessages({
+        data: decodeMailboxMessageListInput({
+          ...view,
+          cursor: pageParam,
+          hasAttachment: filters.hasAttachment,
+          query: filters.query,
+          read:
+            filters.read === undefined ? undefined : filters.read === "read",
+          starred: filters.starred,
+        }),
+      });
+      await handleMailboxReadDenial(queryClient, result);
+      if (!result.ok) {
+        throw new MailboxRequestError(result.status);
+      }
+      return result.messages;
+    },
+    queryKey: [
+      "mailbox",
+      "messages",
+      sessionId,
+      mailboxId,
+      view._tag,
+      view._tag === "Folder" ? view.folderId : view.labelId,
+      filters.query,
+      filters.read,
+      filters.starred,
+      filters.hasAttachment,
+    ],
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage) => lastPage.nextCursor,
+    retry: false,
+    staleTime: mailboxListStaleTime,
+  });
 
 const inboxSearchFor = (
   selection: MailboxViewSelection,
@@ -640,27 +725,9 @@ function DraftListWorkspace({
 }) {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
-  const drafts = useInfiniteQuery({
-    queryFn: async ({ pageParam }) => {
-      const result = await listMailboxDrafts({
-        data: decodeMailboxDraftListInput({
-          mailboxId,
-          page: { cursor: pageParam, limit: 25 },
-        }),
-      });
-      if (!result.ok) {
-        if (result.status === 401) {
-          await clearCachedAuthSession(queryClient);
-        }
-        throw new MailboxRequestError(result.status);
-      }
-      return result.drafts;
-    },
-    queryKey: ["mailbox", "drafts", sessionId, mailboxId],
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    retry: false,
-  });
+  const drafts = useInfiniteQuery(
+    mailboxDraftListQueryOptions({ mailboxId, queryClient, sessionId })
+  );
 
   if (drafts.isLoading) {
     return (
@@ -743,41 +810,15 @@ function MailboxWorkspace({
       ? { _tag: "Label", labelId: selection.label, mailboxId }
       : { _tag: "Folder", folderId: selection.folder, mailboxId }
   );
-  const messages = useInfiniteQuery({
-    queryFn: async ({ pageParam }) => {
-      const result = await listMailboxMessages({
-        data: decodeMailboxMessageListInput({
-          ...view,
-          cursor: pageParam,
-          hasAttachment: filters.hasAttachment,
-          query: filters.query,
-          read:
-            filters.read === undefined ? undefined : filters.read === "read",
-          starred: filters.starred,
-        }),
-      });
-      await handleMailboxReadDenial(queryClient, result);
-      if (!result.ok) {
-        throw new MailboxRequestError(result.status);
-      }
-      return result.messages;
-    },
-    queryKey: [
-      "mailbox",
-      "messages",
-      sessionId,
+  const messages = useInfiniteQuery(
+    mailboxMessageListQueryOptions({
+      filters,
       mailboxId,
-      view._tag,
-      view._tag === "Folder" ? view.folderId : view.labelId,
-      filters.query,
-      filters.read,
-      filters.starred,
-      filters.hasAttachment,
-    ],
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    retry: false,
-  });
+      queryClient,
+      sessionId,
+      view,
+    })
+  );
   const actionMutationKey = [
     ...mailboxMessageActionMutationKey,
     sessionId,
@@ -1544,6 +1585,50 @@ function AuthenticatedInbox({
   const draftEditorOpen =
     search.compose === "true" || search.draft !== undefined;
   const outboundDeliveryId = search.delivery;
+  const navigateToSelection = (nextSelection: MailboxViewSelection) =>
+    void navigate({
+      to: "/inbox",
+      search: decodeInboxSearch({
+        ...nextSelection,
+        delivery: outboundDeliveryId,
+      }),
+    });
+  const prefetchSelection = (nextSelection: MailboxViewSelection) => {
+    const folder = folders.find((item) => item.id === nextSelection.folder);
+    if (folder?.kind === "drafts") {
+      void queryClient.prefetchInfiniteQuery(
+        mailboxDraftListQueryOptions({
+          mailboxId: mailbox.id,
+          queryClient,
+          sessionId,
+        })
+      );
+      return;
+    }
+
+    const view = decodeMailboxMessageView(
+      nextSelection.folder === undefined
+        ? {
+            _tag: "Label",
+            labelId: nextSelection.label,
+            mailboxId: mailbox.id,
+          }
+        : {
+            _tag: "Folder",
+            folderId: nextSelection.folder,
+            mailboxId: mailbox.id,
+          }
+    );
+    void queryClient.prefetchInfiniteQuery(
+      mailboxMessageListQueryOptions({
+        filters: {},
+        mailboxId: mailbox.id,
+        queryClient,
+        sessionId,
+        view,
+      })
+    );
+  };
   const closeEditor = () =>
     void navigate({
       to: "/inbox",
@@ -1556,6 +1641,8 @@ function AuthenticatedInbox({
         folders={folders}
         labels={labels}
         mailboxName={mailbox.displayName}
+        onNavigate={navigateToSelection}
+        onPrefetch={prefetchSelection}
         outboundDeliveryId={outboundDeliveryId}
         headerAction={
           draftEditorOpen ? undefined : (
