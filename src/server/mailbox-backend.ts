@@ -7,6 +7,10 @@ import * as Schema from "effect/Schema";
 
 import type { MailboxPublicError } from "../http/mailbox-contract";
 import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
+import type {
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "../mailboxes/administration";
 import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
 import { isSafeInlineImageMimeType } from "../mailboxes/attachment-reading";
 import { MailboxRecordSchema } from "../mailboxes/core";
@@ -324,7 +328,7 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
   }) => Effect.Effect<MailboxMessageActionServerResult>;
   readonly bootstrapOwner: (input: {
-    readonly displayName: string;
+    readonly command: BootstrapOwnerMailboxCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxServerResult>;
   readonly createDraft: (input: {
@@ -363,9 +367,8 @@ export interface MailboxBackendOperationsShape {
     readonly query: MailboxDraftListInput;
   }) => Effect.Effect<MailboxDraftListServerResult>;
   readonly rename: (input: {
-    readonly displayName: string;
+    readonly command: RenameMailboxCommand;
     readonly incoming: Request;
-    readonly mailboxId: string;
   }) => Effect.Effect<MailboxServerResult>;
   readonly reserveDraftAttachment: (input: {
     readonly command: ReserveDraftAttachmentCommand;
@@ -609,13 +612,13 @@ export const MailboxBackendOperationsLive = Layer.effect(
           })
         );
       },
-      bootstrapOwner: ({ displayName, incoming }) =>
+      bootstrapOwner: ({ command, incoming }) =>
         forwardRequest({
           incoming,
           method: "POST",
           operation: "website.mailbox.bootstrap",
           path: "/api/mailboxes/bootstrap-owner",
-          payload: { displayName },
+          payload: command,
         }).pipe(
           Effect.map((result): MailboxServerResult => {
             if (!result.ok) {
@@ -867,13 +870,17 @@ export const MailboxBackendOperationsLive = Layer.effect(
           })
         );
       },
-      rename: ({ displayName, incoming, mailboxId }) =>
+      rename: ({ command, incoming }) =>
         forwardRequest({
           incoming,
           method: "PATCH",
           operation: "website.mailbox.rename",
-          path: `/api/mailboxes/${encodeURIComponent(mailboxId)}`,
-          payload: { displayName },
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}`,
+          payload: {
+            displayName: command.displayName,
+            expectedVersion: command.expectedVersion,
+            operationId: command.operationId,
+          },
         }).pipe(
           Effect.map((result): MailboxServerResult => {
             if (!result.ok) {

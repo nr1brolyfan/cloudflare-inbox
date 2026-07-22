@@ -23,7 +23,10 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
   const [stepUpPassword, setStepUpPassword] = useState("");
   const [stepUpComplete, setStepUpComplete] = useState(false);
   const mailboxBootstrap = useMutation({
-    mutationFn: () => bootstrapMailboxOwner({ data: { displayName: "Inbox" } }),
+    mutationFn: () =>
+      bootstrapMailboxOwner({
+        data: { displayName: "Inbox", operationId: crypto.randomUUID() },
+      }),
     onSuccess: async (result) => {
       if (!result.ok && result.status === 401) {
         await clearCachedAuthSession(queryClient);

@@ -72,6 +72,7 @@ import {
   UndoMailboxSendCommand,
   UndoMailboxSendResult,
 } from "../mailboxes/outbound-sending";
+import { BackendRequestContextMiddleware } from "../observability/request-context-middleware";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
 const InboundReplayParams = Schema.Struct({
@@ -349,6 +350,8 @@ export const RenameMailboxEndpoint = HttpApiEndpoint.patch(
     params: MailboxParams,
     payload: Schema.Struct({
       displayName: RenameMailboxCommand.fields.displayName,
+      expectedVersion: RenameMailboxCommand.fields.expectedVersion,
+      operationId: RenameMailboxCommand.fields.operationId,
     }),
     success: MailboxRecordSchema,
   }
@@ -389,5 +392,6 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     UploadDraftAttachmentEndpoint
   )
   .middleware(AuthSchemaErrorMiddleware)
+  .middleware(BackendRequestContextMiddleware)
   .middleware(CurrentRequestAuthMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}

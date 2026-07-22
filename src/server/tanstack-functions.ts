@@ -58,9 +58,7 @@ export const actOnMailboxMessage = createServerFn({ method: "POST" })
 
 export const bootstrapMailboxOwner = createServerFn({ method: "POST" })
   .validator(bootstrapInput)
-  .handler(({ data }) =>
-    websiteBackend.bootstrapMailboxOwner(data.displayName)
-  );
+  .handler(({ data }) => websiteBackend.bootstrapMailboxOwner(data));
 
 export const createMailboxDraft = createServerFn({ method: "POST" })
   .validator(createMailboxDraftInput)

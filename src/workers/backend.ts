@@ -446,6 +446,10 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
             );
             const handler = yield* HttpRouter.toHttpEffect(routesLive);
             const response = yield* handler.pipe(
+              Effect.provideService(
+                CurrentBackendRequestContext,
+                requestContext
+              ),
               Effect.catchTag(
                 "HttpServerError",
                 HttpServerRespondable.toResponse

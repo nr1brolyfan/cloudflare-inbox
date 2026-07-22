@@ -23,6 +23,10 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
 import { AiToolRunBudgetLive } from "../ai/tool-run-budget";
+import {
+  AdministrativeAuditLive,
+  AdministrativeAuditRuntimeLive,
+} from "../audit/administrative-audit-live";
 import { ExistingPasswordResetLive } from "../auth/existing-password-reset";
 import { AuthServicesLive } from "../auth/live";
 import { PasswordResetEligibilityLive } from "../auth/password-reset-eligibility";
@@ -69,6 +73,7 @@ import {
 } from "../mailboxes/outbound-delivery-reading";
 import { MailboxOutboundSendingLive } from "../mailboxes/outbound-sending";
 import { BackendHealthLive } from "../observability/backend-health-live";
+import { BackendRequestContextMiddlewareLive } from "../observability/backend-request-live";
 import { BackendHttpApi } from "./api";
 import {
   PasswordEnrollmentUnavailableGroupLive,
@@ -177,6 +182,9 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxAdministrationLive = MailboxAdministrationLive.pipe(
       Layer.provide(
         Layer.mergeAll(
+          AdministrativeAuditLive.pipe(
+            Layer.provide(AdministrativeAuditRuntimeLive)
+          ),
           MailboxAdministrationRuntimeLive,
           mailAuthorizationLive,
           SensitiveOperationStepUpClockLive
@@ -267,6 +275,7 @@ const BackendRoutesLive = Layer.unwrap(
         )
       ),
       Layer.provide(currentRequestAuthLive),
+      Layer.provide(BackendRequestContextMiddlewareLive),
       Layer.provide(requestValidationLive)
     );
     const healthGroupLive = HealthGroupLive.pipe(

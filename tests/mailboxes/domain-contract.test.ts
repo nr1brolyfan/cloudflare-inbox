@@ -81,18 +81,31 @@ describe("mail domain contracts", () => {
     expect(
       Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
         displayName: "  Inbox  ",
+        operationId: "00000000-0000-4000-8000-000000000010",
       })
-    ).toStrictEqual({ displayName: "Inbox" });
+    ).toStrictEqual({
+      displayName: "Inbox",
+      operationId: "00000000-0000-4000-8000-000000000010",
+    });
     expect(
       Schema.decodeUnknownSync(RenameMailboxCommand)({
         displayName: "  Recruiting  ",
+        expectedVersion: 1,
         mailboxId: "primary",
+        operationId: "00000000-0000-4000-8000-000000000011",
       })
-    ).toStrictEqual({ displayName: "Recruiting", mailboxId: "primary" });
+    ).toStrictEqual({
+      displayName: "Recruiting",
+      expectedVersion: 1,
+      mailboxId: "primary",
+      operationId: "00000000-0000-4000-8000-000000000011",
+    });
     expect(
       decodeSucceeds(RenameMailboxCommand, {
         displayName: "Recruiting",
+        expectedVersion: 1,
         mailboxId: " primary ",
+        operationId: "00000000-0000-4000-8000-000000000011",
       })
     ).toBeFalsy();
   });
@@ -392,11 +405,22 @@ describe("mail domain contracts", () => {
     expect(
       Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
         displayName: "  Team inbox  ",
+        operationId: "00000000-0000-4000-8000-000000000010",
       })
-    ).toStrictEqual({ displayName: "Team inbox" });
+    ).toStrictEqual({
+      displayName: "Team inbox",
+      operationId: "00000000-0000-4000-8000-000000000010",
+    });
     expect(
       decodeSucceeds(BootstrapOwnerMailboxCommand, {
         displayName: "x".repeat(201),
+        operationId: "00000000-0000-4000-8000-000000000010",
+      })
+    ).toBeFalsy();
+    expect(
+      decodeSucceeds(BootstrapOwnerMailboxCommand, {
+        displayName: "Team inbox",
+        operationId: "owner@example.test",
       })
     ).toBeFalsy();
   });

@@ -3,6 +3,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import type {
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "../mailboxes/administration";
 import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
 import type {
   ReserveDraftAttachmentCommand,
@@ -53,12 +57,12 @@ export const websiteBackend = {
         return yield* operations.actOnMessage({ command, incoming });
       })
     ),
-  bootstrapMailboxOwner: (displayName: string) =>
+  bootstrapMailboxOwner: (command: BootstrapOwnerMailboxCommand) =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
-        return yield* operations.bootstrapOwner({ displayName, incoming });
+        return yield* operations.bootstrapOwner({ command, incoming });
       })
     ),
   createMailboxDraft: (command: CreateMailboxDraftCommand) =>
@@ -162,15 +166,12 @@ export const websiteBackend = {
         return yield* operations.listDrafts({ incoming, query });
       })
     ),
-  renameMailbox: (input: {
-    readonly displayName: string;
-    readonly mailboxId: string;
-  }) =>
+  renameMailbox: (command: RenameMailboxCommand) =>
     websiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
-        return yield* operations.rename({ ...input, incoming });
+        return yield* operations.rename({ command, incoming });
       })
     ),
   reserveMailboxDraftAttachment: (command: ReserveDraftAttachmentCommand) =>

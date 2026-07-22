@@ -3,6 +3,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import {
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "#/mailboxes/administration";
 import { MailboxInlineAttachmentInput } from "#/mailboxes/attachment-reading";
 import { GetDraftAttachmentInput } from "#/mailboxes/draft-attachments";
 import {
@@ -868,7 +872,13 @@ describe("Website mailbox Backend forwarding", () => {
         return Promise.resolve(Response.json(mailbox, { status: 201 }));
       },
       (operations) =>
-        operations.bootstrapOwner({ displayName: "Inbox", incoming })
+        operations.bootstrapOwner({
+          command: Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+            displayName: "Inbox",
+            operationId: "00000000-0000-4000-8000-000000000010",
+          }),
+          incoming,
+        })
     );
 
     expect(result).toStrictEqual({ mailbox, ok: true });
@@ -884,7 +894,10 @@ describe("Website mailbox Backend forwarding", () => {
       referer: forwarded?.headers.get("referer"),
       userAgent: forwarded?.headers.get("user-agent"),
     }).toStrictEqual({
-      body: { displayName: "Inbox" },
+      body: {
+        displayName: "Inbox",
+        operationId: "00000000-0000-4000-8000-000000000010",
+      },
       cookie: "__Host-session=session-a.secret",
       method: "POST",
       origin: "https://inbox.test",
@@ -906,9 +919,13 @@ describe("Website mailbox Backend forwarding", () => {
       },
       (operations) =>
         operations.rename({
-          displayName: "Recruiting",
+          command: Schema.decodeUnknownSync(RenameMailboxCommand)({
+            displayName: "Recruiting",
+            expectedVersion: 1,
+            mailboxId: "team/primary ?",
+            operationId: "00000000-0000-4000-8000-000000000011",
+          }),
           incoming,
-          mailboxId: "team/primary ?",
         })
     );
 
@@ -933,9 +950,13 @@ describe("Website mailbox Backend forwarding", () => {
       },
       (operations) =>
         operations.rename({
-          displayName: "Recruiting",
+          command: Schema.decodeUnknownSync(RenameMailboxCommand)({
+            displayName: "Recruiting",
+            expectedVersion: 1,
+            mailboxId: "primary",
+            operationId: "00000000-0000-4000-8000-000000000011",
+          }),
           incoming,
-          mailboxId: "primary",
         })
     );
 
@@ -964,7 +985,13 @@ describe("Website mailbox Backend forwarding", () => {
         );
       },
       (operations) =>
-        operations.bootstrapOwner({ displayName: "Inbox", incoming })
+        operations.bootstrapOwner({
+          command: Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+            displayName: "Inbox",
+            operationId: "00000000-0000-4000-8000-000000000010",
+          }),
+          incoming,
+        })
     );
 
     expect(result).toStrictEqual({
@@ -1029,7 +1056,13 @@ describe("Website mailbox Backend forwarding", () => {
           )
         ),
       (operations) =>
-        operations.bootstrapOwner({ displayName: "Inbox", incoming })
+        operations.bootstrapOwner({
+          command: Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+            displayName: "Inbox",
+            operationId: "00000000-0000-4000-8000-000000000010",
+          }),
+          incoming,
+        })
     );
 
     expect(result).toStrictEqual({

@@ -91,6 +91,11 @@ import {
   MailboxOutboundSendingError,
   SendMailboxDraftResult,
 } from "#/mailboxes/outbound-sending";
+import {
+  BackendRequestContextMiddlewareLive,
+  backendRequestContext,
+} from "#/observability/backend-request-live";
+import { CurrentBackendRequestContext } from "#/observability/request-context";
 
 const publicOrigin = "https://inbox.test";
 const MailboxTestApi = HttpApi.make("AuthApi").add(MailboxGroup);
@@ -359,6 +364,14 @@ const makeHandler = (
     })
   );
   const middlewareLive = Layer.mergeAll(
+    BackendRequestContextMiddlewareLive.pipe(
+      Layer.provide(
+        Layer.succeed(
+          CurrentBackendRequestContext,
+          CurrentBackendRequestContext.of(backendRequestContext())
+        )
+      )
+    ),
     AuthSchemaErrorMiddlewareLive,
     AuthOriginCheckMiddlewareLive({
       allowMissingOrigin: false,
@@ -433,8 +446,21 @@ const mailboxRequest = (
     return new Request(`https://backend.test${path}`, { headers });
   }
   const mutationMethod: "PATCH" | "POST" | "PUT" = method;
+  const defaultBody =
+    path === "/api/mailboxes/bootstrap-owner"
+      ? {
+          displayName: "Recruiting",
+          operationId: "00000000-0000-4000-8000-000000000010",
+        }
+      : path === "/api/mailboxes/primary" && method === "PATCH"
+        ? {
+            displayName: "Recruiting",
+            expectedVersion: 1,
+            operationId: "00000000-0000-4000-8000-000000000011",
+          }
+        : { displayName: "Recruiting" };
   return new Request(`https://backend.test${path}`, {
-    body: JSON.stringify(options.body ?? { displayName: "Recruiting" }),
+    body: JSON.stringify(options.body ?? defaultBody),
     headers,
     method: mutationMethod,
   });

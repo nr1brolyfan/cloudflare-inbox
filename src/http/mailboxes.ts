@@ -80,7 +80,10 @@ const mapAdministrationError = (
       return Effect.fail(
         new AuthConflictError({
           code: "conflict",
-          message: "Mailbox already exists",
+          message:
+            error.operation === "rename"
+              ? "Mailbox changed"
+              : "Mailbox already exists",
         })
       );
     }
@@ -490,9 +493,7 @@ export const MailboxGroupLive = HttpApiBuilder.group(
           .pipe(mapHttpErrors)
       )
       .handle("bootstrapOwner", ({ payload }) =>
-        administration
-          .bootstrapOwner({ displayName: payload.displayName })
-          .pipe(mapHttpErrors)
+        administration.bootstrapOwner(payload).pipe(mapHttpErrors)
       )
       .handle("createDraft", ({ params, payload }) =>
         draftEditing
@@ -637,7 +638,9 @@ export const MailboxGroupLive = HttpApiBuilder.group(
         administration
           .rename({
             displayName: payload.displayName,
+            expectedVersion: payload.expectedVersion,
             mailboxId: params.mailboxId,
+            operationId: payload.operationId,
           })
           .pipe(mapHttpErrors)
       )

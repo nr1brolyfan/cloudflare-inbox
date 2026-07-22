@@ -5,6 +5,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { AdministrativeAudit } from "../audit/administrative-audit";
+import type { AdministrativeAuditError } from "../audit/administrative-audit-error";
 import type { CurrentRequestAuthShape } from "../auth/session";
 import { CurrentRequestAuth } from "../auth/session";
 import {
@@ -27,9 +29,12 @@ import {
 import {
   EmailAddress,
   MailboxDisplayName,
+  MailboxId,
   MailboxRecordSchema,
+  UnixMillis,
   normalizeEmailAddressDomain,
 } from "../mailboxes/core";
+import { administrativeAuditInsertStatement } from "./administrative-audit-d1";
 import * as ControlPlane from "./batch";
 
 export const MailboxAdministrationOwnerEmail = EmailAddress;
@@ -355,6 +360,18 @@ const storageError = (
     reason: "storage",
   });
 
+const auditError = (
+  operation: "bootstrap-owner" | "rename",
+  error: AdministrativeAuditError
+) =>
+  new MailboxAdministrationError({
+    cause: error,
+    commitState: "not-committed",
+    message: "Failed to prepare administrative audit",
+    operation,
+    reason: "storage",
+  });
+
 const decodeResultRows = <Row>(
   schema: Schema.Decoder<Row>,
   results: readonly ControlPlane.ControlPlaneBatchResult[],
@@ -380,14 +397,17 @@ const BootstrapStatusRow = Schema.Struct({
   authorized: Schema.Number,
   base_session_valid: Schema.Number,
   catalog_valid: Schema.Number,
+  mailbox_available: Schema.Number,
   owner_eligible: Schema.Number,
   step_up_valid: Schema.Number,
 });
 
 const RenameStatusRow = Schema.Struct({
   authorized: Schema.Number,
+  mailbox_exists: Schema.Number,
   permission_valid: Schema.Number,
   session_valid: Schema.Number,
+  version_valid: Schema.Number,
 });
 
 const RenamedMailboxRow = Schema.Struct({
@@ -410,6 +430,7 @@ export const MailboxAdministrationLive = Layer.effect(
     const stepUpClock = yield* SensitiveOperationStepUpClock;
     const batch = yield* ControlPlane.ControlPlaneBatch;
     const authorization = yield* MailAuthorization;
+    const audit = yield* AdministrativeAudit;
     const { ownerEmail: configuredOwnerEmail } = options;
     const { now, randomId } = runtime;
     const ownerEmail = normalizeEmailAddressDomain(configuredOwnerEmail);
@@ -440,9 +461,19 @@ export const MailboxAdministrationLive = Layer.effect(
             input.displayName,
             "bootstrap-owner"
           );
-          const timestamp = now();
-          const mailboxId = "primary";
+          const timestamp = Schema.decodeUnknownSync(UnixMillis)(now());
+          const mailboxId = Schema.decodeUnknownSync(MailboxId)("primary");
           const nonce = randomId();
+          const auditEvent = yield* audit
+            .prepare({
+              _tag: "MailboxBootstrapped",
+              mailboxId,
+              occurredAt: timestamp,
+              operationId: input.operationId,
+            })
+            .pipe(
+              Effect.mapError((error) => auditError("bootstrap-owner", error))
+            );
           const trustedSessionParams = sensitiveSessionParams(
             requestAuth,
             timestamp
@@ -456,8 +487,9 @@ export const MailboxAdministrationLive = Layer.effect(
               sql: `insert into app_authorization_guard (nonce)
                     select ?
                       where ${sensitiveSessionPredicate}
-                       and ${activeOwnerRolePredicate}
-                       and ${ownerIdentityPredicate}`,
+                        and ${activeOwnerRolePredicate}
+                        and ${ownerIdentityPredicate}
+                        and not exists (select 1 from app_mailbox)`,
               params: [
                 nonce,
                 ...trustedSessionParams,
@@ -474,7 +506,10 @@ export const MailboxAdministrationLive = Layer.effect(
                            cast(${activeOwnerRolePredicate} as integer)
                               as catalog_valid,
                            cast(${ownerIdentityPredicate} as integer)
-                              as owner_eligible,
+                               as owner_eligible,
+                           cast(not exists (
+                             select 1 from app_mailbox
+                           ) as integer) as mailbox_available,
                            cast(exists (
                              select 1 from app_authorization_guard where nonce = ?
                            ) as integer) as authorized`,
@@ -570,6 +605,9 @@ export const MailboxAdministrationLive = Layer.effect(
               ],
             },
             {
+              ...administrativeAuditInsertStatement(auditEvent, nonce),
+            },
+            {
               sql: "delete from app_authorization_guard where nonce = ?",
               params: [nonce],
             },
@@ -619,6 +657,13 @@ export const MailboxAdministrationLive = Layer.effect(
                 reason: "owner-not-eligible",
               });
             }
+            if (status.mailbox_available !== 1) {
+              return yield* new MailboxAdministrationError({
+                message: "Primary mailbox already exists",
+                operation: "bootstrap-owner",
+                reason: "conflict",
+              });
+            }
             return yield* Effect.die(
               new Error("Owner bootstrap authorization guard is inconsistent")
             );
@@ -666,7 +711,7 @@ export const MailboxAdministrationLive = Layer.effect(
             action: "manage-settings",
             resource: { _tag: "Mailbox", mailboxId: input.mailboxId },
           });
-          const timestamp = now();
+          const timestamp = Schema.decodeUnknownSync(UnixMillis)(now());
           const nonce = randomId();
           const scope = mailboxScope(location.mailboxId);
           const trustedSessionParams = sessionParams(requestAuth, timestamp);
@@ -676,39 +721,79 @@ export const MailboxAdministrationLive = Layer.effect(
             scope,
             timestamp
           );
+          const auditEvent = yield* audit
+            .prepare({
+              _tag: "MailboxRenamed",
+              beforeVersion: input.expectedVersion,
+              mailboxId: location.mailboxId,
+              occurredAt: timestamp,
+              operationId: input.operationId,
+            })
+            .pipe(Effect.mapError((error) => auditError("rename", error)));
           const statements: readonly ControlPlane.ControlPlaneStatement[] = [
             {
               sql: `insert into app_authorization_guard (nonce)
                     select ?
-                     where ${sessionPredicate}
-                       and ${permissionPredicate}`,
+                      where ${sessionPredicate}
+                        and ${permissionPredicate}
+                        and exists (
+                          select 1 from app_mailbox
+                           where id = ?
+                             and status = 'active'
+                             and version = ?
+                        )`,
               params: [
                 nonce,
                 ...trustedSessionParams,
                 ...trustedPermissionParams,
+                location.mailboxId,
+                input.expectedVersion,
               ],
             },
             {
               sql: `update app_mailbox
                        set display_name = ?, updated_at = ?, version = version + 1
-                     where id = ?
-                       and status = 'active'
-                       and exists (
+                      where id = ?
+                        and status = 'active'
+                        and version = ?
+                        and exists (
                          select 1 from app_authorization_guard where nonce = ?
                        )
                     returning id, display_name, created_by_user_id,
                               created_at, updated_at, version`,
-              params: [displayName, timestamp, location.mailboxId, nonce],
+              params: [
+                displayName,
+                timestamp,
+                location.mailboxId,
+                input.expectedVersion,
+                nonce,
+              ],
+            },
+            {
+              ...administrativeAuditInsertStatement(auditEvent, nonce),
             },
             {
               sql: `select cast(${sessionPredicate} as integer) as session_valid,
-                           cast(${permissionPredicate} as integer) as permission_valid,
-                           cast(exists (
+                            cast(${permissionPredicate} as integer) as permission_valid,
+                            cast(exists (
+                              select 1 from app_mailbox
+                               where id = ? and status = 'active'
+                            ) as integer) as mailbox_exists,
+                            cast(exists (
+                              select 1 from app_mailbox
+                               where id = ?
+                                 and status = 'active'
+                                 and version = ?
+                            ) as integer) as version_valid,
+                            cast(exists (
                              select 1 from app_authorization_guard where nonce = ?
                            ) as integer) as authorized`,
               params: [
                 ...trustedSessionParams,
                 ...trustedPermissionParams,
+                location.mailboxId,
+                location.mailboxId,
+                input.expectedVersion,
                 nonce,
               ],
             },
@@ -723,7 +808,7 @@ export const MailboxAdministrationLive = Layer.effect(
           const [status] = yield* decodeResultRows(
             RenameStatusRow,
             results,
-            2,
+            3,
             "rename"
           );
 
@@ -735,6 +820,20 @@ export const MailboxAdministrationLive = Layer.effect(
             });
           }
           if (status.permission_valid !== 1 || status.authorized !== 1) {
+            if (status.mailbox_exists !== 1) {
+              return yield* new MailboxAdministrationError({
+                message: "Mailbox not found",
+                operation: "rename",
+                reason: "not-found",
+              });
+            }
+            if (status.version_valid !== 1) {
+              return yield* new MailboxAdministrationError({
+                message: "Mailbox changed before mutation",
+                operation: "rename",
+                reason: "conflict",
+              });
+            }
             return yield* new MailboxAdministrationError({
               message: "Permission changed before mailbox mutation",
               operation: "rename",

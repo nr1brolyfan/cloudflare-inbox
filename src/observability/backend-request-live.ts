@@ -16,7 +16,9 @@ import {
   BackendRequestContext,
   BackendRequestId,
   CloudflareRayId,
+  CurrentBackendRequestContext,
 } from "./request-context";
+import { BackendRequestContextMiddleware } from "./request-context-middleware";
 
 /** Generates server-owned identity and accepts only bounded Cloudflare metadata. */
 export const backendRequestContext = (
@@ -37,6 +39,18 @@ export const backendRequestContext = (
     requestId,
   });
 };
+
+/** Captures the fetch-owned context and supplies it to mailbox/admin handlers. */
+export const BackendRequestContextMiddlewareLive = Layer.effect(
+  BackendRequestContextMiddleware,
+  Effect.gen(function* () {
+    const context = yield* CurrentBackendRequestContext;
+    return (httpEffect) =>
+      httpEffect.pipe(
+        Effect.provideService(CurrentBackendRequestContext, context)
+      );
+  })
+);
 
 export const BackendRequestCompletionLive = Layer.succeed(
   BackendRequestCompletion,

@@ -6,11 +6,18 @@ import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuthShape } from "../auth/session";
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailboxDisplayName, MailboxId } from "./core";
+import type { BackendRequestContext } from "../observability/request-context";
+import {
+  AdministrativeOperationId,
+  MailboxDisplayName,
+  MailboxId,
+  Version,
+} from "./core";
 import type { MailboxRecord } from "./core";
 
 export const BootstrapOwnerMailboxCommand = Schema.Struct({
   displayName: MailboxDisplayName,
+  operationId: AdministrativeOperationId,
 });
 export type BootstrapOwnerMailboxCommand = Schema.Schema.Type<
   typeof BootstrapOwnerMailboxCommand
@@ -18,7 +25,9 @@ export type BootstrapOwnerMailboxCommand = Schema.Schema.Type<
 
 export const RenameMailboxCommand = Schema.Struct({
   displayName: MailboxDisplayName,
+  expectedVersion: Version,
   mailboxId: MailboxId,
+  operationId: AdministrativeOperationId,
 });
 export type RenameMailboxCommand = Schema.Schema.Type<
   typeof RenameMailboxCommand
@@ -58,14 +67,18 @@ export interface MailboxAdministration {
   ) => Effect.Effect<
     MailboxRecord,
     MailboxAdministrationError,
-    CurrentRequestAuthShape
+    | AuthPermission.CurrentPrincipal
+    | BackendRequestContext
+    | CurrentRequestAuthShape
   >;
   readonly rename: (
     input: RenameMailboxCommand
   ) => Effect.Effect<
     MailboxRecord,
     MailAuthorizationError | MailboxAdministrationError,
-    AuthPermission.CurrentPrincipal | CurrentRequestAuthShape
+    | AuthPermission.CurrentPrincipal
+    | BackendRequestContext
+    | CurrentRequestAuthShape
   >;
 }
 
