@@ -7,6 +7,7 @@ import {
   AuthPolicyDeniedError,
   AuthRequestRejectedError,
   AuthSchemaErrorMiddleware,
+  AuthStepUpRequiredError,
   AuthUnauthenticatedError,
 } from "@effect-auth/core/HttpApi";
 import * as Schema from "effect/Schema";
@@ -134,6 +135,7 @@ const MailboxErrors = [
   AuthUnauthenticatedError,
   AuthPolicyDeniedError,
   AuthRequestRejectedError,
+  AuthStepUpRequiredError,
   AuthNotFoundError,
   AuthConflictError,
   AuthInternalError,

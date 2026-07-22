@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import { D1EffectQbSqliteAuthStorageLive } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
+  CredentialId,
   SessionId,
   SessionToken,
   UnixMillis,
@@ -17,6 +18,10 @@ import { describe, expect, it } from "vitest";
 
 import type { CurrentRequestAuthShape } from "#/auth/session";
 import { CurrentRequestAuth } from "#/auth/session";
+import {
+  CONTROL_PLANE_STEP_UP_POLICY,
+  SensitiveOperationStepUpClock,
+} from "#/auth/step-up-policy";
 import {
   MailPermission,
   MailRole,
@@ -52,20 +57,39 @@ import {
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
 const now = 2000;
+const stepUpNow = Date.now();
+const recentPasswordEvent = {
+  credentialId: CredentialId("credential-a"),
+  type: "password" as const,
+  verifiedAt: UnixMillis(stepUpNow - 100),
+  version: 1 as const,
+};
 
 const makeValidatedSession = (
   user: string,
   session: string,
-  rotatedAt?: number
+  rotatedAt?: number,
+  authenticationEvents: ValidatedSession["currentSession"]["authenticationEvents"] = [
+    recentPasswordEvent,
+  ]
 ): ValidatedSession => {
   const userId = UserId(user);
   const sessionId = SessionId(session);
+  let authTime = 1000;
+  for (const event of authenticationEvents) {
+    authTime = Math.max(authTime, event.verifiedAt);
+  }
   const currentSession = {
     aal: "aal1" as const,
-    amr: [],
-    authenticationEvents: [],
-    authTime: UnixMillis(1000),
-    expiresAt: UnixMillis(10_000),
+    amr:
+      authenticationEvents.length === 0
+        ? []
+        : authenticationEvents.map((event) =>
+            event.type === "password" ? "pwd" : event.type
+          ),
+    authenticationEvents,
+    authTime: UnixMillis(authTime),
+    expiresAt: UnixMillis(stepUpNow + 60 * 60 * 1000),
     sessionId,
     userId,
   };
@@ -113,8 +137,8 @@ const insertCurrentSession = (
     .prepare(
       `insert into auth_session
         (id, user_id, secret_hash, created_at, expires_at, auth_time,
-         authentication_events, aal, amr, rotated_at)
-       values (?, ?, ?, ?, ?, ?, '[]', 'aal1', '[]', ?)`
+          authentication_events, aal, amr, rotated_at)
+        values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .run(
       validated.actor.sessionId,
@@ -123,6 +147,9 @@ const insertCurrentSession = (
       1000,
       validated.issued.expiresAt,
       validated.issued.authTime,
+      JSON.stringify(validated.issued.authenticationEvents),
+      validated.issued.aal,
+      JSON.stringify(validated.issued.amr),
       validated.issued.rotatedAt ?? null
     );
 };
@@ -252,7 +279,7 @@ const bootstrap = (
         MailboxAdministrationLive.pipe(
           Layer.provide(unavailableMailAuthorizationLive),
           Layer.provide(
-            Layer.merge(
+            Layer.mergeAll(
               Layer.succeed(
                 MailboxAdministrationConfig,
                 MailboxAdministrationConfig.of({
@@ -267,6 +294,10 @@ const bootstrap = (
                   now: () => now,
                   randomId: () => nonce,
                 })
+              ),
+              Layer.succeed(
+                SensitiveOperationStepUpClock,
+                SensitiveOperationStepUpClock.of({ now: () => stepUpNow })
               )
             )
           ),
@@ -295,7 +326,7 @@ const rename = (
       Effect.provide(
         MailboxAdministrationLive.pipe(
           Layer.provide(
-            Layer.merge(
+            Layer.mergeAll(
               Layer.succeed(
                 MailboxAdministrationConfig,
                 MailboxAdministrationConfig.of({
@@ -310,6 +341,10 @@ const rename = (
                   now: () => now + 1000,
                   randomId: () => "rename-guard",
                 })
+              ),
+              Layer.succeed(
+                SensitiveOperationStepUpClock,
+                SensitiveOperationStepUpClock.of({ now: () => stepUpNow })
               )
             )
           ),
@@ -492,9 +527,54 @@ describe("mailbox administration", () => {
       insertCurrentSession(database, validated);
       database
         .prepare(
-          "update auth_session set authentication_events = '[ ]' where id = ?"
+          "update auth_session set authentication_events = ? where id = ?"
         )
-        .run(validated.actor.sessionId);
+        .run(
+          JSON.stringify([recentPasswordEvent], undefined, 2),
+          validated.actor.sessionId
+        );
+
+      const mailbox = await Effect.runPromise(
+        bootstrap(d1, validated, "bootstrap-guard")
+      );
+
+      expect(mailbox.id).toBe("primary");
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each([
+    [
+      "TOTP",
+      {
+        acceptedCounter: 1,
+        factorId: CredentialId("factor-a"),
+        type: "totp",
+        verifiedAt: UnixMillis(stepUpNow),
+        version: 1,
+      },
+    ],
+    [
+      "UV passkey",
+      {
+        credentialId: CredentialId("credential-a"),
+        type: "passkey",
+        userVerification: "verified",
+        verifiedAt: UnixMillis(stepUpNow),
+        version: 1,
+      },
+    ],
+  ] as const)("accepts transactional %s evidence", async (_, event) => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a", undefined, [
+        event,
+      ]);
+      insertCurrentSession(database, validated);
 
       const mailbox = await Effect.runPromise(
         bootstrap(d1, validated, "bootstrap-guard")
@@ -538,6 +618,249 @@ describe("mailbox administration", () => {
       database.close();
     }
   });
+
+  it.each([
+    ["no authentication evidence", []],
+    [
+      "stale password evidence",
+      [
+        {
+          credentialId: CredentialId("credential-a"),
+          type: "password",
+          verifiedAt: UnixMillis(
+            stepUpNow - CONTROL_PLANE_STEP_UP_POLICY.maxAgeMs - 1
+          ),
+          version: 1,
+        },
+      ],
+    ],
+    [
+      "email OTP evidence",
+      [
+        {
+          identityId: "identity-a",
+          type: "email_otp",
+          verifiedAt: UnixMillis(stepUpNow),
+          version: 1,
+        },
+      ],
+    ],
+  ] as const)(
+    "requires step-up for owner bootstrap with %s",
+    async (_, events) => {
+      const database = new DatabaseSync(":memory:");
+
+      try {
+        await applyControlPlaneMigrations(database);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession(
+          "user-a",
+          "session-a",
+          undefined,
+          events
+        );
+        insertCurrentSession(database, validated);
+
+        const error = await Effect.runPromise(
+          bootstrap(d1, validated, "bootstrap-guard").pipe(Effect.flip)
+        );
+
+        expect(error).toMatchObject({
+          operation: "bootstrap-owner",
+          reason: "step-up-required",
+        });
+        expect({
+          addresses: countRows(database, "app_mailbox_address"),
+          grants: countRows(database, "auth_role_grant"),
+          mailboxes: countRows(database, "app_mailbox"),
+          members: countRows(database, "app_mailbox_member"),
+        }).toStrictEqual({ addresses: 0, grants: 0, mailboxes: 0, members: 0 });
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it("rechecks fresh evidence inside the bootstrap batch", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const baseD1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      const staleD1: D1EffectQbDatabaseLike = {
+        batch: (statements) => {
+          database
+            .prepare(
+              "update auth_session set authentication_events = '[]' where id = ?"
+            )
+            .run(validated.actor.sessionId);
+          return baseD1.batch(statements);
+        },
+        prepare: baseD1.prepare,
+      };
+
+      const error = await Effect.runPromise(
+        bootstrap(staleD1, validated, "bootstrap-guard").pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({
+        operation: "bootstrap-owner",
+        reason: "step-up-required",
+      });
+      expect(countRows(database, "app_mailbox")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rechecks session expiry against database execution time", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const baseD1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      const expiredD1: D1EffectQbDatabaseLike = {
+        batch: (statements) => {
+          database
+            .prepare("update auth_session set expires_at = ? where id = ?")
+            .run(now + 1, validated.actor.sessionId);
+          return baseD1.batch(statements);
+        },
+        prepare: baseD1.prepare,
+      };
+
+      const error = await Effect.runPromise(
+        bootstrap(expiredD1, validated, "bootstrap-guard").pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({
+        operation: "bootstrap-owner",
+        reason: "session-recheck",
+      });
+      expect(countRows(database, "app_mailbox")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each([
+    [
+      "application mutation clock",
+      [{ ...recentPasswordEvent, verifiedAt: UnixMillis(now) }],
+    ],
+    ["unknown evidence version", [{ ...recentPasswordEvent, version: 2 }]],
+    [
+      "malformed password evidence",
+      [{ type: "password", verifiedAt: stepUpNow, version: 1 }],
+    ],
+    [
+      "malformed TOTP evidence",
+      [
+        {
+          factorId: "factor-a",
+          type: "totp",
+          verifiedAt: stepUpNow,
+          version: 1,
+        },
+      ],
+    ],
+    [
+      "non-UV passkey evidence",
+      [
+        {
+          credentialId: "credential-a",
+          type: "passkey",
+          userVerification: "not-verified",
+          verifiedAt: stepUpNow,
+          version: 1,
+        },
+      ],
+    ],
+    [
+      "future evidence",
+      [{ ...recentPasswordEvent, verifiedAt: stepUpNow + 60_000 }],
+    ],
+    [
+      "fractional evidence timestamp",
+      [{ ...recentPasswordEvent, verifiedAt: stepUpNow - 0.5 }],
+    ],
+    [
+      "negative TOTP counter",
+      [
+        {
+          acceptedCounter: -1,
+          factorId: "factor-a",
+          type: "totp",
+          verifiedAt: stepUpNow,
+          version: 1,
+        },
+      ],
+    ],
+    [
+      "negative passkey sign count",
+      [
+        {
+          credentialId: "credential-a",
+          signCount: -1,
+          type: "passkey",
+          userVerification: "verified",
+          verifiedAt: stepUpNow,
+          version: 1,
+        },
+      ],
+    ],
+    [
+      "oversized evidence array",
+      Array.from(
+        { length: 33 },
+        (_, index) =>
+          ({
+            ...recentPasswordEvent,
+            credentialId: CredentialId(`credential-${index}`),
+          }) as const
+      ),
+    ],
+    ["object evidence container", recentPasswordEvent],
+  ] as const)(
+    "rejects transactional evidence using %s",
+    async (_, evidence) => {
+      const database = new DatabaseSync(":memory:");
+
+      try {
+        await applyControlPlaneMigrations(database);
+        const baseD1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+        const changedD1: D1EffectQbDatabaseLike = {
+          batch: (statements) => {
+            database
+              .prepare(
+                "update auth_session set authentication_events = ? where id = ?"
+              )
+              .run(JSON.stringify(evidence), validated.actor.sessionId);
+            return baseD1.batch(statements);
+          },
+          prepare: baseD1.prepare,
+        };
+
+        const error = await Effect.runPromise(
+          bootstrap(changedD1, validated, "bootstrap-guard").pipe(Effect.flip)
+        );
+
+        expect(error).toMatchObject({
+          operation: "bootstrap-owner",
+          reason: "step-up-required",
+        });
+        expect(countRows(database, "app_mailbox")).toBe(0);
+      } finally {
+        database.close();
+      }
+    }
+  );
 
   it("does not let an unconfigured actor take ownership", async () => {
     const database = new DatabaseSync(":memory:");
@@ -643,6 +966,54 @@ describe("mailbox administration", () => {
         version: 2,
       });
       expect(countRows(database, "app_authorization_guard")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("does not require fresh step-up for a mailbox display-name rename", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const elevated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, elevated);
+      await Effect.runPromise(bootstrap(d1, elevated, "bootstrap-guard"));
+      const ordinary = makeValidatedSession(
+        "user-a",
+        "session-a",
+        undefined,
+        []
+      );
+      database
+        .prepare(
+          `update auth_session
+              set authentication_events = ?, auth_time = ?, amr = ?
+            where id = ?`
+        )
+        .run(
+          JSON.stringify(ordinary.issued.authenticationEvents),
+          ordinary.issued.authTime,
+          JSON.stringify(ordinary.issued.amr),
+          ordinary.issued.sessionId
+        );
+      const mailAuthorizationLive = MailAuthorizationLive.pipe(
+        Layer.provide(
+          Layer.merge(
+            MailPermissionsLive.pipe(
+              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
+            ),
+            makeResolverLive()
+          )
+        )
+      );
+
+      const mailbox = await Effect.runPromise(
+        rename(d1, ordinary, mailAuthorizationLive, "primary", "Recruiting")
+      );
+
+      expect(mailbox).toMatchObject({ displayName: "Recruiting", version: 2 });
     } finally {
       database.close();
     }
@@ -865,6 +1236,48 @@ describe("mailbox administration", () => {
     }
   });
 
+  it("keeps the authorization guard decision authoritative", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const baseD1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      const boundaryD1: D1EffectQbDatabaseLike = {
+        batch: async (statements) => {
+          const results = await baseD1.batch(statements);
+          return results.map((result, index) =>
+            index === 1
+              ? {
+                  ...result,
+                  results: [
+                    {
+                      authorized: 1,
+                      base_session_valid: 0,
+                      catalog_valid: 0,
+                      owner_eligible: 0,
+                      step_up_valid: 0,
+                    },
+                  ],
+                }
+              : result
+          );
+        },
+        prepare: baseD1.prepare,
+      };
+
+      const mailbox = await Effect.runPromise(
+        bootstrap(boundaryD1, validated, "bootstrap-guard")
+      );
+
+      expect(mailbox.id).toBe("primary");
+      expect(countRows(database, "app_mailbox")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
   it("reports missing required batch rows as storage failure after commit", async () => {
     const database = new DatabaseSync(":memory:");
 
@@ -877,7 +1290,7 @@ describe("mailbox administration", () => {
         batch: async (statements) => {
           const results = await baseD1.batch(statements);
           return results.map((result, index) =>
-            index === 5 ? { ...result, results: undefined } : result
+            index === 1 ? { ...result, results: undefined } : result
           );
         },
         prepare: baseD1.prepare,

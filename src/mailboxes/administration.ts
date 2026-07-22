@@ -45,6 +45,7 @@ export class MailboxAdministrationError extends Data.TaggedError(
     | "not-found"
     | "owner-not-eligible"
     | "session-recheck"
+    | "step-up-required"
     | "storage";
   readonly scope?: AuthPermission.PermissionScope;
 }> {}

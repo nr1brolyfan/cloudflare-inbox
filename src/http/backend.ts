@@ -3,6 +3,18 @@ import {
   AuthHttpApiConfigLive,
   AuthOriginCheckMiddlewareLive,
   AuthSchemaErrorMiddlewareLive,
+  CoreAuthEmailVerificationGroupLive,
+  CoreAuthLoginApprovalGroupLive,
+  CoreAuthLoginNotificationGroupLive,
+  CoreAuthMagicLinkGroupLive,
+  CoreAuthSessionGroupLive,
+  EmailOtpHttpOperationsLive,
+  EmailVerificationHttpOperationsLive,
+  LoginApprovalHttpOperationsLive,
+  LoginNotificationHttpOperationsLive,
+  MagicLinkHttpOperationsLive,
+  PasswordHttpOperationsLive,
+  SessionHttpOperationsLive,
 } from "@effect-auth/core/HttpApi";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -11,12 +23,14 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
 import { AiToolRunBudgetLive } from "../ai/tool-run-budget";
-import { CoreAuthGroupHandlersLive } from "../auth/http-api";
+import { ExistingPasswordResetLive } from "../auth/existing-password-reset";
 import { AuthRuntimeConfig, AuthServicesLive } from "../auth/live";
+import { PasswordResetEligibilityLive } from "../auth/password-reset-eligibility";
 import {
   CurrentRequestAuthMiddlewareLive,
   RequestSessionAuthenticatorLive,
 } from "../auth/session";
+import { SensitiveOperationStepUpClockLive } from "../auth/step-up-policy";
 import {
   D1DevEmailStoreLive,
   EffectAuthStorageLive,
@@ -55,6 +69,14 @@ import {
 import { MailboxOutboundSendingLive } from "../mailboxes/outbound-sending";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendHttpApi } from "./api";
+import {
+  PasswordEnrollmentUnavailableGroupLive,
+  RestrictedEmailOtpGroupLive,
+} from "./auth";
+import {
+  PasswordOnlyStepUpHttpOperationsLive,
+  PasswordStepUpGroupLive,
+} from "./auth-step-up";
 import { DevEmailGroupLive } from "./dev-emails";
 import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
@@ -90,7 +112,40 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(authStorageLive),
       Layer.provide(devEmailStoreLive)
     );
-    const authGroupHandlersLive = CoreAuthGroupHandlersLive.pipe(
+    const requestSessionAuthenticatorLive =
+      RequestSessionAuthenticatorLive.pipe(Layer.provide(authServicesLive));
+    const passwordResetEligibilityLive = PasswordResetEligibilityLive.pipe(
+      Layer.provide(authServicesLive),
+      Layer.provide(authStorageLive)
+    );
+    const existingPasswordResetLive = ExistingPasswordResetLive.pipe(
+      Layer.provide(passwordResetEligibilityLive),
+      Layer.provide(authServicesLive)
+    );
+    const passwordHttpOperationsLive = PasswordHttpOperationsLive.pipe(
+      Layer.provide(existingPasswordResetLive),
+      Layer.provide(authServicesLive)
+    );
+    const authGroupHandlersLive = Layer.mergeAll(
+      PasswordEnrollmentUnavailableGroupLive,
+      CoreAuthSessionGroupLive,
+      CoreAuthEmailVerificationGroupLive,
+      RestrictedEmailOtpGroupLive,
+      CoreAuthMagicLinkGroupLive,
+      CoreAuthLoginApprovalGroupLive,
+      CoreAuthLoginNotificationGroupLive,
+      PasswordStepUpGroupLive
+    ).pipe(
+      Layer.provide(passwordHttpOperationsLive),
+      Layer.provide(SessionHttpOperationsLive),
+      Layer.provide(EmailVerificationHttpOperationsLive),
+      Layer.provide(EmailOtpHttpOperationsLive),
+      Layer.provide(MagicLinkHttpOperationsLive),
+      Layer.provide(LoginApprovalHttpOperationsLive),
+      Layer.provide(LoginNotificationHttpOperationsLive),
+      Layer.provide(PasswordOnlyStepUpHttpOperationsLive),
+      Layer.provide(passwordResetEligibilityLive),
+      Layer.provide(SensitiveOperationStepUpClockLive),
       Layer.provide(
         AuthHttpApiConfigLive({
           originCheck: originPolicy,
@@ -100,10 +155,9 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(requestValidationLive),
       Layer.provide(authServicesLive),
       Layer.provide(authStorageLive),
+      Layer.provide(requestSessionAuthenticatorLive),
       Layer.provide(BotProtectionNoopLive)
     );
-    const requestSessionAuthenticatorLive =
-      RequestSessionAuthenticatorLive.pipe(Layer.provide(authServicesLive));
     const currentRequestAuthLive = CurrentRequestAuthMiddlewareLive.pipe(
       Layer.provide(requestSessionAuthenticatorLive)
     );
@@ -121,7 +175,11 @@ const BackendRoutesLive = Layer.unwrap(
     );
     const mailboxAdministrationLive = MailboxAdministrationLive.pipe(
       Layer.provide(
-        Layer.merge(MailboxAdministrationRuntimeLive, mailAuthorizationLive)
+        Layer.mergeAll(
+          MailboxAdministrationRuntimeLive,
+          mailAuthorizationLive,
+          SensitiveOperationStepUpClockLive
+        )
       )
     );
     const mailboxNavigationLive = MailboxNavigationLive.pipe(

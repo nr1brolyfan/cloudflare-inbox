@@ -11,7 +11,7 @@ import * as Layer from "effect/Layer";
 import { HttpApiTest } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { RestrictedEmailOtpGroupLive } from "#/auth/http-api";
+import { RestrictedEmailOtpGroupLive } from "#/http/auth";
 import { HttpApiPlatformLive } from "#/http/platform";
 
 const identity = {

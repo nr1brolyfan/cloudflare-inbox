@@ -5,6 +5,7 @@ import {
   AuthConflictError,
   AuthNotFoundError,
   AuthPolicyDeniedError,
+  AuthStepUpRequiredError,
   mapAuthGuardErrors,
 } from "@effect-auth/core/HttpApi";
 import { CurrentActor, CurrentSession } from "@effect-auth/core/Sessions";
@@ -62,7 +63,8 @@ type MailboxPublicError =
   | AuthConflictError
   | AuthInternalError
   | AuthNotFoundError
-  | AuthPolicyDeniedError;
+  | AuthPolicyDeniedError
+  | AuthStepUpRequiredError;
 
 const mapAdministrationError = (
   error: MailboxAdministrationError
@@ -116,6 +118,14 @@ const mapAdministrationError = (
         new AuthPolicyDeniedError({
           code: "policy_denied",
           message: "Mailbox owner account required",
+        })
+      );
+    }
+    case "step-up-required": {
+      return fail(
+        new AuthStepUpRequiredError({
+          code: "step_up_required",
+          message: "Recent authentication required",
         })
       );
     }

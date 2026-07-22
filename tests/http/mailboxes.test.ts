@@ -1259,6 +1259,38 @@ describe("protected mailbox API", () => {
     }
   });
 
+  it("returns a typed step-up response for owner bootstrap", async () => {
+    const { dispose, handler } = makeHandler(
+      makeAdministration({
+        bootstrapOwner: () =>
+          Effect.fail(
+            new MailboxAdministrationError({
+              message: "internal policy detail",
+              operation: "bootstrap-owner",
+              reason: "step-up-required",
+            })
+          ),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/bootstrap-owner", "POST")
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body).toStrictEqual({
+        _tag: "AuthStepUpRequiredError",
+        code: "step_up_required",
+        message: "Recent authentication required",
+      });
+      expect(JSON.stringify(body)).not.toContain("internal policy detail");
+    } finally {
+      await dispose();
+    }
+  });
+
   it("maps transactional denial without leaking scope or causes", async () => {
     const { dispose, handler } = makeHandler(
       makeAdministration({

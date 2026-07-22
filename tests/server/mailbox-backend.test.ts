@@ -937,6 +937,42 @@ describe("Website mailbox Backend forwarding", () => {
     expect(requests).toBe(1);
   });
 
+  it("preserves a typed step-up response without retries", async () => {
+    let requests = 0;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { origin: "https://inbox.test" },
+    });
+
+    const result = await runForward(
+      () => {
+        requests += 1;
+        return Promise.resolve(
+          Response.json(
+            {
+              _tag: "AuthStepUpRequiredError",
+              code: "step_up_required",
+              message: "provider policy detail",
+            },
+            { status: 403 }
+          )
+        );
+      },
+      (operations) =>
+        operations.bootstrapOwner({ displayName: "Inbox", incoming })
+    );
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "AuthStepUpRequiredError",
+        code: "step_up_required",
+        message: "Recent authentication required",
+      },
+      ok: false,
+      status: 403,
+    });
+    expect(requests).toBe(1);
+  });
+
   it("does not expose administration denial messages to mailbox reads", async () => {
     const incoming = new Request("https://inbox.test/_server");
     const query = Schema.decodeUnknownSync(MailboxMessageListInput)({

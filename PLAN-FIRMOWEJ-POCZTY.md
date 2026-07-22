@@ -7,7 +7,7 @@ Kompletny plan przejścia z jednej skrzynki do modelu organizacji, wielu izolowa
 - Ostatnia aktualizacja: 2026-07-22
 - Stan: `IN PROGRESS`
 - Aktualny etap: `1. Fundament bezpieczeństwa i operacji`
-- Aktualne zadanie: `SAFE-001` step-up authentication dla operacji wrażliwych
+- Aktualne zadanie: `SAFE-002` passkey i recovery codes
 - Zakres pierwszego wydania: jedna organizacja i jedna domena na wdrożenie, ale model danych od początku tenant-aware
 - Źródło prawdy dla istniejącego v1: `TODO.md`
 - Źródło prawdy dla rozbudowy firmowej: ten dokument
@@ -465,7 +465,7 @@ Kryterium wyjścia spełnione: wszystkie decyzje blokujące schemat i autoryzacj
 
 Cel: przed rozszerzeniem liczby użytkowników i skrzynek domknąć mechanizmy wymagane do bezpiecznych mutacji administracyjnych.
 
-- [ ] SAFE-001 Dodać step-up authentication dla domen, adresów, grantów, transferów i operacji właścicielskich.
+- [x] SAFE-001 Dodać wersjonowaną, pięciominutową politykę step-up, password completion z rotacją sesji, typed HTTP/UI flow i transakcyjny recheck; zastosować ją do obecnego owner bootstrapu i wymagać jej od przyszłych domen, adresów, grantów, transferów oraz operacji właścicielskich.
 - [ ] SAFE-002 Dodać passkey oraz recovery codes albo zatwierdzony równoważny mechanizm odzyskiwania.
 - [ ] SAFE-003 Jawnie zdefiniować, które mailbox operations odrzucają ograniczone lub niezweryfikowane sesje.
 - [ ] SAFE-004 Dodać wersjonowany append-only administracyjny audit event store, privacy contract i atomowe API zapisu używane przez kolejne etapy.

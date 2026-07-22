@@ -21,6 +21,8 @@ The product also needs predictable mailbox roles. Folder-level access would make
 - SSO may be added later.
 - Invitation acceptance, identity enrollment, login/recovery initiation, and address transfer must all enforce the recovery-safe identity policy.
 
+Until SAFE-002 provisions passkeys and recovery codes, SAFE-001 exposes a five-minute password reauthentication fallback for the existing owner bootstrap. A basic session cannot enroll its own step-up factor, and password reset is limited to accounts with an existing active password credential; passwordless ownership actions remain disabled until the separately authorized passkey enrollment flow exists. The reusable `control-plane-sensitive` policy version 1 accepts a recent password, TOTP, or user-verified passkey, rejects email OTP, magic link, recovery code, stale evidence, future evidence, and sessions with active requirements, and rechecks the evidence and session expiry against SQLite execution time in the D1 mutation batch. Authentication-event schema versioning remains separate from policy versioning. Future ownership, domain, address, grant, and transfer operations must use the same policy boundary. SAFE-002 replaces the transitional password-first UX with the accepted passkey-first target.
+
 ### Authorization
 
 The first release grants access at mailbox level only. Folder-level grants are not exposed or issued by product workflows.

@@ -218,6 +218,11 @@ const publicErrors = {
     message: "Request rejected",
     status: 403,
   },
+  step_up_required: {
+    _tag: "AuthStepUpRequiredError",
+    message: "Recent authentication required",
+    status: 403,
+  },
   unauthenticated: {
     _tag: "AuthUnauthenticatedError",
     message: "Unauthenticated",

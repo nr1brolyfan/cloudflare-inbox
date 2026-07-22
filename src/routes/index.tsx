@@ -2,11 +2,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
   ArrowRight,
-  CheckCircle2,
   KeyRound,
   LoaderCircle,
   LockKeyhole,
-  LogOut,
   Mail,
   ShieldCheck,
 } from "lucide-react";
@@ -21,10 +19,8 @@ import {
   currentSessionForQuery,
   emailIdentity,
 } from "../auth/client";
-import {
-  bootstrapMailboxOwner,
-  getDevEmailInboxStatus,
-} from "../server/tanstack-functions";
+import { getDevEmailInboxStatus } from "../server/tanstack-functions";
+import { SignedInOwnerBootstrap } from "./-index-owner-bootstrap";
 
 export const Route = createFileRoute("/")({
   loader: () => getDevEmailInboxStatus(),
@@ -122,15 +118,6 @@ function Home() {
     retry: false,
     onSuccess: () => clearCachedAuthSession(queryClient),
   });
-  const mailboxBootstrap = useMutation({
-    mutationFn: () => bootstrapMailboxOwner({ data: { displayName: "Inbox" } }),
-    onSuccess: async (result) => {
-      if (!result.ok && result.status === 401) {
-        await clearCachedAuthSession(queryClient);
-      }
-    },
-    retry: false,
-  });
 
   const activeMutation =
     mode === "magic"
@@ -188,13 +175,10 @@ function Home() {
                 <LoaderCircle className="animate-spin" />
               </div>
             ) : session.data ? (
-              <SignedIn
-                bootstrapError={mailboxBootstrap.error}
-                bootstrapResult={mailboxBootstrap.data}
+              <SignedInOwnerBootstrap
+                key={session.data.userId}
                 userId={session.data.userId}
-                isBootstrapPending={mailboxBootstrap.isPending}
-                isPending={logout.isPending}
-                onBootstrap={() => mailboxBootstrap.mutate()}
+                isLogoutPending={logout.isPending}
                 onLogout={() => logout.mutate()}
               />
             ) : (
@@ -315,100 +299,6 @@ function Home() {
         </section>
       </div>
     </main>
-  );
-}
-
-function SignedIn({
-  bootstrapError,
-  bootstrapResult,
-  userId,
-  isBootstrapPending,
-  isPending,
-  onBootstrap,
-  onLogout,
-}: {
-  bootstrapError: Error | null;
-  bootstrapResult?: Awaited<ReturnType<typeof bootstrapMailboxOwner>>;
-  userId: string;
-  isBootstrapPending: boolean;
-  isPending: boolean;
-  onBootstrap: () => void;
-  onLogout: () => void;
-}) {
-  const mailboxExists =
-    bootstrapResult?.ok === false && bootstrapResult.status === 409;
-  const mailboxKnown = bootstrapResult?.ok === true || mailboxExists;
-
-  return (
-    <div>
-      <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-800">
-        <CheckCircle2 size={28} />
-      </div>
-      <p className="island-kicker mt-8">Session active</p>
-      <h2 className="display-title mt-3 text-4xl font-bold">
-        You are signed in.
-      </h2>
-      <p className="mt-4 text-sm leading-6 text-[var(--sea-ink-soft)]">
-        Mailbox access is verified when you open the workspace. Session
-        principal: <code>{userId.slice(0, 12)}...</code>
-      </p>
-      <div className="mt-6">
-        {bootstrapResult?.ok ? (
-          <div className="space-y-3">
-            <Notice>
-              Primary inbox ready: {bootstrapResult.mailbox.displayName}
-            </Notice>
-            <p className="text-sm leading-6 text-[var(--sea-ink-soft)]">
-              Open the responsive workspace to continue to your mailbox.
-            </p>
-          </div>
-        ) : mailboxExists ? (
-          <Notice>
-            A primary inbox already exists. Open it to verify your access.
-          </Notice>
-        ) : bootstrapResult ? (
-          <ErrorNotice>{bootstrapResult.error.message}</ErrorNotice>
-        ) : bootstrapError ? (
-          <ErrorNotice>Mailbox setup request failed. Try again.</ErrorNotice>
-        ) : null}
-      </div>
-      {mailboxKnown ? null : (
-        <button
-          type="button"
-          onClick={onBootstrap}
-          disabled={isBootstrapPending}
-          className="mt-8 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
-        >
-          {isBootstrapPending ? (
-            <LoaderCircle className="animate-spin" size={17} />
-          ) : (
-            <Mail size={17} />
-          )}
-          Create primary inbox
-        </button>
-      )}
-      {mailboxKnown ? (
-        <Link
-          to="/inbox"
-          className="mt-8 flex w-fit items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white no-underline shadow-lg hover:-translate-y-0.5 hover:text-white"
-        >
-          <Mail size={17} /> Open inbox
-        </Link>
-      ) : null}
-      <button
-        type="button"
-        onClick={onLogout}
-        disabled={isPending}
-        className="mt-3 flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/70 px-5 py-3 font-bold hover:bg-white disabled:opacity-50"
-      >
-        {isPending ? (
-          <LoaderCircle className="animate-spin" size={17} />
-        ) : (
-          <LogOut size={17} />
-        )}{" "}
-        Sign out
-      </button>
-    </div>
   );
 }
 
