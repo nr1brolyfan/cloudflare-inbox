@@ -9,6 +9,15 @@ export default defineConfig({
   ignorePatterns: [...(core.ignorePatterns ?? []), "migrations/**"],
   overrides: [
     {
+      files: [
+        "src/{modules,apps,platform,shared}/**/*.{ts,tsx}",
+        "tests/{modules,apps,platform,shared}/**/*.{ts,tsx}",
+      ],
+      rules: {
+        "unicorn/filename-case": "off",
+      },
+    },
+    {
       files: ["scripts/**/*.ts"],
       rules: {
         "no-await-in-loop": "off",

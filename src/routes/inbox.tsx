@@ -22,6 +22,12 @@ import {
 import { useRef, useState } from "react";
 
 import {
+  MailboxMessageListInput,
+  MailboxMessageView,
+  OpenMailboxThreadInput,
+} from "#/modules/mailbox/application/MailboxMessageReading";
+
+import {
   authClient,
   authSessionQueryKey,
   clearCachedAuthSession,
@@ -73,11 +79,6 @@ import {
 } from "../mailboxes/draft-editing";
 import { MailboxDraftListInput } from "../mailboxes/draft-reading";
 import { MailboxMessageActionCommand } from "../mailboxes/message-actions";
-import {
-  MailboxMessageListInput,
-  MailboxMessageView,
-  OpenMailboxThreadInput,
-} from "../mailboxes/message-reading";
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
 import { SendMailboxDraftCommand } from "../mailboxes/outbound-sending";
 import {

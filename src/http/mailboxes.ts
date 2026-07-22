@@ -13,6 +13,9 @@ import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import type { MailboxMessageReadingError } from "#/modules/mailbox/application/MailboxMessageReading";
+import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
+
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
 import type { MailboxAdministrationError } from "../mailboxes/administration";
@@ -36,8 +39,6 @@ import type { MailboxMessageActionError } from "../mailboxes/message-actions";
 import { MailboxMessageActions } from "../mailboxes/message-actions";
 import type { MailboxMessageHtmlError } from "../mailboxes/message-html";
 import { MailboxMessageHtmlReading } from "../mailboxes/message-html";
-import type { MailboxMessageReadingError } from "../mailboxes/message-reading";
-import { MailboxMessageReading } from "../mailboxes/message-reading";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
 import { MailboxNavigation } from "../mailboxes/navigation";
 import {

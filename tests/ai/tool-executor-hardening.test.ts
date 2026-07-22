@@ -22,7 +22,8 @@ import {
 import {
   MailboxMessageReading,
   MailboxMessageReadResult,
-} from "#/mailboxes/message-reading";
+} from "#/modules/mailbox/application/MailboxMessageReading";
+import type { MailboxMessageReadingService } from "#/modules/mailbox/application/MailboxMessageReading";
 
 const scope = Schema.decodeUnknownSync(CurrentAiToolScopeSchema)({
   mailboxId: "mailbox-a",
@@ -202,7 +203,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
         )
       )
     );
-    const run = (readingEffect: MailboxMessageReading["readMessage"]) =>
+    const run = (readingEffect: MailboxMessageReadingService["readMessage"]) =>
       AiToolExecutor.pipe(
         Effect.flatMap((executor) => executor.execute(readCall)),
         Effect.provide(

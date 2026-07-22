@@ -2,7 +2,8 @@ import type * as Schema from "effect/Schema";
 import { ArrowLeft, MailOpen, Paperclip } from "lucide-react";
 import { useState } from "react";
 
-import type { MailboxThreadResult } from "../mailboxes/message-reading";
+import type { MailboxThreadResult } from "#/modules/mailbox/application/MailboxMessageReading";
+
 import type {
   MailboxMessageQueryState,
   MailboxViewSelection,

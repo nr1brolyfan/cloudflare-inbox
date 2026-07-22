@@ -6,8 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailAuthorization } from "../authorization/mail-authorization";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   AttachmentId,
   ByteSize,
@@ -27,10 +27,10 @@ import {
   ThreadId,
   UnixMillis,
   Version,
-} from "./core";
-import { MailboxDomainError } from "./errors";
-import type { MailboxRepositoryError } from "./errors";
-import { MailboxRepository } from "./repository";
+} from "#/mailboxes/core";
+import { MailboxDomainError } from "#/mailboxes/errors";
+import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import { MailboxRepository } from "#/mailboxes/repository";
 
 export const MailboxMessageView = Schema.Union([
   Schema.Struct({
@@ -231,7 +231,7 @@ export class MailboxMessageReadingError extends Data.TaggedError(
   readonly reason: "invalid-input" | "not-found" | "storage";
 }> {}
 
-export interface MailboxMessageReading {
+export interface MailboxMessageReadingService {
   readonly listView: (
     input: MailboxMessageListInput
   ) => Effect.Effect<
@@ -254,10 +254,6 @@ export interface MailboxMessageReading {
     CurrentPrincipal
   >;
 }
-
-export const MailboxMessageReading = Context.Service<MailboxMessageReading>(
-  "cloudflare-inbox/MailboxMessageReading"
-);
 
 const readingError = (
   reason: "invalid-input" | "not-found" | "storage",
@@ -288,9 +284,11 @@ const mapRepositoryError = (
 const mailboxMessagePageSize = Schema.decodeUnknownSync(PageSize)(25);
 
 /** Authorized mailbox-wide reads projected for the inbox UI boundary. */
-export const MailboxMessageReadingLive = Layer.effect(
+export class MailboxMessageReading extends Context.Service<
   MailboxMessageReading,
-  Effect.gen(function* () {
+  MailboxMessageReadingService
+>()("cloudflare-inbox/MailboxMessageReading", {
+  make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
     const repository = yield* MailboxRepository;
 
@@ -314,7 +312,7 @@ export const MailboxMessageReadingLive = Layer.effect(
               }))
             );
 
-    return MailboxMessageReading.of({
+    return {
       listView: (input) =>
         Effect.gen(function* () {
           yield* requireRead(input);
@@ -528,6 +526,8 @@ export const MailboxMessageReadingLive = Layer.effect(
             to: message.to,
           }).pipe(Effect.mapError((cause) => readingError("storage", cause)));
         }),
-    });
-  })
-);
+    } satisfies MailboxMessageReadingService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

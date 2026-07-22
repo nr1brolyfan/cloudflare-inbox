@@ -37,9 +37,8 @@ import type {
   CreateMailboxDraftCommand,
   MailboxDraftEditing as MailboxDraftEditingService,
 } from "#/mailboxes/draft-editing";
-import { MailboxMessageReading } from "#/mailboxes/message-reading";
-import type { MailboxMessageReading as MailboxMessageReadingService } from "#/mailboxes/message-reading";
 import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
+import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 
 const trustedScope = Schema.decodeUnknownSync(CurrentAiToolScopeSchema)({
   mailboxId: "mailbox-trusted",
@@ -166,7 +165,7 @@ const visibleInteractiveRequirements: Layer.Layer<
   | AiToolAudit
   | AiToolRunBudget
   | MailboxDraftEditingService
-  | MailboxMessageReadingService
+  | MailboxMessageReading
 > = AiToolExecutorMailInteractiveLive;
 
 describe("mail create draft tool", () => {

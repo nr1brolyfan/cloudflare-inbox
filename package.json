@@ -14,6 +14,7 @@
     "check:auth-migrations": "bun scripts/write-auth-migrations.ts --check",
     "generate:auth-schema": "bun scripts/write-auth-schema.ts",
     "check:auth-schema": "bun scripts/write-auth-schema.ts --check",
+    "check:architecture": "bun scripts/check-architecture.ts",
     "check:no-raw-sql": "bun scripts/check-no-raw-sql.ts",
     "build": "vite build",
     "preview": "vite preview",
@@ -23,7 +24,7 @@
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",
-    "check": "bun run check:auth-migrations && bun run check:auth-schema && bun run check:no-raw-sql && bun run format:check && bun run lint"
+    "check": "bun run check:auth-migrations && bun run check:auth-schema && bun run check:architecture && bun run check:no-raw-sql && bun run format:check && bun run lint"
   },
   "dependencies": {
     "@effect-auth/core": "0.1.0-alpha.19",

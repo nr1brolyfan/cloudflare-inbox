@@ -10,9 +10,11 @@ import type { MailAuthorization as MailAuthorizationService } from "#/authorizat
 import { MailAuthorization } from "#/authorization/mail-authorization";
 import { FolderId } from "#/mailboxes/core";
 import { MailboxDomainError } from "#/mailboxes/errors";
+import { GetThreadResult, MessagePage } from "#/mailboxes/messages";
+import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
+import { MailboxRepository } from "#/mailboxes/repository";
 import {
   MailboxMessageReading,
-  MailboxMessageReadingLive,
   MailboxMessageListInput,
   MailboxMessageListResult,
   MailboxMessageReadResult,
@@ -20,10 +22,8 @@ import {
   MailboxThreadResult,
   OpenMailboxThreadInput,
   ReadMailboxMessageInput,
-} from "#/mailboxes/message-reading";
-import { GetThreadResult, MessagePage } from "#/mailboxes/messages";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
+} from "#/modules/mailbox/application/MailboxMessageReading";
+import type { MailboxMessageReadingService } from "#/modules/mailbox/application/MailboxMessageReading";
 
 const messageSummary = {
   activityAt: 2000,
@@ -179,14 +179,14 @@ const runReading = <A, E>(
   authorization: MailAuthorizationService,
   repository: MailboxRepositoryService,
   use: (
-    reading: MailboxMessageReading
+    reading: MailboxMessageReadingService
   ) => Effect.Effect<A, E, AuthPermission.CurrentPrincipal>
 ) =>
   Effect.runPromise(
     MailboxMessageReading.pipe(
       Effect.flatMap(use),
       Effect.provide(
-        MailboxMessageReadingLive.pipe(
+        MailboxMessageReading.layerNoDeps.pipe(
           Layer.provide(
             Layer.merge(
               Layer.succeed(MailAuthorization, authorization),

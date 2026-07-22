@@ -15,8 +15,9 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import type { MailboxMessageListResult } from "#/modules/mailbox/application/MailboxMessageReading";
+
 import { hasSearchableMessageTerm } from "../mailboxes/core";
-import type { MailboxMessageListResult } from "../mailboxes/message-reading";
 import type {
   MailboxMessageQueryState,
   MailboxViewSelection,

@@ -5,6 +5,15 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type {
+  MailboxMessageListInput,
+  OpenMailboxThreadInput,
+} from "#/modules/mailbox/application/MailboxMessageReading";
+import {
+  MailboxMessageListResult,
+  MailboxThreadResult,
+} from "#/modules/mailbox/application/MailboxMessageReading";
+
 import type { MailboxPublicError } from "../http/mailbox-contract";
 import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import type {
@@ -36,14 +45,6 @@ import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import { MailboxMessageActionResult } from "../mailboxes/message-actions";
 import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
 import { MailboxMessageHtmlResult } from "../mailboxes/message-html";
-import type {
-  MailboxMessageListInput,
-  OpenMailboxThreadInput,
-} from "../mailboxes/message-reading";
-import {
-  MailboxMessageListResult,
-  MailboxThreadResult,
-} from "../mailboxes/message-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import { GetMailboxOutboundDeliveryResult } from "../mailboxes/outbound-delivery-reading";

@@ -50,7 +50,8 @@ import {
   MailboxMessageReading,
   MailboxMessageReadingError,
   MailboxThreadResult,
-} from "#/mailboxes/message-reading";
+} from "#/modules/mailbox/application/MailboxMessageReading";
+import type { MailboxMessageReadingService } from "#/modules/mailbox/application/MailboxMessageReading";
 
 const readResult = Schema.decodeUnknownSync(MailboxMessageReadResult)({
   activityAt: 2000,
@@ -132,8 +133,8 @@ const makeCall = (name: string, args: Record<string, Schema.Json>) =>
 const unexpected = () => Effect.die("Unexpected mail reading operation");
 
 const readingWith = (
-  overrides: Partial<MailboxMessageReading> = {}
-): MailboxMessageReading =>
+  overrides: Partial<MailboxMessageReadingService> = {}
+): MailboxMessageReadingService =>
   MailboxMessageReading.of({
     listView: () => Effect.succeed(searchResult),
     openThread: () => Effect.succeed(threadResult),
@@ -170,7 +171,7 @@ const executeWithVisibleRequirements = (
 
 const execute = (
   call: AiToolCall,
-  reading: MailboxMessageReading = readingWith(),
+  reading: MailboxMessageReadingService = readingWith(),
   principalId = "user-a",
   scope = trustedScope
 ) =>

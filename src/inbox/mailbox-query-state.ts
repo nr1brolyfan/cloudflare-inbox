@@ -5,11 +5,12 @@ import type {
 } from "@tanstack/react-query";
 import type * as Schema from "effect/Schema";
 
-import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import type {
   MailboxMessageListResult,
   MailboxThreadResult,
-} from "../mailboxes/message-reading";
+} from "#/modules/mailbox/application/MailboxMessageReading";
+
+import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import type {
   MailboxMessageQueryState,
   MailboxViewSelection,

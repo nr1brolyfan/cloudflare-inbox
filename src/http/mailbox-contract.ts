@@ -17,6 +17,11 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
+import {
+  MailboxMessageListResult,
+  MailboxThreadResult,
+} from "#/modules/mailbox/application/MailboxMessageReading";
+
 import { CurrentRequestAuthMiddleware } from "../auth/session";
 import {
   BootstrapOwnerMailboxCommand,
@@ -57,10 +62,6 @@ import {
   MailboxMessageActionResult,
 } from "../mailboxes/message-actions";
 import { MailboxMessageHtmlResult } from "../mailboxes/message-html";
-import {
-  MailboxMessageListResult,
-  MailboxThreadResult,
-} from "../mailboxes/message-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import {
   GetMailboxOutboundDeliveryQuery,

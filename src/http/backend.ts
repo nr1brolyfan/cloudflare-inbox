@@ -24,6 +24,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
+
 import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
 import { AiToolRunBudgetLive } from "../ai/tool-run-budget";
@@ -91,7 +93,6 @@ import {
 import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
 import { MailboxMessageActionsLive } from "../mailboxes/message-actions";
 import { MailboxMessageHtmlReadingLive } from "../mailboxes/message-html";
-import { MailboxMessageReadingLive } from "../mailboxes/message-reading";
 import {
   MailboxOutboundDeliveryReadingClockLive,
   MailboxOutboundDeliveryReadingLive,
@@ -242,7 +243,7 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxNavigationLive = MailboxNavigationLive.pipe(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
-    const mailboxMessageReadingLive = MailboxMessageReadingLive.pipe(
+    const mailboxMessageReadingLive = MailboxMessageReading.layerNoDeps.pipe(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
     const mailboxMessageActionsLive = MailboxMessageActionsLive.pipe(

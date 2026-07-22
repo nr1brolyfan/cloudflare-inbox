@@ -70,12 +70,6 @@ import {
   MailboxMessageHtmlResult,
 } from "#/mailboxes/message-html";
 import {
-  MailboxMessageListResult,
-  MailboxMessageReading,
-  MailboxMessageReadingError,
-  MailboxThreadResult,
-} from "#/mailboxes/message-reading";
-import {
   MailboxNavigation,
   MailboxNavigationError,
   MailboxNavigationResult,
@@ -91,6 +85,13 @@ import {
   MailboxOutboundSendingError,
   SendMailboxDraftResult,
 } from "#/mailboxes/outbound-sending";
+import {
+  MailboxMessageListResult,
+  MailboxMessageReading,
+  MailboxMessageReadingError,
+  MailboxThreadResult,
+} from "#/modules/mailbox/application/MailboxMessageReading";
+import type { MailboxMessageReadingService } from "#/modules/mailbox/application/MailboxMessageReading";
 import {
   BackendRequestContextMiddlewareLive,
   backendRequestContext,
@@ -311,7 +312,7 @@ const makeHandler = (
   navigation: MailboxNavigation = MailboxNavigation.of({
     getCurrent: Effect.succeed(mailboxNavigation),
   }),
-  messageReading: MailboxMessageReading = MailboxMessageReading.of({
+  messageReading: MailboxMessageReadingService = MailboxMessageReading.of({
     listView: () => Effect.succeed(mailboxMessages),
     openThread: () => Effect.succeed(mailboxThread),
     readMessage: () => Effect.die("Unexpected message read"),

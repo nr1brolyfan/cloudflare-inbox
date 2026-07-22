@@ -21,7 +21,7 @@ import {
 import type { ControlPlaneDatabase } from "#/control-plane/database";
 import { BackendAiInteractiveToolkitLive } from "#/http/backend";
 import { MailboxDraftEditing } from "#/mailboxes/draft-editing";
-import { MailboxMessageReading } from "#/mailboxes/message-reading";
+import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 

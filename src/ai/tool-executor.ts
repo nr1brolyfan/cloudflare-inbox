@@ -4,20 +4,22 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
+import type {
+  MailboxMessageReadingError,
+  MailboxMessageReadResult,
+  MailboxMessageListItem,
+  MailboxMessageReadingService,
+  MailboxThreadMessage,
+  MailboxThreadResult,
+} from "#/modules/mailbox/application/MailboxMessageReading";
+
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
 import { MailboxId, OperationId } from "../mailboxes/core";
 import type { MailAddress } from "../mailboxes/core";
 import { MailboxDraftEditing } from "../mailboxes/draft-editing";
 import type { MailboxDraftEditingError } from "../mailboxes/draft-editing";
-import { MailboxMessageReading } from "../mailboxes/message-reading";
-import type {
-  MailboxMessageReadingError,
-  MailboxMessageReadResult,
-  MailboxMessageListItem,
-  MailboxThreadMessage,
-  MailboxThreadResult,
-} from "../mailboxes/message-reading";
 import {
   AiToolExecution,
   CurrentMailboxOperationProvenance,
@@ -648,7 +650,7 @@ const operationIdFrom = (runId: AiToolRunId, callId: AiToolCall["callId"]) => {
 const mailExecutor = (
   audit: AiToolAudit,
   budget: AiToolRunBudget,
-  reading: MailboxMessageReading,
+  reading: MailboxMessageReadingService,
   editing?: MailboxDraftEditing
 ) =>
   AiToolExecutor.of({
