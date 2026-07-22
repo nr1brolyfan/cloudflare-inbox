@@ -42,7 +42,10 @@ export const RecoverySafeIdentityPolicyLive = Layer.effect(
 
           const recoveryPredicate = and(
             eq(appExternalRecoveryIdentity.comparisonKey, comparisonKey),
-            sql`${appExternalRecoveryIdentity.status} in ('pending', 'verified')`,
+            sql`(${appExternalRecoveryIdentity.status} = 'verified'
+              or (${appExternalRecoveryIdentity.status} = 'pending'
+                and ${appExternalRecoveryIdentity.challengeExpiresAt}
+                  > cast(unixepoch('subsec') * 1000 as integer)))`,
             input.excludeRecoveryIdentityId === undefined
               ? undefined
               : ne(

@@ -23,13 +23,6 @@ export type ExternalRecoveryIdentityId = Schema.Schema.Type<
   typeof ExternalRecoveryIdentityId
 >;
 
-export const ExternalRecoveryIdentityOperationId = RecoveryResourceId.pipe(
-  Schema.brand("cloudflare-inbox/ExternalRecoveryIdentityOperationId")
-);
-export type ExternalRecoveryIdentityOperationId = Schema.Schema.Type<
-  typeof ExternalRecoveryIdentityOperationId
->;
-
 export const ExternalRecoveryAddressComparisonKey = EmailAddress.pipe(
   Schema.check(
     Schema.makeFilter<EmailAddress>((value) =>

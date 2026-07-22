@@ -74,6 +74,7 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
 };
 
 function StepUpPanel({
+  description = "Creating the primary inbox grants ownership and configures its initial address. Re-enter your password to continue.",
   isPending,
   onPasswordChange,
   onSubmit,
@@ -82,7 +83,9 @@ function StepUpPanel({
   password,
   passwordAvailable,
   passwordError,
+  title = "Confirm this ownership action",
 }: {
+  readonly description?: string;
   readonly isPending: boolean;
   readonly onPasswordChange: (password: string) => void;
   readonly onSubmit: () => void;
@@ -91,6 +94,7 @@ function StepUpPanel({
   readonly password: string;
   readonly passwordAvailable: boolean;
   readonly passwordError: Error | null;
+  readonly title?: string;
 }) {
   return (
     <div className="mt-8 rounded-2xl border border-[var(--line)] bg-white/70 p-5">
@@ -99,10 +103,9 @@ function StepUpPanel({
           <ShieldCheck size={18} />
         </span>
         <div>
-          <p className="font-bold">Confirm this ownership action</p>
+          <p className="font-bold">{title}</p>
           <p className="mt-1 text-sm leading-6 text-[var(--sea-ink-soft)]">
-            Creating the primary inbox grants ownership and configures its
-            initial address. Re-enter your password to continue.
+            {description}
           </p>
         </div>
       </div>
@@ -155,6 +158,112 @@ function StepUpPanel({
         </ErrorNotice>
       )}
     </div>
+  );
+}
+
+function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
+  const queryClient = useQueryClient();
+  const [address, setAddress] = useState("");
+  const [operationId] = useState(() => crypto.randomUUID());
+  const [password, setPassword] = useState("");
+  const enrollment = useMutation({
+    mutationFn: () =>
+      authClient.extensions.enrollExternalRecoveryIdentity({
+        address,
+        operationId,
+      }),
+    retry: false,
+  });
+  const stepUpRequired =
+    enrollment.error !== null &&
+    typeof enrollment.error === "object" &&
+    "code" in enrollment.error &&
+    enrollment.error.code === "step_up_required";
+  const stepUpOptions = useQuery({
+    enabled: stepUpRequired,
+    queryFn: () => authClient.stepUp.options(),
+    queryKey: ["auth", "recovery-step-up-options", userId] as const,
+    retry: false,
+  });
+  const passwordStepUp = useMutation({
+    mutationFn: () => authClient.stepUp.password.verify({ password }),
+    onSuccess: async () => {
+      setPassword("");
+      enrollment.reset();
+      await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
+    },
+    retry: false,
+  });
+
+  return (
+    <section className="mt-8 border-t border-[var(--line)] pt-8">
+      <p className="island-kicker">Recovery safety</p>
+      <h3 className="mt-2 text-xl font-bold">External recovery address</h3>
+      <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+        Use a personal address outside the managed mail domain. It remains
+        separate from login identities and mailbox routing.
+      </p>
+      {enrollment.isSuccess ? (
+        <div className="mt-4">
+          <Notice>
+            Verification email sent. Open its secure link to finish.
+          </Notice>
+        </div>
+      ) : (
+        <form
+          className="mt-5 space-y-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            enrollment.mutate();
+          }}
+        >
+          <label className="block space-y-2 text-sm font-bold">
+            <span>External email</span>
+            <input
+              type="email"
+              required
+              autoComplete="email"
+              value={address}
+              onChange={(event) => setAddress(event.target.value)}
+              className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
+            />
+          </label>
+          {enrollment.error && !stepUpRequired ? (
+            <ErrorNotice>{authErrorMessage(enrollment.error)}</ErrorNotice>
+          ) : null}
+          <button
+            type="submit"
+            disabled={enrollment.isPending}
+            className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/80 px-5 py-3 font-bold shadow-sm disabled:opacity-50"
+          >
+            {enrollment.isPending ? (
+              <LoaderCircle className="animate-spin" size={17} />
+            ) : (
+              <ShieldCheck size={17} />
+            )}
+            Send verification link
+          </button>
+        </form>
+      )}
+      {stepUpRequired ? (
+        <StepUpPanel
+          title="Confirm recovery enrollment"
+          description="Re-enter your password before adding an account recovery channel."
+          isPending={passwordStepUp.isPending}
+          onPasswordChange={setPassword}
+          onSubmit={() => passwordStepUp.mutate()}
+          optionsError={stepUpOptions.error}
+          optionsPending={stepUpOptions.isPending}
+          password={password}
+          passwordAvailable={
+            stepUpOptions.data?.factors.some(
+              (factor) => factor.type === "password"
+            ) ?? false
+          }
+          passwordError={passwordStepUp.error}
+        />
+      ) : null}
+    </section>
   );
 }
 
@@ -249,6 +358,7 @@ export function SignedInOwnerBootstrap({
           <Mail size={17} /> Open inbox
         </Link>
       ) : null}
+      <ExternalRecoveryEnrollment userId={userId} />
       <button
         type="button"
         onClick={onLogout}

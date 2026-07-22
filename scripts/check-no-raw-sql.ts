@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL("..", import.meta.url));
 const sourceDirectory = path.join(root, "src");
 const allowed = new Set([
   "src/control-plane/batch.ts",
+  "src/control-plane/external-recovery-identity-live.ts",
   "src/control-plane/mailbox-administration-live.ts",
   "src/mailboxes/sqlite-migrations.ts",
 ]);

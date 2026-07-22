@@ -45,7 +45,7 @@ Owner bootstrap is a sensitive ownership mutation and requires authentication ev
 
 The first SAFE-002 slice installs the pinned SimpleWebAuthn verifier and composes passkey option, verification, and credential-management services over the maintained D1 store. WebAuthn policy is derived only from validated `PUBLIC_ORIGIN`: exact origin, hostname-only RP ID, discoverable credentials, required user verification, and no attestation. Public passkey enrollment, sign-in, step-up, and recovery-code routes remain disabled until the recovery-safe enrollment ceremony is implemented and reviewed.
 
-External recovery addresses are structurally separate from effect-auth login identities in `app_external_recovery_identity`, so generic password, OTP, and magic-link lookups cannot treat them as login authority. The shared recovery-safe policy rejects the transitional managed owner domain, every mailbox route, active login identities, and active or pending recovery duplicates using a conservative lowercase comparison key. Public password sign-up remains unavailable. Recovery enrollment and verification endpoints are not exposed yet.
+External recovery addresses are structurally separate from effect-auth login identities in `app_external_recovery_identity`, so generic password, OTP, and magic-link lookups cannot treat them as login authority. The shared recovery-safe policy rejects the transitional managed owner domain, every mailbox route, active login identities, verified recovery duplicates, and unexpired pending recovery duplicates using a conservative lowercase comparison key; an unverified reservation stops blocking the user, address, and route when its 30-minute challenge expires. Authenticated enrollment requires the five-minute sensitive-operation step-up and sends a dedicated verification link whose challenge credentials exist only in the URL fragment. Verification requires the same signed-in user, re-runs the recovery-safe policy, and atomically consumes the challenge, advances the identity version, and appends a metadata-only administrative audit event. Neither operation creates an effect-auth login identity or new authentication evidence. Public password sign-up remains unavailable, and invitation, generic login/recovery initiation, and future shared-route mutations must still adopt the policy before `SAFE-013` is complete.
 
 Every environment requires the values documented in `.env.example`. `PUBLIC_ORIGIN` must be the exact Website origin, `AUTH_EMAIL_FROM` must use a domain configured for Cloudflare Email Routing in production, and `MAILBOX_OWNER_EMAIL` must identify the verified account allowed to claim the singleton mailbox and becomes its initial inbound address. Each auth secret must be a separate high-entropy value. Alchemy binds these values as Worker secrets.
 
@@ -85,7 +85,7 @@ Production deployment uses Alchemy's Cloudflare state store. Local development s
 alchemy.run.ts              Cloudflare resource graph
 src/routes/                 TanStack Start routes
 src/audit/                  administrative audit contracts and event preparation
-src/auth/                   effect-auth services, session handling, and storage
+src/auth/                   effect-auth services, recovery identity, session handling, and storage
 src/authorization/          mail permission catalog and D1-backed layers
 src/control-plane/          D1 adapters and transactional mailbox administration
 src/http/                   declarative Effect HTTP APIs and Backend composition

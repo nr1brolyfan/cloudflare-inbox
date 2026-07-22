@@ -28,6 +28,8 @@ import {
   AdministrativeAuditRuntimeLive,
 } from "../audit/administrative-audit-live";
 import { ExistingPasswordResetLive } from "../auth/existing-password-reset";
+import { ExternalRecoveryIdentityChallengeLive } from "../auth/external-recovery-identity-challenge-live";
+import { ExternalRecoveryIdentityDeliveryLive } from "../auth/external-recovery-identity-delivery-live";
 import { AuthServicesLive } from "../auth/live";
 import { PasswordResetEligibilityLive } from "../auth/password-reset-eligibility";
 import { AuthRuntimeConfig } from "../auth/runtime-config";
@@ -46,11 +48,16 @@ import { MailPermissionsLive } from "../authorization/permissions-live";
 import { ControlPlaneLive } from "../control-plane/batch";
 import { MailboxRegistryLive } from "../control-plane/database";
 import {
+  ExternalRecoveryIdentityManagementLive,
+  ExternalRecoveryIdentityRuntimeLive,
+} from "../control-plane/external-recovery-identity-live";
+import {
   MailboxAdministrationLive,
   MailboxAdministrationRuntimeLive,
 } from "../control-plane/mailbox-administration-live";
 import { MailboxNavigationLive } from "../control-plane/mailbox-navigation-live";
 import { MailboxSenderIdentityLive } from "../control-plane/mailbox-sender-identity-live";
+import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
 import { MailboxInlineAttachmentReadingLive } from "../mailboxes/attachment-reading";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
 import { DraftAttachmentBlobStoreR2WithRuntimeLive } from "../mailboxes/draft-attachment-store-r2-live";
@@ -84,6 +91,7 @@ import {
   PasswordStepUpGroupLive,
 } from "./auth-step-up";
 import { DevEmailGroupLive } from "./dev-emails";
+import { ExternalRecoveryIdentityGroupLive } from "./external-recovery-identities";
 import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
 import { HttpApiPlatformLive } from "./platform";
@@ -167,6 +175,9 @@ const BackendRoutesLive = Layer.unwrap(
     const currentRequestAuthLive = CurrentRequestAuthMiddlewareLive.pipe(
       Layer.provide(requestSessionAuthenticatorLive)
     );
+    const administrativeAuditLive = AdministrativeAuditLive.pipe(
+      Layer.provide(AdministrativeAuditRuntimeLive)
+    );
     const permissionsLive = MailPermissionsLive.pipe(
       Layer.provide(authStorageLive)
     );
@@ -182,9 +193,7 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxAdministrationLive = MailboxAdministrationLive.pipe(
       Layer.provide(
         Layer.mergeAll(
-          AdministrativeAuditLive.pipe(
-            Layer.provide(AdministrativeAuditRuntimeLive)
-          ),
+          administrativeAuditLive,
           MailboxAdministrationRuntimeLive,
           mailAuthorizationLive,
           SensitiveOperationStepUpClockLive
@@ -284,11 +293,36 @@ const BackendRoutesLive = Layer.unwrap(
     const devEmailGroupLive = DevEmailGroupLive.pipe(
       Layer.provide(devEmailStoreLive)
     );
+    const recoveryIdentityManagementLive =
+      ExternalRecoveryIdentityManagementLive.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            administrativeAuditLive,
+            ExternalRecoveryIdentityChallengeLive.pipe(
+              Layer.provide(authServicesLive)
+            ),
+            ExternalRecoveryIdentityDeliveryLive.pipe(
+              Layer.provide(authRuntimeConfigLive),
+              Layer.provide(devEmailStoreLive)
+            ),
+            ExternalRecoveryIdentityRuntimeLive,
+            RecoverySafeIdentityPolicyLive,
+            SensitiveOperationStepUpClockLive
+          )
+        )
+      );
+    const recoveryIdentityGroupLive = ExternalRecoveryIdentityGroupLive.pipe(
+      Layer.provide(recoveryIdentityManagementLive),
+      Layer.provide(currentRequestAuthLive),
+      Layer.provide(BackendRequestContextMiddlewareLive),
+      Layer.provide(requestValidationLive)
+    );
 
     return HttpApiBuilder.layer(BackendHttpApi).pipe(
       Layer.provide(
         Layer.mergeAll(
           authGroupHandlersLive,
+          recoveryIdentityGroupLive,
           healthGroupLive,
           mailboxGroupLive,
           devEmailGroupLive

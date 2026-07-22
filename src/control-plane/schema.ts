@@ -250,7 +250,16 @@ export const appExternalRecoveryIdentity = sqliteTable(
     ),
     check(
       "app_external_recovery_identity_operation_id_check",
-      sql`length(enrollment_operation_id) between 1 and 128`
+      sql`length(enrollment_operation_id) = 36
+        and enrollment_operation_id = lower(trim(enrollment_operation_id))
+        and substr(enrollment_operation_id, 9, 1) = '-'
+        and substr(enrollment_operation_id, 14, 1) = '-'
+        and substr(enrollment_operation_id, 15, 1) = '4'
+        and substr(enrollment_operation_id, 19, 1) = '-'
+        and substr(enrollment_operation_id, 20, 1) in ('8', '9', 'a', 'b')
+        and substr(enrollment_operation_id, 24, 1) = '-'
+        and length(replace(enrollment_operation_id, '-', '')) = 32
+        and replace(enrollment_operation_id, '-', '') not glob '*[^0-9a-f]*'`
     ),
     check(
       "app_external_recovery_identity_created_at_check",
@@ -289,15 +298,18 @@ export const appExternalRecoveryIdentity = sqliteTable(
     uniqueIndex("app_external_recovery_identity_operation_idx").on(
       t.enrollmentOperationId
     ),
-    uniqueIndex("app_external_recovery_identity_pending_user_idx")
-      .on(t.userId)
+    index("app_external_recovery_identity_pending_user_expiry_idx")
+      .on(t.userId, t.challengeExpiresAt)
       .where(sql`status = 'pending'`),
     uniqueIndex("app_external_recovery_identity_verified_user_idx")
       .on(t.userId)
       .where(sql`status = 'verified'`),
-    uniqueIndex("app_external_recovery_identity_active_address_idx")
+    uniqueIndex("app_external_recovery_identity_verified_address_idx")
       .on(t.comparisonKey)
-      .where(sql`status in ('pending', 'verified')`),
+      .where(sql`status = 'verified'`),
+    index("app_external_recovery_identity_pending_address_expiry_idx")
+      .on(t.comparisonKey, t.challengeExpiresAt)
+      .where(sql`status = 'pending'`),
     index("app_external_recovery_identity_pending_expiry_idx")
       .on(t.challengeExpiresAt)
       .where(sql`status = 'pending'`),

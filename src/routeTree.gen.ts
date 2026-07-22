@@ -15,6 +15,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
 import { Route as AuthCompletePasswordResetRouteImport } from './routes/auth-complete/password-reset'
 import { Route as AuthCompleteMagicLinkRouteImport } from './routes/auth-complete/magic-link'
+import { Route as AuthCompleteExternalRecoveryIdentityRouteImport } from './routes/auth-complete/external-recovery-identity'
 import { Route as AuthCompleteEmailVerificationRouteImport } from './routes/auth-complete/email-verification'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/html'
@@ -52,6 +53,12 @@ const AuthCompleteMagicLinkRoute = AuthCompleteMagicLinkRouteImport.update({
   path: '/auth-complete/magic-link',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthCompleteExternalRecoveryIdentityRoute =
+  AuthCompleteExternalRecoveryIdentityRouteImport.update({
+    id: '/auth-complete/external-recovery-identity',
+    path: '/auth-complete/external-recovery-identity',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const AuthCompleteEmailVerificationRoute =
   AuthCompleteEmailVerificationRouteImport.update({
     id: '/auth-complete/email-verification',
@@ -92,6 +99,7 @@ export interface FileRoutesByFullPath {
   '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
+  '/auth-complete/external-recovery-identity': typeof AuthCompleteExternalRecoveryIdentityRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
@@ -105,6 +113,7 @@ export interface FileRoutesByTo {
   '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
+  '/auth-complete/external-recovery-identity': typeof AuthCompleteExternalRecoveryIdentityRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
@@ -119,6 +128,7 @@ export interface FileRoutesById {
   '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
+  '/auth-complete/external-recovery-identity': typeof AuthCompleteExternalRecoveryIdentityRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
@@ -134,6 +144,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/api/health'
     | '/auth-complete/email-verification'
+    | '/auth-complete/external-recovery-identity'
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
@@ -147,6 +158,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/api/health'
     | '/auth-complete/email-verification'
+    | '/auth-complete/external-recovery-identity'
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
@@ -160,6 +172,7 @@ export interface FileRouteTypes {
     | '/inbox'
     | '/api/health'
     | '/auth-complete/email-verification'
+    | '/auth-complete/external-recovery-identity'
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
@@ -174,6 +187,7 @@ export interface RootRouteChildren {
   InboxRoute: typeof InboxRoute
   ApiHealthRoute: typeof ApiHealthRoute
   AuthCompleteEmailVerificationRoute: typeof AuthCompleteEmailVerificationRoute
+  AuthCompleteExternalRecoveryIdentityRoute: typeof AuthCompleteExternalRecoveryIdentityRoute
   AuthCompleteMagicLinkRoute: typeof AuthCompleteMagicLinkRoute
   AuthCompletePasswordResetRoute: typeof AuthCompletePasswordResetRoute
   AuthSplatRoute: typeof AuthSplatRoute
@@ -226,6 +240,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCompleteMagicLinkRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth-complete/external-recovery-identity': {
+      id: '/auth-complete/external-recovery-identity'
+      path: '/auth-complete/external-recovery-identity'
+      fullPath: '/auth-complete/external-recovery-identity'
+      preLoaderRoute: typeof AuthCompleteExternalRecoveryIdentityRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/auth-complete/email-verification': {
       id: '/auth-complete/email-verification'
       path: '/auth-complete/email-verification'
@@ -270,6 +291,8 @@ const rootRouteChildren: RootRouteChildren = {
   InboxRoute: InboxRoute,
   ApiHealthRoute: ApiHealthRoute,
   AuthCompleteEmailVerificationRoute: AuthCompleteEmailVerificationRoute,
+  AuthCompleteExternalRecoveryIdentityRoute:
+    AuthCompleteExternalRecoveryIdentityRoute,
   AuthCompleteMagicLinkRoute: AuthCompleteMagicLinkRoute,
   AuthCompletePasswordResetRoute: AuthCompletePasswordResetRoute,
   AuthSplatRoute: AuthSplatRoute,

@@ -107,16 +107,32 @@ const insertLoginIdentity = (database: DatabaseSync, address: string) => {
     .run(address, address);
 };
 
+const insertRecoveryChallenge = (
+  database: DatabaseSync,
+  challengeId: string,
+  identityId: string
+) =>
+  database
+    .prepare(
+      `insert into auth_verification
+        (id, type, subject, secret_hash, created_at, expires_at, metadata)
+       values (?, 'external-recovery-identity-verification', ?, 'hash', 1000,
+               4000000000000, '{"userId":"user-a"}')`
+    )
+    .run(challengeId, identityId);
+
 const insertRecoveryIdentity = (database: DatabaseSync, address: string) => {
   const emailAddress = Schema.decodeUnknownSync(EmailAddress)(address);
+  insertRecoveryChallenge(database, "challenge-a", "recovery-a");
   database
     .prepare(
       `insert into app_external_recovery_identity
         (id, user_id, address, normalized_address, comparison_key, status,
          challenge_id, challenge_expires_at, enrollment_operation_id,
          created_at, updated_at, version)
-       values ('recovery-a', 'user-a', ?, ?, ?, 'pending', 'challenge-a', 2000,
-               'operation-a', 1000, 1000, 1)`
+        values ('recovery-a', 'user-a', ?, ?, ?, 'pending', 'challenge-a',
+                4000000000000,
+                '00000000-0000-4000-8000-000000000020', 1000, 1000, 1)`
     )
     .run(
       address,
@@ -160,7 +176,7 @@ describe("recovery-safe identity policy", () => {
     }
   });
 
-  it("uses the active-address index for recovery duplicate checks", async () => {
+  it("uses the expiry index for pending recovery duplicate checks", async () => {
     const database = new DatabaseSync(":memory:");
     try {
       await applyControlPlaneMigrations(database);
@@ -168,15 +184,16 @@ describe("recovery-safe identity policy", () => {
         .prepare(
           `explain query plan
            select id from app_external_recovery_identity
-            where comparison_key = ?
-              and status in ('pending', 'verified')
-            limit 1`
+             where comparison_key = ?
+               and status = 'pending'
+               and challenge_expires_at > ?
+             limit 1`
         )
-        .all("person@external.test") as { detail: string }[];
+        .all("person@external.test", Date.now()) as { detail: string }[];
       expect(
         plan.some((row) =>
           row.detail.includes(
-            "app_external_recovery_identity_active_address_idx"
+            "app_external_recovery_identity_pending_address_expiry_idx"
           )
         )
       ).toBeTruthy();
@@ -218,6 +235,7 @@ describe("recovery-safe identity policy", () => {
     try {
       await applyControlPlaneMigrations(database);
       insertRecoveryIdentity(database, "first@external.test");
+      insertRecoveryChallenge(database, "challenge-b", "recovery-b");
       expect(() =>
         database
           .prepare(
@@ -227,10 +245,93 @@ describe("recovery-safe identity policy", () => {
                enrollment_operation_id, created_at, updated_at, version)
              values ('recovery-b', 'user-a', 'second@external.test',
                      'second@external.test', 'second@external.test', 'pending',
-                     'challenge-b', 2000, 'operation-b', 1000, 1000, 1)`
+                      'challenge-b', 4000000000000,
+                      '00000000-0000-4000-8000-000000000021', 1000, 1000, 1)`
           )
           .run()
-      ).toThrow(/UNIQUE constraint failed/u);
+      ).toThrow(/conflicts with active identity/u);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("releases an unverified pending reservation after challenge expiry", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`insert into auth_verification
+        (id, type, subject, secret_hash, created_at, expires_at, metadata)
+        values ('expired-challenge',
+                'external-recovery-identity-verification', 'expired-recovery',
+                'hash', 1000, 2000, '{"userId":"user-a"}');
+        insert into app_external_recovery_identity
+        (id, user_id, address, normalized_address, comparison_key, status,
+         challenge_id, challenge_expires_at, enrollment_operation_id,
+         created_at, updated_at, version)
+        values ('expired-recovery', 'user-a', 'person@external.test',
+                'person@external.test', 'person@external.test', 'pending',
+                'expired-challenge', 2000,
+                '00000000-0000-4000-8000-000000000022', 1000, 1000, 1)`);
+
+      await expect(
+        requireAddress(database, "person@external.test")
+      ).resolves.toBeUndefined();
+      expect(() =>
+        insertMailboxAddress(database, "person@external.test")
+      ).not.toThrow();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("cannot insert a fabricated verified recovery identity", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertRecoveryChallenge(database, "challenge-a", "recovery-a");
+
+      expect(() =>
+        database.exec(`insert into app_external_recovery_identity
+          (id, user_id, address, normalized_address, comparison_key, status,
+           challenge_id, challenge_expires_at, enrollment_operation_id,
+           created_at, updated_at, verified_at, version)
+          values ('recovery-a', 'user-a', 'person@external.test',
+                  'person@external.test', 'person@external.test', 'verified',
+                  'challenge-a', 4000000000000,
+                  '00000000-0000-4000-8000-000000000020', 1000, 1500, 1500,
+                  2)`)
+      ).toThrow(/must start pending/u);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("cannot verify with challenge consumption after expiry", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`insert into auth_verification
+        (id, type, subject, secret_hash, created_at, expires_at, metadata)
+        values ('challenge-a', 'external-recovery-identity-verification',
+                'recovery-a', 'hash', 1000, 2000,
+                '{"userId":"user-a"}');
+        insert into app_external_recovery_identity
+        (id, user_id, address, normalized_address, comparison_key, status,
+         challenge_id, challenge_expires_at, enrollment_operation_id,
+         created_at, updated_at, version)
+        values ('recovery-a', 'user-a', 'person@external.test',
+                'person@external.test', 'person@external.test', 'pending',
+                'challenge-a', 2000,
+                '00000000-0000-4000-8000-000000000020', 1000, 1000, 1);
+        update auth_verification set consumed_at = 2500
+         where id = 'challenge-a'`);
+
+      expect(() =>
+        database.exec(`update app_external_recovery_identity
+          set status = 'verified', verified_at = 2500, updated_at = 2500,
+              version = 2
+          where id = 'recovery-a'`)
+      ).toThrow(/not consumed atomically/u);
     } finally {
       database.close();
     }
@@ -278,6 +379,8 @@ describe("recovery-safe identity policy", () => {
     const database = new DatabaseSync(":memory:");
     try {
       await applyControlPlaneMigrations(database);
+      insertRecoveryChallenge(database, "challenge-a", "recovery-a");
+      insertRecoveryChallenge(database, "challenge-b", "recovery-b");
       expect(() =>
         database
           .prepare(
@@ -287,8 +390,8 @@ describe("recovery-safe identity policy", () => {
                enrollment_operation_id, created_at, updated_at, version)
              values ('recovery-a', 'user-a', 'first@external.test',
                      'first@external.test', 'different@external.test',
-                     'pending', 'challenge-a', 2000, 'operation-a', 1000,
-                     1000, 1)`
+                      'pending', 'challenge-a', 4000000000000,
+                      '00000000-0000-4000-8000-000000000020', 1000, 1000, 1)`
           )
           .run()
       ).toThrow(/CHECK constraint failed/u);
@@ -301,7 +404,8 @@ describe("recovery-safe identity policy", () => {
                enrollment_operation_id, created_at, updated_at, version)
              values ('recovery-b', 'user-a', 'Person@External.test',
                      'other@external.test', 'person@external.test', 'pending',
-                     'challenge-b', 2000, 'operation-b', 1000, 1000, 1)`
+                      'challenge-b', 4000000000000,
+                      '00000000-0000-4000-8000-000000000021', 1000, 1000, 1)`
           )
           .run()
       ).toThrow(/CHECK constraint failed/u);
@@ -317,8 +421,14 @@ describe("recovery-safe identity policy", () => {
       insertRecoveryIdentity(database, "person@external.test");
       database
         .prepare(
+          "update auth_verification set consumed_at = 1500 where id = 'challenge-a'"
+        )
+        .run();
+      database
+        .prepare(
           `update app_external_recovery_identity
-              set status = 'verified', verified_at = 1500, updated_at = 1500
+              set status = 'verified', verified_at = 1500, updated_at = 1500,
+                  version = version + 1
             where id = 'recovery-a'`
         )
         .run();
@@ -329,7 +439,8 @@ describe("recovery-safe identity policy", () => {
       database
         .prepare(
           `update app_external_recovery_identity
-              set status = 'revoked', revoked_at = 1600, updated_at = 1600
+              set status = 'revoked', revoked_at = 1600, updated_at = 1600,
+                  version = version + 1
             where id = 'recovery-a'`
         )
         .run();
@@ -337,7 +448,8 @@ describe("recovery-safe identity policy", () => {
         database
           .prepare(
             `update app_external_recovery_identity
-                set status = 'verified', updated_at = 1700
+                set status = 'verified', updated_at = 1700,
+                    version = version + 1
               where id = 'recovery-a'`
           )
           .run()
@@ -386,7 +498,8 @@ describe("recovery-safe identity policy", () => {
           .prepare(
             `update app_external_recovery_identity
                 set status = 'revoked', verified_at = 1400,
-                    revoked_at = 1500, updated_at = 1500
+                    revoked_at = 1500, updated_at = 1500,
+                    version = version + 1
               where id = 'recovery-a'`
           )
           .run()
@@ -417,7 +530,7 @@ describe("recovery-safe identity policy", () => {
                 where id = 'recovery-a'`
             )
             .run()
-        ).toThrow(/conflicts/u);
+        ).toThrow(/core fields are immutable/u);
       } finally {
         database.close();
       }
