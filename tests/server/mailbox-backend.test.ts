@@ -8,16 +8,16 @@ import {
   RenameMailboxCommand,
 } from "#/mailboxes/administration";
 import { GetDraftAttachmentInput } from "#/mailboxes/draft-attachments";
-import {
-  CreateMailboxDraftCommand,
-  GetMailboxDraftQuery,
-} from "#/mailboxes/draft-editing";
-import { MailboxDraftListInput } from "#/mailboxes/draft-reading";
 import { GetMailboxOutboundDeliveryQuery } from "#/mailboxes/outbound-delivery-reading";
 import {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,
 } from "#/mailboxes/outbound-sending";
+import {
+  CreateMailboxDraftCommand,
+  GetMailboxDraftQuery,
+} from "#/modules/mailbox/application/MailboxDraftEditing";
+import { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";

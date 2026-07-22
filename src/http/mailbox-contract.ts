@@ -18,6 +18,12 @@ import {
 } from "effect/unstable/httpapi";
 
 import {
+  CreateMailboxDraftCommand,
+  DraftEditorDraft,
+  UpdateMailboxDraftCommand,
+} from "#/modules/mailbox/application/MailboxDraftEditing";
+import { MailboxDraftListResult } from "#/modules/mailbox/application/MailboxDraftReading";
+import {
   MailboxMessageActionPayload,
   MailboxMessageActionResult,
 } from "#/modules/mailbox/application/MailboxMessageActions";
@@ -52,12 +58,6 @@ import {
   ReservedDraftAttachment,
   UploadDraftAttachmentCommand,
 } from "../mailboxes/draft-attachments";
-import {
-  CreateMailboxDraftCommand,
-  DraftEditorDraft,
-  UpdateMailboxDraftCommand,
-} from "../mailboxes/draft-editing";
-import { MailboxDraftListResult } from "../mailboxes/draft-reading";
 import {
   InboundProcessingResult,
   ReplayInboundInput,

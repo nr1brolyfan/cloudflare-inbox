@@ -4,6 +4,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
+import type {
+  MailboxDraftEditingError,
+  MailboxDraftEditingService,
+} from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 import type {
   MailboxMessageReadingError,
@@ -18,8 +23,6 @@ import type { MailAuthorizationError } from "../authorization/mail-authorization
 import type { MailResourceResolveError } from "../authorization/resources";
 import { MailboxId, OperationId } from "../mailboxes/core";
 import type { MailAddress } from "../mailboxes/core";
-import { MailboxDraftEditing } from "../mailboxes/draft-editing";
-import type { MailboxDraftEditingError } from "../mailboxes/draft-editing";
 import {
   AiToolExecution,
   CurrentMailboxOperationProvenance,
@@ -651,7 +654,7 @@ const mailExecutor = (
   audit: AiToolAudit,
   budget: AiToolRunBudget,
   reading: MailboxMessageReadingService,
-  editing?: MailboxDraftEditing
+  editing?: MailboxDraftEditingService
 ) =>
   AiToolExecutor.of({
     execute: (untrustedCall) =>

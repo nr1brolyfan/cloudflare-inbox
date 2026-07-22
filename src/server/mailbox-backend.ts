@@ -5,6 +5,14 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type {
+  CreateMailboxDraftCommand,
+  GetMailboxDraftQuery,
+  UpdateMailboxDraftCommand,
+} from "#/modules/mailbox/application/MailboxDraftEditing";
+import { DraftEditorDraft } from "#/modules/mailbox/application/MailboxDraftEditing";
+import type { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
+import { MailboxDraftListResult } from "#/modules/mailbox/application/MailboxDraftReading";
 import type { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { isSafeInlineImageMimeType } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
@@ -37,14 +45,6 @@ import {
   draftAttachmentMaxBytes,
   ReservedDraftAttachment,
 } from "../mailboxes/draft-attachments";
-import type {
-  CreateMailboxDraftCommand,
-  GetMailboxDraftQuery,
-  UpdateMailboxDraftCommand,
-} from "../mailboxes/draft-editing";
-import { DraftEditorDraft } from "../mailboxes/draft-editing";
-import type { MailboxDraftListInput } from "../mailboxes/draft-reading";
-import { MailboxDraftListResult } from "../mailboxes/draft-reading";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import { GetMailboxOutboundDeliveryResult } from "../mailboxes/outbound-delivery-reading";

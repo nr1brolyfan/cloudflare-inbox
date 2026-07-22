@@ -6,8 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailAuthorization } from "../authorization/mail-authorization";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   DraftId,
   MailAddress,
@@ -16,13 +16,13 @@ import {
   OperationId,
   UnixMillis,
   Version,
-} from "./core";
-import type { DraftAttachmentList } from "./draft-attachments";
-import { StoredDraftAttachment } from "./draft-attachments";
-import type { Draft as DraftType } from "./drafts";
-import { MailboxDomainError } from "./errors";
-import type { MailboxRepositoryError } from "./errors";
-import { MailboxRepository } from "./repository";
+} from "#/mailboxes/core";
+import type { DraftAttachmentList } from "#/mailboxes/draft-attachments";
+import { StoredDraftAttachment } from "#/mailboxes/draft-attachments";
+import type { Draft as DraftType } from "#/mailboxes/drafts";
+import { MailboxDomainError } from "#/mailboxes/errors";
+import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 
 const DraftRecipients = Schema.Array(MailAddress).check(
   Schema.makeFilter((recipients) =>
@@ -90,7 +90,7 @@ export class MailboxDraftEditingError extends Data.TaggedError(
   readonly reason: "conflict" | "invalid-input" | "not-found" | "storage";
 }> {}
 
-export interface MailboxDraftEditing {
+export interface MailboxDraftEditingService {
   readonly create: (
     command: CreateMailboxDraftCommand
   ) => Effect.Effect<
@@ -113,10 +113,6 @@ export interface MailboxDraftEditing {
     CurrentPrincipal
   >;
 }
-
-export const MailboxDraftEditing = Context.Service<MailboxDraftEditing>(
-  "cloudflare-inbox/MailboxDraftEditing"
-);
 
 const editingError = (
   reason: MailboxDraftEditingError["reason"],
@@ -187,11 +183,13 @@ const verifyIdentity = (
         )
       );
 
-export const MailboxDraftEditingLive = Layer.effect(
+export class MailboxDraftEditing extends Context.Service<
   MailboxDraftEditing,
-  Effect.gen(function* () {
+  MailboxDraftEditingService
+>()("cloudflare-inbox/MailboxDraftEditing", {
+  make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxDraftRepository;
     const loadConsistentDraft = (
       query: GetMailboxDraftQuery,
       attempts = 0
@@ -246,7 +244,7 @@ export const MailboxDraftEditingLive = Layer.effect(
           )
         );
 
-    return MailboxDraftEditing.of({
+    return {
       create: (command) =>
         Effect.gen(function* () {
           yield* authorization.requireDraftCreate({
@@ -301,6 +299,8 @@ export const MailboxDraftEditingLive = Layer.effect(
           yield* verifyIdentity(draft, command.mailboxId, command.draftId);
           return yield* loadConsistentDraft(command);
         }),
-    });
-  })
-);
+    } satisfies MailboxDraftEditingService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

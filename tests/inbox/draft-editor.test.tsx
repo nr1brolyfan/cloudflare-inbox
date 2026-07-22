@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { DraftEditor } from "#/inbox/draft-editor";
 import { DraftAttachmentReservationSchema } from "#/mailboxes/draft-attachments";
-import { DraftEditorContent } from "#/mailboxes/draft-editing";
+import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
 
 const initial = Schema.decodeUnknownSync(DraftEditorContent)({
   bcc: [],

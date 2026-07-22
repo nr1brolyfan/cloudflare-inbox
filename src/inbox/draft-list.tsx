@@ -1,7 +1,8 @@
 import type * as Schema from "effect/Schema";
 import { FilePenLine, LoaderCircle, Paperclip } from "lucide-react";
 
-import type { MailboxDraftListResult } from "../mailboxes/draft-reading";
+import type { MailboxDraftListResult } from "#/modules/mailbox/application/MailboxDraftReading";
+
 import { mailboxDraftHref } from "./mailbox-view-links";
 
 type DraftListData = Schema.Codec.Encoded<typeof MailboxDraftListResult>;

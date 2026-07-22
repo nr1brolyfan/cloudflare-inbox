@@ -18,7 +18,7 @@ import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
-} from "#/mailboxes/draft-editing";
+} from "#/modules/mailbox/application/MailboxDraftEditing";
 import {
   MailboxMessageReading,
   MailboxMessageReadResult,

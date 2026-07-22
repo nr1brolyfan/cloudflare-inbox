@@ -11,8 +11,9 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
+import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
+
 import type { DraftAttachmentReservation } from "../mailboxes/draft-attachments";
-import { DraftEditorContent } from "../mailboxes/draft-editing";
 
 type EditorContent = Schema.Schema.Type<typeof DraftEditorContent>;
 

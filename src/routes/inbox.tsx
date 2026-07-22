@@ -21,6 +21,13 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 
+import {
+  CreateMailboxDraftCommand,
+  DraftEditorContent,
+  DraftEditorDraft,
+  UpdateMailboxDraftCommand,
+} from "#/modules/mailbox/application/MailboxDraftEditing";
+import { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import {
   MailboxMessageListInput,
@@ -72,13 +79,6 @@ import {
   draftAttachmentMaxBytes,
   ReserveDraftAttachmentCommand,
 } from "../mailboxes/draft-attachments";
-import {
-  CreateMailboxDraftCommand,
-  DraftEditorContent,
-  DraftEditorDraft,
-  UpdateMailboxDraftCommand,
-} from "../mailboxes/draft-editing";
-import { MailboxDraftListInput } from "../mailboxes/draft-reading";
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
 import { SendMailboxDraftCommand } from "../mailboxes/outbound-sending";
 import {

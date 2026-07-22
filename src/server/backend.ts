@@ -3,6 +3,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import type {
+  CreateMailboxDraftCommand,
+  GetMailboxDraftQuery,
+  UpdateMailboxDraftCommand,
+} from "#/modules/mailbox/application/MailboxDraftEditing";
+import type { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
 import type { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
@@ -19,12 +25,6 @@ import type {
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
 } from "../mailboxes/draft-attachments";
-import type {
-  CreateMailboxDraftCommand,
-  GetMailboxDraftQuery,
-  UpdateMailboxDraftCommand,
-} from "../mailboxes/draft-editing";
-import type { MailboxDraftListInput } from "../mailboxes/draft-reading";
 import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import type {
   SendMailboxDraftCommand,

@@ -13,6 +13,10 @@ import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import type { MailboxDraftEditingError } from "#/modules/mailbox/application/MailboxDraftEditing";
+import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
+import type { MailboxDraftReadingError } from "#/modules/mailbox/application/MailboxDraftReading";
+import { MailboxDraftReading } from "#/modules/mailbox/application/MailboxDraftReading";
 import type { MailboxInlineAttachmentError } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxMessageActionError } from "#/modules/mailbox/application/MailboxMessageActions";
@@ -28,10 +32,6 @@ import type { MailboxAdministrationError } from "../mailboxes/administration";
 import { MailboxAdministration } from "../mailboxes/administration";
 import type { MailboxDraftAttachmentError } from "../mailboxes/draft-attachments";
 import { MailboxDraftAttachments } from "../mailboxes/draft-attachments";
-import type { MailboxDraftEditingError } from "../mailboxes/draft-editing";
-import { MailboxDraftEditing } from "../mailboxes/draft-editing";
-import type { MailboxDraftReadingError } from "../mailboxes/draft-reading";
-import { MailboxDraftReading } from "../mailboxes/draft-reading";
 import type {
   MailboxDomainError,
   MailboxRepositoryError,

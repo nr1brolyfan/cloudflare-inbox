@@ -50,14 +50,6 @@ import {
   DraftAttachmentUploadResult,
   MailboxDraftAttachments,
 } from "#/mailboxes/draft-attachments";
-import {
-  DraftEditorDraft,
-  MailboxDraftEditing,
-} from "#/mailboxes/draft-editing";
-import {
-  MailboxDraftListResult,
-  MailboxDraftReading,
-} from "#/mailboxes/draft-reading";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import {
@@ -76,6 +68,16 @@ import {
   MailboxOutboundSendingError,
   SendMailboxDraftResult,
 } from "#/mailboxes/outbound-sending";
+import {
+  DraftEditorDraft,
+  MailboxDraftEditing,
+} from "#/modules/mailbox/application/MailboxDraftEditing";
+import type { MailboxDraftEditingService } from "#/modules/mailbox/application/MailboxDraftEditing";
+import {
+  MailboxDraftListResult,
+  MailboxDraftReading,
+} from "#/modules/mailbox/application/MailboxDraftReading";
+import type { MailboxDraftReadingService } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxInlineAttachmentReadingService } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import {
@@ -335,7 +337,7 @@ const makeHandler = (
         }),
     }
   ),
-  draftEditing: MailboxDraftEditing = MailboxDraftEditing.of({
+  draftEditing: MailboxDraftEditingService = MailboxDraftEditing.of({
     create: () => Effect.succeed(mailboxDraft),
     get: () => Effect.succeed(mailboxDraft),
     update: () => Effect.succeed(mailboxDraft),
@@ -353,7 +355,7 @@ const makeHandler = (
       get: () => Effect.succeed(mailboxOutboundDelivery),
     }
   ),
-  draftReading: MailboxDraftReading = MailboxDraftReading.of({
+  draftReading: MailboxDraftReadingService = MailboxDraftReading.of({
     list: () => Effect.succeed(mailboxDrafts),
   })
 ) => {

@@ -28,16 +28,16 @@ import {
 import type { AiToolResult } from "#/ai/tool-protocol";
 import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
 import type { AiToolRunBudget } from "#/ai/tool-run-budget";
+import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
   MailboxDraftEditingError,
-} from "#/mailboxes/draft-editing";
+} from "#/modules/mailbox/application/MailboxDraftEditing";
 import type {
   CreateMailboxDraftCommand,
-  MailboxDraftEditing as MailboxDraftEditingService,
-} from "#/mailboxes/draft-editing";
-import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
+  MailboxDraftEditingService,
+} from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 
 const trustedScope = Schema.decodeUnknownSync(CurrentAiToolScopeSchema)({
@@ -162,10 +162,7 @@ const failureResult = (result: AiToolResult) => {
 const visibleInteractiveRequirements: Layer.Layer<
   AiToolExecutor,
   never,
-  | AiToolAudit
-  | AiToolRunBudget
-  | MailboxDraftEditingService
-  | MailboxMessageReading
+  AiToolAudit | AiToolRunBudget | MailboxDraftEditing | MailboxMessageReading
 > = AiToolExecutorMailInteractiveLive;
 
 describe("mail create draft tool", () => {

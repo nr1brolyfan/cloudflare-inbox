@@ -7,22 +7,21 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
+import { DraftSchema } from "#/mailboxes/drafts";
+import { MailboxDomainError } from "#/mailboxes/errors";
 import {
   CreateMailboxDraftCommand,
   MailboxDraftEditing,
-  MailboxDraftEditingLive,
   UpdateMailboxDraftCommand,
-} from "#/mailboxes/draft-editing";
+} from "#/modules/mailbox/application/MailboxDraftEditing";
+import type { MailboxDraftEditingService } from "#/modules/mailbox/application/MailboxDraftEditing";
 import {
   MailboxDraftListInput,
   MailboxDraftListResult,
   MailboxDraftReading,
-  MailboxDraftReadingLive,
-} from "#/mailboxes/draft-reading";
-import { DraftSchema } from "#/mailboxes/drafts";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
+} from "#/modules/mailbox/application/MailboxDraftReading";
+import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
+import type { MailboxDraftRepositoryService } from "#/modules/mailbox/ports/MailboxDraftRepository";
 
 const existingDraft = Schema.decodeUnknownSync(DraftSchema)({
   attachmentIds: ["attachment-1"],
@@ -65,43 +64,13 @@ const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
 const repositoryWith = (
-  overrides: Partial<MailboxRepositoryService>
-): MailboxRepositoryService =>
-  MailboxRepository.of({
-    addMessageLabel: unused,
-    cancelOutboundDelivery: unused,
-    completeDraftAttachment: unused,
+  overrides: Partial<MailboxDraftRepositoryService>
+): MailboxDraftRepositoryService =>
+  MailboxDraftRepository.of({
     createDraft: unused,
-    createFolder: unused,
-    createLabel: unused,
-    deleteFolder: unused,
-    deleteLabel: unused,
-    findAttachmentLocation: unused,
-    findDraftLocation: unused,
-    findFolderLocation: unused,
-    findMessageLocation: unused,
-    findRuleLocation: unused,
-    getAttachmentBlob: unused,
     getDraft: unused,
-    getDraftAttachment: unused,
-    getMessage: unused,
-    getOutboundDelivery: unused,
-    getThread: unused,
-    listFolders: unused,
     listDraftAttachments: () => Effect.succeed({ items: [] }),
     listDrafts: unused,
-    listLabels: unused,
-    listMessages: unused,
-    moveMessage: unused,
-    removeMessageLabel: unused,
-    reserveDraftAttachment: unused,
-    renameFolder: unused,
-    renameLabel: unused,
-    resendOutbound: unused,
-    scheduleOutbound: unused,
-    searchMessages: unused,
-    setMessageRead: unused,
-    setMessageStarred: unused,
     updateDraft: unused,
     ...overrides,
   });
@@ -127,20 +96,20 @@ const authorizationWith = (
 
 const runEditing = <A>(
   authorization: MailAuthorizationService,
-  repository: MailboxRepositoryService,
+  repository: MailboxDraftRepositoryService,
   effect: (
-    service: MailboxDraftEditing
+    service: MailboxDraftEditingService
   ) => Effect.Effect<A, unknown, AuthPermission.CurrentPrincipal>
 ) =>
   Effect.runPromise(
     MailboxDraftEditing.pipe(
       Effect.flatMap(effect),
       Effect.provide(
-        MailboxDraftEditingLive.pipe(
+        MailboxDraftEditing.layerNoDeps.pipe(
           Layer.provide(
             Layer.merge(
               Layer.succeed(MailAuthorization, authorization),
-              Layer.succeed(MailboxRepository, repository)
+              Layer.succeed(MailboxDraftRepository, repository)
             )
           )
         )
@@ -179,7 +148,7 @@ describe("mailbox draft editing", () => {
       MailboxDraftReading.pipe(
         Effect.flatMap((reading) => reading.list(input)),
         Effect.provide(
-          MailboxDraftReadingLive.pipe(
+          MailboxDraftReading.layerNoDeps.pipe(
             Layer.provide(
               Layer.merge(
                 Layer.succeed(
@@ -192,7 +161,7 @@ describe("mailbox draft editing", () => {
                   })
                 ),
                 Layer.succeed(
-                  MailboxRepository,
+                  MailboxDraftRepository,
                   repositoryWith({
                     listDrafts: (query) => {
                       calls.push(`list:${query.mailboxId}`);

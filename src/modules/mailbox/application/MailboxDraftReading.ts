@@ -1,15 +1,16 @@
+/* oxlint-disable max-classes-per-file -- Draft list contract, error and service form one cohesive use case. */
 import type { CurrentPrincipal } from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailAuthorization } from "../authorization/mail-authorization";
-import { DraftPage, ListDraftsInput } from "./drafts";
-import { MailboxDomainError } from "./errors";
-import type { MailboxRepositoryError } from "./errors";
-import { MailboxRepository } from "./repository";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
+import { DraftPage, ListDraftsInput } from "#/mailboxes/drafts";
+import { MailboxDomainError } from "#/mailboxes/errors";
+import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 
 export const MailboxDraftListInput = ListDraftsInput;
 export type MailboxDraftListInput = ListDraftsInput;
@@ -24,7 +25,7 @@ export class MailboxDraftReadingError extends Data.TaggedError(
   readonly reason: "invalid-input" | "storage";
 }> {}
 
-export interface MailboxDraftReading {
+export interface MailboxDraftReadingService {
   readonly list: (
     input: MailboxDraftListInput
   ) => Effect.Effect<
@@ -33,10 +34,6 @@ export interface MailboxDraftReading {
     CurrentPrincipal
   >;
 }
-
-export const MailboxDraftReading = Context.Service<MailboxDraftReading>(
-  "cloudflare-inbox/MailboxDraftReading"
-);
 
 const readingError = (
   reason: MailboxDraftReadingError["reason"],
@@ -59,13 +56,15 @@ const mapRepositoryError = (
     : readingError("storage", error);
 
 /** Authorized active-draft collection reads for a mailbox. */
-export const MailboxDraftReadingLive = Layer.effect(
+export class MailboxDraftReading extends Context.Service<
   MailboxDraftReading,
-  Effect.gen(function* () {
+  MailboxDraftReadingService
+>()("cloudflare-inbox/MailboxDraftReading", {
+  make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxDraftRepository;
 
-    return MailboxDraftReading.of({
+    return {
       list: (input) =>
         Effect.gen(function* () {
           yield* authorization.requireDraftCreate({
@@ -82,6 +81,8 @@ export const MailboxDraftReadingLive = Layer.effect(
           }
           return page;
         }),
-    });
-  })
-);
+    } satisfies MailboxDraftReadingService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

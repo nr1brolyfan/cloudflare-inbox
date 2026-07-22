@@ -26,8 +26,11 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import {
   MailboxDirectoryRepositoryDoLayer,
+  MailboxDraftRepositoryDoLayer,
   MailboxMessageRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
+import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
+import { MailboxDraftReading } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { MailboxMessageActions } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
@@ -88,8 +91,6 @@ import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-i
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
 import { DraftAttachmentBlobStoreR2WithRuntimeLive } from "../mailboxes/draft-attachment-store-r2-live";
 import { MailboxDraftAttachmentsLive } from "../mailboxes/draft-attachments";
-import { MailboxDraftEditingLive } from "../mailboxes/draft-editing";
-import { MailboxDraftReadingLive } from "../mailboxes/draft-reading";
 import { InboundAttachmentBlobReaderR2WithRuntimeLive } from "../mailboxes/inbound-attachment-reader-r2-live";
 import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
 import {
@@ -236,6 +237,9 @@ const BackendRoutesLive = Layer.unwrap(
       MailboxDirectoryRepositoryDoLayer.pipe(
         Layer.provide(mailboxRepositoryLive)
       );
+    const mailboxDraftRepositoryDoLayer = MailboxDraftRepositoryDoLayer.pipe(
+      Layer.provide(mailboxRepositoryLive)
+    );
     const resourceResolverLive = MailResourceResolverLive.pipe(
       Layer.provide(mailboxRepositoryLive)
     );
@@ -269,11 +273,15 @@ const BackendRoutesLive = Layer.unwrap(
         )
       )
     );
-    const mailboxDraftEditingLive = MailboxDraftEditingLive.pipe(
-      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+    const mailboxDraftEditingLive = MailboxDraftEditing.layerNoDeps.pipe(
+      Layer.provide(
+        Layer.merge(mailAuthorizationLive, mailboxDraftRepositoryDoLayer)
+      )
     );
-    const mailboxDraftReadingLive = MailboxDraftReadingLive.pipe(
-      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+    const mailboxDraftReadingLive = MailboxDraftReading.layerNoDeps.pipe(
+      Layer.provide(
+        Layer.merge(mailAuthorizationLive, mailboxDraftRepositoryDoLayer)
+      )
     );
     const mailboxOutboundSendingLive = MailboxOutboundSendingLive.pipe(
       Layer.provide(
