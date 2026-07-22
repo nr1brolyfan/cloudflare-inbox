@@ -8,6 +8,7 @@ import {
   LogOut,
   Mail,
   ShieldCheck,
+  Trash2,
 } from "lucide-react";
 import { useState } from "react";
 
@@ -273,6 +274,11 @@ function PasskeyEnrollment({ userId }: { readonly userId: string }) {
   const [password, setPassword] = useState("");
   const enrollment = useMutation({
     mutationFn: () => authClient.passkey.register(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({
+        queryKey: ["auth", "passkey-credentials", userId],
+      });
+    },
     retry: false,
   });
   const stepUpRequired =
@@ -336,6 +342,189 @@ function PasskeyEnrollment({ userId }: { readonly userId: string }) {
         <StepUpPanel
           title="Confirm passkey enrollment"
           description="Re-enter your password before creating a new authentication factor."
+          isPending={passwordStepUp.isPending}
+          onPasswordChange={setPassword}
+          onSubmit={() => passwordStepUp.mutate()}
+          optionsError={options.error}
+          optionsPending={options.isPending}
+          password={password}
+          passwordAvailable={
+            options.data?.factors.some(
+              (factor) => factor.type === "password"
+            ) ?? false
+          }
+          passwordError={passwordStepUp.error}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+const formatCredentialTime = (timestamp: number) =>
+  new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(timestamp);
+
+const hasAuthErrorCode = (error: unknown, code: string) =>
+  error !== null &&
+  typeof error === "object" &&
+  "code" in error &&
+  error.code === code;
+
+function PasskeyCredentialManagement({ userId }: { readonly userId: string }) {
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState("");
+  const [revokeCommand, setRevokeCommand] = useState<{
+    readonly id: string;
+    readonly operationId: string;
+  } | null>(null);
+  const credentials = useQuery({
+    queryFn: async () => {
+      try {
+        return await authClient.extensions.listPasskeyCredentials();
+      } catch (error) {
+        if (hasAuthErrorCode(error, "unauthenticated")) {
+          await clearCachedAuthSession(queryClient);
+        }
+        throw error;
+      }
+    },
+    queryKey: ["auth", "passkey-credentials", userId] as const,
+    retry: false,
+  });
+  const revocation = useMutation({
+    mutationFn: async (command: {
+      readonly id: string;
+      readonly operationId: string;
+    }) => {
+      try {
+        return await authClient.extensions.revokePasskeyCredential(command);
+      } catch (error) {
+        try {
+          const receipt = await authClient.extensions.readPasskeyRevocation({
+            operationId: command.operationId,
+          });
+          if (receipt.credential.id === command.id) {
+            return receipt;
+          }
+        } catch (readbackError) {
+          // Preserve the original revoke failure when no durable receipt exists.
+          if (hasAuthErrorCode(readbackError, "unauthenticated")) {
+            await clearCachedAuthSession(queryClient);
+          }
+        }
+        if (hasAuthErrorCode(error, "unauthenticated")) {
+          await clearCachedAuthSession(queryClient);
+        }
+        throw error;
+      }
+    },
+    onSuccess: async () => {
+      setRevokeCommand(null);
+      await queryClient.invalidateQueries({
+        queryKey: ["auth", "passkey-credentials", userId],
+      });
+    },
+    retry: false,
+  });
+  const stepUpRequired =
+    revocation.error !== null &&
+    typeof revocation.error === "object" &&
+    "code" in revocation.error &&
+    revocation.error.code === "step_up_required";
+  const options = useQuery({
+    enabled: stepUpRequired,
+    queryFn: () => authClient.stepUp.options(),
+    queryKey: ["auth", "passkey-revocation-step-up", userId] as const,
+    retry: false,
+  });
+  const passwordStepUp = useMutation({
+    mutationFn: () => authClient.stepUp.password.verify({ password }),
+    onSuccess: async () => {
+      setPassword("");
+      await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
+      if (revokeCommand !== null) {
+        revocation.mutate(revokeCommand);
+      }
+    },
+    retry: false,
+  });
+
+  return (
+    <section className="mt-8 border-t border-[var(--line)] pt-8">
+      <p className="island-kicker">Credential inventory</p>
+      <h3 className="mt-2 text-xl font-bold">Your passkeys</h3>
+      <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+        Review active passkeys without exposing authenticator secrets. For
+        account safety, the final active passkey cannot be revoked.
+      </p>
+      {credentials.isPending ? (
+        <p className="mt-4 flex items-center gap-2 text-sm text-[var(--sea-ink-soft)]">
+          <LoaderCircle className="animate-spin" size={16} /> Loading
+          passkeys...
+        </p>
+      ) : credentials.error ? (
+        <ErrorNotice>{authErrorMessage(credentials.error)}</ErrorNotice>
+      ) : credentials.data.credentials.length === 0 ? (
+        <p className="mt-4 rounded-xl border border-[var(--line)] bg-white/60 px-4 py-3 text-sm text-[var(--sea-ink-soft)]">
+          No active passkeys are enrolled.
+        </p>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {credentials.data.credentials.map((credential, index) => (
+            <div
+              className="flex flex-col gap-4 rounded-2xl border border-[var(--line)] bg-white/70 p-4 sm:flex-row sm:items-center sm:justify-between"
+              key={credential.id}
+            >
+              <div>
+                <p className="font-bold">Passkey {index + 1}</p>
+                <p className="mt-1 text-xs leading-5 text-[var(--sea-ink-soft)]">
+                  Added {formatCredentialTime(credential.createdAt)}
+                  {credential.lastUsedAt === undefined
+                    ? " | Not used yet"
+                    : ` | Last used ${formatCredentialTime(credential.lastUsedAt)}`}
+                </p>
+              </div>
+              <button
+                type="button"
+                disabled={revocation.isPending}
+                onClick={() => {
+                  const command =
+                    revokeCommand?.id === credential.id
+                      ? revokeCommand
+                      : {
+                          id: credential.id,
+                          operationId: crypto.randomUUID(),
+                        };
+                  setRevokeCommand(command);
+                  revocation.mutate(command);
+                }}
+                className="flex shrink-0 items-center justify-center gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-bold text-red-800 disabled:opacity-50"
+              >
+                {revocation.isPending && revokeCommand?.id === credential.id ? (
+                  <LoaderCircle className="animate-spin" size={15} />
+                ) : (
+                  <Trash2 size={15} />
+                )}
+                Revoke
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+      {revocation.error && !stepUpRequired ? (
+        <ErrorNotice>{authErrorMessage(revocation.error)}</ErrorNotice>
+      ) : null}
+      {revocation.isSuccess ? (
+        <div className="mt-4">
+          <Notice>Passkey revoked.</Notice>
+        </div>
+      ) : null}
+      {stepUpRequired ? (
+        <StepUpPanel
+          title="Confirm passkey revocation"
+          description="Re-enter your password before revoking this authentication factor."
           isPending={passwordStepUp.isPending}
           onPasswordChange={setPassword}
           onSubmit={() => passwordStepUp.mutate()}
@@ -447,6 +636,7 @@ export function SignedInOwnerBootstrap({
       ) : null}
       <ExternalRecoveryEnrollment userId={userId} />
       <PasskeyEnrollment userId={userId} />
+      <PasskeyCredentialManagement userId={userId} />
       <button
         type="button"
         onClick={onLogout}

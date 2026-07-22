@@ -7,14 +7,18 @@ import type { AuthClientRequestOptions } from "@effect-auth/core/Client";
 import type { QueryClient } from "@tanstack/react-query";
 import * as Schema from "effect/Schema";
 
-import { ExternalRecoveryIdentityClientHttpApi } from "../http/external-recovery-identity-contract";
+import { ApplicationAuthClientExtensionApi } from "../http/auth-client-extension-contract";
 import {
   EnrollExternalRecoveryIdentityCommand,
   VerifyExternalRecoveryIdentityCommand,
 } from "./external-recovery-identity-management";
+import {
+  ReadPasskeyRevocationQuery,
+  RevokePasskeyCredentialCommand,
+} from "./passkey-credential-administration";
 
-const externalRecoveryIdentityExtension = defineAuthHttpApiExtension(
-  ExternalRecoveryIdentityClientHttpApi,
+const applicationAuthExtension = defineAuthHttpApiExtension(
+  ApplicationAuthClientExtensionApi,
   ({ run }) => ({
     enrollExternalRecoveryIdentity: (
       payload: Schema.Codec.Encoded<
@@ -46,11 +50,42 @@ const externalRecoveryIdentityExtension = defineAuthHttpApiExtension(
           }),
         options
       ),
+    listPasskeyCredentials: (options?: AuthClientRequestOptions) =>
+      run(
+        (client) => client.passkeyCredentialManagement.list({ payload: {} }),
+        options
+      ),
+    readPasskeyRevocation: (
+      query: Schema.Codec.Encoded<typeof ReadPasskeyRevocationQuery>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.passkeyCredentialManagement.readRevocation({
+            payload: Schema.decodeUnknownSync(ReadPasskeyRevocationQuery)(
+              query
+            ),
+          }),
+        options
+      ),
+    revokePasskeyCredential: (
+      payload: Schema.Codec.Encoded<typeof RevokePasskeyCredentialCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.passkeyCredentialManagement.revoke({
+            payload: Schema.decodeUnknownSync(RevokePasskeyCredentialCommand)(
+              payload
+            ),
+          }),
+        options
+      ),
   })
 );
 
 export const authClient = createAuthClient({
-  protocol: { extensions: externalRecoveryIdentityExtension },
+  protocol: { extensions: applicationAuthExtension },
 });
 
 export const authSessionQueryKey = ["auth", "session"] as const;
@@ -70,6 +105,7 @@ export const clearCachedMailboxData = (queryClient: QueryClient) => {
 
 export const clearCachedAuthSession = async (queryClient: QueryClient) => {
   clearCachedMailboxData(queryClient);
+  queryClient.removeQueries({ queryKey: ["auth", "passkey-credentials"] });
   queryClient.removeQueries({ queryKey: mailboxReadDenialQueryKey });
   queryClient.setQueryData(authSessionQueryKey, null);
   await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });

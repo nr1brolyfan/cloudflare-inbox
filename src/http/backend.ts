@@ -59,6 +59,10 @@ import {
 import { MailboxNavigationLive } from "../control-plane/mailbox-navigation-live";
 import { MailboxSenderIdentityLive } from "../control-plane/mailbox-sender-identity-live";
 import {
+  PasskeyCredentialAdministrationLive,
+  PasskeyCredentialAdministrationRuntimeLive,
+} from "../control-plane/passkey-credential-administration-live";
+import {
   PasskeyEnrollmentLive,
   PasskeyEnrollmentRuntimeLive,
 } from "../control-plane/passkey-enrollment-live";
@@ -99,6 +103,7 @@ import { DevEmailGroupLive } from "./dev-emails";
 import { ExternalRecoveryIdentityGroupLive } from "./external-recovery-identities";
 import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
+import { PasskeyCredentialManagementGroupLive } from "./passkey-credential-management";
 import { PasskeyEnrollmentGroupLive } from "./passkey-enrollment";
 import { HttpApiPlatformLive } from "./platform";
 
@@ -339,6 +344,23 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(BackendRequestContextMiddlewareLive),
       Layer.provide(requestValidationLive)
     );
+    const passkeyCredentialAdministrationLive =
+      PasskeyCredentialAdministrationLive.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            authServicesLive,
+            PasskeyCredentialAdministrationRuntimeLive,
+            SensitiveOperationStepUpClockLive
+          )
+        )
+      );
+    const passkeyCredentialManagementGroupLive =
+      PasskeyCredentialManagementGroupLive.pipe(
+        Layer.provide(passkeyCredentialAdministrationLive),
+        Layer.provide(currentRequestAuthLive),
+        Layer.provide(BackendRequestContextMiddlewareLive),
+        Layer.provide(requestValidationLive)
+      );
 
     return HttpApiBuilder.layer(BackendHttpApi).pipe(
       Layer.provide(
@@ -346,6 +368,7 @@ const BackendRoutesLive = Layer.unwrap(
           authGroupHandlersLive,
           recoveryIdentityGroupLive,
           passkeyEnrollmentGroupLive,
+          passkeyCredentialManagementGroupLive,
           healthGroupLive,
           mailboxGroupLive,
           devEmailGroupLive

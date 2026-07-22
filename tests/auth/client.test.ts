@@ -35,13 +35,25 @@ describe("auth session query cache", () => {
     queryClient.setQueryData(["mailbox", "navigation", "user-a"], {
       mailbox: "sensitive cached data",
     });
+    queryClient.setQueryData(["auth", "passkey-credentials", "user-a"], {
+      credentials: [{ id: "passkey-a" }],
+    });
 
     await clearCachedAuthSession(queryClient);
 
     expect({
       mailbox: queryClient.getQueryData(["mailbox", "navigation", "user-a"]),
+      passkeys: queryClient.getQueryData([
+        "auth",
+        "passkey-credentials",
+        "user-a",
+      ]),
       session: queryClient.getQueryData(authSessionQueryKey),
-    }).toStrictEqual({ mailbox: undefined, session: null });
+    }).toStrictEqual({
+      mailbox: undefined,
+      passkeys: undefined,
+      session: null,
+    });
   });
 
   it("clears mailbox data without ending a valid session", () => {
