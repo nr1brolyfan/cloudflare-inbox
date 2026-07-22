@@ -2,6 +2,7 @@ import { BotProtectionNoopLive } from "@effect-auth/core/AbuseProtection";
 import {
   AuthHttpApiConfigLive,
   AuthOriginCheckMiddlewareLive,
+  AuthRequestMetadataMiddlewareLive,
   AuthSchemaErrorMiddlewareLive,
   CoreAuthEmailVerificationGroupLive,
   CoreAuthLoginApprovalGroupLive,
@@ -31,6 +32,7 @@ import { ExistingPasswordResetLive } from "../auth/existing-password-reset";
 import { ExternalRecoveryIdentityChallengeLive } from "../auth/external-recovery-identity-challenge-live";
 import { ExternalRecoveryIdentityDeliveryLive } from "../auth/external-recovery-identity-delivery-live";
 import { AuthServicesLive } from "../auth/live";
+import { PasskeyAuthentication } from "../auth/passkey-authentication";
 import { PasskeyRuntimeConfigLive } from "../auth/passkey-config";
 import { PasswordResetEligibilityLive } from "../auth/password-reset-eligibility";
 import { AuthRuntimeConfig } from "../auth/runtime-config";
@@ -96,13 +98,14 @@ import {
   RestrictedEmailOtpGroupLive,
 } from "./auth";
 import {
-  PasswordOnlyStepUpHttpOperationsLive,
-  PasswordStepUpGroupLive,
+  ApplicationStepUpHttpOperationsLayer,
+  StepUpApiLayer,
 } from "./auth-step-up";
 import { DevEmailGroupLive } from "./dev-emails";
 import { ExternalRecoveryIdentityGroupLive } from "./external-recovery-identities";
 import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
+import { PasskeyAuthenticationApiLayer } from "./passkey-authentication";
 import { PasskeyCredentialManagementGroupLive } from "./passkey-credential-management";
 import { PasskeyEnrollmentGroupLive } from "./passkey-enrollment";
 import { HttpApiPlatformLive } from "./platform";
@@ -126,9 +129,10 @@ const BackendRoutesLive = Layer.unwrap(
       allowMissingOrigin: false,
       allowedOrigins: [authRuntimeConfig.publicOrigin.origin],
     } as const;
-    const requestValidationLive = Layer.merge(
+    const requestValidationLive = Layer.mergeAll(
       AuthSchemaErrorMiddlewareLive,
-      AuthOriginCheckMiddlewareLive(originPolicy)
+      AuthOriginCheckMiddlewareLive(originPolicy),
+      AuthRequestMetadataMiddlewareLive({ trustProxyHeaders: true })
     );
     const authStorageLive = EffectAuthStorageLive;
     const devEmailStoreLive = D1DevEmailStoreLive;
@@ -136,6 +140,16 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(authRuntimeConfigLive),
       Layer.provide(authStorageLive),
       Layer.provide(devEmailStoreLive)
+    );
+    const passkeyAuthenticationLive = PasskeyAuthentication.layerNoDeps.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          authServicesLive,
+          authStorageLive,
+          PasskeyRuntimeConfigLive.pipe(Layer.provide(authRuntimeConfigLive)),
+          SensitiveOperationStepUpClockLive
+        )
+      )
     );
     const requestSessionAuthenticatorLive =
       RequestSessionAuthenticatorLive.pipe(Layer.provide(authServicesLive));
@@ -159,7 +173,7 @@ const BackendRoutesLive = Layer.unwrap(
       CoreAuthMagicLinkGroupLive,
       CoreAuthLoginApprovalGroupLive,
       CoreAuthLoginNotificationGroupLive,
-      PasswordStepUpGroupLive
+      StepUpApiLayer
     ).pipe(
       Layer.provide(passwordHttpOperationsLive),
       Layer.provide(SessionHttpOperationsLive),
@@ -168,7 +182,7 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(MagicLinkHttpOperationsLive),
       Layer.provide(LoginApprovalHttpOperationsLive),
       Layer.provide(LoginNotificationHttpOperationsLive),
-      Layer.provide(PasswordOnlyStepUpHttpOperationsLive),
+      Layer.provide(ApplicationStepUpHttpOperationsLayer),
       Layer.provide(passwordResetEligibilityLive),
       Layer.provide(SensitiveOperationStepUpClockLive),
       Layer.provide(
@@ -180,6 +194,7 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(requestValidationLive),
       Layer.provide(authServicesLive),
       Layer.provide(authStorageLive),
+      Layer.provide(passkeyAuthenticationLive),
       Layer.provide(requestSessionAuthenticatorLive),
       Layer.provide(BotProtectionNoopLive)
     );
@@ -344,6 +359,12 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(BackendRequestContextMiddlewareLive),
       Layer.provide(requestValidationLive)
     );
+    const passkeyAuthenticationApiLayer = PasskeyAuthenticationApiLayer.pipe(
+      Layer.provide(passkeyAuthenticationLive),
+      Layer.provide(BackendRequestContextMiddlewareLive),
+      Layer.provide(requestValidationLive),
+      Layer.provide(authServicesLive)
+    );
     const passkeyCredentialAdministrationLive =
       PasskeyCredentialAdministrationLive.pipe(
         Layer.provide(
@@ -368,6 +389,7 @@ const BackendRoutesLive = Layer.unwrap(
           authGroupHandlersLive,
           recoveryIdentityGroupLive,
           passkeyEnrollmentGroupLive,
+          passkeyAuthenticationApiLayer,
           passkeyCredentialManagementGroupLive,
           healthGroupLive,
           mailboxGroupLive,

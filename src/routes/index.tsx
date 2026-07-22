@@ -8,7 +8,7 @@ import {
   Mail,
   ShieldCheck,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import {
   authClient,
@@ -27,7 +27,62 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-type AuthMode = "magic" | "otp" | "password";
+type AuthMode = "magic" | "otp" | "passkey" | "password";
+
+const subscribeToPasskeySupport = () => () => null;
+const usePasskeySupport = () =>
+  useSyncExternalStore(
+    subscribeToPasskeySupport,
+    () => authClient.passkey.isSupported(),
+    () => false
+  );
+
+const authModeLabel = (mode: AuthMode) =>
+  mode === "magic" ? "Magic link" : mode;
+
+function AuthSubmitContent({
+  mode,
+  otpStarted,
+  pending,
+}: {
+  readonly mode: AuthMode;
+  readonly otpStarted: boolean;
+  readonly pending: boolean;
+}) {
+  if (pending) {
+    return (
+      <>
+        <LoaderCircle className="animate-spin" size={18} /> Working...
+      </>
+    );
+  }
+  if (mode === "passkey") {
+    return (
+      <>
+        <KeyRound size={18} /> Sign in with a passkey
+      </>
+    );
+  }
+  if (mode === "magic") {
+    return (
+      <>
+        <ArrowRight size={18} /> Email me a sign-in link
+      </>
+    );
+  }
+  if (mode === "otp") {
+    return (
+      <>
+        <KeyRound size={18} /> {otpStarted ? "Verify code" : "Send a code"}
+      </>
+    );
+  }
+  return (
+    <>
+      <ArrowRight size={18} /> Sign in
+    </>
+  );
+}
 
 function DevEmailInboxLink({ enabled }: { readonly enabled: boolean }) {
   if (!enabled) {
@@ -53,6 +108,10 @@ function Home() {
   const [otpCode, setOtpCode] = useState("");
   const [otpChallengeId, setOtpChallengeId] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const passkeySupported = usePasskeySupport();
+  const authModes: readonly AuthMode[] = passkeySupported
+    ? ["passkey", "magic", "otp", "password"]
+    : ["magic", "otp", "password"];
 
   const session = useQuery({
     queryKey: authSessionQueryKey,
@@ -104,6 +163,12 @@ function Home() {
     onSuccess: completeAuthentication,
   });
 
+  const passkeyAuth = useMutation({
+    mutationFn: () => authClient.passkey.signIn(),
+    retry: false,
+    onSuccess: completeAuthentication,
+  });
+
   const passwordReset = useMutation({
     mutationFn: () => authClient.password.reset.start(emailIdentity(email)),
     retry: false,
@@ -126,7 +191,9 @@ function Home() {
         ? otpChallengeId
           ? otpVerify
           : otpStart
-        : passwordAuth;
+        : mode === "passkey"
+          ? passkeyAuth
+          : passwordAuth;
   const error = activeMutation.error ?? passwordReset.error ?? session.error;
 
   const submit = (event: React.FormEvent) => {
@@ -188,12 +255,12 @@ function Home() {
                   Sign in to your inbox
                 </h2>
                 <p className="mt-3 text-sm leading-6 text-[var(--sea-ink-soft)]">
-                  Use a one-time link, email code, or your password.
+                  Use a passkey, one-time link, email code, or your password.
                 </p>
                 <DevEmailInboxLink enabled={devEmailInbox.enabled} />
 
-                <div className="mt-7 grid grid-cols-3 rounded-xl bg-[var(--sand)]/75 p-1">
-                  {(["magic", "otp", "password"] as const).map((value) => (
+                <div className="mt-7 grid grid-cols-2 rounded-xl bg-[var(--sand)]/75 p-1 sm:grid-cols-4">
+                  {authModes.map((value) => (
                     <button
                       key={value}
                       type="button"
@@ -203,23 +270,30 @@ function Home() {
                       }}
                       className={`rounded-lg px-2 py-2.5 text-xs font-bold capitalize ${mode === value ? "bg-white text-[var(--sea-ink)] shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
                     >
-                      {value === "magic" ? "Magic link" : value}
+                      {authModeLabel(value)}
                     </button>
                   ))}
                 </div>
 
                 <form className="mt-7 space-y-5" onSubmit={submit}>
-                  <label className="block space-y-2 text-sm font-bold">
-                    <span>Email address</span>
-                    <input
-                      type="email"
-                      required
-                      autoComplete="email"
-                      value={email}
-                      onChange={(event) => setEmail(event.target.value)}
-                      className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3.5 outline-none focus:border-[var(--lagoon-deep)]"
-                    />
-                  </label>
+                  {mode === "passkey" ? (
+                    <p className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-4 text-sm leading-6 text-[var(--sea-ink-soft)]">
+                      Your browser will ask for a discoverable passkey. No email
+                      address or account identifier is sent first.
+                    </p>
+                  ) : (
+                    <label className="block space-y-2 text-sm font-bold">
+                      <span>Email address</span>
+                      <input
+                        type="email"
+                        required
+                        autoComplete="email"
+                        value={email}
+                        onChange={(event) => setEmail(event.target.value)}
+                        className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3.5 outline-none focus:border-[var(--lagoon-deep)]"
+                      />
+                    </label>
+                  )}
 
                   {mode === "otp" && otpChallengeId ? (
                     <label className="block space-y-2 text-sm font-bold">
@@ -261,20 +335,11 @@ function Home() {
                     disabled={activeMutation.isPending}
                     className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
                   >
-                    {activeMutation.isPending ? (
-                      <LoaderCircle className="animate-spin" size={18} />
-                    ) : mode === "otp" ? (
-                      <KeyRound size={18} />
-                    ) : (
-                      <ArrowRight size={18} />
-                    )}
-                    {mode === "magic"
-                      ? "Email me a sign-in link"
-                      : mode === "otp"
-                        ? otpChallengeId
-                          ? "Verify code"
-                          : "Send a code"
-                        : "Sign in"}
+                    <AuthSubmitContent
+                      mode={mode}
+                      otpStarted={otpChallengeId !== undefined}
+                      pending={activeMutation.isPending}
+                    />
                   </button>
                 </form>
 

@@ -29,17 +29,23 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiTest } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
+import type { PasskeyAuthenticationService } from "#/auth/passkey-authentication";
+import {
+  PasskeyAuthentication,
+  StartedPasskeyAuthentication,
+} from "#/auth/passkey-authentication";
 import { RequestSessionAuthenticator } from "#/auth/session";
 import { SensitiveOperationStepUpClock } from "#/auth/step-up-policy";
 import { PasswordEnrollmentUnavailableGroupLive } from "#/http/auth";
 import { ApplicationAuthHttpApi } from "#/http/auth-contract";
 import {
-  PasswordOnlyStepUpHttpOperationsLive,
-  PasswordStepUpGroupLive,
+  ApplicationStepUpHttpOperationsLayer,
+  StepUpApiLayer,
 } from "#/http/auth-step-up";
 import { HttpApiPlatformLive } from "#/http/platform";
 
@@ -47,6 +53,16 @@ const userId = UserId("user-a");
 const sessionId = SessionId("session-a");
 const token = SessionToken(`${sessionId}.old-secret`);
 const credentialId = CredentialId("credential-a");
+const passkeyStarted = Schema.decodeUnknownSync(StartedPasskeyAuthentication)({
+  challengeId: "passkey-step-up-challenge-a",
+  expiresAt: 10_000,
+  publicKey: {
+    allowCredentials: [{ id: "webauthn-credential-a", type: "public-key" }],
+    challenge: "server-challenge",
+    rpId: "inbox.test",
+    userVerification: "required",
+  },
+});
 const currentSession = {
   aal: "aal1" as const,
   amr: ["magic_link"],
@@ -151,7 +167,10 @@ const runStepUpClient = <A, E>(
   use: (client: Effect.Success<typeof StepUpClient>) => Effect.Effect<A, E>,
   options: {
     readonly currentSession?: CurrentSessionShape;
+    readonly finishPasskey?: PasskeyAuthenticationService["finishStepUp"];
     readonly passwordValid?: boolean;
+    readonly passkeyAvailable?: boolean;
+    readonly startPasskey?: PasskeyAuthenticationService["startStepUp"];
     readonly onAssure?: SessionsService["assureAndRotate"];
     readonly onCommit?: (issued: IssuedSession) => void;
   } = {}
@@ -162,8 +181,21 @@ const runStepUpClient = <A, E>(
         const client = yield* StepUpClient;
         return yield* use(client);
       }).pipe(
-        Effect.provide(PasswordStepUpGroupLive),
-        Effect.provide(PasswordOnlyStepUpHttpOperationsLive),
+        Effect.provide(StepUpApiLayer),
+        Effect.provide(ApplicationStepUpHttpOperationsLayer),
+        Effect.provide(
+          Layer.mock(PasskeyAuthentication, {
+            finishSignIn: () => Effect.die("sign-in is not used"),
+            finishStepUp:
+              options.finishPasskey ??
+              (() => Effect.die("passkey step-up is not used")),
+            startSignIn: () => Effect.die("sign-in is not used"),
+            startStepUp:
+              options.startPasskey ??
+              (() => Effect.die("passkey step-up is not used")),
+            stepUpAvailable: Effect.succeed(options.passkeyAvailable ?? false),
+          })
+        ),
         Effect.provide(
           Layer.succeed(
             SensitiveOperationStepUpClock,
@@ -250,6 +282,63 @@ describe("password step-up API", () => {
     const result = await runStepUpClient((client) => client.stepUp.options());
 
     expect(result).toStrictEqual({ factors: [{ type: "password" }] });
+  });
+
+  it("lists and starts a purpose-bound passkey step-up", async () => {
+    let starts = 0;
+    const options = await runStepUpClient((client) => client.stepUp.options(), {
+      passkeyAvailable: true,
+    });
+    const started = await runStepUpClient(
+      (client) => client.stepUp.startPasskey({ payload: {} }),
+      {
+        passkeyAvailable: true,
+        startPasskey: () =>
+          Effect.sync(() => {
+            starts += 1;
+            return passkeyStarted;
+          }),
+      }
+    );
+
+    expect(options.factors).toStrictEqual([
+      { type: "password" },
+      { type: "passkey" },
+    ]);
+    expect(started).toMatchObject(passkeyStarted);
+    expect(starts).toBe(1);
+  });
+
+  it("commits the rotated session after passkey verification", async () => {
+    let finishedChallenge: string | undefined;
+    let committedToken: string | undefined;
+
+    const result = await runStepUpClient(
+      (client) =>
+        client.stepUp.verifyPasskey({
+          payload: {
+            challengeId: passkeyStarted.challengeId,
+            credential: {
+              id: "browser-credential-a",
+              response: { authenticatorData: "signed" },
+              type: "public-key",
+            },
+          },
+        }),
+      {
+        finishPasskey: (command) => {
+          finishedChallenge = command.challengeId;
+          return Effect.succeed(elevated);
+        },
+        onCommit: (issued) => {
+          committedToken = issued.token;
+        },
+      }
+    );
+
+    expect(result).toMatchObject({ aal: "aal1", type: "authenticated" });
+    expect(finishedChallenge).toBe(passkeyStarted.challengeId);
+    expect(committedToken).toBe(elevated.token);
   });
 
   it("rotates the session after verifying the password", async () => {

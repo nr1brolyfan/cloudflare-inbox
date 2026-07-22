@@ -1,6 +1,7 @@
 import { passwordEvidence } from "@effect-auth/core/Assurance";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import {
+  AuthBadRequestError,
   AuthInternalError,
   AuthInvalidCredentialsError,
   AuthPolicyDeniedError,
@@ -9,6 +10,7 @@ import {
   stepUpAuthenticatedHttpBody,
 } from "@effect-auth/core/HttpApi";
 import { PasswordHasher } from "@effect-auth/core/Password";
+import { CurrentPrincipal } from "@effect-auth/core/Permission";
 import type { PrivacyError } from "@effect-auth/core/Privacy";
 import type { RateLimitError } from "@effect-auth/core/RateLimiter";
 import { SessionCookie, Sessions } from "@effect-auth/core/Sessions";
@@ -22,7 +24,12 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { RequestSessionAuthenticator } from "../auth/session";
+import { PasskeyAuthentication } from "../auth/passkey-authentication";
+import type { PasskeyAuthenticationError } from "../auth/passkey-authentication";
+import {
+  CurrentRequestAuth,
+  RequestSessionAuthenticator,
+} from "../auth/session";
 import {
   SensitiveOperationStepUpClock,
   StepUpVerifiedAt,
@@ -47,6 +54,35 @@ const stepUpRestricted = () =>
     message: "Complete pending account requirements before step-up",
   });
 
+const stepUpBadRequest = () =>
+  new AuthBadRequestError({
+    code: "bad_request",
+    message: "Invalid passkey step-up request",
+  });
+
+type PasskeyStepUpPublicError =
+  | AuthBadRequestError
+  | AuthInternalError
+  | AuthPolicyDeniedError;
+
+const mapPasskeyError = (
+  error: PasskeyAuthenticationError
+): Effect.Effect<never, PasskeyStepUpPublicError> => {
+  switch (error.reason) {
+    case "invalid-credential":
+    case "invalid-input": {
+      return Effect.fail(stepUpBadRequest());
+    }
+    case "policy-denied":
+    case "restricted-session": {
+      return Effect.fail(stepUpRestricted());
+    }
+    default: {
+      return Effect.fail(stepUpInternalError());
+    }
+  }
+};
+
 const mapRateLimitError = (error: RateLimitError | PrivacyError) =>
   error._tag === "RateLimitExceededError"
     ? new AuthRateLimitedError({
@@ -56,8 +92,8 @@ const mapRateLimitError = (error: RateLimitError | PrivacyError) =>
       })
     : stepUpInternalError();
 
-/** Password-only adapter used until SAFE-002 enables stronger factors. */
-export const PasswordOnlyStepUpHttpOperationsLive = Layer.effect(
+/** Application policy adapter for password and purpose-bound passkey step-up. */
+export const ApplicationStepUpHttpOperationsLayer = Layer.effect(
   StepUpHttpOperations,
   Effect.gen(function* () {
     const authenticator = yield* RequestSessionAuthenticator;
@@ -65,6 +101,7 @@ export const PasswordOnlyStepUpHttpOperationsLive = Layer.effect(
     const clock = yield* SensitiveOperationStepUpClock;
     const credentials = yield* CredentialStore;
     const hasher = yield* PasswordHasher;
+    const passkeyAuthentication = yield* PasskeyAuthentication;
     const sessionCookie = yield* SessionCookie;
     const sessions = yield* Sessions;
 
@@ -74,7 +111,11 @@ export const PasswordOnlyStepUpHttpOperationsLive = Layer.effect(
         Effect.flatMap(authenticator.authenticate)
       );
     const requireRateLimit = (
-      operation: "auth.step_up.options" | "auth.step_up.password_verify",
+      operation:
+        | "auth.step_up.options"
+        | "auth.step_up.passkey_start"
+        | "auth.step_up.passkey_verify"
+        | "auth.step_up.password_verify",
       userId: Parameters<typeof credentials.findPasswordByUserId>[0]
     ) =>
       authRateLimit
@@ -98,17 +139,81 @@ export const PasswordOnlyStepUpHttpOperationsLive = Layer.effect(
           const credential = yield* credentials
             .findPasswordByUserId(userId)
             .pipe(Effect.mapError(stepUpInternalError));
+          const passkeyAvailable =
+            yield* passkeyAuthentication.stepUpAvailable.pipe(
+              Effect.provideService(
+                CurrentRequestAuth,
+                authenticated.requestAuth
+              ),
+              Effect.provideService(CurrentPrincipal, authenticated.principal),
+              Effect.catchTag("PasskeyAuthenticationError", (error) =>
+                error.reason === "storage"
+                  ? Effect.fail(stepUpInternalError())
+                  : Effect.succeed(false)
+              )
+            );
 
           return {
-            factors:
-              Option.isSome(credential) &&
+            factors: [
+              ...(Option.isSome(credential) &&
               credential.value.revokedAt === undefined
                 ? ([{ type: "password" }] as const)
-                : [],
+                : []),
+              ...(passkeyAvailable ? ([{ type: "passkey" }] as const) : []),
+            ],
           };
         }),
-      startPasskey: unavailable,
-      verifyPasskey: unavailable,
+      startPasskey: ({ request }) =>
+        Effect.gen(function* () {
+          const authenticated = yield* authenticate(request);
+          yield* requireUnrestricted(authenticated.session);
+          yield* requireRateLimit(
+            "auth.step_up.passkey_start",
+            authenticated.session.userId
+          );
+          return yield* passkeyAuthentication
+            .startStepUp({})
+            .pipe(
+              Effect.provideService(
+                CurrentRequestAuth,
+                authenticated.requestAuth
+              ),
+              Effect.provideService(CurrentPrincipal, authenticated.principal),
+              Effect.catchTag("PasskeyAuthenticationError", mapPasskeyError)
+            );
+        }),
+      verifyPasskey: ({ payload, request }) =>
+        Effect.gen(function* () {
+          const authenticated = yield* authenticate(request);
+          yield* requireUnrestricted(authenticated.session);
+          yield* requireRateLimit(
+            "auth.step_up.passkey_verify",
+            authenticated.session.userId
+          );
+          const issued = yield* passkeyAuthentication
+            .finishStepUp({
+              challengeId: payload.challengeId,
+              credential: payload.credential,
+            })
+            .pipe(
+              Effect.provideService(
+                CurrentRequestAuth,
+                authenticated.requestAuth
+              ),
+              Effect.provideService(CurrentPrincipal, authenticated.principal),
+              Effect.catchTag("PasskeyAuthenticationError", mapPasskeyError)
+            );
+          const cookie = yield* sessionCookie
+            .commit(issued)
+            .pipe(Effect.mapError(stepUpInternalError));
+          return yield* HttpServerResponse.json(
+            stepUpAuthenticatedHttpBody(issued),
+            {
+              headers: { "set-cookie": cookie },
+              status: 200,
+            }
+          ).pipe(Effect.mapError(stepUpInternalError));
+        }),
       verifyPassword: ({ payload, request }) =>
         Effect.gen(function* () {
           const authenticated = yield* authenticate(request);
@@ -173,7 +278,7 @@ export const PasswordOnlyStepUpHttpOperationsLive = Layer.effect(
 );
 
 /** Thin transport binding for the application step-up operations. */
-export const PasswordStepUpGroupLive = HttpApiBuilder.group(
+export const StepUpApiLayer = HttpApiBuilder.group(
   ApplicationAuthHttpApi,
   "stepUp",
   Effect.fn("auth.http.step_up.password_group")(function* (handlers) {

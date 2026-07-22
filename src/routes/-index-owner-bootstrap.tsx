@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useSyncExternalStore } from "react";
 
 import {
   authClient,
@@ -19,6 +19,14 @@ import {
   clearCachedAuthSession,
 } from "../auth/client";
 import { bootstrapMailboxOwner } from "../server/tanstack-functions";
+
+const subscribeToPasskeySupport = () => () => null;
+const usePasskeySupport = () =>
+  useSyncExternalStore(
+    subscribeToPasskeySupport,
+    () => authClient.passkey.isSupported(),
+    () => false
+  );
 
 const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
   const [stepUpPassword, setStepUpPassword] = useState("");
@@ -61,6 +69,10 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
       setStepUpComplete(false);
       mailboxBootstrap.mutate();
     },
+    handlePasskeyStepUp: () => {
+      setStepUpComplete(true);
+      mailboxBootstrap.reset();
+    },
     handleStepUpPasswordChange: setStepUpPassword,
     mailboxBootstrap,
     passwordStepUp,
@@ -78,25 +90,40 @@ function StepUpPanel({
   description = "Creating the primary inbox grants ownership and configures its initial address. Re-enter your password to continue.",
   isPending,
   onPasswordChange,
+  onPasskeySuccess,
   onSubmit,
   optionsError,
   optionsPending,
   password,
   passwordAvailable,
   passwordError,
+  passkeyAvailable,
   title = "Confirm this ownership action",
 }: {
   readonly description?: string;
   readonly isPending: boolean;
   readonly onPasswordChange: (password: string) => void;
+  readonly onPasskeySuccess: () => Promise<void> | void;
   readonly onSubmit: () => void;
   readonly optionsError: Error | null;
   readonly optionsPending: boolean;
   readonly password: string;
   readonly passwordAvailable: boolean;
   readonly passwordError: Error | null;
+  readonly passkeyAvailable: boolean;
   readonly title?: string;
 }) {
+  const queryClient = useQueryClient();
+  const passkeySupported = usePasskeySupport();
+  const passkeyStepUp = useMutation({
+    mutationFn: () => authClient.stepUp.passkey.verify(),
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
+      await onPasskeySuccess();
+    },
+    retry: false,
+  });
+
   return (
     <div className="mt-8 rounded-2xl border border-[var(--line)] bg-white/70 p-5">
       <div className="flex items-start gap-3">
@@ -117,45 +144,72 @@ function StepUpPanel({
         </p>
       ) : optionsError ? (
         <ErrorNotice>{authErrorMessage(optionsError)}</ErrorNotice>
-      ) : passwordAvailable ? (
-        <form
-          className="mt-5 space-y-4"
-          onSubmit={(event) => {
-            event.preventDefault();
-            onSubmit();
-          }}
-        >
-          <label className="block space-y-2 text-sm font-bold">
-            <span>Password</span>
-            <input
-              type="password"
-              required
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => onPasswordChange(event.target.value)}
-              className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
-            />
-          </label>
-          {passwordError ? (
-            <ErrorNotice>{authErrorMessage(passwordError)}</ErrorNotice>
+      ) : passwordAvailable || (passkeyAvailable && passkeySupported) ? (
+        <div className="mt-5 space-y-4">
+          {passkeyAvailable && passkeySupported ? (
+            <div className="space-y-3">
+              <button
+                type="button"
+                disabled={passkeyStepUp.isPending || isPending}
+                onClick={() => passkeyStepUp.mutate()}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg disabled:opacity-50"
+              >
+                {passkeyStepUp.isPending ? (
+                  <LoaderCircle className="animate-spin" size={17} />
+                ) : (
+                  <KeyRound size={17} />
+                )}
+                Confirm with passkey
+              </button>
+              {passkeyStepUp.error ? (
+                <ErrorNotice>
+                  {authErrorMessage(passkeyStepUp.error)}
+                </ErrorNotice>
+              ) : null}
+            </div>
           ) : null}
-          <button
-            type="submit"
-            disabled={isPending}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg disabled:opacity-50"
-          >
-            {isPending ? (
-              <LoaderCircle className="animate-spin" size={17} />
-            ) : (
-              <KeyRound size={17} />
-            )}
-            Confirm identity
-          </button>
-        </form>
+          {passwordAvailable ? (
+            <form
+              className="space-y-4"
+              onSubmit={(event) => {
+                event.preventDefault();
+                onSubmit();
+              }}
+            >
+              <label className="block space-y-2 text-sm font-bold">
+                <span>Password</span>
+                <input
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(event) => onPasswordChange(event.target.value)}
+                  className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
+                />
+              </label>
+              {passwordError ? (
+                <ErrorNotice>{authErrorMessage(passwordError)}</ErrorNotice>
+              ) : null}
+              <button
+                type="submit"
+                disabled={isPending || passkeyStepUp.isPending}
+                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--line)] bg-white px-5 py-3 font-bold text-[var(--sea-ink)] shadow-sm disabled:opacity-50"
+              >
+                {isPending ? (
+                  <LoaderCircle className="animate-spin" size={17} />
+                ) : (
+                  <ShieldCheck size={17} />
+                )}
+                Confirm with password
+              </button>
+            </form>
+          ) : null}
+        </div>
       ) : (
         <ErrorNotice>
-          This account has no independently established step-up method, so it
-          cannot authorize a new ownership or authentication factor.
+          {passkeyAvailable
+            ? "This browser does not support the passkey required for this action."
+            : "This account has no independently established step-up method, so it cannot authorize a new ownership or authentication factor."}
         </ErrorNotice>
       )}
     </div>
@@ -252,10 +306,16 @@ function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
           description="Re-enter your password before adding an account recovery channel."
           isPending={passwordStepUp.isPending}
           onPasswordChange={setPassword}
+          onPasskeySuccess={() => enrollment.reset()}
           onSubmit={() => passwordStepUp.mutate()}
           optionsError={stepUpOptions.error}
           optionsPending={stepUpOptions.isPending}
           password={password}
+          passkeyAvailable={
+            stepUpOptions.data?.factors.some(
+              (factor) => factor.type === "passkey"
+            ) ?? false
+          }
           passwordAvailable={
             stepUpOptions.data?.factors.some(
               (factor) => factor.type === "password"
@@ -270,7 +330,7 @@ function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
 
 function PasskeyEnrollment({ userId }: { readonly userId: string }) {
   const queryClient = useQueryClient();
-  const supported = authClient.passkey.isSupported();
+  const supported = usePasskeySupport();
   const [password, setPassword] = useState("");
   const enrollment = useMutation({
     mutationFn: () => authClient.passkey.register(),
@@ -308,7 +368,8 @@ function PasskeyEnrollment({ userId }: { readonly userId: string }) {
       <h3 className="mt-2 text-xl font-bold">Enroll a passkey</h3>
       <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
         Enrollment requires recent authentication and a verified external
-        recovery address. Sign-in and passkey recovery remain disabled.
+        recovery address. Sign-in and passkey step-up are enabled; recovery
+        codes remain disabled.
       </p>
       {supported ? (
         enrollment.isSuccess ? (
@@ -344,10 +405,15 @@ function PasskeyEnrollment({ userId }: { readonly userId: string }) {
           description="Re-enter your password before creating a new authentication factor."
           isPending={passwordStepUp.isPending}
           onPasswordChange={setPassword}
+          onPasskeySuccess={() => enrollment.reset()}
           onSubmit={() => passwordStepUp.mutate()}
           optionsError={options.error}
           optionsPending={options.isPending}
           password={password}
+          passkeyAvailable={
+            options.data?.factors.some((factor) => factor.type === "passkey") ??
+            false
+          }
           passwordAvailable={
             options.data?.factors.some(
               (factor) => factor.type === "password"
@@ -365,6 +431,11 @@ const formatCredentialTime = (timestamp: number) =>
     dateStyle: "medium",
     timeStyle: "short",
   }).format(timestamp);
+
+const hasStepUpFactor = (
+  data: { readonly factors: readonly { readonly type: string }[] } | undefined,
+  type: "passkey" | "password"
+) => data?.factors.some((factor) => factor.type === type) ?? false;
 
 const hasAuthErrorCode = (error: unknown, code: string) =>
   error !== null &&
@@ -527,10 +598,19 @@ function PasskeyCredentialManagement({ userId }: { readonly userId: string }) {
           description="Re-enter your password before revoking this authentication factor."
           isPending={passwordStepUp.isPending}
           onPasswordChange={setPassword}
+          onPasskeySuccess={() => {
+            if (revokeCommand !== null) {
+              revocation.mutate(revokeCommand);
+            }
+          }}
           onSubmit={() => passwordStepUp.mutate()}
           optionsError={options.error}
           optionsPending={options.isPending}
           password={password}
+          passkeyAvailable={
+            options.data?.factors.some((factor) => factor.type === "passkey") ??
+            false
+          }
           passwordAvailable={
             options.data?.factors.some(
               (factor) => factor.type === "password"
@@ -604,10 +684,15 @@ export function SignedInOwnerBootstrap({
         <StepUpPanel
           isPending={ownerBootstrap.passwordStepUp.isPending}
           onPasswordChange={ownerBootstrap.handleStepUpPasswordChange}
+          onPasskeySuccess={ownerBootstrap.handlePasskeyStepUp}
           onSubmit={() => ownerBootstrap.passwordStepUp.mutate()}
           optionsError={ownerBootstrap.stepUpOptions.error}
           optionsPending={ownerBootstrap.stepUpOptions.isPending}
           password={ownerBootstrap.stepUpPassword}
+          passkeyAvailable={hasStepUpFactor(
+            ownerBootstrap.stepUpOptions.data,
+            "passkey"
+          )}
           passwordAvailable={ownerBootstrap.stepUpPasswordAvailable}
           passwordError={ownerBootstrap.passwordStepUp.error}
         />
