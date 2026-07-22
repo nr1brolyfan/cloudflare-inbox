@@ -28,6 +28,7 @@ import {
   MailboxDirectoryRepositoryDoLayer,
   MailboxMessageRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
+import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { MailboxMessageActions } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
@@ -84,7 +85,6 @@ import {
 } from "../control-plane/passkey-enrollment-live";
 import { RecoveryCodeAdministrationLive } from "../control-plane/recovery-code-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
-import { MailboxInlineAttachmentReadingLive } from "../mailboxes/attachment-reading";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
 import { DraftAttachmentBlobStoreR2WithRuntimeLive } from "../mailboxes/draft-attachment-store-r2-live";
 import { MailboxDraftAttachmentsLive } from "../mailboxes/draft-attachments";
@@ -308,15 +308,16 @@ const BackendRoutesLive = Layer.unwrap(
         Layer.merge(mailAuthorizationLive, mailboxMessageRepositoryDoLayer)
       )
     );
-    const mailboxInlineAttachmentLive = MailboxInlineAttachmentReadingLive.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          mailAuthorizationLive,
-          mailboxRepositoryLive,
-          InboundAttachmentBlobReaderR2WithRuntimeLive
+    const mailboxInlineAttachmentLive =
+      MailboxInlineAttachmentReading.layerNoDeps.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            mailAuthorizationLive,
+            mailboxMessageRepositoryDoLayer,
+            InboundAttachmentBlobReaderR2WithRuntimeLive
+          )
         )
-      )
-    );
+      );
     const inboundReplayLive = InboundReplayLive.pipe(
       Layer.provide(
         Layer.merge(

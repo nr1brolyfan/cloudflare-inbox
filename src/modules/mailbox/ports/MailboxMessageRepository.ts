@@ -6,6 +6,8 @@ import type {
   MailboxRepositoryError,
 } from "#/mailboxes/errors";
 import type {
+  AttachmentBlobLocation,
+  GetAttachmentBlobInput,
   GetMessageInput,
   GetMessageResult,
   GetThreadInput,
@@ -22,6 +24,9 @@ import type {
 type RepositoryError = MailboxDomainError | MailboxRepositoryError;
 
 export interface MailboxMessageRepositoryService {
+  readonly getAttachmentBlob: (
+    input: GetAttachmentBlobInput
+  ) => Effect.Effect<AttachmentBlobLocation, RepositoryError>;
   readonly getMessage: (
     input: GetMessageInput
   ) => Effect.Effect<GetMessageResult, RepositoryError>;

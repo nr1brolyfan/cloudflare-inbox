@@ -5,12 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import { ParsedInboundAttachmentV1 } from "#/mailboxes/inbound";
 import {
-  InboundAttachmentBlobReader,
   InboundAttachmentBlobReaderR2Live,
   InboundAttachmentR2ReadClient,
 } from "#/mailboxes/inbound-attachment-reader-r2-live";
 import { InboundAttachmentStoreRuntimeLive } from "#/mailboxes/inbound-attachment-store-r2-live";
 import { AttachmentBlobLocation } from "#/mailboxes/messages";
+import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
 
 const location = Schema.decodeUnknownSync(AttachmentBlobLocation)({
   attachmentId: "attachment-1",

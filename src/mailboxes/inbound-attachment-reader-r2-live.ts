@@ -3,6 +3,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
+
 import { BlobStoreError } from "./errors";
 import { ParsedInboundAttachmentV1 } from "./inbound";
 import {
@@ -10,7 +12,6 @@ import {
   InboundAttachmentStoreRuntimeLive,
   inboundAttachmentObjectKey,
 } from "./inbound-attachment-store-r2-live";
-import type { AttachmentBlobLocation } from "./messages";
 
 export interface InboundAttachmentR2ReadObject {
   readonly arrayBuffer: () => Effect.Effect<ArrayBuffer, unknown>;
@@ -29,17 +30,6 @@ export interface InboundAttachmentR2ReadClient {
 export const InboundAttachmentR2ReadClient =
   Context.Service<InboundAttachmentR2ReadClient>(
     "cloudflare-inbox/InboundAttachmentR2ReadClient"
-  );
-
-export interface InboundAttachmentBlobReader {
-  readonly read: (
-    location: AttachmentBlobLocation
-  ) => Effect.Effect<Uint8Array, BlobStoreError>;
-}
-
-export const InboundAttachmentBlobReader =
-  Context.Service<InboundAttachmentBlobReader>(
-    "cloudflare-inbox/InboundAttachmentBlobReader"
   );
 
 const readError = (cause: unknown, retryable: boolean) =>

@@ -1,3 +1,4 @@
+/* oxlint-disable max-classes-per-file -- Attachment contract, error and service form one cohesive use case. */
 import type { CurrentPrincipal } from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -5,15 +6,27 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailAuthorization } from "../authorization/mail-authorization";
-import { AttachmentId, FolderId, LabelId, MailboxId, MessageId } from "./core";
-import type { MimeType } from "./core";
-import type { BlobStoreError, MailboxRepositoryError } from "./errors";
-import { MailboxDomainError } from "./errors";
-import { InboundAttachmentBlobReader } from "./inbound-attachment-reader-r2-live";
-import type { AttachmentBlobLocation, MessageDetail } from "./messages";
-import { MailboxRepository } from "./repository";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
+import {
+  AttachmentId,
+  FolderId,
+  LabelId,
+  MailboxId,
+  MessageId,
+} from "#/mailboxes/core";
+import type { MimeType } from "#/mailboxes/core";
+import type {
+  BlobStoreError,
+  MailboxRepositoryError,
+} from "#/mailboxes/errors";
+import { MailboxDomainError } from "#/mailboxes/errors";
+import type {
+  AttachmentBlobLocation,
+  MessageDetail,
+} from "#/mailboxes/messages";
+import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
+import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
 export const MailboxInlineAttachmentInput = Schema.Union([
   Schema.Struct({
@@ -48,7 +61,7 @@ export class MailboxInlineAttachmentError extends Data.TaggedError(
   readonly reason: "not-found" | "storage";
 }> {}
 
-export interface MailboxInlineAttachmentReading {
+export interface MailboxInlineAttachmentReadingService {
   readonly get: (
     input: MailboxInlineAttachmentInput
   ) => Effect.Effect<
@@ -57,11 +70,6 @@ export interface MailboxInlineAttachmentReading {
     CurrentPrincipal
   >;
 }
-
-export const MailboxInlineAttachmentReading =
-  Context.Service<MailboxInlineAttachmentReading>(
-    "cloudflare-inbox/MailboxInlineAttachmentReading"
-  );
 
 const safeInlineImageMimeTypes = new Set([
   "image/avif",
@@ -140,14 +148,16 @@ const attachmentLocationsMatch = (
   isSafeInlineImageMimeType(location.mimeType);
 
 /** Independently authorizes and loads one CID image without exposing R2 identity. */
-export const MailboxInlineAttachmentReadingLive = Layer.effect(
+export class MailboxInlineAttachmentReading extends Context.Service<
   MailboxInlineAttachmentReading,
-  Effect.gen(function* () {
+  MailboxInlineAttachmentReadingService
+>()("cloudflare-inbox/MailboxInlineAttachmentReading", {
+  make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
     const blobs = yield* InboundAttachmentBlobReader;
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxMessageRepository;
 
-    return MailboxInlineAttachmentReading.of({
+    return {
       get: (input) =>
         Effect.gen(function* () {
           yield* input._tag === "Folder"
@@ -229,6 +239,8 @@ export const MailboxInlineAttachmentReadingLive = Layer.effect(
             );
           return { bytes, mimeType: location.mimeType };
         }),
-    });
-  })
-);
+    } satisfies MailboxInlineAttachmentReadingService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

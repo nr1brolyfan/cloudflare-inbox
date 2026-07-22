@@ -7,16 +7,15 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
+import { FolderId } from "#/mailboxes/core";
+import { AttachmentBlobLocation, GetMessageResult } from "#/mailboxes/messages";
 import {
   MailboxInlineAttachmentInput,
   MailboxInlineAttachmentReading,
-  MailboxInlineAttachmentReadingLive,
-} from "#/mailboxes/attachment-reading";
-import { FolderId } from "#/mailboxes/core";
-import { InboundAttachmentBlobReader } from "#/mailboxes/inbound-attachment-reader-r2-live";
-import { AttachmentBlobLocation, GetMessageResult } from "#/mailboxes/messages";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
+} from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
+import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
+import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
 const message = Schema.decodeUnknownSync(GetMessageResult)({
   activityAt: 1000,
@@ -70,43 +69,16 @@ const unused = () => Effect.die(new Error("Unexpected repository operation"));
 const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
-const repository = MailboxRepository.of({
-  addMessageLabel: unused,
-  cancelOutboundDelivery: unused,
-  completeDraftAttachment: unused,
-  createDraft: unused,
-  createFolder: unused,
-  createLabel: unused,
-  deleteFolder: unused,
-  deleteLabel: unused,
-  findAttachmentLocation: unused,
-  findDraftLocation: unused,
-  findFolderLocation: unused,
-  findMessageLocation: unused,
-  findRuleLocation: unused,
+const repository = MailboxMessageRepository.of({
   getAttachmentBlob: () => Effect.succeed(blobLocation),
-  getDraft: unused,
-  getDraftAttachment: unused,
   getMessage: () => Effect.succeed(message),
-  getOutboundDelivery: unused,
   getThread: unused,
-  listFolders: unused,
-  listDraftAttachments: unused,
-  listDrafts: unused,
-  listLabels: unused,
   listMessages: unused,
   moveMessage: unused,
-  removeMessageLabel: unused,
-  reserveDraftAttachment: unused,
-  renameFolder: unused,
-  renameLabel: unused,
-  resendOutbound: unused,
-  scheduleOutbound: unused,
   searchMessages: unused,
   setMessageRead: unused,
   setMessageStarred: unused,
-  updateDraft: unused,
-}) satisfies MailboxRepositoryService;
+}) satisfies MailboxMessageRepositoryService;
 
 const authorization = MailAuthorization.of({
   requireAttachmentRead: () =>
@@ -144,11 +116,11 @@ const runRead = (input: unknown) =>
         )
       ),
       Effect.provide(
-        MailboxInlineAttachmentReadingLive.pipe(
+        MailboxInlineAttachmentReading.layerNoDeps.pipe(
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(MailAuthorization, authorization),
-              Layer.succeed(MailboxRepository, repository),
+              Layer.succeed(MailboxMessageRepository, repository),
               Layer.succeed(
                 InboundAttachmentBlobReader,
                 InboundAttachmentBlobReader.of({

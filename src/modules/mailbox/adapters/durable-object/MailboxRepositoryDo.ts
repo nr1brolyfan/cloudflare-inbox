@@ -11,6 +11,7 @@ export const MailboxMessageRepositoryDoLayer = Layer.effect(
   Effect.gen(function* () {
     const repository = yield* MailboxRepository;
     return MailboxMessageRepository.of({
+      getAttachmentBlob: repository.getAttachmentBlob,
       getMessage: repository.getMessage,
       getThread: repository.getThread,
       listMessages: repository.listMessages,

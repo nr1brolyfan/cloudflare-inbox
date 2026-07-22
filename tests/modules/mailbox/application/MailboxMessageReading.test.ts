@@ -105,6 +105,7 @@ const repositoryWith = (
   searchMessages: MailboxMessageRepositoryService["searchMessages"] = unused
 ) =>
   MailboxMessageRepository.of({
+    getAttachmentBlob: unused,
     getMessage,
     getThread,
     listMessages,

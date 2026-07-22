@@ -44,7 +44,6 @@ import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "#/mailboxes/administration";
-import { MailboxInlineAttachmentReading } from "#/mailboxes/attachment-reading";
 import { MailboxRecordSchema, MimeType } from "#/mailboxes/core";
 import {
   DraftAttachmentReservationSchema,
@@ -77,6 +76,8 @@ import {
   MailboxOutboundSendingError,
   SendMailboxDraftResult,
 } from "#/mailboxes/outbound-sending";
+import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
+import type { MailboxInlineAttachmentReadingService } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import {
   MailboxMessageActionResult,
   MailboxMessageActions,
@@ -325,7 +326,7 @@ const makeHandler = (
   messageHtml: MailboxMessageHtmlReadingService = MailboxMessageHtmlReading.of({
     get: () => Effect.succeed(mailboxMessageHtml),
   }),
-  inlineAttachments: MailboxInlineAttachmentReading = MailboxInlineAttachmentReading.of(
+  inlineAttachments: MailboxInlineAttachmentReadingService = MailboxInlineAttachmentReading.of(
     {
       get: () =>
         Effect.succeed({

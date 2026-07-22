@@ -102,6 +102,7 @@ const repositoryWith = (
       listFolders: listFolders ?? unused,
     }),
     messages: MailboxMessageRepository.of({
+      getAttachmentBlob: unused,
       getMessage: unused,
       getThread: unused,
       listMessages: unused,

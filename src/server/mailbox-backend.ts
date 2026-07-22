@@ -5,6 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
+import { isSafeInlineImageMimeType } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageActionResult } from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
@@ -24,8 +26,6 @@ import type {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
-import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
-import { isSafeInlineImageMimeType } from "../mailboxes/attachment-reading";
 import { MailboxRecordSchema } from "../mailboxes/core";
 import type {
   DraftAttachmentReservationSchema,

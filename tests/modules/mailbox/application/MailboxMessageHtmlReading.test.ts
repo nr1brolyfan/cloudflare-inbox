@@ -55,6 +55,7 @@ const repositoryWithMessage = (
   value = message
 ): MailboxMessageRepositoryService =>
   MailboxMessageRepository.of({
+    getAttachmentBlob: unused,
     getMessage: () => Effect.succeed(value),
     getThread: unused,
     listMessages: unused,

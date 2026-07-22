@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import type { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import type {
@@ -14,7 +15,6 @@ import type {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
-import type { MailboxInlineAttachmentInput } from "../mailboxes/attachment-reading";
 import type {
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,

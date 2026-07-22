@@ -2,7 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
-import { MailboxInlineAttachmentInput } from "../../../../../../../../mailboxes/attachment-reading";
+import { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
+
 import { websiteBackend } from "../../../../../../../../server/backend";
 
 const responseHeaders = (contentType: string) => ({

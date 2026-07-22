@@ -7,7 +7,6 @@ import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "#/mailboxes/administration";
-import { MailboxInlineAttachmentInput } from "#/mailboxes/attachment-reading";
 import { GetDraftAttachmentInput } from "#/mailboxes/draft-attachments";
 import {
   CreateMailboxDraftCommand,
@@ -19,6 +18,7 @@ import {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,
 } from "#/mailboxes/outbound-sending";
+import { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import {
