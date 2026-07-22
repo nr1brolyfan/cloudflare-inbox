@@ -336,6 +336,28 @@ describe("password step-up API", () => {
 });
 
 describe("password enrollment guard", () => {
+  it("keeps public password sign-up unavailable", async () => {
+    const error = await runRestrictedPasswordClient((client) =>
+      client.password
+        .signUp({
+          payload: {
+            identity: {
+              kind: "email",
+              scope: { type: "global" },
+              value: "person@example.test",
+            },
+            password: "correct-password",
+          },
+        })
+        .pipe(Effect.flip)
+    );
+
+    expect(error).toMatchObject({
+      _tag: "AuthPolicyDeniedError",
+      code: "policy_denied",
+    });
+  });
+
   it("keeps first-password enrollment unavailable", async () => {
     let passwordSets = 0;
     const error = await runRestrictedPasswordClient(

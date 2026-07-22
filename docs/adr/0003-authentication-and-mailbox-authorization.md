@@ -25,6 +25,8 @@ Until SAFE-002 provisions passkeys and recovery codes, SAFE-001 exposes a five-m
 
 SAFE-002 starts with an internal passkey foundation only. The RP ID is the configured public-origin hostname, expected origin is exact, discoverable credentials and user verification are required, and attestation is disabled. These domain layers do not expose registration or authentication routes by themselves; public enrollment remains blocked until it can require independently established recent authentication and recovery-safe identity handling.
 
+Recovery-only email identities are application-owned records, not effect-auth `auth_user_identity` rows. This structural separation prevents generic password, OTP, and magic-link flows from treating a verified recovery address as login authority. Until `MailDomain` exists, the recovery-safe policy treats the configured owner domain as managed and also rejects every recorded mailbox route, active login identity, and active or pending recovery duplicate. The policy must be reused by enrollment, verification, invitation, login/recovery initiation, and future route mutations before SAFE-013 is complete.
+
 ### Authorization
 
 The first release grants access at mailbox level only. Folder-level grants are not exposed or issued by product workflows.

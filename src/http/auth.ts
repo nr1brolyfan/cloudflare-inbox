@@ -14,6 +14,12 @@ const passwordEnrollmentUnavailable = () =>
     message: "Password enrollment unavailable",
   });
 
+const passwordSignUpUnavailable = () =>
+  new AuthPolicyDeniedError({
+    code: "policy_denied",
+    message: "Password sign-up unavailable",
+  });
+
 /** Keeps first-password enrollment unavailable until a recovery-safe flow exists. */
 export const PasswordEnrollmentUnavailableGroupLive = HttpApiBuilder.group(
   CoreAuthHttpApi,
@@ -23,7 +29,7 @@ export const PasswordEnrollmentUnavailableGroupLive = HttpApiBuilder.group(
 
     return handlers
       .handle("signIn", operations.signIn)
-      .handle("signUp", operations.signUp)
+      .handle("signUp", () => Effect.fail(passwordSignUpUnavailable()))
       .handle("resetStart", operations.resetStart)
       .handle("resetVerify", operations.resetVerify)
       .handle("set", () => Effect.fail(passwordEnrollmentUnavailable()))

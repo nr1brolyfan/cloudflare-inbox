@@ -106,6 +106,9 @@ export const appMailboxAddress = sqliteTable(
       sql`is_primary = 0 or enabled = 1`
     ),
     uniqueIndex("app_mailbox_address_route_idx").on(t.normalizedAddress),
+    index("app_mailbox_address_recovery_comparison_idx").on(
+      sql`lower(${t.normalizedAddress})`
+    ),
     uniqueIndex("app_mailbox_address_primary_idx")
       .on(t.mailboxId)
       .where(sql`${t.isPrimary} = 1`),
@@ -177,6 +180,127 @@ export const appUserPreference = sqliteTable(
       sql`updated_at >= created_at`
     ),
     check("app_user_preference_version_check", sql`version >= 1`),
+  ]
+);
+
+export const appExternalRecoveryIdentity = sqliteTable(
+  "app_external_recovery_identity",
+  {
+    id: text("id").notNull(),
+    userId: text("user_id").notNull(),
+    address: text("address").notNull(),
+    normalizedAddress: text("normalized_address").notNull(),
+    comparisonKey: text("comparison_key").notNull(),
+    status: text("status", {
+      enum: ["pending", "verified", "revoked"],
+    }).notNull(),
+    challengeId: text("challenge_id").notNull(),
+    challengeExpiresAt: integer("challenge_expires_at").notNull(),
+    enrollmentOperationId: text("enrollment_operation_id").notNull(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    verifiedAt: integer("verified_at"),
+    revokedAt: integer("revoked_at"),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    primaryKey({
+      name: "app_external_recovery_identity_pkey",
+      columns: [t.id],
+    }),
+    check(
+      "app_external_recovery_identity_id_check",
+      sql`length(id) between 1 and 128`
+    ),
+    check(
+      "app_external_recovery_identity_user_id_check",
+      sql`length(user_id) between 1 and 128`
+    ),
+    check(
+      "app_external_recovery_identity_address_check",
+      sql`length(address) between 3 and 320 and address = trim(address)`
+    ),
+    check(
+      "app_external_recovery_identity_normalized_address_check",
+      sql`length(normalized_address) between 3 and 320
+        and normalized_address = trim(normalized_address)
+        and instr(address, '@') > 1
+        and instr(substr(address, instr(address, '@') + 1), '@') = 0
+        and normalized_address =
+          substr(address, 1, instr(address, '@'))
+          || lower(substr(address, instr(address, '@') + 1))`
+    ),
+    check(
+      "app_external_recovery_identity_comparison_key_check",
+      sql`length(comparison_key) between 3 and 320
+        and comparison_key = lower(trim(comparison_key))
+        and comparison_key = lower(address)`
+    ),
+    check(
+      "app_external_recovery_identity_status_check",
+      sql`status in ('pending', 'verified', 'revoked')`
+    ),
+    check(
+      "app_external_recovery_identity_challenge_id_check",
+      sql`length(challenge_id) between 1 and 128`
+    ),
+    check(
+      "app_external_recovery_identity_challenge_expiry_check",
+      sql`challenge_expires_at >= 0 and challenge_expires_at > created_at`
+    ),
+    check(
+      "app_external_recovery_identity_operation_id_check",
+      sql`length(enrollment_operation_id) between 1 and 128`
+    ),
+    check(
+      "app_external_recovery_identity_created_at_check",
+      sql`created_at >= 0`
+    ),
+    check(
+      "app_external_recovery_identity_updated_at_check",
+      sql`updated_at >= created_at`
+    ),
+    check(
+      "app_external_recovery_identity_verified_at_check",
+      sql`verified_at is null
+        or (verified_at >= created_at and verified_at <= updated_at)`
+    ),
+    check(
+      "app_external_recovery_identity_revoked_at_check",
+      sql`revoked_at is null
+        or (revoked_at >= created_at and revoked_at <= updated_at)`
+    ),
+    check(
+      "app_external_recovery_identity_lifecycle_order_check",
+      sql`verified_at is null
+        or revoked_at is null
+        or revoked_at >= verified_at`
+    ),
+    check("app_external_recovery_identity_version_check", sql`version >= 1`),
+    check(
+      "app_external_recovery_identity_state_check",
+      sql`(status = 'pending' and verified_at is null and revoked_at is null)
+        or (status = 'verified' and verified_at is not null and revoked_at is null)
+        or (status = 'revoked' and revoked_at is not null)`
+    ),
+    uniqueIndex("app_external_recovery_identity_challenge_idx").on(
+      t.challengeId
+    ),
+    uniqueIndex("app_external_recovery_identity_operation_idx").on(
+      t.enrollmentOperationId
+    ),
+    uniqueIndex("app_external_recovery_identity_pending_user_idx")
+      .on(t.userId)
+      .where(sql`status = 'pending'`),
+    uniqueIndex("app_external_recovery_identity_verified_user_idx")
+      .on(t.userId)
+      .where(sql`status = 'verified'`),
+    uniqueIndex("app_external_recovery_identity_active_address_idx")
+      .on(t.comparisonKey)
+      .where(sql`status in ('pending', 'verified')`),
+    index("app_external_recovery_identity_pending_expiry_idx")
+      .on(t.challengeExpiresAt)
+      .where(sql`status = 'pending'`),
   ]
 );
 
