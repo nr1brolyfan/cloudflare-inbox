@@ -17,6 +17,7 @@ import {
   PasswordHttpOperationsLive,
   SessionHttpOperationsLive,
 } from "@effect-auth/core/HttpApi";
+import { RecoveryCodesLive } from "@effect-auth/core/RecoveryCode";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
@@ -68,6 +69,7 @@ import {
   PasskeyEnrollmentLive,
   PasskeyEnrollmentRuntimeLive,
 } from "../control-plane/passkey-enrollment-live";
+import { RecoveryCodeAdministrationLive } from "../control-plane/recovery-code-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
 import { MailboxInlineAttachmentReadingLive } from "../mailboxes/attachment-reading";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
@@ -109,6 +111,7 @@ import { PasskeyAuthenticationApiLayer } from "./passkey-authentication";
 import { PasskeyCredentialManagementGroupLive } from "./passkey-credential-management";
 import { PasskeyEnrollmentGroupLive } from "./passkey-enrollment";
 import { HttpApiPlatformLive } from "./platform";
+import { RecoveryCodeManagementApiLayer } from "./recovery-code-management";
 
 /** Acquire once per interactive request/run so its atomic budget is never process-global. */
 export const BackendAiInteractiveToolkitLive =
@@ -382,6 +385,21 @@ const BackendRoutesLive = Layer.unwrap(
         Layer.provide(BackendRequestContextMiddlewareLive),
         Layer.provide(requestValidationLive)
       );
+    const recoveryCodeAdministrationLive = RecoveryCodeAdministrationLive.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          authServicesLive,
+          RecoveryCodesLive.pipe(Layer.provide(authServicesLive)),
+          SensitiveOperationStepUpClockLive
+        )
+      )
+    );
+    const recoveryCodeManagementApiLayer = RecoveryCodeManagementApiLayer.pipe(
+      Layer.provide(recoveryCodeAdministrationLive),
+      Layer.provide(currentRequestAuthLive),
+      Layer.provide(BackendRequestContextMiddlewareLive),
+      Layer.provide(requestValidationLive)
+    );
 
     return HttpApiBuilder.layer(BackendHttpApi).pipe(
       Layer.provide(
@@ -391,6 +409,7 @@ const BackendRoutesLive = Layer.unwrap(
           passkeyEnrollmentGroupLive,
           passkeyAuthenticationApiLayer,
           passkeyCredentialManagementGroupLive,
+          recoveryCodeManagementApiLayer,
           healthGroupLive,
           mailboxGroupLive,
           devEmailGroupLive

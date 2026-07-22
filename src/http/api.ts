@@ -6,6 +6,7 @@ import { MailboxGroup } from "./mailbox-contract";
 import { PasskeyAuthenticationGroup } from "./passkey-authentication-contract";
 import { PasskeyCredentialManagementGroup } from "./passkey-credential-management-contract";
 import { PasskeyEnrollmentGroup } from "./passkey-enrollment-contract";
+import { RecoveryCodeManagementGroup } from "./recovery-code-management-contract";
 
 /** The complete private Worker contract. Every route is registered by one builder. */
 export const BackendHttpApi = ApplicationAuthHttpApi.add(
@@ -15,5 +16,6 @@ export const BackendHttpApi = ApplicationAuthHttpApi.add(
   ExternalRecoveryIdentityGroup,
   PasskeyEnrollmentGroup,
   PasskeyAuthenticationGroup,
-  PasskeyCredentialManagementGroup
+  PasskeyCredentialManagementGroup,
+  RecoveryCodeManagementGroup
 );

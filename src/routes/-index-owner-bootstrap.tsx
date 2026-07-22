@@ -623,6 +623,100 @@ function PasskeyCredentialManagement({ userId }: { readonly userId: string }) {
   );
 }
 
+function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
+  const queryClient = useQueryClient();
+  const [password, setPassword] = useState("");
+  const generation = useMutation({
+    gcTime: 0,
+    mutationFn: () => authClient.extensions.generateRecoveryCodes(),
+    retry: false,
+  });
+  const stepUpRequired = hasAuthErrorCode(generation.error, "step_up_required");
+  const options = useQuery({
+    enabled: stepUpRequired,
+    queryFn: () => authClient.stepUp.options(),
+    queryKey: ["auth", "recovery-code-step-up", userId] as const,
+    retry: false,
+  });
+  const passwordStepUp = useMutation({
+    mutationFn: () => authClient.stepUp.password.verify({ password }),
+    onSuccess: async () => {
+      setPassword("");
+      generation.reset();
+      await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
+    },
+    retry: false,
+  });
+
+  return (
+    <section className="mt-8 border-t border-[var(--line)] pt-8">
+      <p className="island-kicker">Account recovery</p>
+      <h3 className="mt-2 text-xl font-bold">Recovery codes</h3>
+      <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+        Generating a set immediately invalidates every previous unused code.
+        Account recovery will also require access to your verified external
+        recovery address.
+      </p>
+      {generation.data ? (
+        <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+          <p className="font-bold text-amber-950">
+            Save these codes now. They will not be shown again.
+          </p>
+          <div className="mt-4 grid gap-2 font-mono text-sm sm:grid-cols-2">
+            {generation.data.codes.map((code) => (
+              <code key={code} className="rounded-lg bg-white px-3 py-2">
+                {code}
+              </code>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={() => generation.reset()}
+            className="mt-5 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-bold text-amber-950"
+          >
+            I saved these codes
+          </button>
+        </div>
+      ) : (
+        <div className="mt-5">
+          {generation.error && !stepUpRequired ? (
+            <ErrorNotice>{authErrorMessage(generation.error)}</ErrorNotice>
+          ) : null}
+          <button
+            type="button"
+            disabled={generation.isPending}
+            onClick={() => generation.mutate()}
+            className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/80 px-5 py-3 font-bold shadow-sm disabled:opacity-50"
+          >
+            {generation.isPending ? (
+              <LoaderCircle className="animate-spin" size={17} />
+            ) : (
+              <KeyRound size={17} />
+            )}
+            Generate new recovery codes
+          </button>
+        </div>
+      )}
+      {stepUpRequired ? (
+        <StepUpPanel
+          title="Confirm recovery-code generation"
+          description="Use a recently established password or passkey before replacing your recovery codes."
+          isPending={passwordStepUp.isPending}
+          onPasswordChange={setPassword}
+          onPasskeySuccess={() => generation.reset()}
+          onSubmit={() => passwordStepUp.mutate()}
+          optionsError={options.error}
+          optionsPending={options.isPending}
+          password={password}
+          passkeyAvailable={hasStepUpFactor(options.data, "passkey")}
+          passwordAvailable={hasStepUpFactor(options.data, "password")}
+          passwordError={passwordStepUp.error}
+        />
+      ) : null}
+    </section>
+  );
+}
+
 export function SignedInOwnerBootstrap({
   isLogoutPending,
   onLogout,
@@ -722,6 +816,7 @@ export function SignedInOwnerBootstrap({
       <ExternalRecoveryEnrollment userId={userId} />
       <PasskeyEnrollment userId={userId} />
       <PasskeyCredentialManagement userId={userId} />
+      <RecoveryCodeManagement userId={userId} />
       <button
         type="button"
         onClick={onLogout}

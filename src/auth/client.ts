@@ -81,6 +81,11 @@ const applicationAuthExtension = defineAuthHttpApiExtension(
           }),
         options
       ),
+    generateRecoveryCodes: (options?: AuthClientRequestOptions) =>
+      run(
+        (client) => client.recoveryCodeManagement.generate({ payload: {} }),
+        options
+      ),
   })
 );
 
