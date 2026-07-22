@@ -16,14 +16,16 @@ export const PasskeyServicesLive = Layer.unwrap(
       PasskeyCredentialStore,
       PasskeyCredentialStore.of(credentialStore)
     );
+    const verifierLive = SimpleWebAuthnPasskeyVerifierLive;
 
     return Layer.mergeAll(
       PasskeyCredentialManagementLive.pipe(Layer.provide(credentialStoreLive)),
       PasskeyOptionsLive.pipe(Layer.provide(credentialStoreLive)),
       PasskeyVerificationLive().pipe(
         Layer.provide(credentialStoreLive),
-        Layer.provide(SimpleWebAuthnPasskeyVerifierLive)
-      )
+        Layer.provide(verifierLive)
+      ),
+      verifierLive
     );
   })
 );

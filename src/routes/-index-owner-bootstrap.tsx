@@ -153,8 +153,8 @@ function StepUpPanel({
         </form>
       ) : (
         <ErrorNotice>
-          This account has no available step-up method. Passwordless ownership
-          actions remain disabled until passkey enrollment is available.
+          This account has no independently established step-up method, so it
+          cannot authorize a new ownership or authentication factor.
         </ErrorNotice>
       )}
     </div>
@@ -267,6 +267,93 @@ function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
   );
 }
 
+function PasskeyEnrollment({ userId }: { readonly userId: string }) {
+  const queryClient = useQueryClient();
+  const supported = authClient.passkey.isSupported();
+  const [password, setPassword] = useState("");
+  const enrollment = useMutation({
+    mutationFn: () => authClient.passkey.register(),
+    retry: false,
+  });
+  const stepUpRequired =
+    enrollment.error !== null &&
+    typeof enrollment.error === "object" &&
+    "code" in enrollment.error &&
+    enrollment.error.code === "step_up_required";
+  const options = useQuery({
+    enabled: stepUpRequired,
+    queryFn: () => authClient.stepUp.options(),
+    queryKey: ["auth", "passkey-enrollment-step-up", userId] as const,
+    retry: false,
+  });
+  const passwordStepUp = useMutation({
+    mutationFn: () => authClient.stepUp.password.verify({ password }),
+    onSuccess: async () => {
+      setPassword("");
+      enrollment.reset();
+      await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
+    },
+    retry: false,
+  });
+
+  return (
+    <section className="mt-8 border-t border-[var(--line)] pt-8">
+      <p className="island-kicker">Passkey-first access</p>
+      <h3 className="mt-2 text-xl font-bold">Enroll a passkey</h3>
+      <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+        Enrollment requires recent authentication and a verified external
+        recovery address. Sign-in and passkey recovery remain disabled.
+      </p>
+      {supported ? (
+        enrollment.isSuccess ? (
+          <div className="mt-4">
+            <Notice>Passkey enrolled for this account.</Notice>
+          </div>
+        ) : (
+          <div className="mt-5">
+            {enrollment.error && !stepUpRequired ? (
+              <ErrorNotice>{authErrorMessage(enrollment.error)}</ErrorNotice>
+            ) : null}
+            <button
+              type="button"
+              onClick={() => enrollment.mutate()}
+              disabled={enrollment.isPending}
+              className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/80 px-5 py-3 font-bold shadow-sm disabled:opacity-50"
+            >
+              {enrollment.isPending ? (
+                <LoaderCircle className="animate-spin" size={17} />
+              ) : (
+                <KeyRound size={17} />
+              )}
+              Create passkey
+            </button>
+          </div>
+        )
+      ) : (
+        <ErrorNotice>This browser does not support passkeys.</ErrorNotice>
+      )}
+      {stepUpRequired ? (
+        <StepUpPanel
+          title="Confirm passkey enrollment"
+          description="Re-enter your password before creating a new authentication factor."
+          isPending={passwordStepUp.isPending}
+          onPasswordChange={setPassword}
+          onSubmit={() => passwordStepUp.mutate()}
+          optionsError={options.error}
+          optionsPending={options.isPending}
+          password={password}
+          passwordAvailable={
+            options.data?.factors.some(
+              (factor) => factor.type === "password"
+            ) ?? false
+          }
+          passwordError={passwordStepUp.error}
+        />
+      ) : null}
+    </section>
+  );
+}
+
 export function SignedInOwnerBootstrap({
   isLogoutPending,
   onLogout,
@@ -359,6 +446,7 @@ export function SignedInOwnerBootstrap({
         </Link>
       ) : null}
       <ExternalRecoveryEnrollment userId={userId} />
+      <PasskeyEnrollment userId={userId} />
       <button
         type="button"
         onClick={onLogout}

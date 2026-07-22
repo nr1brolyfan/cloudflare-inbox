@@ -31,6 +31,7 @@ import { ExistingPasswordResetLive } from "../auth/existing-password-reset";
 import { ExternalRecoveryIdentityChallengeLive } from "../auth/external-recovery-identity-challenge-live";
 import { ExternalRecoveryIdentityDeliveryLive } from "../auth/external-recovery-identity-delivery-live";
 import { AuthServicesLive } from "../auth/live";
+import { PasskeyRuntimeConfigLive } from "../auth/passkey-config";
 import { PasswordResetEligibilityLive } from "../auth/password-reset-eligibility";
 import { AuthRuntimeConfig } from "../auth/runtime-config";
 import {
@@ -57,6 +58,10 @@ import {
 } from "../control-plane/mailbox-administration-live";
 import { MailboxNavigationLive } from "../control-plane/mailbox-navigation-live";
 import { MailboxSenderIdentityLive } from "../control-plane/mailbox-sender-identity-live";
+import {
+  PasskeyEnrollmentLive,
+  PasskeyEnrollmentRuntimeLive,
+} from "../control-plane/passkey-enrollment-live";
 import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
 import { MailboxInlineAttachmentReadingLive } from "../mailboxes/attachment-reading";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
@@ -94,6 +99,7 @@ import { DevEmailGroupLive } from "./dev-emails";
 import { ExternalRecoveryIdentityGroupLive } from "./external-recovery-identities";
 import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
+import { PasskeyEnrollmentGroupLive } from "./passkey-enrollment";
 import { HttpApiPlatformLive } from "./platform";
 
 /** Acquire once per interactive request/run so its atomic budget is never process-global. */
@@ -317,12 +323,29 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(BackendRequestContextMiddlewareLive),
       Layer.provide(requestValidationLive)
     );
+    const passkeyEnrollmentLive = PasskeyEnrollmentLive.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          authServicesLive,
+          PasskeyEnrollmentRuntimeLive,
+          PasskeyRuntimeConfigLive.pipe(Layer.provide(authRuntimeConfigLive)),
+          SensitiveOperationStepUpClockLive
+        )
+      )
+    );
+    const passkeyEnrollmentGroupLive = PasskeyEnrollmentGroupLive.pipe(
+      Layer.provide(passkeyEnrollmentLive),
+      Layer.provide(currentRequestAuthLive),
+      Layer.provide(BackendRequestContextMiddlewareLive),
+      Layer.provide(requestValidationLive)
+    );
 
     return HttpApiBuilder.layer(BackendHttpApi).pipe(
       Layer.provide(
         Layer.mergeAll(
           authGroupHandlersLive,
           recoveryIdentityGroupLive,
+          passkeyEnrollmentGroupLive,
           healthGroupLive,
           mailboxGroupLive,
           devEmailGroupLive
