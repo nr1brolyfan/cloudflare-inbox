@@ -1,10 +1,13 @@
 import { RateLimitDurableObject } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
 import { ALCHEMY_DEV, RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Clock from "effect/Clock";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Ref from "effect/Ref";
 import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -61,6 +64,19 @@ import {
   BackendObservabilityLive,
 } from "../observability/backend";
 import { BackendHealthBindings } from "../observability/backend-health-live";
+import {
+  BackendRequestCompletionLive,
+  backendRequestContext,
+} from "../observability/backend-request-live";
+import {
+  BackendRequestCompletion,
+  backendRequestMethod,
+  backendRequestRoute,
+} from "../observability/request-completion";
+import {
+  CurrentBackendRequestContext,
+  backendRequestContextAnnotations,
+} from "../observability/request-context";
 import InboundWorkflow from "../workflows/inbound-workflow";
 import {
   EmailRoutingEventSource,
@@ -317,6 +333,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       ),
       Layer.succeed(DevEmailConfig, DevEmailConfig.of({ isDevelopment }))
     );
+    const completionContext = yield* Layer.build(BackendRequestCompletionLive);
     const observabilityLive = BackendObservabilityLive.pipe(
       Layer.provide(
         Layer.succeed(
@@ -378,34 +395,87 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     );
     return {
       fetch: Effect.gen(function* () {
-        // Building in Alchemy's request scope flushes OTLP finalizers through waitUntil.
-        const observabilityContext = yield* Layer.build(observabilityLive);
+        const startedAtNanos = yield* Clock.currentTimeNanos;
         const request = yield* HttpServerRequest.HttpServerRequest;
         const requestUrl = new URL(request.url, authRuntimeConfig.publicOrigin);
+        const requestContext = backendRequestContext(request.headers["cf-ray"]);
+        const completion = yield* BackendRequestCompletion.pipe(
+          Effect.provide(completionContext)
+        );
+        // Building in Alchemy's request scope flushes OTLP finalizers through waitUntil.
+        const observabilityExit = yield* Layer.build(observabilityLive).pipe(
+          Effect.exit
+        );
+        if (Exit.isFailure(observabilityExit)) {
+          yield* completion
+            .emit({
+              context: requestContext,
+              method: request.method,
+              pathname: requestUrl.pathname,
+              startedAtNanos,
+              statusCode: 500,
+            })
+            .pipe(Effect.catchCause(() => Effect.void));
+          return yield* Effect.failCause(observabilityExit.cause);
+        }
+        const observabilityContext = observabilityExit.value;
 
         return yield* Effect.gen(function* () {
-          const controlPlaneDatabase = yield* controlPlane.raw;
-          const routesLive = BackendHttpLive.pipe(
-            Layer.provide(
-              Layer.succeed(
-                ControlPlaneD1Binding,
-                ControlPlaneD1Binding.of({
-                  database: controlPlaneDatabase,
-                })
+          const responseStatus = yield* Ref.make(500);
+          const requestEffect = Effect.gen(function* () {
+            yield* Effect.annotateCurrentSpan(
+              backendRequestContextAnnotations(requestContext)
+            );
+            const controlPlaneDatabase = yield* controlPlane.raw;
+            const routesLive = BackendHttpLive.pipe(
+              Layer.provide(
+                Layer.succeed(
+                  ControlPlaneD1Binding,
+                  ControlPlaneD1Binding.of({
+                    database: controlPlaneDatabase,
+                  })
+                )
+              ),
+              Layer.provide(workerServicesLive),
+              Layer.provide(
+                Layer.succeed(
+                  CurrentBackendRequestContext,
+                  CurrentBackendRequestContext.of(requestContext)
+                )
               )
-            ),
-            Layer.provide(workerServicesLive)
-          );
-          const handler = yield* HttpRouter.toHttpEffect(routesLive);
+            );
+            const handler = yield* HttpRouter.toHttpEffect(routesLive);
+            const response = yield* handler.pipe(
+              Effect.catchTag(
+                "HttpServerError",
+                HttpServerRespondable.toResponse
+              )
+            );
+            yield* Ref.set(responseStatus, response.status);
+            return response;
+          });
 
-          return yield* handler.pipe(
-            Effect.catchTag("HttpServerError", HttpServerRespondable.toResponse)
+          return yield* requestEffect.pipe(
+            Effect.ensuring(
+              Ref.get(responseStatus).pipe(
+                Effect.flatMap((statusCode) =>
+                  completion.emit({
+                    context: requestContext,
+                    method: request.method,
+                    pathname: requestUrl.pathname,
+                    startedAtNanos,
+                    statusCode,
+                  })
+                ),
+                Effect.catchCause(() => Effect.void)
+              )
+            )
           );
         }).pipe(
           Effect.withSpan("backend.request", {
             attributes: {
-              "http.request.method": request.method,
-              "url.path": requestUrl.pathname,
+              "http.request.method": backendRequestMethod(request.method),
+              "http.route": backendRequestRoute(requestUrl.pathname),
             },
             kind: "server",
             root: true,

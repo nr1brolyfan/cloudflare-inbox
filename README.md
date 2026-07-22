@@ -49,7 +49,7 @@ Every environment requires the values documented in `.env.example`. `PUBLIC_ORIG
 
 ## Observability
 
-Cloudflare Workers Logs and native tracing are enabled for both Website and Backend, including invocation, service binding, D1, R2, Durable Object, and fetch spans collected by the platform. Website-to-Backend auth, health, and mailbox calls add Cloudflare custom spans with sanitized method and path attributes. Effect application logs use structured console output in deployed environments so Workers Logs can index their fields.
+Cloudflare Workers Logs and native tracing are enabled for both Website and Backend, including invocation, service binding, D1, R2, Durable Object, and fetch spans collected by the platform. Website-to-Backend auth, health, and mailbox calls add Cloudflare custom spans with sanitized method and route-family attributes. Every Backend request receives a server-generated UUID request/correlation context in the request-scoped Layer graph and emits one structured `backend.request.completed` event with status, outcome, duration, a closed route family, and validated Cloudflare ray metadata. The event excludes raw paths and resource IDs, query strings, headers, bodies, cookies, tokens, email content, user agent, referer, and full IP. Caller-provided request/correlation headers are ignored; controlled cross-service propagation remains future work. Effect application logs use structured console output in deployed environments so Workers Logs can index their fields.
 
 Local Backend Effect logs and spans can additionally be sent over OTLP/HTTP to Motel. Start Motel, use the base URL reported by the daemon as `OTEL_EXPORTER_OTLP_ENDPOINT`, and then start the application:
 

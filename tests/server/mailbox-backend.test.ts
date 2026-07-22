@@ -188,7 +188,9 @@ describe("Website mailbox Backend forwarding", () => {
         "content-type": "application/octet-stream",
         cookie: "__Host-session=session-a.secret",
         origin: "https://inbox.test",
+        "x-correlation-id": "caller-correlation",
         "x-forwarded-for": "203.0.113.1",
+        "x-request-id": "caller-request",
       },
       method: "PUT",
     });
@@ -225,7 +227,11 @@ describe("Website mailbox Backend forwarding", () => {
     expect(new URL(forwarded?.url ?? "https://invalid.test").pathname).toBe(
       "/api/mailboxes/team%2Fprimary/drafts/draft%2Fone/attachments/attachment%2Fone/content"
     );
-    expect(forwarded?.headers.get("x-forwarded-for")).toBeNull();
+    expect([
+      forwarded?.headers.get("x-correlation-id"),
+      forwarded?.headers.get("x-forwarded-for"),
+      forwarded?.headers.get("x-request-id"),
+    ]).toStrictEqual([null, null, null]);
     await expect(forwarded?.arrayBuffer()).resolves.toStrictEqual(
       new Uint8Array([1, 2, 3]).buffer
     );

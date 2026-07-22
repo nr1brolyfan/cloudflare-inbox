@@ -478,7 +478,7 @@ Cel: przed rozszerzeniem liczby użytkowników i skrzynek domknąć mechanizmy w
 - [ ] SAFE-011 Dodać CI gate dla migracji, typecheck, test, lint, format i build.
 - [x] SAFE-012 Uzgodnić nakładające się pozycje z `TODO.md`, poprawić jego nieaktualne statusy infrastruktury i pozostawić jeden kanoniczny checkbox per deliverable.
 - [ ] SAFE-013 Wprowadzić recovery-safe identity policy egzekwowaną przy enrollment, invitation acceptance, login/recovery initiation i zmianie route na shared mailbox; shared-routed address nigdy nie może być samodzielnym dowodem email-auth. Recovery-only identity ma osobny model i D1 constraints, a wspólna policy odrzuca zarządzaną domenę, mailbox routes, login identities i duplikaty; enrollment, verification oraz pozostałe ścieżki pozostają otwarte.
-- [ ] SAFE-014 Dodać minimalny request/correlation context i wide event contract przed pierwszym nowym endpointem administracyjnym.
+- [x] SAFE-014 Dodać minimalny request/correlation context i wide event contract przed pierwszym nowym endpointem administracyjnym. Backend generuje UUID per request, udostępnia context w request-scoped grafie Layer i emituje jeden privacy-bounded completion event z zamkniętą rodziną route, statusem, outcome, duration i zwalidowanym CF-Ray; propagacja między service hops pozostaje w OBS-006.
 - [ ] SAFE-015 Przetestować restore wiadomości, folderów, reguł, draftów, outbound state, raw MIME i attachmentów do tego samego mailbox ID.
 
 Kryterium wyjścia: wrażliwe mutacje mają step-up, audit, idempotency, backup i powtarzalny test odmowy dostępu.

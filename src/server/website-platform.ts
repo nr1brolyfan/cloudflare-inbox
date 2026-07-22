@@ -3,6 +3,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import type { WebsiteEnv } from "../../alchemy.run.ts";
+import {
+  backendRequestMethod,
+  backendRequestRoute,
+} from "../observability/request-completion";
 
 const hasWebsiteBindings = (
   env: Cloudflare.Env
@@ -33,8 +37,11 @@ const WebsitePlatformLive = Layer.effect(
         Cloudflare.tracing.enterSpan(operation, (span) => {
           if (span.isTraced) {
             const url = new URL(request.url);
-            span.setAttribute("http.request.method", request.method);
-            span.setAttribute("url.path", url.pathname);
+            span.setAttribute(
+              "http.request.method",
+              backendRequestMethod(request.method)
+            );
+            span.setAttribute("http.route", backendRequestRoute(url.pathname));
           }
 
           return env.BACKEND.fetch(request);

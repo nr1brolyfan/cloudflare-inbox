@@ -10,7 +10,6 @@ import {
 } from "@effect-auth/core/HttpApi";
 import { CurrentActor, CurrentSession } from "@effect-auth/core/Sessions";
 import * as Effect from "effect/Effect";
-import * as Schema from "effect/Schema";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
@@ -50,7 +49,6 @@ import { MailboxOutboundDeliveryReading } from "../mailboxes/outbound-delivery-r
 import type { MailboxOutboundSendingError } from "../mailboxes/outbound-sending";
 import { MailboxOutboundSending } from "../mailboxes/outbound-sending";
 import { BackendHttpApi } from "./api";
-import { MailboxPublicErrorSchema } from "./mailbox-contract";
 
 const internalError = () =>
   new AuthInternalError({
@@ -69,20 +67,9 @@ type MailboxPublicError =
 const mapAdministrationError = (
   error: MailboxAdministrationError
 ): Effect.Effect<never, MailboxPublicError> => {
-  const fail = <E extends MailboxPublicError>(publicError: E) =>
-    Schema.encodeEffect(MailboxPublicErrorSchema)(publicError).pipe(
-      Effect.orDie,
-      Effect.andThen(
-        Effect.logWarning(
-          `Mailbox ${error.operation} rejected: ${error.reason}`
-        )
-      ),
-      Effect.flatMap(() => Effect.fail(publicError))
-    );
-
   switch (error.reason) {
     case "invalid-input": {
-      return fail(
+      return Effect.fail(
         new AuthBadRequestError({
           code: "bad_request",
           message: "Invalid mailbox request",
@@ -90,7 +77,7 @@ const mapAdministrationError = (
       );
     }
     case "conflict": {
-      return fail(
+      return Effect.fail(
         new AuthConflictError({
           code: "conflict",
           message: "Mailbox already exists",
@@ -98,7 +85,7 @@ const mapAdministrationError = (
       );
     }
     case "not-found": {
-      return fail(
+      return Effect.fail(
         new AuthNotFoundError({
           code: "not_found",
           message: "Mailbox not found",
@@ -106,7 +93,7 @@ const mapAdministrationError = (
       );
     }
     case "authorization-recheck": {
-      return fail(
+      return Effect.fail(
         new AuthPolicyDeniedError({
           code: "policy_denied",
           message: "Mailbox operation denied",
@@ -114,7 +101,7 @@ const mapAdministrationError = (
       );
     }
     case "owner-not-eligible": {
-      return fail(
+      return Effect.fail(
         new AuthPolicyDeniedError({
           code: "policy_denied",
           message: "Mailbox owner account required",
@@ -122,7 +109,7 @@ const mapAdministrationError = (
       );
     }
     case "step-up-required": {
-      return fail(
+      return Effect.fail(
         new AuthStepUpRequiredError({
           code: "step_up_required",
           message: "Recent authentication required",
@@ -130,7 +117,7 @@ const mapAdministrationError = (
       );
     }
     case "session-recheck": {
-      return fail(
+      return Effect.fail(
         new AuthPolicyDeniedError({
           code: "policy_denied",
           message: "Complete account verification and sign in again",
@@ -138,10 +125,10 @@ const mapAdministrationError = (
       );
     }
     case "storage": {
-      return fail(internalError());
+      return Effect.fail(internalError());
     }
     default: {
-      return fail(internalError());
+      return Effect.fail(internalError());
     }
   }
 };
