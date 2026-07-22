@@ -29,6 +29,7 @@ import {
   MailboxMessageRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { MailboxMessageActions } from "#/modules/mailbox/application/MailboxMessageActions";
+import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 
 import { AiToolAuditD1Live } from "../ai/tool-audit";
@@ -96,7 +97,6 @@ import {
   InboundReplayPreparerDoLive,
 } from "../mailboxes/inbound-replay-do-live";
 import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
-import { MailboxMessageHtmlReadingLive } from "../mailboxes/message-html";
 import {
   MailboxOutboundDeliveryReadingClockLive,
   MailboxOutboundDeliveryReadingLive,
@@ -303,8 +303,10 @@ const BackendRoutesLive = Layer.unwrap(
         )
       )
     );
-    const mailboxMessageHtmlLive = MailboxMessageHtmlReadingLive.pipe(
-      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+    const mailboxMessageHtmlLive = MailboxMessageHtmlReading.layerNoDeps.pipe(
+      Layer.provide(
+        Layer.merge(mailAuthorizationLive, mailboxMessageRepositoryDoLayer)
+      )
     );
     const mailboxInlineAttachmentLive = MailboxInlineAttachmentReadingLive.pipe(
       Layer.provide(

@@ -9,16 +9,15 @@ import { describe, expect, it } from "vitest";
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
 import { FolderId } from "#/mailboxes/core";
+import { GetMessageResult } from "#/mailboxes/messages";
 import {
   MailboxMessageHtmlInput,
   MailboxMessageHtmlReading,
-  MailboxMessageHtmlReadingLive,
   mailboxMessageHtmlCsp,
   renderSandboxedMessageHtml,
-} from "#/mailboxes/message-html";
-import { GetMessageResult } from "#/mailboxes/messages";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
+} from "#/modules/mailbox/application/MailboxMessageHtmlReading";
+import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
 const message = Schema.decodeUnknownSync(GetMessageResult)({
   activityAt: 1000,
@@ -52,43 +51,17 @@ const unused = () => Effect.die(new Error("Unexpected repository operation"));
 const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
-const repositoryWithMessage = (value = message): MailboxRepositoryService =>
-  MailboxRepository.of({
-    addMessageLabel: unused,
-    cancelOutboundDelivery: unused,
-    completeDraftAttachment: unused,
-    createDraft: unused,
-    createFolder: unused,
-    createLabel: unused,
-    deleteFolder: unused,
-    deleteLabel: unused,
-    findAttachmentLocation: unused,
-    findDraftLocation: unused,
-    findFolderLocation: unused,
-    findMessageLocation: unused,
-    findRuleLocation: unused,
-    getAttachmentBlob: unused,
-    getDraft: unused,
-    getDraftAttachment: unused,
+const repositoryWithMessage = (
+  value = message
+): MailboxMessageRepositoryService =>
+  MailboxMessageRepository.of({
     getMessage: () => Effect.succeed(value),
-    getOutboundDelivery: unused,
     getThread: unused,
-    listFolders: unused,
-    listDraftAttachments: unused,
-    listDrafts: unused,
-    listLabels: unused,
     listMessages: unused,
     moveMessage: unused,
-    removeMessageLabel: unused,
-    reserveDraftAttachment: unused,
-    renameFolder: unused,
-    renameLabel: unused,
-    resendOutbound: unused,
-    scheduleOutbound: unused,
     searchMessages: unused,
     setMessageRead: unused,
     setMessageStarred: unused,
-    updateDraft: unused,
   });
 
 const authorization = MailAuthorization.of({
@@ -121,11 +94,11 @@ const runHtmlRead = (
     MailboxMessageHtmlReading.pipe(
       Effect.flatMap((reading) => reading.get(input)),
       Effect.provide(
-        MailboxMessageHtmlReadingLive.pipe(
+        MailboxMessageHtmlReading.layerNoDeps.pipe(
           Layer.provide(
             Layer.merge(
               Layer.succeed(MailAuthorization, authorizationService),
-              Layer.succeed(MailboxRepository, repository)
+              Layer.succeed(MailboxMessageRepository, repository)
             )
           )
         )

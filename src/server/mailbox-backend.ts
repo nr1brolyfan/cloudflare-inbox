@@ -7,6 +7,8 @@ import * as Schema from "effect/Schema";
 
 import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageActionResult } from "#/modules/mailbox/application/MailboxMessageActions";
+import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
+import { MailboxMessageHtmlResult } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -43,8 +45,6 @@ import type {
 import { DraftEditorDraft } from "../mailboxes/draft-editing";
 import type { MailboxDraftListInput } from "../mailboxes/draft-reading";
 import { MailboxDraftListResult } from "../mailboxes/draft-reading";
-import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
-import { MailboxMessageHtmlResult } from "../mailboxes/message-html";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import { GetMailboxOutboundDeliveryResult } from "../mailboxes/outbound-delivery-reading";

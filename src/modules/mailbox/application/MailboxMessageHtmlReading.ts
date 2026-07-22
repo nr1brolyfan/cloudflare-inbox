@@ -1,3 +1,4 @@
+/* oxlint-disable max-classes-per-file -- HTML contract, error and service form one cohesive use case. */
 import type { CurrentPrincipal } from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -7,13 +8,13 @@ import * as Schema from "effect/Schema";
 import { parse, serialize } from "parse5";
 import type { DefaultTreeAdapterTypes } from "parse5";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailAuthorization } from "../authorization/mail-authorization";
-import { isSafeInlineImageMimeType } from "./attachment-reading";
-import { FolderId, LabelId, MailboxId, MessageId } from "./core";
-import { MailboxDomainError } from "./errors";
-import type { MailboxRepositoryError } from "./errors";
-import { MailboxRepository } from "./repository";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
+import { isSafeInlineImageMimeType } from "#/mailboxes/attachment-reading";
+import { FolderId, LabelId, MailboxId, MessageId } from "#/mailboxes/core";
+import { MailboxDomainError } from "#/mailboxes/errors";
+import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
 const messageHtmlCsp = (imageSource: string) =>
   [
@@ -89,7 +90,7 @@ export class MailboxMessageHtmlError extends Data.TaggedError(
   readonly reason: "not-found" | "storage";
 }> {}
 
-export interface MailboxMessageHtmlReading {
+export interface MailboxMessageHtmlReadingService {
   readonly get: (
     input: MailboxMessageHtmlInput
   ) => Effect.Effect<
@@ -98,11 +99,6 @@ export interface MailboxMessageHtmlReading {
     CurrentPrincipal
   >;
 }
-
-export const MailboxMessageHtmlReading =
-  Context.Service<MailboxMessageHtmlReading>(
-    "cloudflare-inbox/MailboxMessageHtmlReading"
-  );
 
 const htmlError = (reason: "not-found" | "storage", cause?: unknown) =>
   new MailboxMessageHtmlError({
@@ -304,13 +300,15 @@ const cidUrls = (
 };
 
 /** Independently authorized HTML reads produce inert documents for one iframe. */
-export const MailboxMessageHtmlReadingLive = Layer.effect(
+export class MailboxMessageHtmlReading extends Context.Service<
   MailboxMessageHtmlReading,
-  Effect.gen(function* () {
+  MailboxMessageHtmlReadingService
+>()("cloudflare-inbox/MailboxMessageHtmlReading", {
+  make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxMessageRepository;
 
-    return MailboxMessageHtmlReading.of({
+    return {
       get: (input) =>
         Effect.gen(function* () {
           yield* input._tag === "Folder"
@@ -370,6 +368,8 @@ export const MailboxMessageHtmlReadingLive = Layer.effect(
             document,
           }).pipe(Effect.mapError((cause) => htmlError("storage", cause)));
         }),
-    });
-  })
-);
+    } satisfies MailboxMessageHtmlReadingService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

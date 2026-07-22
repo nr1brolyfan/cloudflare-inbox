@@ -15,6 +15,8 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import type { MailboxMessageActionError } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageActions } from "#/modules/mailbox/application/MailboxMessageActions";
+import type { MailboxMessageHtmlError } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
+import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import type { MailboxMessageReadingError } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 
@@ -37,8 +39,6 @@ import type {
 } from "../mailboxes/errors";
 import { InboundReplay } from "../mailboxes/inbound";
 import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
-import type { MailboxMessageHtmlError } from "../mailboxes/message-html";
-import { MailboxMessageHtmlReading } from "../mailboxes/message-html";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
 import { MailboxNavigation } from "../mailboxes/navigation";
 import {

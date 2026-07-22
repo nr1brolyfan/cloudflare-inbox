@@ -4,6 +4,7 @@ import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
 import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -24,7 +25,6 @@ import type {
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
 import type { MailboxDraftListInput } from "../mailboxes/draft-reading";
-import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
 import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import type {
   SendMailboxDraftCommand,

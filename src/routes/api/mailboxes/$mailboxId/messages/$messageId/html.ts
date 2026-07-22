@@ -5,7 +5,8 @@ import * as Schema from "effect/Schema";
 import {
   MailboxMessageHtmlInput,
   mailboxMessageHtmlCspForOrigin,
-} from "../../../../../../mailboxes/message-html";
+} from "#/modules/mailbox/application/MailboxMessageHtmlReading";
+
 import { websiteBackend } from "../../../../../../server/backend";
 
 const responseHeaders = (contentType: string, origin: string) => ({

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { mailboxMessageHtmlCspForOrigin } from "#/mailboxes/message-html";
+import { mailboxMessageHtmlCspForOrigin } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { mailboxMessageHtmlResponse } from "#/routes/api/mailboxes/$mailboxId/messages/$messageId/html";
 import { websiteBackend } from "#/server/backend";
 

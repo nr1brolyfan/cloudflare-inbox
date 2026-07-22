@@ -62,10 +62,6 @@ import {
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import {
-  MailboxMessageHtmlReading,
-  MailboxMessageHtmlResult,
-} from "#/mailboxes/message-html";
-import {
   MailboxNavigation,
   MailboxNavigationError,
   MailboxNavigationResult,
@@ -86,6 +82,11 @@ import {
   MailboxMessageActions,
 } from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageActionsService } from "#/modules/mailbox/application/MailboxMessageActions";
+import {
+  MailboxMessageHtmlReading,
+  MailboxMessageHtmlResult,
+} from "#/modules/mailbox/application/MailboxMessageHtmlReading";
+import type { MailboxMessageHtmlReadingService } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import {
   MailboxMessageListResult,
   MailboxMessageReading,
@@ -321,7 +322,7 @@ const makeHandler = (
   messageActions: MailboxMessageActionsService = MailboxMessageActions.of({
     execute: () => Effect.succeed(mailboxMessageAction),
   }),
-  messageHtml: MailboxMessageHtmlReading = MailboxMessageHtmlReading.of({
+  messageHtml: MailboxMessageHtmlReadingService = MailboxMessageHtmlReading.of({
     get: () => Effect.succeed(mailboxMessageHtml),
   }),
   inlineAttachments: MailboxInlineAttachmentReading = MailboxInlineAttachmentReading.of(

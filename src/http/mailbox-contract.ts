@@ -21,6 +21,7 @@ import {
   MailboxMessageActionPayload,
   MailboxMessageActionResult,
 } from "#/modules/mailbox/application/MailboxMessageActions";
+import { MailboxMessageHtmlResult } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import {
   MailboxMessageListResult,
   MailboxThreadResult,
@@ -61,7 +62,6 @@ import {
   InboundProcessingResult,
   ReplayInboundInput,
 } from "../mailboxes/inbound";
-import { MailboxMessageHtmlResult } from "../mailboxes/message-html";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import {
   GetMailboxOutboundDeliveryQuery,
