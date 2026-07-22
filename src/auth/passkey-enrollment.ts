@@ -1,8 +1,10 @@
+/* oxlint-disable max-classes-per-file -- Enrollment models, remediation result, error, and port form one boundary. */
 import {
   ChallengeIdSchema,
   UnixMillisSchema,
 } from "@effect-auth/core/Identifiers";
 import type * as AuthPermission from "@effect-auth/core/Permission";
+import type { IssuedSession } from "@effect-auth/core/Sessions";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
@@ -11,6 +13,7 @@ import * as Schema from "effect/Schema";
 import type { ControlPlaneCommitState } from "../control-plane/batch";
 import { AdministrativeOperationId } from "../mailboxes/core";
 import type { BackendRequestContext } from "../observability/request-context";
+import { RecoveryCodeText } from "./recovery-code-administration";
 import type { CurrentRequestAuthShape } from "./session";
 
 export const PasskeyClientCredential = Schema.Struct({
@@ -31,11 +34,13 @@ export const FinishPasskeyEnrollmentCommand = Schema.Struct({
 });
 
 export const PasskeyEnrollmentChallengeMetadata = Schema.Struct({
+  authorization: Schema.Literals(["recovery-remediation", "step-up"]),
   operationId: AdministrativeOperationId,
   purpose: Schema.Literal("passkey-enrollment"),
   recoveryIdentityId: Schema.String,
   recoveryIdentityVersion: Schema.Int,
   sessionId: Schema.String,
+  sessionSecretHash: Schema.String,
   stepUpPolicyId: Schema.Literal("control-plane-sensitive"),
   stepUpPolicyVersion: Schema.Literal(1),
 });
@@ -64,6 +69,29 @@ export const EnrolledPasskeyCredential = Schema.Struct({
   credentialId: Schema.String,
 });
 
+export class RecoveryPasskeyRemediationCompleted extends Schema.Class<RecoveryPasskeyRemediationCompleted>(
+  "cloudflare-inbox/RecoveryPasskeyRemediationCompleted"
+)({
+  codes: Schema.Array(RecoveryCodeText).pipe(
+    Schema.check(
+      Schema.makeFilter((codes) =>
+        codes.length === 10 ? undefined : "must contain exactly 10 codes"
+      )
+    )
+  ),
+  credentialId: Schema.String,
+  generatedAt: UnixMillisSchema,
+  type: Schema.Literal("recovery-remediation-completed"),
+}) {}
+
+export interface PasskeyEnrollmentResult {
+  readonly credentialId: string;
+  readonly remediation?: {
+    readonly body: RecoveryPasskeyRemediationCompleted;
+    readonly session: IssuedSession;
+  };
+}
+
 export class PasskeyEnrollmentError extends Data.TaggedError(
   "PasskeyEnrollmentError"
 )<{
@@ -73,6 +101,7 @@ export class PasskeyEnrollmentError extends Data.TaggedError(
   readonly reason:
     | "challenge-invalid"
     | "credential-conflict"
+    | "indeterminate"
     | "invalid-input"
     | "rate-limited"
     | "recovery-identity-required"
@@ -95,7 +124,7 @@ export interface PasskeyEnrollment {
   readonly finish: (
     command: Schema.Schema.Type<typeof FinishPasskeyEnrollmentCommand>
   ) => Effect.Effect<
-    Schema.Schema.Type<typeof EnrolledPasskeyCredential>,
+    PasskeyEnrollmentResult,
     PasskeyEnrollmentError,
     | AuthPermission.CurrentPrincipal
     | BackendRequestContext

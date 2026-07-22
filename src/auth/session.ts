@@ -1,7 +1,9 @@
+/* oxlint-disable max-classes-per-file -- Normal and recovery-only request middleware share one session authentication boundary. */
 import { AuthSecrets } from "@effect-auth/core/AuthConfig";
 import { Crypto } from "@effect-auth/core/Crypto";
 import {
   AuthInternalError,
+  AuthPolicyDeniedError,
   AuthUnauthenticatedError,
 } from "@effect-auth/core/HttpApi";
 import {
@@ -83,7 +85,20 @@ export class CurrentRequestAuthMiddleware extends HttpApiMiddleware.Service<
       | CurrentPrincipal;
   }
 >()("cloudflare-inbox/CurrentRequestAuthMiddleware", {
-  error: [AuthUnauthenticatedError, AuthInternalError],
+  error: [AuthUnauthenticatedError, AuthPolicyDeniedError, AuthInternalError],
+}) {}
+
+export class RecoveryRemediationRequestAuthMiddleware extends HttpApiMiddleware.Service<
+  RecoveryRemediationRequestAuthMiddleware,
+  {
+    provides:
+      | CurrentRequestAuthShape
+      | CurrentSession
+      | CurrentActor
+      | CurrentPrincipal;
+  }
+>()("cloudflare-inbox/RecoveryRemediationRequestAuthMiddleware", {
+  error: [AuthUnauthenticatedError, AuthPolicyDeniedError, AuthInternalError],
 }) {}
 
 /** Concrete request authenticator with stable auth dependencies captured once. */
@@ -169,6 +184,53 @@ export const CurrentRequestAuthMiddlewareLive = Layer.effect(
           )
         );
         const authenticated = yield* authenticator.authenticate(webRequest);
+        if ((authenticated.session.claims?.requirements?.length ?? 0) !== 0) {
+          return yield* new AuthPolicyDeniedError({
+            code: "policy_denied",
+            message: "Session remediation required",
+          });
+        }
+
+        return yield* httpEffect.pipe(
+          Effect.provideService(CurrentRequestAuth, authenticated.requestAuth),
+          Effect.provideService(CurrentSession, authenticated.session),
+          Effect.provideService(CurrentActor, authenticated.actor),
+          Effect.provideService(CurrentPrincipal, authenticated.principal)
+        );
+      });
+  })
+);
+
+export const RecoveryRemediationRequestAuthMiddlewareLive = Layer.effect(
+  RecoveryRemediationRequestAuthMiddleware,
+  Effect.gen(function* () {
+    const authenticator = yield* RequestSessionAuthenticator;
+
+    return (httpEffect) =>
+      Effect.gen(function* () {
+        const request = yield* HttpServerRequest.HttpServerRequest;
+        const webRequest = yield* HttpServerRequest.toWeb(request).pipe(
+          Effect.mapError(
+            () =>
+              new AuthInternalError({
+                code: "internal_error",
+                message: "Failed to read request",
+              })
+          )
+        );
+        const authenticated = yield* authenticator.authenticate(webRequest);
+        const { claims } = authenticated.session;
+        if (
+          claims?.requirements?.length !== 1 ||
+          claims.requirements[0] !== "recovery_remediation" ||
+          claims.recoveryRemediation?.allowed.includes("second-passkey") !==
+            true
+        ) {
+          return yield* new AuthPolicyDeniedError({
+            code: "policy_denied",
+            message: "Passkey recovery remediation is not allowed",
+          });
+        }
 
         return yield* httpEffect.pipe(
           Effect.provideService(CurrentRequestAuth, authenticated.requestAuth),

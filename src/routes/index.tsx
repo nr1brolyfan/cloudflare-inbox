@@ -18,6 +18,7 @@ import {
   clearMailboxReadDenial,
   currentSessionForQuery,
   emailIdentity,
+  enrollRecoveryPasskey,
 } from "../auth/client";
 import { getDevEmailInboxStatus } from "../server/tanstack-functions";
 import { SignedInOwnerBootstrap } from "./-index-owner-bootstrap";
@@ -27,7 +28,7 @@ export const Route = createFileRoute("/")({
   component: Home,
 });
 
-type AuthMode = "magic" | "otp" | "passkey" | "password";
+type AuthMode = "magic" | "otp" | "passkey" | "password" | "recovery";
 
 const subscribeToPasskeySupport = () => () => null;
 const usePasskeySupport = () =>
@@ -38,7 +39,7 @@ const usePasskeySupport = () =>
   );
 
 const authModeLabel = (mode: AuthMode) =>
-  mode === "magic" ? "Magic link" : mode;
+  mode === "magic" ? "Magic link" : mode === "recovery" ? "Recovery" : mode;
 
 function AuthSubmitContent({
   mode,
@@ -77,6 +78,13 @@ function AuthSubmitContent({
       </>
     );
   }
+  if (mode === "recovery") {
+    return (
+      <>
+        <ShieldCheck size={18} /> Send recovery link
+      </>
+    );
+  }
   return (
     <>
       <ArrowRight size={18} /> Sign in
@@ -99,6 +107,119 @@ function DevEmailInboxLink({ enabled }: { readonly enabled: boolean }) {
   );
 }
 
+const requiresRecoveryRemediation = (session: {
+  readonly claims?: {
+    readonly requirements?: readonly string[];
+  };
+}) =>
+  session.claims?.requirements?.length === 1 &&
+  session.claims.requirements[0] === "recovery_remediation";
+
+function RecoveryRemediationPanel({
+  isLogoutPending,
+  onComplete,
+  onLogout,
+  passkeySupported,
+}: {
+  readonly isLogoutPending: boolean;
+  readonly onComplete: (codes: readonly string[]) => Promise<void>;
+  readonly onLogout: () => void;
+  readonly passkeySupported: boolean;
+}) {
+  const enrollment = useMutation({
+    gcTime: 0,
+    mutationFn: enrollRecoveryPasskey,
+    onSuccess: (result) => onComplete(result.codes),
+    retry: false,
+  });
+
+  return (
+    <div>
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-900">
+        <ShieldCheck size={28} />
+      </div>
+      <p className="island-kicker mt-8">Recovery checkpoint</p>
+      <h2 className="display-title mt-3 text-4xl font-bold">
+        Secure this account with a passkey.
+      </h2>
+      <p className="mt-4 text-sm leading-6 text-[var(--sea-ink-soft)]">
+        This temporary session cannot open mail or change account settings.
+        Create a user-verified passkey to finish recovery. Existing sign-in
+        credentials and sessions will be revoked.
+      </p>
+      {passkeySupported ? null : (
+        <ErrorNotice>
+          This browser cannot create a passkey. Open the recovery link in a
+          passkey-capable browser before the temporary session expires.
+        </ErrorNotice>
+      )}
+      {enrollment.error ? (
+        <ErrorNotice>{authErrorMessage(enrollment.error)}</ErrorNotice>
+      ) : null}
+      <button
+        type="button"
+        disabled={!passkeySupported || enrollment.isPending}
+        onClick={() => enrollment.mutate()}
+        className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-white shadow-lg disabled:opacity-50"
+      >
+        {enrollment.isPending ? (
+          <LoaderCircle className="animate-spin" size={18} />
+        ) : (
+          <KeyRound size={18} />
+        )}
+        Create recovery passkey
+      </button>
+      <button
+        type="button"
+        disabled={isLogoutPending}
+        onClick={onLogout}
+        className="mt-3 w-full rounded-xl border border-[var(--line)] bg-white/70 px-5 py-3 font-bold disabled:opacity-50"
+      >
+        Sign out
+      </button>
+    </div>
+  );
+}
+
+function RecoveredCodesPanel({
+  codes,
+  onSaved,
+}: {
+  readonly codes: readonly string[];
+  readonly onSaved: () => void;
+}) {
+  return (
+    <div>
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-900">
+        <ShieldCheck size={28} />
+      </div>
+      <p className="island-kicker mt-8">Recovery complete</p>
+      <h2 className="display-title mt-3 text-4xl font-bold">
+        Save your new recovery codes.
+      </h2>
+      <p className="mt-4 text-sm leading-6 text-[var(--sea-ink-soft)]">
+        The previous code set is no longer valid. These codes are shown once and
+        are not stored in plaintext.
+      </p>
+      <div className="mt-6 grid gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-5 font-mono text-sm sm:grid-cols-2">
+        {codes.map((code) => (
+          <code key={code} className="rounded-lg bg-white px-3 py-2">
+            {code}
+          </code>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={onSaved}
+        className="mt-6 w-full rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-white shadow-lg"
+      >
+        I saved these codes
+      </button>
+    </div>
+  );
+}
+
+// oxlint-disable-next-line eslint/complexity -- The single auth surface exhaustively selects mutually exclusive sign-in and recovery states.
 function Home() {
   const devEmailInbox = Route.useLoaderData();
   const queryClient = useQueryClient();
@@ -108,10 +229,11 @@ function Home() {
   const [otpCode, setOtpCode] = useState("");
   const [otpChallengeId, setOtpChallengeId] = useState<string>();
   const [notice, setNotice] = useState<string>();
+  const [recoveredCodes, setRecoveredCodes] = useState<readonly string[]>();
   const passkeySupported = usePasskeySupport();
   const authModes: readonly AuthMode[] = passkeySupported
-    ? ["passkey", "magic", "otp", "password"]
-    : ["magic", "otp", "password"];
+    ? ["passkey", "magic", "otp", "password", "recovery"]
+    : ["magic", "otp", "password", "recovery"];
 
   const session = useQuery({
     queryKey: authSessionQueryKey,
@@ -169,6 +291,16 @@ function Home() {
     onSuccess: completeAuthentication,
   });
 
+  const accountRecovery = useMutation({
+    mutationFn: () =>
+      authClient.extensions.startAccountRecovery({ address: email }),
+    onSuccess: () =>
+      setNotice(
+        "If this is a verified recovery address with active codes, a recovery link is on its way."
+      ),
+    retry: false,
+  });
+
   const passwordReset = useMutation({
     mutationFn: () => authClient.password.reset.start(emailIdentity(email)),
     retry: false,
@@ -181,8 +313,17 @@ function Home() {
   const logout = useMutation({
     mutationFn: () => authClient.session.logout(),
     retry: false,
-    onSuccess: () => clearCachedAuthSession(queryClient),
+    onSuccess: () => {
+      setRecoveredCodes(undefined);
+      return clearCachedAuthSession(queryClient);
+    },
   });
+
+  const completeRecoveryRemediation = async (codes: readonly string[]) => {
+    setRecoveredCodes(codes);
+    clearMailboxReadDenial(queryClient);
+    await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
+  };
 
   const activeMutation =
     mode === "magic"
@@ -193,7 +334,9 @@ function Home() {
           : otpStart
         : mode === "passkey"
           ? passkeyAuth
-          : passwordAuth;
+          : mode === "recovery"
+            ? accountRecovery
+            : passwordAuth;
   const error = activeMutation.error ?? passwordReset.error ?? session.error;
 
   const submit = (event: React.FormEvent) => {
@@ -241,6 +384,18 @@ function Home() {
               <div className="flex items-center justify-center py-24 text-[var(--sea-ink-soft)]">
                 <LoaderCircle className="animate-spin" />
               </div>
+            ) : recoveredCodes ? (
+              <RecoveredCodesPanel
+                codes={recoveredCodes}
+                onSaved={() => setRecoveredCodes(undefined)}
+              />
+            ) : session.data && requiresRecoveryRemediation(session.data) ? (
+              <RecoveryRemediationPanel
+                isLogoutPending={logout.isPending}
+                onComplete={completeRecoveryRemediation}
+                onLogout={() => logout.mutate()}
+                passkeySupported={passkeySupported}
+              />
             ) : session.data ? (
               <SignedInOwnerBootstrap
                 key={session.data.userId}
@@ -259,7 +414,7 @@ function Home() {
                 </p>
                 <DevEmailInboxLink enabled={devEmailInbox.enabled} />
 
-                <div className="mt-7 grid grid-cols-2 rounded-xl bg-[var(--sand)]/75 p-1 sm:grid-cols-4">
+                <div className="mt-7 grid grid-cols-2 rounded-xl bg-[var(--sand)]/75 p-1 sm:grid-cols-5">
                   {authModes.map((value) => (
                     <button
                       key={value}
@@ -283,7 +438,11 @@ function Home() {
                     </p>
                   ) : (
                     <label className="block space-y-2 text-sm font-bold">
-                      <span>Email address</span>
+                      <span>
+                        {mode === "recovery"
+                          ? "Verified recovery address"
+                          : "Email address"}
+                      </span>
                       <input
                         type="email"
                         required

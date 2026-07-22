@@ -17,6 +17,7 @@ import { Route as AuthCompletePasswordResetRouteImport } from './routes/auth-com
 import { Route as AuthCompleteMagicLinkRouteImport } from './routes/auth-complete/magic-link'
 import { Route as AuthCompleteExternalRecoveryIdentityRouteImport } from './routes/auth-complete/external-recovery-identity'
 import { Route as AuthCompleteEmailVerificationRouteImport } from './routes/auth-complete/email-verification'
+import { Route as AuthCompleteAccountRecoveryRouteImport } from './routes/auth-complete/account-recovery'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/html'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
@@ -65,6 +66,12 @@ const AuthCompleteEmailVerificationRoute =
     path: '/auth-complete/email-verification',
     getParentRoute: () => rootRouteImport,
   } as any)
+const AuthCompleteAccountRecoveryRoute =
+  AuthCompleteAccountRecoveryRouteImport.update({
+    id: '/auth-complete/account-recovery',
+    path: '/auth-complete/account-recovery',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiHealthRoute = ApiHealthRouteImport.update({
   id: '/api/health',
   path: '/api/health',
@@ -98,6 +105,7 @@ export interface FileRoutesByFullPath {
   '/dev-email-inbox': typeof DevEmailInboxRoute
   '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
+  '/auth-complete/account-recovery': typeof AuthCompleteAccountRecoveryRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
   '/auth-complete/external-recovery-identity': typeof AuthCompleteExternalRecoveryIdentityRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
@@ -112,6 +120,7 @@ export interface FileRoutesByTo {
   '/dev-email-inbox': typeof DevEmailInboxRoute
   '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
+  '/auth-complete/account-recovery': typeof AuthCompleteAccountRecoveryRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
   '/auth-complete/external-recovery-identity': typeof AuthCompleteExternalRecoveryIdentityRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
@@ -127,6 +136,7 @@ export interface FileRoutesById {
   '/dev-email-inbox': typeof DevEmailInboxRoute
   '/inbox': typeof InboxRoute
   '/api/health': typeof ApiHealthRoute
+  '/auth-complete/account-recovery': typeof AuthCompleteAccountRecoveryRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
   '/auth-complete/external-recovery-identity': typeof AuthCompleteExternalRecoveryIdentityRoute
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
@@ -143,6 +153,7 @@ export interface FileRouteTypes {
     | '/dev-email-inbox'
     | '/inbox'
     | '/api/health'
+    | '/auth-complete/account-recovery'
     | '/auth-complete/email-verification'
     | '/auth-complete/external-recovery-identity'
     | '/auth-complete/magic-link'
@@ -157,6 +168,7 @@ export interface FileRouteTypes {
     | '/dev-email-inbox'
     | '/inbox'
     | '/api/health'
+    | '/auth-complete/account-recovery'
     | '/auth-complete/email-verification'
     | '/auth-complete/external-recovery-identity'
     | '/auth-complete/magic-link'
@@ -171,6 +183,7 @@ export interface FileRouteTypes {
     | '/dev-email-inbox'
     | '/inbox'
     | '/api/health'
+    | '/auth-complete/account-recovery'
     | '/auth-complete/email-verification'
     | '/auth-complete/external-recovery-identity'
     | '/auth-complete/magic-link'
@@ -186,6 +199,7 @@ export interface RootRouteChildren {
   DevEmailInboxRoute: typeof DevEmailInboxRoute
   InboxRoute: typeof InboxRoute
   ApiHealthRoute: typeof ApiHealthRoute
+  AuthCompleteAccountRecoveryRoute: typeof AuthCompleteAccountRecoveryRoute
   AuthCompleteEmailVerificationRoute: typeof AuthCompleteEmailVerificationRoute
   AuthCompleteExternalRecoveryIdentityRoute: typeof AuthCompleteExternalRecoveryIdentityRoute
   AuthCompleteMagicLinkRoute: typeof AuthCompleteMagicLinkRoute
@@ -254,6 +268,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthCompleteEmailVerificationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/auth-complete/account-recovery': {
+      id: '/auth-complete/account-recovery'
+      path: '/auth-complete/account-recovery'
+      fullPath: '/auth-complete/account-recovery'
+      preLoaderRoute: typeof AuthCompleteAccountRecoveryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/health': {
       id: '/api/health'
       path: '/api/health'
@@ -290,6 +311,7 @@ const rootRouteChildren: RootRouteChildren = {
   DevEmailInboxRoute: DevEmailInboxRoute,
   InboxRoute: InboxRoute,
   ApiHealthRoute: ApiHealthRoute,
+  AuthCompleteAccountRecoveryRoute: AuthCompleteAccountRecoveryRoute,
   AuthCompleteEmailVerificationRoute: AuthCompleteEmailVerificationRoute,
   AuthCompleteExternalRecoveryIdentityRoute:
     AuthCompleteExternalRecoveryIdentityRoute,

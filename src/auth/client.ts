@@ -4,10 +4,15 @@ import {
   defineAuthHttpApiExtension,
 } from "@effect-auth/core/Client";
 import type { AuthClientRequestOptions } from "@effect-auth/core/Client";
+import { createPasskeyCredential } from "@effect-auth/core/PasskeyBrowser";
 import type { QueryClient } from "@tanstack/react-query";
 import * as Schema from "effect/Schema";
 
 import { ApplicationAuthClientExtensionApi } from "../http/auth-client-extension-contract";
+import {
+  CompleteAccountRecoveryCommand,
+  StartAccountRecoveryCommand,
+} from "./account-recovery";
 import {
   EnrollExternalRecoveryIdentityCommand,
   VerifyExternalRecoveryIdentityCommand,
@@ -16,10 +21,27 @@ import {
   ReadPasskeyRevocationQuery,
   RevokePasskeyCredentialCommand,
 } from "./passkey-credential-administration";
+import {
+  FinishPasskeyEnrollmentCommand,
+  StartPasskeyEnrollmentCommand,
+} from "./passkey-enrollment";
 
 const applicationAuthExtension = defineAuthHttpApiExtension(
   ApplicationAuthClientExtensionApi,
   ({ run }) => ({
+    completeAccountRecovery: (
+      payload: Schema.Codec.Encoded<typeof CompleteAccountRecoveryCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.accountRecovery.complete({
+            payload: Schema.decodeUnknownSync(CompleteAccountRecoveryCommand)(
+              payload
+            ),
+          }),
+        options
+      ),
     enrollExternalRecoveryIdentity: (
       payload: Schema.Codec.Encoded<
         typeof EnrollExternalRecoveryIdentityCommand
@@ -86,12 +108,59 @@ const applicationAuthExtension = defineAuthHttpApiExtension(
         (client) => client.recoveryCodeManagement.generate({ payload: {} }),
         options
       ),
+    startAccountRecovery: (
+      payload: Schema.Codec.Encoded<typeof StartAccountRecoveryCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.accountRecovery.start({
+            payload: Schema.decodeUnknownSync(StartAccountRecoveryCommand)(
+              payload
+            ),
+          }),
+        options
+      ),
+    startRecoveryPasskeyEnrollment: (options?: AuthClientRequestOptions) =>
+      run(
+        (client) =>
+          client.recoveryPasskeyEnrollment.start({
+            payload: Schema.decodeUnknownSync(StartPasskeyEnrollmentCommand)(
+              {}
+            ),
+          }),
+        options
+      ),
+    finishRecoveryPasskeyEnrollment: (
+      payload: Schema.Codec.Encoded<typeof FinishPasskeyEnrollmentCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.recoveryPasskeyEnrollment.finish({
+            payload: Schema.decodeUnknownSync(FinishPasskeyEnrollmentCommand)(
+              payload
+            ),
+          }),
+        options
+      ),
   })
 );
 
 export const authClient = createAuthClient({
   protocol: { extensions: applicationAuthExtension },
 });
+
+export const enrollRecoveryPasskey = async () => {
+  const started = await authClient.extensions.startRecoveryPasskeyEnrollment();
+  const credential = await createPasskeyCredential(
+    started.publicKey as Parameters<typeof createPasskeyCredential>[0]
+  );
+  return authClient.extensions.finishRecoveryPasskeyEnrollment({
+    challengeId: started.challengeId,
+    credential,
+  });
+};
 
 export const authSessionQueryKey = ["auth", "session"] as const;
 export const mailboxReadDenialQueryKey = ["mailbox-access-denial"] as const;

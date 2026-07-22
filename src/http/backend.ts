@@ -15,9 +15,11 @@ import {
   LoginNotificationHttpOperationsLive,
   MagicLinkHttpOperationsLive,
   PasswordHttpOperationsLive,
-  SessionHttpOperationsLive,
 } from "@effect-auth/core/HttpApi";
-import { RecoveryCodesLive } from "@effect-auth/core/RecoveryCode";
+import {
+  RecoveryCodeManagementLive,
+  RecoveryCodesLive,
+} from "@effect-auth/core/RecoveryCode";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
@@ -29,6 +31,7 @@ import {
   AdministrativeAuditLive,
   AdministrativeAuditRuntimeLive,
 } from "../audit/administrative-audit-live";
+import { AccountRecoveryDeliveryLive } from "../auth/account-recovery-delivery-live";
 import { ExistingPasswordResetLive } from "../auth/existing-password-reset";
 import { ExternalRecoveryIdentityChallengeLive } from "../auth/external-recovery-identity-challenge-live";
 import { ExternalRecoveryIdentityDeliveryLive } from "../auth/external-recovery-identity-delivery-live";
@@ -39,6 +42,7 @@ import { PasswordResetEligibilityLive } from "../auth/password-reset-eligibility
 import { AuthRuntimeConfig } from "../auth/runtime-config";
 import {
   CurrentRequestAuthMiddlewareLive,
+  RecoveryRemediationRequestAuthMiddlewareLive,
   RequestSessionAuthenticatorLive,
 } from "../auth/session";
 import { SensitiveOperationStepUpClockLive } from "../auth/step-up-policy";
@@ -49,6 +53,7 @@ import {
 import { MailAuthorizationLive } from "../authorization/mail-authorization";
 import { MailResourceResolverLive } from "../authorization/mail-resource-resolver-live";
 import { MailPermissionsLive } from "../authorization/permissions-live";
+import { AccountRecoveryLive } from "../control-plane/account-recovery-live";
 import { ControlPlaneLive } from "../control-plane/batch";
 import { MailboxRegistryLive } from "../control-plane/database";
 import {
@@ -94,11 +99,13 @@ import {
 import { MailboxOutboundSendingLive } from "../mailboxes/outbound-sending";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendRequestContextMiddlewareLive } from "../observability/backend-request-live";
+import { AccountRecoveryApiLayer } from "./account-recovery";
 import { BackendHttpApi } from "./api";
 import {
   PasswordEnrollmentUnavailableGroupLive,
   RestrictedEmailOtpGroupLive,
 } from "./auth";
+import { ApplicationSessionHttpOperationsLayer } from "./auth-session";
 import {
   ApplicationStepUpHttpOperationsLayer,
   StepUpApiLayer,
@@ -109,7 +116,10 @@ import { HealthGroupLive } from "./health";
 import { MailboxGroupLive } from "./mailboxes";
 import { PasskeyAuthenticationApiLayer } from "./passkey-authentication";
 import { PasskeyCredentialManagementGroupLive } from "./passkey-credential-management";
-import { PasskeyEnrollmentGroupLive } from "./passkey-enrollment";
+import {
+  PasskeyEnrollmentGroupLive,
+  RecoveryPasskeyEnrollmentApiLayer,
+} from "./passkey-enrollment";
 import { HttpApiPlatformLive } from "./platform";
 import { RecoveryCodeManagementApiLayer } from "./recovery-code-management";
 
@@ -179,7 +189,7 @@ const BackendRoutesLive = Layer.unwrap(
       StepUpApiLayer
     ).pipe(
       Layer.provide(passwordHttpOperationsLive),
-      Layer.provide(SessionHttpOperationsLive),
+      Layer.provide(ApplicationSessionHttpOperationsLayer),
       Layer.provide(EmailVerificationHttpOperationsLive),
       Layer.provide(EmailOtpHttpOperationsLive),
       Layer.provide(MagicLinkHttpOperationsLive),
@@ -350,6 +360,7 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(
         Layer.mergeAll(
           authServicesLive,
+          RecoveryCodesLive.pipe(Layer.provide(authServicesLive)),
           PasskeyEnrollmentRuntimeLive,
           PasskeyRuntimeConfigLive.pipe(Layer.provide(authRuntimeConfigLive)),
           SensitiveOperationStepUpClockLive
@@ -362,6 +373,18 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(BackendRequestContextMiddlewareLive),
       Layer.provide(requestValidationLive)
     );
+    const recoveryRequestAuthLive =
+      RecoveryRemediationRequestAuthMiddlewareLive.pipe(
+        Layer.provide(requestSessionAuthenticatorLive)
+      );
+    const recoveryPasskeyEnrollmentApiLayer =
+      RecoveryPasskeyEnrollmentApiLayer.pipe(
+        Layer.provide(passkeyEnrollmentLive),
+        Layer.provide(recoveryRequestAuthLive),
+        Layer.provide(BackendRequestContextMiddlewareLive),
+        Layer.provide(requestValidationLive),
+        Layer.provide(authServicesLive)
+      );
     const passkeyAuthenticationApiLayer = PasskeyAuthenticationApiLayer.pipe(
       Layer.provide(passkeyAuthenticationLive),
       Layer.provide(BackendRequestContextMiddlewareLive),
@@ -400,13 +423,40 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(BackendRequestContextMiddlewareLive),
       Layer.provide(requestValidationLive)
     );
+    const recoveryCodeCoreLive = RecoveryCodeManagementLive.pipe(
+      Layer.provide(RecoveryCodesLive.pipe(Layer.provide(authServicesLive))),
+      Layer.provide(authServicesLive),
+      Layer.provide(authStorageLive)
+    );
+    const accountRecoveryLive = AccountRecoveryLive.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          authServicesLive,
+          authStorageLive,
+          recoveryCodeCoreLive,
+          RecoverySafeIdentityPolicyLive,
+          AccountRecoveryDeliveryLive.pipe(
+            Layer.provide(authRuntimeConfigLive),
+            Layer.provide(devEmailStoreLive)
+          )
+        )
+      )
+    );
+    const accountRecoveryApiLayer = AccountRecoveryApiLayer.pipe(
+      Layer.provide(accountRecoveryLive),
+      Layer.provide(BackendRequestContextMiddlewareLive),
+      Layer.provide(requestValidationLive),
+      Layer.provide(authServicesLive)
+    );
 
     return HttpApiBuilder.layer(BackendHttpApi).pipe(
       Layer.provide(
         Layer.mergeAll(
           authGroupHandlersLive,
+          accountRecoveryApiLayer,
           recoveryIdentityGroupLive,
           passkeyEnrollmentGroupLive,
+          recoveryPasskeyEnrollmentApiLayer,
           passkeyAuthenticationApiLayer,
           passkeyCredentialManagementGroupLive,
           recoveryCodeManagementApiLayer,

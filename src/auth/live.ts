@@ -1,5 +1,6 @@
 import { AlchemyCloudflareMailer } from "@effect-auth/core/AlchemyCloudflareEmail";
 import { RateLimitStoreDurableObject } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
+import { CustomEvidencePoliciesLive } from "@effect-auth/core/Assurance";
 import {
   AuthDomainConfigLive,
   AuthSecretsLive,
@@ -35,6 +36,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import { RateLimiter as PersistenceRateLimiter } from "effect/unstable/persistence";
 
+import { externalRecoveryLinkEvidence } from "./account-recovery";
 import { completionUrl } from "./completion-url";
 import { PasskeyServicesLive } from "./passkey-live";
 import { meetsPasswordPolicy } from "./password-policy";
@@ -121,6 +123,11 @@ export const AuthServicesLive = Layer.unwrap(
       );
     })();
     const sessionLive = AuthKernelLive.pipe(
+      Layer.provide(
+        CustomEvidencePoliciesLive([externalRecoveryLinkEvidence.policy]).pipe(
+          Layer.orDie
+        )
+      ),
       Layer.provideMerge(WebCryptoLive()),
       Layer.provideMerge(AuthSecretsLive(options.secrets))
     );

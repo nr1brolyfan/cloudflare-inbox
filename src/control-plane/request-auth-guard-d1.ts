@@ -55,6 +55,25 @@ const unrestrictedSession = sql<boolean>`coalesce(json_array_length(
   )
 ), 0) = 0`;
 
+const recoveryRemediationSession = sql<boolean>`json_array_length(
+  json_extract(
+    ${authSession.metadata},
+    '$.__effectAuthSession.claims.requirements'
+  )
+) = 1
+and json_extract(
+  ${authSession.metadata},
+  '$.__effectAuthSession.claims.requirements[0]'
+) = 'recovery_remediation'
+and exists (
+  select 1
+    from json_each(json_extract(
+      ${authSession.metadata},
+      '$.__effectAuthSession.claims.recoveryRemediation.allowed'
+    )) as capability
+   where capability.value = 'second-passkey'
+)`;
+
 const recentAuthenticationEvidence = sql<boolean>`json_array_length(
   case
     when json_valid(${authSession.authenticationEvents}) then
@@ -93,7 +112,8 @@ const sessionWhere = (
   requestAuth: CurrentRequestAuthShape,
   now: number,
   databaseTime: boolean,
-  sensitive: boolean
+  sensitive: boolean,
+  requirement: SQL<boolean> = unrestrictedSession
 ) => {
   const { validated } = requestAuth;
   const mfaVerifiedAt = validated.issued.mfaVerifiedAt ?? null;
@@ -110,7 +130,7 @@ const sessionWhere = (
     mfaVerifiedAt === null
       ? isNull(authSession.mfaVerifiedAt)
       : eq(authSession.mfaVerifiedAt, mfaVerifiedAt),
-    unrestrictedSession,
+    requirement,
     databaseTime
       ? gt(authSession.expiresAt, controlPlaneDatabaseNow)
       : undefined,
@@ -150,3 +170,18 @@ export const sensitiveSessionPredicate = (
   requestAuth: CurrentRequestAuthShape,
   now: number
 ) => sessionExists(database, requestAuth, now, true, true);
+
+export const recoveryRemediationSessionPredicate = (
+  database: ControlPlaneDatabase,
+  requestAuth: CurrentRequestAuthShape,
+  now: number
+) =>
+  exists(
+    database
+      .select({ value: sql`1` })
+      .from(authSession)
+      .innerJoin(authUser, eq(authUser.id, authSession.userId))
+      .where(
+        sessionWhere(requestAuth, now, true, false, recoveryRemediationSession)
+      )
+  );

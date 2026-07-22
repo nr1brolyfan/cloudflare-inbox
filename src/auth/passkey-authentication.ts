@@ -363,9 +363,15 @@ export class PasskeyAuthentication extends Context.Service<
             "finish-sign-in"
           );
           const identity = yield* verifiedIdentity(finished.userId);
+          // Recovery retires the email login authority; this marker preserves
+          // the verified-identity gate only for its replacement UV passkey.
+          const verifiedIdentityKinds =
+            identity.kind === "recovery-passkey"
+              ? (["email", "recovery-passkey"] as const)
+              : [identity.kind];
           const result = yield* authFlow
             .completePrimaryFactor({
-              claims: { verifiedIdentityKinds: [identity.kind] },
+              claims: { verifiedIdentityKinds },
               evidence: [authenticationEvidence],
               ...(identity.kind === "email"
                 ? {

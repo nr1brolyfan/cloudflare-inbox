@@ -395,6 +395,53 @@ describe("passkey authentication", () => {
     }
   });
 
+  it("keeps a recovered passkey identity unrestricted on later sign-in", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertVerifiedRecovery(database);
+      database
+        .prepare(
+          `update auth_user_identity
+              set kind = 'recovery-passkey', value = user_id,
+                  normalized_value = user_id, updated_at = ?
+            where id = 'login-a'`
+        )
+        .run(now);
+      const state = makeState();
+      const command = Schema.decodeUnknownSync(FinishPasskeySignInCommand)({
+        challengeId,
+        credential: clientCredential,
+      });
+
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          const authentication = yield* PasskeyAuthentication;
+          return yield* authentication.finishSignIn(command);
+        }).pipe(Effect.provide(serviceLayer(database, state)))
+      );
+
+      expect(state.primaryFactorInputs).toMatchObject([
+        {
+          claims: {
+            verifiedIdentityKinds: ["email", "recovery-passkey"],
+          },
+          identity: {
+            identityId: "login-a",
+            kind: "recovery-passkey",
+            verified: true,
+          },
+          method: "passkey",
+        },
+      ]);
+      expect(state.primaryFactorInputs[0]).not.toHaveProperty(
+        "emailDestination"
+      );
+    } finally {
+      database.close();
+    }
+  });
+
   it("denies sign-in before verification when the account is disabled", async () => {
     const database = new DatabaseSync(":memory:");
     try {

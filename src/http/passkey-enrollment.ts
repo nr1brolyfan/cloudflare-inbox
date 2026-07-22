@@ -7,8 +7,10 @@ import {
   AuthStepUpRequiredError,
 } from "@effect-auth/core/HttpApi";
 import { RateLimitExceededError } from "@effect-auth/core/RateLimiter";
+import { SessionCookie } from "@effect-auth/core/Sessions";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { PasskeyEnrollment } from "../auth/passkey-enrollment";
@@ -74,6 +76,15 @@ const mapError = (
         })
       );
     }
+    case "indeterminate": {
+      return Effect.fail(
+        new AuthInternalError({
+          code: "internal_error",
+          message:
+            "Passkey registration may have completed. Sign in with the new passkey and regenerate recovery codes before retrying.",
+        })
+      );
+    }
     default: {
       return Effect.fail(
         new AuthInternalError({
@@ -99,7 +110,55 @@ export const PasskeyEnrollmentGroupLive = HttpApiBuilder.group(
       .handle("registerFinish", ({ payload }) =>
         enrollment
           .finish(payload)
+          .pipe(Effect.map(({ credentialId }) => ({ credentialId })))
           .pipe(Effect.catchTag("PasskeyEnrollmentError", mapError))
+      );
+  })
+);
+
+export const RecoveryPasskeyEnrollmentApiLayer = HttpApiBuilder.group(
+  BackendHttpApi,
+  "recoveryPasskeyEnrollment",
+  Effect.fn("auth.http.recovery_passkey_enrollment")(function* (handlers) {
+    const enrollment = yield* PasskeyEnrollment;
+    const sessionCookie = yield* SessionCookie;
+    return handlers
+      .handle("start", ({ payload }) =>
+        enrollment
+          .start(payload)
+          .pipe(Effect.catchTag("PasskeyEnrollmentError", mapError))
+      )
+      .handle("finish", ({ payload }) =>
+        Effect.gen(function* () {
+          const result = yield* enrollment
+            .finish(payload)
+            .pipe(Effect.catchTag("PasskeyEnrollmentError", mapError));
+          if (result.remediation === undefined) {
+            return yield* new AuthPolicyDeniedError({
+              code: "policy_denied",
+              message: "Recovery remediation session required",
+            });
+          }
+          const cookie = yield* sessionCookie
+            .commit(result.remediation.session)
+            .pipe(
+              Effect.mapError(
+                () =>
+                  new AuthInternalError({
+                    code: "internal_error",
+                    message:
+                      "Recovery may have completed. Sign in with the new passkey and regenerate recovery codes.",
+                  })
+              )
+            );
+          return yield* HttpServerResponse.json(result.remediation.body, {
+            headers: {
+              "cache-control": "private, no-store",
+              pragma: "no-cache",
+              "set-cookie": cookie,
+            },
+          }).pipe(Effect.orDie);
+        })
       );
   })
 );
