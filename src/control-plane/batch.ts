@@ -1,3 +1,6 @@
+import type { SQLWrapper } from "drizzle-orm";
+import type { BatchItem } from "drizzle-orm/batch";
+import { SQLiteDialect } from "drizzle-orm/sqlite-core";
 /* oxlint-disable unicorn/no-array-for-each, unicorn/no-array-method-this-argument -- Effect.forEach is not Array#forEach. */
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -16,10 +19,13 @@ export class ControlPlaneBatchError extends Data.TaggedError(
   readonly statement?: number;
 }> {}
 
-export interface ControlPlaneStatement {
-  readonly params?: readonly unknown[];
-  readonly sql: string;
-}
+/** Drizzle batch item kept compatible with a future Effect-D1 batch API. */
+export type ControlPlaneStatement = BatchItem<"sqlite"> & SQLWrapper;
+
+export type ControlPlaneStatements = readonly [
+  ControlPlaneStatement,
+  ...ControlPlaneStatement[],
+];
 
 export interface ControlPlaneBatchResult {
   readonly error?: string;
@@ -29,7 +35,7 @@ export interface ControlPlaneBatchResult {
 
 export interface ControlPlaneBatch {
   readonly execute: (
-    statements: readonly ControlPlaneStatement[]
+    statements: ControlPlaneStatements
   ) => Effect.Effect<
     readonly ControlPlaneBatchResult[],
     ControlPlaneBatchError
@@ -46,20 +52,24 @@ export const ControlPlaneBatchLive = Layer.effect(
   ControlPlaneBatch,
   Effect.gen(function* () {
     const { database } = yield* ControlPlaneD1Binding;
+    const dialect = new SQLiteDialect();
 
     return ControlPlaneBatch.of({
       execute: (statements) =>
         Effect.gen(function* () {
           const prepared = yield* Effect.forEach(
             statements,
-            ({ params = [], sql }, statement) =>
+            (statement, index) =>
               Effect.try({
-                try: () => database.prepare(sql).bind(...params),
+                try: () => {
+                  const query = dialect.sqlToQuery(statement.getSQL());
+                  return database.prepare(query.sql).bind(...query.params);
+                },
                 catch: (cause) =>
                   new ControlPlaneBatchError({
                     cause,
                     commitState: "not-committed",
-                    statement,
+                    statement: index,
                   }),
               })
           );
@@ -100,7 +110,6 @@ export const ControlPlaneBatchLive = Layer.effect(
 );
 
 /** Shared control-plane adapters; the Worker must provide ControlPlaneD1Binding. */
-export const ControlPlaneLive = Layer.merge(
-  ControlPlaneDatabaseLive,
-  ControlPlaneBatchLive
+export const ControlPlaneLive = ControlPlaneBatchLive.pipe(
+  Layer.provideMerge(ControlPlaneDatabaseLive)
 );

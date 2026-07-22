@@ -1,54 +1,31 @@
 import { maximumSessionAuthenticationEvents } from "@effect-auth/core/Assurance";
+import { and, eq, exists, gt, isNull, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 
+import { authUser } from "../auth/schema/modules/core";
+import { authSession } from "../auth/schema/modules/sessions";
 import type { CurrentRequestAuthShape } from "../auth/session";
 import {
   AUTHENTICATION_EVENT_SCHEMA_VERSION,
   CONTROL_PLANE_STEP_UP_POLICY,
 } from "../auth/step-up-policy";
 import type { SensitiveOperationEvidenceMethod } from "../auth/step-up-policy";
+import type { ControlPlaneDatabase } from "./database";
 
-const sessionWhere = `session.id = ?
-      and session.user_id = ?
-      and session.secret_hash = ?
-      and session.revoked_at is null
-      and session.expires_at > ?
-      and user.disabled_at is null
-      and session.auth_time = ?
-      and session.aal = ?
-      and session.amr = ?
-      and ((session.mfa_verified_at is null and ? is null) or session.mfa_verified_at = ?)
-      and coalesce(json_array_length(
-        json_extract(session.metadata, '$.__effectAuthSession.claims.requirements')
-      ), 0) = 0`;
-
-export const sessionPredicate = `exists (
-  select 1
-    from auth_session as session
-    join auth_user as user on user.id = session.user_id
-   where ${sessionWhere}
-)`;
-
-export const controlPlaneDatabaseNow =
-  "cast(unixepoch('subsec') * 1000 as integer)";
-
-export const transactionalSessionPredicate = `exists (
-  select 1
-    from auth_session as session
-    join auth_user as user on user.id = session.user_id
-   where ${sessionWhere}
-     and session.expires_at > ${controlPlaneDatabaseNow}
-)`;
+export const controlPlaneDatabaseNow = sql<number>`cast(
+  unixepoch('subsec') * 1000 as integer
+ )`;
 
 const evidenceSqlByMethod: Readonly<
-  Record<SensitiveOperationEvidenceMethod, string>
+  Record<SensitiveOperationEvidenceMethod, SQL<boolean>>
 > = {
-  password: `(json_extract(event.value, '$.type') = 'password'
+  password: sql<boolean>`(json_extract(event.value, '$.type') = 'password'
           and json_type(event.value, '$.credentialId') = 'text')`,
-  totp: `(json_extract(event.value, '$.type') = 'totp'
+  totp: sql<boolean>`(json_extract(event.value, '$.type') = 'totp'
           and json_type(event.value, '$.factorId') = 'text'
           and json_type(event.value, '$.acceptedCounter') = 'integer'
           and json_extract(event.value, '$.acceptedCounter') >= 0)`,
-  "verified-passkey": `(json_extract(event.value, '$.type') = 'passkey'
+  "verified-passkey": sql<boolean>`(json_extract(event.value, '$.type') = 'passkey'
           and json_type(event.value, '$.credentialId') = 'text'
           and json_extract(event.value, '$.userVerification') = 'verified'
           and (json_type(event.value, '$.authenticatorAttachment') is null
@@ -62,79 +39,114 @@ const evidenceSqlByMethod: Readonly<
             or (json_type(event.value, '$.signCount') = 'integer'
               and json_extract(event.value, '$.signCount') >= 0))
           and (json_type(event.value, '$.aaguid') is null
-            or (json_type(event.value, '$.aaguid') = 'text'
+           or (json_type(event.value, '$.aaguid') = 'text'
               and length(json_extract(event.value, '$.aaguid')) > 0)))`,
 };
 
-const acceptedEvidencePredicates = CONTROL_PLANE_STEP_UP_POLICY.acceptedEvidence
-  .map((method) => evidenceSqlByMethod[method])
-  .join(" or ");
+const acceptedEvidencePredicates =
+  CONTROL_PLANE_STEP_UP_POLICY.acceptedEvidence.map(
+    (method) => evidenceSqlByMethod[method]
+  );
 
-export const sensitiveSessionPredicate = `exists (
-  /* ${CONTROL_PLANE_STEP_UP_POLICY.id}/v${CONTROL_PLANE_STEP_UP_POLICY.version} */
+const unrestrictedSession = sql<boolean>`coalesce(json_array_length(
+  json_extract(
+    ${authSession.metadata},
+    '$.__effectAuthSession.claims.requirements'
+  )
+), 0) = 0`;
+
+const recentAuthenticationEvidence = sql<boolean>`json_array_length(
+  case
+    when json_valid(${authSession.authenticationEvents}) then
+      case
+        when json_type(${authSession.authenticationEvents}) = 'array'
+          then ${authSession.authenticationEvents}
+        else '[]'
+      end
+    else '[]'
+  end
+) <= ${maximumSessionAuthenticationEvents}
+and exists (
   select 1
-    from auth_session as session
-    join auth_user as user on user.id = session.user_id
-   where ${sessionWhere}
-     and session.expires_at > ${controlPlaneDatabaseNow}
-     and json_array_length(
-       case
-         when json_valid(session.authentication_events) then
-           case
-             when json_type(session.authentication_events) = 'array'
-               then session.authentication_events
-             else '[]'
-           end
-         else '[]'
-       end
-     ) <= ${maximumSessionAuthenticationEvents}
-     and exists (
-       select 1
-          from json_each(
-            case
-              when json_valid(session.authentication_events) then
-                case
-                  when json_type(session.authentication_events) = 'array'
-                    then session.authentication_events
-                  else '[]'
-                end
-              else '[]'
-            end
-         ) as event
-        where json_type(event.value, '$.version') = 'integer'
-          and json_extract(event.value, '$.version') = ?
-          and json_type(event.value, '$.verifiedAt') = 'integer'
-          and json_extract(event.value, '$.verifiedAt') >= 0
-          and json_extract(event.value, '$.verifiedAt')
-              between ${controlPlaneDatabaseNow} - ? and ${controlPlaneDatabaseNow}
-          and (${acceptedEvidencePredicates})
-     )
+    from json_each(
+      case
+        when json_valid(${authSession.authenticationEvents}) then
+          case
+            when json_type(${authSession.authenticationEvents}) = 'array'
+              then ${authSession.authenticationEvents}
+            else '[]'
+          end
+        else '[]'
+      end
+    ) as event
+   where json_type(event.value, '$.version') = 'integer'
+     and json_extract(event.value, '$.version') = ${AUTHENTICATION_EVENT_SCHEMA_VERSION}
+     and json_type(event.value, '$.verifiedAt') = 'integer'
+     and json_extract(event.value, '$.verifiedAt') >= 0
+     and json_extract(event.value, '$.verifiedAt') between
+       ${controlPlaneDatabaseNow} - ${CONTROL_PLANE_STEP_UP_POLICY.maxAgeMs}
+       and ${controlPlaneDatabaseNow}
+     and (${sql.join(acceptedEvidencePredicates, sql` or `)})
 )`;
 
-export const sessionParams = (
+const sessionWhere = (
   requestAuth: CurrentRequestAuthShape,
-  now: number
-): readonly unknown[] => {
+  now: number,
+  databaseTime: boolean,
+  sensitive: boolean
+) => {
   const { validated } = requestAuth;
   const mfaVerifiedAt = validated.issued.mfaVerifiedAt ?? null;
-  return [
-    validated.issued.sessionId,
-    validated.issued.userId,
-    requestAuth.sessionSecretHash,
-    now,
-    validated.issued.authTime,
-    validated.issued.aal,
-    JSON.stringify(validated.issued.amr),
-    mfaVerifiedAt,
-    mfaVerifiedAt,
-  ];
+  return and(
+    eq(authSession.id, validated.issued.sessionId),
+    eq(authSession.userId, validated.issued.userId),
+    eq(authSession.secretHash, requestAuth.sessionSecretHash),
+    isNull(authSession.revokedAt),
+    gt(authSession.expiresAt, now),
+    isNull(authUser.disabledAt),
+    eq(authSession.authTime, validated.issued.authTime),
+    eq(authSession.aal, validated.issued.aal),
+    eq(authSession.amr, JSON.stringify(validated.issued.amr)),
+    mfaVerifiedAt === null
+      ? isNull(authSession.mfaVerifiedAt)
+      : eq(authSession.mfaVerifiedAt, mfaVerifiedAt),
+    unrestrictedSession,
+    databaseTime
+      ? gt(authSession.expiresAt, controlPlaneDatabaseNow)
+      : undefined,
+    sensitive ? recentAuthenticationEvidence : undefined
+  );
 };
 
-export const sensitiveSessionParams = (
+const sessionExists = (
+  database: ControlPlaneDatabase,
+  requestAuth: CurrentRequestAuthShape,
+  now: number,
+  databaseTime: boolean,
+  sensitive: boolean
+) =>
+  exists(
+    database
+      .select({ value: sql`1` })
+      .from(authSession)
+      .innerJoin(authUser, eq(authUser.id, authSession.userId))
+      .where(sessionWhere(requestAuth, now, databaseTime, sensitive))
+  );
+
+export const sessionPredicate = (
+  database: ControlPlaneDatabase,
   requestAuth: CurrentRequestAuthShape,
   now: number
-): readonly unknown[] => [
-  ...sessionParams(requestAuth, now),
-  AUTHENTICATION_EVENT_SCHEMA_VERSION,
-  CONTROL_PLANE_STEP_UP_POLICY.maxAgeMs,
-];
+) => sessionExists(database, requestAuth, now, false, false);
+
+export const transactionalSessionPredicate = (
+  database: ControlPlaneDatabase,
+  requestAuth: CurrentRequestAuthShape,
+  now: number
+) => sessionExists(database, requestAuth, now, true, false);
+
+export const sensitiveSessionPredicate = (
+  database: ControlPlaneDatabase,
+  requestAuth: CurrentRequestAuthShape,
+  now: number
+) => sessionExists(database, requestAuth, now, true, true);

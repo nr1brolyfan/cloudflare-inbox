@@ -37,7 +37,7 @@ import {
 } from "#/authorization/mail-authorization";
 import { MailPermissionsLive } from "#/authorization/permissions-live";
 import * as Resources from "#/authorization/resources";
-import { ControlPlaneBatchLive } from "#/control-plane/batch";
+import { ControlPlaneLive } from "#/control-plane/batch";
 import { ControlPlaneD1Binding } from "#/control-plane/database";
 import {
   MailboxAdministrationConfig,
@@ -250,7 +250,7 @@ const unavailableMailAuthorizationLive = Layer.succeed(
 );
 
 const controlPlaneBatchLive = (database: D1EffectQbDatabaseLike) =>
-  ControlPlaneBatchLive.pipe(
+  ControlPlaneLive.pipe(
     Layer.provide(
       Layer.succeed(
         ControlPlaneD1Binding,

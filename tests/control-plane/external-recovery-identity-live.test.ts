@@ -252,6 +252,27 @@ const managementLive = (
   );
 };
 
+const beforeBatch = (
+  database: D1EffectQbDatabaseLike,
+  mutation: () => void
+): D1EffectQbDatabaseLike => ({
+  batch: (statements) => {
+    mutation();
+    return database.batch(statements);
+  },
+  prepare: database.prepare,
+});
+
+const loseResponseAfterCommit = (
+  database: D1EffectQbDatabaseLike
+): D1EffectQbDatabaseLike => ({
+  batch: async (statements) => {
+    await database.batch(statements);
+    throw new Error("D1 response lost after commit");
+  },
+  prepare: database.prepare,
+});
+
 const runAuthenticated = <A, E, R>(
   effect: Effect.Effect<
     A,
@@ -398,6 +419,117 @@ describe("external recovery identity management", () => {
         challenges: { count: 0 },
         delivered: [],
         identities: { count: 0 },
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rechecks session revocation inside the enrollment batch", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      const delivered: string[] = [];
+      const d1 = beforeBatch(makeTestD1Database(database), () => {
+        database
+          .prepare("update auth_session set revoked_at = ? where id = ?")
+          .run(now, session.actor.sessionId);
+      });
+      const live = managementLive(database, d1, delivered);
+
+      const error = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management
+              .enroll(
+                Schema.decodeUnknownSync(EnrollExternalRecoveryIdentityCommand)(
+                  {
+                    address: "person@external.test",
+                    operationId: "00000000-0000-4000-8000-000000000031",
+                  }
+                )
+              )
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(live)),
+          session
+        )
+      );
+
+      expect(error).toMatchObject({ reason: "restricted-session" });
+      expect(delivered).toStrictEqual(["person@external.test"]);
+      expect(
+        database
+          .prepare(
+            `select
+               (select count(*) from app_external_recovery_identity) as identities,
+               (select count(*) from app_administrative_audit_event) as audits,
+               (select count(*) from app_authorization_guard) as guards,
+               (select consumed_at from auth_verification
+                 where id = 'challenge-a') as consumed_at`
+          )
+          .get()
+      ).toMatchObject({
+        audits: 0,
+        consumed_at: now,
+        guards: 0,
+        identities: 0,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("does not compensate an enrollment whose commit result is unknown", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      const d1 = loseResponseAfterCommit(makeTestD1Database(database));
+      const live = managementLive(database, d1, []);
+
+      const error = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management
+              .enroll(
+                Schema.decodeUnknownSync(EnrollExternalRecoveryIdentityCommand)(
+                  {
+                    address: "person@external.test",
+                    operationId: "00000000-0000-4000-8000-000000000031",
+                  }
+                )
+              )
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(live)),
+          session
+        )
+      );
+
+      expect(error).toMatchObject({
+        commitState: "unknown",
+        reason: "storage",
+      });
+      expect(
+        database
+          .prepare(
+            `select
+               (select count(*) from app_external_recovery_identity) as identities,
+               (select count(*) from app_administrative_audit_event) as audits,
+               (select count(*) from app_authorization_guard) as guards,
+               (select consumed_at from auth_verification
+                 where id = 'challenge-a') as consumed_at`
+          )
+          .get()
+      ).toMatchObject({
+        audits: 1,
+        consumed_at: null,
+        guards: 0,
+        identities: 1,
       });
     } finally {
       database.close();

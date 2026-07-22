@@ -135,10 +135,7 @@ export const D1DevEmailStoreLive = Layer.effect(
             .delete(appDevEmailMessage)
             .where(notInArray(appDevEmailMessage.id, retainedMessages));
 
-          yield* storeOperation(
-            "save",
-            batch.execute([upsert.toSQL(), trim.toSQL()])
-          );
+          yield* storeOperation("save", batch.execute([upsert, trim]));
         }),
       list: (options: DevEmailListOptions = {}) => {
         const limit = Math.min(

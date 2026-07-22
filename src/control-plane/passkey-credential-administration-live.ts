@@ -1,7 +1,17 @@
 import { CustomAuditEventSchema } from "@effect-auth/core/AuditLog";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import * as AuthPermission from "@effect-auth/core/Permission";
-import { and, asc, desc, eq, isNull } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  isNull,
+  ne,
+  notExists,
+  sql,
+} from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -19,6 +29,7 @@ import {
   RevokePasskeyCredentialCommand,
   RevokedPasskeyCredential,
 } from "../auth/passkey-credential-administration";
+import { authAuditLog } from "../auth/schema/modules/audit-log";
 import { authPasskeyCredential } from "../auth/schema/modules/passkeys";
 import type { CurrentRequestAuthShape } from "../auth/session";
 import { CurrentRequestAuth } from "../auth/session";
@@ -31,12 +42,14 @@ import * as ControlPlane from "./batch";
 import { ControlPlaneDatabase } from "./database";
 import {
   controlPlaneDatabaseNow,
-  sensitiveSessionParams,
   sensitiveSessionPredicate,
-  sessionParams,
   transactionalSessionPredicate,
 } from "./request-auth-guard-d1";
-import { appPasskeyCredentialRevocation } from "./schema";
+import {
+  appAuthorizationGuard,
+  appExternalRecoveryIdentity,
+  appPasskeyCredentialRevocation,
+} from "./schema";
 
 export interface PasskeyCredentialAdministrationRuntime {
   readonly now: () => number;
@@ -330,138 +343,167 @@ export const PasskeyCredentialAdministrationLive = Layer.effect(
           }).pipe(
             Effect.mapError((cause) => failure("revoke", "storage", cause))
           );
-          const sensitiveParams = sensitiveSessionParams(
+          const trustedStepUpSession = sensitiveSessionPredicate(
+            database,
             requestAuth,
             timestamp
           );
-          const baseParams = sessionParams(requestAuth, timestamp);
-          const recoveryPredicate = `exists (
-            select 1 from app_external_recovery_identity
-             where user_id = ? and status = 'verified'
-          )`;
-          const targetOwnedPredicate = `exists (
-            select 1 from auth_passkey_credential
-             where id = ? and user_id = ?
-          )`;
-          const targetActivePredicate = `exists (
-            select 1 from auth_passkey_credential
-             where id = ? and user_id = ? and credential_id = ?
-               and revoked_at is null
-          )`;
-          const anotherFactorPredicate = `exists (
-            select 1 from auth_passkey_credential
-             where user_id = ? and id <> ? and revoked_at is null
-          )`;
-          const operationAvailablePredicate = `not exists (
-            select 1 from app_passkey_credential_revocation
-             where operation_id = ?
-          )`;
+          const trustedBaseSession = transactionalSessionPredicate(
+            database,
+            requestAuth,
+            timestamp
+          );
           const { userId } = requestAuth.validated.actor;
-          const statements: readonly ControlPlane.ControlPlaneStatement[] = [
-            {
-              sql: `insert into app_authorization_guard (nonce)
-                    select ? where ${sensitiveSessionPredicate}
-                      and ${recoveryPredicate}
-                      and ${targetActivePredicate}
-                      and ${anotherFactorPredicate}
-                      and ${operationAvailablePredicate}`,
-              params: [
-                nonce,
-                ...sensitiveParams,
-                userId,
-                command.id,
-                userId,
-                target.credentialId,
-                userId,
-                command.id,
-                command.operationId,
-              ],
-            },
-            {
-              sql: `select cast(${transactionalSessionPredicate} as integer)
-                              as session_valid,
-                           cast(${sensitiveSessionPredicate} as integer)
-                              as step_up_valid,
-                           cast(${recoveryPredicate} as integer)
-                              as recovery_valid,
-                           cast(${targetOwnedPredicate} as integer)
-                              as target_owned,
-                           cast(${targetActivePredicate} as integer)
-                              as target_active,
-                           cast(${anotherFactorPredicate} as integer)
-                              as another_factor_exists,
-                           cast(${operationAvailablePredicate} as integer)
-                              as operation_available,
-                           cast(exists (select 1 from app_authorization_guard
-                                        where nonce = ?) as integer)
-                              as authorized`,
-              params: [
-                ...baseParams,
-                ...sensitiveParams,
-                userId,
-                command.id,
-                userId,
-                command.id,
-                userId,
-                target.credentialId,
-                userId,
-                command.id,
-                command.operationId,
-                nonce,
-              ],
-            },
-            {
-              sql: `update auth_passkey_credential
-                        set revoked_at = max(
-                          ?, created_at, coalesce(last_used_at, 0),
-                          ${controlPlaneDatabaseNow}
-                        )
-                     where id = ? and user_id = ? and credential_id = ?
-                       and revoked_at is null
-                       and exists (select 1 from app_authorization_guard
-                                    where nonce = ?)
-                     returning id, created_at, last_used_at, revoked_at`,
-              params: [
-                timestamp,
-                command.id,
-                userId,
-                target.credentialId,
-                nonce,
-              ],
-            },
-            {
-              sql: `insert into app_passkey_credential_revocation
-                      (operation_id, user_id, credential_record_id,
-                       credential_created_at, credential_last_used_at,
-                       revoked_at)
-                    select ?, ?, id, created_at, last_used_at, revoked_at
-                      from auth_passkey_credential
-                      where id = ? and user_id = ?
-                        and exists (select 1 from app_authorization_guard
-                                    where nonce = ?)`,
-              params: [command.operationId, userId, command.id, userId, nonce],
-            },
-            {
-              sql: `insert into auth_audit_log
-                      (id, type, user_id, actor_user_id, occurred_at, event,
-                       created_at)
-                    select ?, ?, ?, ?, ?, ?, ?
-                      from app_authorization_guard where nonce = ?`,
-              params: [
-                `passkey-revocation:${command.operationId}`,
-                auditEvent.type,
-                userId,
-                userId,
-                timestamp,
-                JSON.stringify(auditEvent),
-                timestamp,
-                nonce,
-              ],
-            },
-            {
-              sql: "delete from app_authorization_guard where nonce = ?",
-              params: [nonce],
-            },
+          const recoveryValid = exists(
+            database
+              .select({ value: sql`1` })
+              .from(appExternalRecoveryIdentity)
+              .where(
+                and(
+                  eq(appExternalRecoveryIdentity.userId, userId),
+                  eq(appExternalRecoveryIdentity.status, "verified")
+                )
+              )
+          );
+          const targetOwned = exists(
+            database
+              .select({ value: sql`1` })
+              .from(authPasskeyCredential)
+              .where(
+                and(
+                  eq(authPasskeyCredential.id, command.id),
+                  eq(authPasskeyCredential.userId, userId)
+                )
+              )
+          );
+          const targetActive = exists(
+            database
+              .select({ value: sql`1` })
+              .from(authPasskeyCredential)
+              .where(
+                and(
+                  eq(authPasskeyCredential.id, command.id),
+                  eq(authPasskeyCredential.userId, userId),
+                  eq(authPasskeyCredential.credentialId, target.credentialId),
+                  isNull(authPasskeyCredential.revokedAt)
+                )
+              )
+          );
+          const anotherFactorExists = exists(
+            database
+              .select({ value: sql`1` })
+              .from(authPasskeyCredential)
+              .where(
+                and(
+                  eq(authPasskeyCredential.userId, userId),
+                  ne(authPasskeyCredential.id, command.id),
+                  isNull(authPasskeyCredential.revokedAt)
+                )
+              )
+          );
+          const operationAvailable = notExists(
+            database
+              .select({ value: sql`1` })
+              .from(appPasskeyCredentialRevocation)
+              .where(
+                eq(
+                  appPasskeyCredentialRevocation.operationId,
+                  command.operationId
+                )
+              )
+          );
+          const authorized = exists(
+            database
+              .select({ value: sql`1` })
+              .from(appAuthorizationGuard)
+              .where(eq(appAuthorizationGuard.nonce, nonce))
+          );
+          const statements: ControlPlane.ControlPlaneStatements = [
+            database.insert(appAuthorizationGuard).select(
+              sql`select ${nonce} where ${trustedStepUpSession}
+                      and ${recoveryValid}
+                      and ${targetActive}
+                      and ${anotherFactorExists}
+                      and ${operationAvailable}`
+            ),
+            database.all(sql`select cast(${trustedBaseSession} as integer)
+                                      as session_valid,
+                                   cast(${trustedStepUpSession} as integer)
+                                      as step_up_valid,
+                                   cast(${recoveryValid} as integer)
+                                      as recovery_valid,
+                                   cast(${targetOwned} as integer)
+                                      as target_owned,
+                                   cast(${targetActive} as integer)
+                                      as target_active,
+                                   cast(${anotherFactorExists} as integer)
+                                      as another_factor_exists,
+                                   cast(${operationAvailable} as integer)
+                                      as operation_available,
+                                   cast(${authorized} as integer) as authorized`),
+            database
+              .update(authPasskeyCredential)
+              .set({
+                revokedAt: sql<number>`max(
+                  ${timestamp},
+                  ${authPasskeyCredential.createdAt},
+                  coalesce(${authPasskeyCredential.lastUsedAt}, 0),
+                  ${controlPlaneDatabaseNow}
+                )`,
+              })
+              .where(
+                and(
+                  eq(authPasskeyCredential.id, command.id),
+                  eq(authPasskeyCredential.userId, userId),
+                  eq(authPasskeyCredential.credentialId, target.credentialId),
+                  isNull(authPasskeyCredential.revokedAt),
+                  authorized
+                )
+              )
+              .returning({
+                created_at: authPasskeyCredential.createdAt,
+                id: authPasskeyCredential.id,
+                last_used_at: authPasskeyCredential.lastUsedAt,
+                revoked_at: authPasskeyCredential.revokedAt,
+              }),
+            database.insert(appPasskeyCredentialRevocation).select(
+              database
+                .select({
+                  credentialCreatedAt: authPasskeyCredential.createdAt,
+                  credentialLastUsedAt: authPasskeyCredential.lastUsedAt,
+                  credentialRecordId: authPasskeyCredential.id,
+                  operationId: sql`${command.operationId}`.as("operation_id"),
+                  revokedAt: authPasskeyCredential.revokedAt,
+                  userId: sql`${userId}`.as("user_id"),
+                })
+                .from(authPasskeyCredential)
+                .where(
+                  and(
+                    eq(authPasskeyCredential.id, command.id),
+                    eq(authPasskeyCredential.userId, userId),
+                    authorized
+                  )
+                )
+            ),
+            database.insert(authAuditLog).select(
+              database
+                .select({
+                  actorUserId: sql`${userId}`.as("actor_user_id"),
+                  createdAt: sql`${timestamp}`.as("created_at"),
+                  event: sql`${JSON.stringify(auditEvent)}`.as("event"),
+                  id: sql`${`passkey-revocation:${command.operationId}`}`.as(
+                    "id"
+                  ),
+                  occurredAt: sql`${timestamp}`.as("occurred_at"),
+                  type: sql`${auditEvent.type}`.as("type"),
+                  userId: sql`${userId}`.as("user_id"),
+                })
+                .from(appAuthorizationGuard)
+                .where(eq(appAuthorizationGuard.nonce, nonce))
+            ),
+            database
+              .delete(appAuthorizationGuard)
+              .where(eq(appAuthorizationGuard.nonce, nonce)),
           ];
           const results = yield* batch.execute(statements).pipe(
             Effect.catchTag("ControlPlaneBatchError", (cause) =>

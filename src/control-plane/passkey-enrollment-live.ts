@@ -8,7 +8,7 @@ import {
   passkeyRegistrationChallengeType,
 } from "@effect-auth/core/Passkey";
 import * as AuthPermission from "@effect-auth/core/Permission";
-import { and, eq } from "drizzle-orm";
+import { and, eq, exists, gt, isNull, notExists, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -25,7 +25,10 @@ import {
   StartPasskeyEnrollmentCommand,
   StartedPasskeyEnrollment,
 } from "../auth/passkey-enrollment";
+import { authAuditLog } from "../auth/schema/modules/audit-log";
 import { authUserIdentity } from "../auth/schema/modules/core";
+import { authPasskeyCredential } from "../auth/schema/modules/passkeys";
+import { authVerification } from "../auth/schema/modules/verification";
 import type { CurrentRequestAuthShape } from "../auth/session";
 import { CurrentRequestAuth } from "../auth/session";
 import {
@@ -38,12 +41,10 @@ import * as ControlPlane from "./batch";
 import { ControlPlaneDatabase } from "./database";
 import {
   controlPlaneDatabaseNow,
-  sensitiveSessionParams,
   sensitiveSessionPredicate,
-  sessionParams,
   transactionalSessionPredicate,
 } from "./request-auth-guard-d1";
-import { appExternalRecoveryIdentity } from "./schema";
+import { appAuthorizationGuard, appExternalRecoveryIdentity } from "./schema";
 
 export interface PasskeyEnrollmentRuntime {
   readonly now: () => number;
@@ -278,11 +279,16 @@ export const PasskeyEnrollmentLive = Layer.effect(
             .pipe(
               Effect.mapError((cause) => error("finish", "storage", cause))
             );
-          const sessionParameters = sensitiveSessionParams(
+          const trustedStepUpSession = sensitiveSessionPredicate(
+            database,
             requestAuth,
             timestamp
           );
-          const baseSessionParameters = sessionParams(requestAuth, timestamp);
+          const trustedBaseSession = transactionalSessionPredicate(
+            database,
+            requestAuth,
+            timestamp
+          );
           const metadataJson = JSON.stringify(metadata);
           const auditEvent = yield* Schema.decodeUnknownEffect(
             CustomAuditEventSchema
@@ -306,118 +312,137 @@ export const PasskeyEnrollmentLive = Layer.effect(
           }).pipe(
             Effect.mapError((cause) => error("finish", "storage", cause))
           );
-          const recoveryPredicate = `exists (
-            select 1 from app_external_recovery_identity
-             where id = ? and user_id = ? and status = 'verified'
-               and version = ?
-          )`;
-          const challengePredicate = `exists (
-            select 1 from auth_verification
-             where id = ? and type = 'passkey-registration'
-               and subject = ? and consumed_at is null
-               and expires_at > ${controlPlaneDatabaseNow}
-               and metadata = ?
-          )`;
-          const credentialAvailablePredicate = `not exists (
-            select 1 from auth_passkey_credential where credential_id = ?
-          )`;
-          const recoveryParams = [
-            recovery.id,
-            requestAuth.validated.actor.userId,
-            recovery.version,
-          ] as const;
-          const challengeParams = [
-            command.challengeId,
-            requestAuth.validated.actor.userId,
-            metadataJson,
-          ] as const;
-          const statements: readonly ControlPlane.ControlPlaneStatement[] = [
-            {
-              sql: `insert into app_authorization_guard (nonce)
-                    select ? where ${sensitiveSessionPredicate}
-                      and ${recoveryPredicate}
-                      and ${challengePredicate}
-                      and ${credentialAvailablePredicate}`,
-              params: [
-                nonce,
-                ...sessionParameters,
-                ...recoveryParams,
-                ...challengeParams,
-                verified.credentialId,
-              ],
-            },
-            {
-              sql: `select cast(${sensitiveSessionPredicate} as integer)
-                              as step_up_valid,
-                           cast(${transactionalSessionPredicate} as integer)
-                              as session_valid,
-                           cast(${recoveryPredicate} as integer)
-                              as recovery_valid,
-                           cast(${challengePredicate} as integer)
-                              as challenge_valid,
-                           cast(${credentialAvailablePredicate} as integer)
-                              as credential_available,
-                           cast(exists (select 1 from app_authorization_guard
-                                        where nonce = ?) as integer)
-                              as authorized`,
-              params: [
-                ...sessionParameters,
-                ...baseSessionParameters,
-                ...recoveryParams,
-                ...challengeParams,
-                verified.credentialId,
-                nonce,
-              ],
-            },
-            {
-              sql: `update auth_verification set consumed_at = ?
-                     where id = ? and type = 'passkey-registration'
-                       and consumed_at is null
-                       and exists (select 1 from app_authorization_guard
-                                    where nonce = ?)`,
-              params: [timestamp, command.challengeId, nonce],
-            },
-            {
-              sql: `insert into auth_passkey_credential
-                      (id, user_id, credential_id, public_key, sign_count,
-                       transports, backed_up, created_at, metadata)
-                    select ?, ?, ?, ?, ?, ?, ?, ?, ?
-                       from app_authorization_guard where nonce = ?
-                     returning credential_id`,
-              params: [
-                recordId,
-                requestAuth.validated.actor.userId,
-                verified.credentialId,
-                verified.publicKey,
-                verified.signCount,
-                nullableJson(verified.transports),
-                backedUpValue(verified.backedUp),
-                timestamp,
-                nullableJson(verified.metadata),
-                nonce,
-              ],
-            },
-            {
-              sql: `insert into auth_audit_log
-                      (id, type, user_id, actor_user_id, occurred_at, event,
-                       created_at)
-                    select ?, ?, ?, ?, ?, ?, ?
-                      from app_authorization_guard where nonce = ?`,
-              params: [
-                `passkey-enrollment:${metadata.operationId}`,
-                auditEvent.type,
-                requestAuth.validated.actor.userId,
-                requestAuth.validated.actor.userId,
-                timestamp,
-                JSON.stringify(auditEvent),
-                timestamp,
-                nonce,
-              ],
-            },
-            {
-              sql: "delete from app_authorization_guard where nonce = ?",
-              params: [nonce],
-            },
+          const recoveryValid = exists(
+            database
+              .select({ value: sql`1` })
+              .from(appExternalRecoveryIdentity)
+              .where(
+                and(
+                  eq(appExternalRecoveryIdentity.id, recovery.id),
+                  eq(
+                    appExternalRecoveryIdentity.userId,
+                    requestAuth.validated.actor.userId
+                  ),
+                  eq(appExternalRecoveryIdentity.status, "verified"),
+                  eq(appExternalRecoveryIdentity.version, recovery.version)
+                )
+              )
+          );
+          const challengeValid = exists(
+            database
+              .select({ value: sql`1` })
+              .from(authVerification)
+              .where(
+                and(
+                  eq(authVerification.id, command.challengeId),
+                  eq(authVerification.type, "passkey-registration"),
+                  eq(
+                    authVerification.subject,
+                    requestAuth.validated.actor.userId
+                  ),
+                  isNull(authVerification.consumedAt),
+                  gt(authVerification.expiresAt, controlPlaneDatabaseNow),
+                  eq(authVerification.metadata, metadataJson)
+                )
+              )
+          );
+          const credentialAvailable = notExists(
+            database
+              .select({ value: sql`1` })
+              .from(authPasskeyCredential)
+              .where(
+                eq(authPasskeyCredential.credentialId, verified.credentialId)
+              )
+          );
+          const authorized = exists(
+            database
+              .select({ value: sql`1` })
+              .from(appAuthorizationGuard)
+              .where(eq(appAuthorizationGuard.nonce, nonce))
+          );
+          const statements: ControlPlane.ControlPlaneStatements = [
+            database.insert(appAuthorizationGuard).select(
+              sql`select ${nonce} where ${trustedStepUpSession}
+                      and ${recoveryValid}
+                      and ${challengeValid}
+                      and ${credentialAvailable}`
+            ),
+            database.all(sql`select cast(${trustedStepUpSession} as integer)
+                                      as step_up_valid,
+                                   cast(${trustedBaseSession} as integer)
+                                      as session_valid,
+                                   cast(${recoveryValid} as integer)
+                                      as recovery_valid,
+                                   cast(${challengeValid} as integer)
+                                      as challenge_valid,
+                                   cast(${credentialAvailable} as integer)
+                                      as credential_available,
+                                   cast(${authorized} as integer) as authorized`),
+            database
+              .update(authVerification)
+              .set({ consumedAt: timestamp })
+              .where(
+                and(
+                  eq(authVerification.id, command.challengeId),
+                  eq(authVerification.type, "passkey-registration"),
+                  isNull(authVerification.consumedAt),
+                  authorized
+                )
+              ),
+            database
+              .insert(authPasskeyCredential)
+              .select(
+                database
+                  .select({
+                    backedUp: sql`${backedUpValue(verified.backedUp)}`.as(
+                      "backed_up"
+                    ),
+                    createdAt: sql`${timestamp}`.as("created_at"),
+                    credentialId: sql`${verified.credentialId}`.as(
+                      "credential_id"
+                    ),
+                    id: sql`${recordId}`.as("id"),
+                    metadata: sql`${nullableJson(verified.metadata)}`.as(
+                      "metadata"
+                    ),
+                    publicKey: sql`${verified.publicKey}`.as("public_key"),
+                    signCount: sql`${verified.signCount}`.as("sign_count"),
+                    transports: sql`${nullableJson(verified.transports)}`.as(
+                      "transports"
+                    ),
+                    userId: sql`${requestAuth.validated.actor.userId}`.as(
+                      "user_id"
+                    ),
+                  })
+                  .from(appAuthorizationGuard)
+                  .where(eq(appAuthorizationGuard.nonce, nonce))
+              )
+              .returning({
+                credential_id: authPasskeyCredential.credentialId,
+              }),
+            database.insert(authAuditLog).select(
+              database
+                .select({
+                  actorUserId: sql`${requestAuth.validated.actor.userId}`.as(
+                    "actor_user_id"
+                  ),
+                  createdAt: sql`${timestamp}`.as("created_at"),
+                  event: sql`${JSON.stringify(auditEvent)}`.as("event"),
+                  id: sql`${`passkey-enrollment:${metadata.operationId}`}`.as(
+                    "id"
+                  ),
+                  occurredAt: sql`${timestamp}`.as("occurred_at"),
+                  type: sql`${auditEvent.type}`.as("type"),
+                  userId: sql`${requestAuth.validated.actor.userId}`.as(
+                    "user_id"
+                  ),
+                })
+                .from(appAuthorizationGuard)
+                .where(eq(appAuthorizationGuard.nonce, nonce))
+            ),
+            database
+              .delete(appAuthorizationGuard)
+              .where(eq(appAuthorizationGuard.nonce, nonce)),
           ];
           const results = yield* batch.execute(statements).pipe(
             Effect.mapError(

@@ -1,5 +1,15 @@
 import * as AuthPermission from "@effect-auth/core/Permission";
-import { and, eq } from "drizzle-orm";
+import {
+  and,
+  eq,
+  exists,
+  gt,
+  isNull,
+  ne,
+  notExists,
+  or,
+  sql,
+} from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -22,6 +32,8 @@ import {
   VerifyExternalRecoveryIdentityCommand,
 } from "../auth/external-recovery-identity-management";
 import type { ExternalRecoveryIdentityManagementOperation } from "../auth/external-recovery-identity-management";
+import { authUserIdentity } from "../auth/schema/modules/core";
+import { authVerification } from "../auth/schema/modules/verification";
 import type { CurrentRequestAuthShape } from "../auth/session";
 import { CurrentRequestAuth } from "../auth/session";
 import {
@@ -39,12 +51,14 @@ import * as ControlPlane from "./batch";
 import { ControlPlaneDatabase } from "./database";
 import {
   controlPlaneDatabaseNow,
-  sensitiveSessionParams,
   sensitiveSessionPredicate,
-  sessionParams,
   transactionalSessionPredicate,
 } from "./request-auth-guard-d1";
-import { appExternalRecoveryIdentity } from "./schema";
+import {
+  appAuthorizationGuard,
+  appExternalRecoveryIdentity,
+  appMailboxAddress,
+} from "./schema";
 
 export interface ExternalRecoveryIdentityRuntime {
   readonly now: () => number;
@@ -107,47 +121,100 @@ const identityFromRow = (row: RawIdentityRow) =>
     version: row.version,
   });
 
-const identityColumns = `id, user_id, address, normalized_address,
-  comparison_key, status, challenge_expires_at, created_at, updated_at,
-  verified_at, revoked_at, version`;
+const identityReturning = {
+  address: appExternalRecoveryIdentity.address,
+  challenge_expires_at: appExternalRecoveryIdentity.challengeExpiresAt,
+  comparison_key: appExternalRecoveryIdentity.comparisonKey,
+  created_at: appExternalRecoveryIdentity.createdAt,
+  id: appExternalRecoveryIdentity.id,
+  normalized_address: appExternalRecoveryIdentity.normalizedAddress,
+  revoked_at: appExternalRecoveryIdentity.revokedAt,
+  status: appExternalRecoveryIdentity.status,
+  updated_at: appExternalRecoveryIdentity.updatedAt,
+  user_id: appExternalRecoveryIdentity.userId,
+  verified_at: appExternalRecoveryIdentity.verifiedAt,
+  version: appExternalRecoveryIdentity.version,
+} as const;
 
-const candidateAvailablePredicate = `(not exists (
-    select 1 from app_mailbox_address
-     where lower(normalized_address) = ?
-  ) and not exists (
-    select 1 from auth_user_identity
-     where kind = 'email' and revoked_at is null
-       and lower(normalized_value) = ?
-  ) and not exists (
-    select 1 from app_external_recovery_identity
-     where (status = 'verified'
-         or (status = 'pending'
-           and challenge_expires_at > ${controlPlaneDatabaseNow}))
-       and (comparison_key = ? or user_id = ?)
-       and (? is null or id <> ?)
-  ))`;
-
-const candidateParams = (
+const candidateAvailablePredicate = (
+  database: ControlPlaneDatabase,
   comparisonKey: string,
   userId: string,
   excludedIdentityId?: string
 ) =>
-  [
-    comparisonKey,
-    comparisonKey,
-    comparisonKey,
-    userId,
-    excludedIdentityId ?? null,
-    excludedIdentityId ?? null,
-  ] as const;
+  and(
+    notExists(
+      database
+        .select({ value: sql`1` })
+        .from(appMailboxAddress)
+        .where(
+          sql`lower(${appMailboxAddress.normalizedAddress}) = ${comparisonKey}`
+        )
+    ),
+    notExists(
+      database
+        .select({ value: sql`1` })
+        .from(authUserIdentity)
+        .where(
+          and(
+            eq(authUserIdentity.kind, "email"),
+            isNull(authUserIdentity.revokedAt),
+            sql`lower(${authUserIdentity.normalizedValue}) = ${comparisonKey}`
+          )
+        )
+    ),
+    notExists(
+      database
+        .select({ value: sql`1` })
+        .from(appExternalRecoveryIdentity)
+        .where(
+          and(
+            or(
+              eq(appExternalRecoveryIdentity.status, "verified"),
+              and(
+                eq(appExternalRecoveryIdentity.status, "pending"),
+                gt(
+                  appExternalRecoveryIdentity.challengeExpiresAt,
+                  controlPlaneDatabaseNow
+                )
+              )
+            ),
+            or(
+              eq(appExternalRecoveryIdentity.comparisonKey, comparisonKey),
+              eq(appExternalRecoveryIdentity.userId, userId)
+            ),
+            excludedIdentityId === undefined
+              ? undefined
+              : ne(appExternalRecoveryIdentity.id, excludedIdentityId)
+          )
+        )
+    )
+  );
 
-const challengeAvailablePredicate = `exists (
-  select 1 from auth_verification
-   where id = ? and type = 'external-recovery-identity-verification'
-     and subject = ? and consumed_at is null and expires_at = ?
-     and json_valid(metadata) and json_extract(metadata, '$.userId') = ?
-     and expires_at > ${controlPlaneDatabaseNow}
-)`;
+const challengeAvailablePredicate = (
+  database: ControlPlaneDatabase,
+  challengeId: string,
+  identityId: string,
+  expiresAt: number,
+  userId: string
+) =>
+  exists(
+    database
+      .select({ value: sql`1` })
+      .from(authVerification)
+      .where(
+        and(
+          eq(authVerification.id, challengeId),
+          eq(authVerification.type, "external-recovery-identity-verification"),
+          eq(authVerification.subject, identityId),
+          isNull(authVerification.consumedAt),
+          eq(authVerification.expiresAt, expiresAt),
+          sql`json_valid(${authVerification.metadata})`,
+          sql`json_extract(${authVerification.metadata}, '$.userId') = ${userId}`,
+          gt(authVerification.expiresAt, controlPlaneDatabaseNow)
+        )
+      )
+  );
 
 const ensureTrustedAuthInvariant = (
   requestAuth: CurrentRequestAuthShape,
@@ -278,78 +345,83 @@ export const ExternalRecoveryIdentityManagementLive = Layer.effect(
           yield* delivery
             .sendVerification({ address: command.address, challenge: issued })
             .pipe(Effect.tapError(() => challenge.consume(issued.challengeId)));
-          const baseParams = sessionParams(requestAuth, timestamp);
-          const stepUpParams = sensitiveSessionParams(requestAuth, timestamp);
-          const availabilityParams = candidateParams(
+          const trustedBaseSession = transactionalSessionPredicate(
+            database,
+            requestAuth,
+            timestamp
+          );
+          const trustedStepUpSession = sensitiveSessionPredicate(
+            database,
+            requestAuth,
+            timestamp
+          );
+          const candidateAvailable = candidateAvailablePredicate(
+            database,
             comparisonKey,
             requestAuth.validated.actor.userId
           );
-          const challengeParams = [
+          const challengeAvailable = challengeAvailablePredicate(
+            database,
             issued.challengeId,
             identityId,
             issued.expiresAt,
-            requestAuth.validated.actor.userId,
-          ] as const;
-          const statements: readonly ControlPlane.ControlPlaneStatement[] = [
-            {
-              sql: `insert into app_authorization_guard (nonce)
-                    select ? where ${sensitiveSessionPredicate}
-                      and ${challengeAvailablePredicate}
-                      and ${candidateAvailablePredicate}`,
-              params: [
-                nonce,
-                ...stepUpParams,
-                ...challengeParams,
-                ...availabilityParams,
-              ],
-            },
-            {
-              sql: `select cast(${transactionalSessionPredicate} as integer)
-                              as session_valid,
-                           cast(${sensitiveSessionPredicate} as integer)
-                              as step_up_valid,
-                           cast(${challengeAvailablePredicate} as integer)
-                              as challenge_valid,
-                           cast(${candidateAvailablePredicate} as integer)
-                              as candidate_available,
-                           cast(exists (select 1 from app_authorization_guard
-                                        where nonce = ?) as integer)
-                              as authorized`,
-              params: [
-                ...baseParams,
-                ...stepUpParams,
-                ...challengeParams,
-                ...availabilityParams,
-                nonce,
-              ],
-            },
-            {
-              sql: `insert into app_external_recovery_identity
-                      (id, user_id, address, normalized_address, comparison_key,
-                       status, challenge_id, challenge_expires_at,
-                       enrollment_operation_id, created_at, updated_at, version)
-                    select ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?, ?, 1
-                      from app_authorization_guard where nonce = ?
-                    returning ${identityColumns}`,
-              params: [
-                identityId,
-                requestAuth.validated.actor.userId,
-                command.address,
-                normalizedAddress,
-                comparisonKey,
-                issued.challengeId,
-                issued.expiresAt,
-                command.operationId,
-                timestamp,
-                timestamp,
-                nonce,
-              ],
-            },
-            administrativeAuditInsertStatement(auditEvent, nonce),
-            {
-              sql: "delete from app_authorization_guard where nonce = ?",
-              params: [nonce],
-            },
+            requestAuth.validated.actor.userId
+          );
+          const authorized = exists(
+            database
+              .select({ value: sql`1` })
+              .from(appAuthorizationGuard)
+              .where(eq(appAuthorizationGuard.nonce, nonce))
+          );
+          const statements: ControlPlane.ControlPlaneStatements = [
+            database.insert(appAuthorizationGuard).select(
+              sql`select ${nonce} where ${trustedStepUpSession}
+                      and ${challengeAvailable}
+                      and ${candidateAvailable}`
+            ),
+            database.all(sql`select cast(${trustedBaseSession} as integer)
+                                      as session_valid,
+                                   cast(${trustedStepUpSession} as integer)
+                                      as step_up_valid,
+                                   cast(${challengeAvailable} as integer)
+                                      as challenge_valid,
+                                   cast(${candidateAvailable} as integer)
+                                      as candidate_available,
+                                   cast(${authorized} as integer) as authorized`),
+            database
+              .insert(appExternalRecoveryIdentity)
+              .select(
+                database
+                  .select({
+                    address: sql`${command.address}`.as("address"),
+                    challengeExpiresAt: sql`${issued.expiresAt}`.as(
+                      "challenge_expires_at"
+                    ),
+                    challengeId: sql`${issued.challengeId}`.as("challenge_id"),
+                    comparisonKey: sql`${comparisonKey}`.as("comparison_key"),
+                    createdAt: sql`${timestamp}`.as("created_at"),
+                    enrollmentOperationId: sql`${command.operationId}`.as(
+                      "enrollment_operation_id"
+                    ),
+                    id: sql`${identityId}`.as("id"),
+                    normalizedAddress: sql`${normalizedAddress}`.as(
+                      "normalized_address"
+                    ),
+                    status: sql`${"pending"}`.as("status"),
+                    updatedAt: sql`${timestamp}`.as("updated_at"),
+                    userId: sql`${requestAuth.validated.actor.userId}`.as(
+                      "user_id"
+                    ),
+                    version: sql<number>`1`.as("version"),
+                  })
+                  .from(appAuthorizationGuard)
+                  .where(eq(appAuthorizationGuard.nonce, nonce))
+              )
+              .returning(identityReturning),
+            administrativeAuditInsertStatement(database, auditEvent, nonce),
+            database
+              .delete(appAuthorizationGuard)
+              .where(eq(appAuthorizationGuard.nonce, nonce)),
           ];
           const results = yield* batch.execute(statements).pipe(
             Effect.tapError((error) =>
@@ -476,103 +548,112 @@ export const ExternalRecoveryIdentityManagementLive = Layer.effect(
               operationId: command.operationId,
             })
             .pipe(Effect.mapError((error) => auditError("verify", error)));
-          const trustedSessionParams = sessionParams(requestAuth, timestamp);
-          const availabilityParams = candidateParams(
+          const trustedSession = transactionalSessionPredicate(
+            database,
+            requestAuth,
+            timestamp
+          );
+          const candidateAvailable = candidateAvailablePredicate(
+            database,
             stored.comparisonKey,
             requestAuth.validated.actor.userId,
             identityId
           );
-          const identityPredicate = `exists (
-            select 1 from app_external_recovery_identity
-             where id = ? and user_id = ? and challenge_id = ?
-               and status = 'pending' and version = ?
-          )`;
-          const identityParams = [
-            identityId,
-            requestAuth.validated.actor.userId,
-            command.challengeId,
-            beforeVersion,
-          ] as const;
-          const challengeParams = [
+          const identityValid = exists(
+            database
+              .select({ value: sql`1` })
+              .from(appExternalRecoveryIdentity)
+              .where(
+                and(
+                  eq(appExternalRecoveryIdentity.id, identityId),
+                  eq(
+                    appExternalRecoveryIdentity.userId,
+                    requestAuth.validated.actor.userId
+                  ),
+                  eq(
+                    appExternalRecoveryIdentity.challengeId,
+                    command.challengeId
+                  ),
+                  eq(appExternalRecoveryIdentity.status, "pending"),
+                  eq(appExternalRecoveryIdentity.version, beforeVersion)
+                )
+              )
+          );
+          const challengeAvailable = challengeAvailablePredicate(
+            database,
             command.challengeId,
             identityId,
             stored.challengeExpiresAt,
-            requestAuth.validated.actor.userId,
-          ] as const;
-          const statements: readonly ControlPlane.ControlPlaneStatement[] = [
-            {
-              sql: `insert into app_authorization_guard (nonce)
-                    select ? where ${transactionalSessionPredicate}
-                      and ${identityPredicate}
-                      and ${challengeAvailablePredicate}
-                      and ${candidateAvailablePredicate}`,
-              params: [
-                nonce,
-                ...trustedSessionParams,
-                ...identityParams,
-                ...challengeParams,
-                ...availabilityParams,
-              ],
-            },
-            {
-              sql: `select cast(${transactionalSessionPredicate} as integer)
-                              as session_valid,
-                           cast(${identityPredicate} as integer)
-                              as identity_valid,
-                           cast(${challengeAvailablePredicate} as integer)
-                              as challenge_valid,
-                           cast(${candidateAvailablePredicate} as integer)
-                              as candidate_available,
-                           cast(exists (select 1 from app_authorization_guard
-                                        where nonce = ?) as integer)
-                              as authorized`,
-              params: [
-                ...trustedSessionParams,
-                ...identityParams,
-                ...challengeParams,
-                ...availabilityParams,
-                nonce,
-              ],
-            },
-            {
-              sql: `update auth_verification set consumed_at = ?
-                     where id = ? and type = 'external-recovery-identity-verification'
-                       and subject = ? and consumed_at is null
-                       and expires_at = ? and expires_at > ${controlPlaneDatabaseNow}
-                       and exists (select 1 from app_authorization_guard
-                                    where nonce = ?)`,
-              params: [
-                timestamp,
-                command.challengeId,
-                identityId,
-                stored.challengeExpiresAt,
-                nonce,
-              ],
-            },
-            {
-              sql: `update app_external_recovery_identity
-                       set status = 'verified', verified_at = ?, updated_at = ?,
-                           version = version + 1
-                     where id = ? and user_id = ? and challenge_id = ?
-                       and status = 'pending' and version = ?
-                       and exists (select 1 from app_authorization_guard
-                                    where nonce = ?)
-                     returning ${identityColumns}`,
-              params: [
-                timestamp,
-                timestamp,
-                identityId,
-                requestAuth.validated.actor.userId,
-                command.challengeId,
-                beforeVersion,
-                nonce,
-              ],
-            },
-            administrativeAuditInsertStatement(auditEvent, nonce),
-            {
-              sql: "delete from app_authorization_guard where nonce = ?",
-              params: [nonce],
-            },
+            requestAuth.validated.actor.userId
+          );
+          const authorized = exists(
+            database
+              .select({ value: sql`1` })
+              .from(appAuthorizationGuard)
+              .where(eq(appAuthorizationGuard.nonce, nonce))
+          );
+          const statements: ControlPlane.ControlPlaneStatements = [
+            database.insert(appAuthorizationGuard).select(
+              sql`select ${nonce} where ${trustedSession}
+                      and ${identityValid}
+                      and ${challengeAvailable}
+                      and ${candidateAvailable}`
+            ),
+            database.all(sql`select cast(${trustedSession} as integer)
+                                      as session_valid,
+                                   cast(${identityValid} as integer)
+                                      as identity_valid,
+                                   cast(${challengeAvailable} as integer)
+                                      as challenge_valid,
+                                   cast(${candidateAvailable} as integer)
+                                      as candidate_available,
+                                   cast(${authorized} as integer) as authorized`),
+            database
+              .update(authVerification)
+              .set({ consumedAt: timestamp })
+              .where(
+                and(
+                  eq(authVerification.id, command.challengeId),
+                  eq(
+                    authVerification.type,
+                    "external-recovery-identity-verification"
+                  ),
+                  eq(authVerification.subject, identityId),
+                  isNull(authVerification.consumedAt),
+                  eq(authVerification.expiresAt, stored.challengeExpiresAt),
+                  gt(authVerification.expiresAt, controlPlaneDatabaseNow),
+                  authorized
+                )
+              ),
+            database
+              .update(appExternalRecoveryIdentity)
+              .set({
+                status: "verified",
+                updatedAt: timestamp,
+                verifiedAt: timestamp,
+                version: sql`${appExternalRecoveryIdentity.version} + 1`,
+              })
+              .where(
+                and(
+                  eq(appExternalRecoveryIdentity.id, identityId),
+                  eq(
+                    appExternalRecoveryIdentity.userId,
+                    requestAuth.validated.actor.userId
+                  ),
+                  eq(
+                    appExternalRecoveryIdentity.challengeId,
+                    command.challengeId
+                  ),
+                  eq(appExternalRecoveryIdentity.status, "pending"),
+                  eq(appExternalRecoveryIdentity.version, beforeVersion),
+                  authorized
+                )
+              )
+              .returning(identityReturning),
+            administrativeAuditInsertStatement(database, auditEvent, nonce),
+            database
+              .delete(appAuthorizationGuard)
+              .where(eq(appAuthorizationGuard.nonce, nonce)),
           ];
           const results = yield* batch
             .execute(statements)
