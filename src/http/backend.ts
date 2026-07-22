@@ -24,8 +24,9 @@ import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
 import { AiToolRunBudgetLive } from "../ai/tool-run-budget";
 import { ExistingPasswordResetLive } from "../auth/existing-password-reset";
-import { AuthRuntimeConfig, AuthServicesLive } from "../auth/live";
+import { AuthServicesLive } from "../auth/live";
 import { PasswordResetEligibilityLive } from "../auth/password-reset-eligibility";
+import { AuthRuntimeConfig } from "../auth/runtime-config";
 import {
   CurrentRequestAuthMiddlewareLive,
   RequestSessionAuthenticatorLive,

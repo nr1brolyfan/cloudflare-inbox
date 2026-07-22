@@ -23,6 +23,8 @@ The product also needs predictable mailbox roles. Folder-level access would make
 
 Until SAFE-002 provisions passkeys and recovery codes, SAFE-001 exposes a five-minute password reauthentication fallback for the existing owner bootstrap. A basic session cannot enroll its own step-up factor, and password reset is limited to accounts with an existing active password credential; passwordless ownership actions remain disabled until the separately authorized passkey enrollment flow exists. The reusable `control-plane-sensitive` policy version 1 accepts a recent password, TOTP, or user-verified passkey, rejects email OTP, magic link, recovery code, stale evidence, future evidence, and sessions with active requirements, and rechecks the evidence and session expiry against SQLite execution time in the D1 mutation batch. Authentication-event schema versioning remains separate from policy versioning. Future ownership, domain, address, grant, and transfer operations must use the same policy boundary. SAFE-002 replaces the transitional password-first UX with the accepted passkey-first target.
 
+SAFE-002 starts with an internal passkey foundation only. The RP ID is the configured public-origin hostname, expected origin is exact, discoverable credentials and user verification are required, and attestation is disabled. These domain layers do not expose registration or authentication routes by themselves; public enrollment remains blocked until it can require independently established recent authentication and recovery-safe identity handling.
+
 ### Authorization
 
 The first release grants access at mailbox level only. Folder-level grants are not exposed or issued by product workflows.

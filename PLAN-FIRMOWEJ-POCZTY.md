@@ -466,7 +466,7 @@ Kryterium wyjścia spełnione: wszystkie decyzje blokujące schemat i autoryzacj
 Cel: przed rozszerzeniem liczby użytkowników i skrzynek domknąć mechanizmy wymagane do bezpiecznych mutacji administracyjnych.
 
 - [x] SAFE-001 Dodać wersjonowaną, pięciominutową politykę step-up, password completion z rotacją sesji, typed HTTP/UI flow i transakcyjny recheck; zastosować ją do obecnego owner bootstrapu i wymagać jej od przyszłych domen, adresów, grantów, transferów oraz operacji właścicielskich.
-- [ ] SAFE-002 Dodać passkey oraz recovery codes albo zatwierdzony równoważny mechanizm odzyskiwania.
+- [ ] SAFE-002 Dodać passkey oraz recovery codes albo zatwierdzony równoważny mechanizm odzyskiwania. Fundament RP/origin, SimpleWebAuthn i domenowe warstwy passkey jest gotowy; guarded enrollment, sign-in, step-up oraz recovery pozostają otwarte.
 - [ ] SAFE-003 Jawnie zdefiniować, które mailbox operations odrzucają ograniczone lub niezweryfikowane sesje.
 - [ ] SAFE-004 Dodać wersjonowany append-only administracyjny audit event store, privacy contract i atomowe API zapisu używane przez kolejne etapy.
 - [ ] SAFE-005 Dodać backup D1, R2 i każdego MailboxDO SQLite wraz z procedurą identity-preserving restore przed pierwszą migracją destrukcyjną.

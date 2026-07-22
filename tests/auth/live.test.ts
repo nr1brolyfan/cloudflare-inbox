@@ -2,7 +2,7 @@ import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { AuthRuntimeConfigSchema } from "#/auth/live";
+import { AuthRuntimeConfigSchema } from "#/auth/runtime-config";
 
 const baseConfig = {
   delivery: { _tag: "development" },
@@ -48,5 +48,24 @@ describe("auth runtime config", () => {
         delivery: { _tag: "production" },
       })
     ).toThrow(/.+/u);
+  });
+
+  it("requires HTTPS in production but permits local HTTP development", () => {
+    expect(() =>
+      Schema.decodeUnknownSync(AuthRuntimeConfigSchema)({
+        ...baseConfig,
+        delivery: {
+          _tag: "production",
+          emailSender: { send: () => null },
+        },
+        publicOrigin: "http://inbox.test",
+      })
+    ).toThrow(/Production auth requires an HTTPS public origin/u);
+
+    const development = Schema.decodeUnknownSync(AuthRuntimeConfigSchema)({
+      ...baseConfig,
+      publicOrigin: "http://localhost:3000",
+    });
+    expect(development.publicOrigin.origin).toBe("http://localhost:3000");
   });
 });
