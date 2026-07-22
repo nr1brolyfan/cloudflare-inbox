@@ -62,10 +62,6 @@ import {
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import {
-  MailboxMessageActionResult,
-  MailboxMessageActions,
-} from "#/mailboxes/message-actions";
-import {
   MailboxMessageHtmlReading,
   MailboxMessageHtmlResult,
 } from "#/mailboxes/message-html";
@@ -85,6 +81,11 @@ import {
   MailboxOutboundSendingError,
   SendMailboxDraftResult,
 } from "#/mailboxes/outbound-sending";
+import {
+  MailboxMessageActionResult,
+  MailboxMessageActions,
+} from "#/modules/mailbox/application/MailboxMessageActions";
+import type { MailboxMessageActionsService } from "#/modules/mailbox/application/MailboxMessageActions";
 import {
   MailboxMessageListResult,
   MailboxMessageReading,
@@ -317,7 +318,7 @@ const makeHandler = (
     openThread: () => Effect.succeed(mailboxThread),
     readMessage: () => Effect.die("Unexpected message read"),
   }),
-  messageActions: MailboxMessageActions = MailboxMessageActions.of({
+  messageActions: MailboxMessageActionsService = MailboxMessageActions.of({
     execute: () => Effect.succeed(mailboxMessageAction),
   }),
   messageHtml: MailboxMessageHtmlReading = MailboxMessageHtmlReading.of({

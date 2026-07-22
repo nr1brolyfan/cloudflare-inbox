@@ -11,8 +11,6 @@ import { MailAuthorization } from "#/authorization/mail-authorization";
 import { FolderId } from "#/mailboxes/core";
 import { MailboxDomainError } from "#/mailboxes/errors";
 import { GetThreadResult, MessagePage } from "#/mailboxes/messages";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
 import {
   MailboxMessageReading,
   MailboxMessageListInput,
@@ -24,6 +22,8 @@ import {
   ReadMailboxMessageInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import type { MailboxMessageReadingService } from "#/modules/mailbox/application/MailboxMessageReading";
+import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
 const messageSummary = {
   activityAt: 2000,
@@ -94,52 +94,24 @@ const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
 const repositoryWith = (
-  listMessages: MailboxRepositoryService["listMessages"] = () =>
+  listMessages: MailboxMessageRepositoryService["listMessages"] = () =>
     Effect.succeed(page),
-  getThread: MailboxRepositoryService["getThread"] = () =>
+  getThread: MailboxMessageRepositoryService["getThread"] = () =>
     Effect.succeed(thread),
-  getMessage: MailboxRepositoryService["getMessage"] = () =>
+  getMessage: MailboxMessageRepositoryService["getMessage"] = () =>
     thread.messages[0] === undefined
       ? Effect.die(new Error("Thread fixture has no anchor message"))
       : Effect.succeed(thread.messages[0]),
-  searchMessages: MailboxRepositoryService["searchMessages"] = unused
+  searchMessages: MailboxMessageRepositoryService["searchMessages"] = unused
 ) =>
-  MailboxRepository.of({
-    addMessageLabel: unused,
-    cancelOutboundDelivery: unused,
-    completeDraftAttachment: unused,
-    createDraft: unused,
-    createFolder: unused,
-    createLabel: unused,
-    deleteFolder: unused,
-    deleteLabel: unused,
-    findAttachmentLocation: unused,
-    findDraftLocation: unused,
-    findFolderLocation: unused,
-    findMessageLocation: unused,
-    findRuleLocation: unused,
-    getAttachmentBlob: unused,
-    getDraft: unused,
-    getDraftAttachment: unused,
+  MailboxMessageRepository.of({
     getMessage,
-    getOutboundDelivery: unused,
     getThread,
-    listFolders: unused,
-    listDraftAttachments: unused,
-    listDrafts: unused,
-    listLabels: unused,
     listMessages,
     moveMessage: unused,
-    removeMessageLabel: unused,
-    reserveDraftAttachment: unused,
-    renameFolder: unused,
-    renameLabel: unused,
-    resendOutbound: unused,
-    scheduleOutbound: unused,
     searchMessages,
     setMessageRead: unused,
     setMessageStarred: unused,
-    updateDraft: unused,
   });
 
 const authorizationWith = (
@@ -177,7 +149,7 @@ const authorizationWith = (
 
 const runReading = <A, E>(
   authorization: MailAuthorizationService,
-  repository: MailboxRepositoryService,
+  repository: MailboxMessageRepositoryService,
   use: (
     reading: MailboxMessageReadingService
   ) => Effect.Effect<A, E, AuthPermission.CurrentPrincipal>
@@ -190,7 +162,7 @@ const runReading = <A, E>(
           Layer.provide(
             Layer.merge(
               Layer.succeed(MailAuthorization, authorization),
-              Layer.succeed(MailboxRepository, repository)
+              Layer.succeed(MailboxMessageRepository, repository)
             )
           )
         )

@@ -7,7 +7,7 @@ import {
   projectPendingThreadActions,
   reconcileMailboxMessageActionCaches,
 } from "#/inbox/mailbox-query-state";
-import { MailboxMessageActionCommand } from "#/mailboxes/message-actions";
+import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 
 const command = Schema.decodeUnknownSync(MailboxMessageActionCommand);
 const messages = {

@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import * as Schema from "effect/Schema";
 
+import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -17,7 +18,6 @@ import {
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
 import { MailboxDraftListInput } from "../mailboxes/draft-reading";
-import { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import {
   SendMailboxDraftCommand,

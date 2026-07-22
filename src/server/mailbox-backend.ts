@@ -5,6 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import { MailboxMessageActionResult } from "#/modules/mailbox/application/MailboxMessageActions";
 import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -41,8 +43,6 @@ import type {
 import { DraftEditorDraft } from "../mailboxes/draft-editing";
 import type { MailboxDraftListInput } from "../mailboxes/draft-reading";
 import { MailboxDraftListResult } from "../mailboxes/draft-reading";
-import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
-import { MailboxMessageActionResult } from "../mailboxes/message-actions";
 import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
 import { MailboxMessageHtmlResult } from "../mailboxes/message-html";
 import { MailboxNavigationResult } from "../mailboxes/navigation";

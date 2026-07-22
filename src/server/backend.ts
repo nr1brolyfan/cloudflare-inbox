@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
 
+import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -23,7 +24,6 @@ import type {
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
 import type { MailboxDraftListInput } from "../mailboxes/draft-reading";
-import type { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import type { MailboxMessageHtmlInput } from "../mailboxes/message-html";
 import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import type {

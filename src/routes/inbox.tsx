@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { useRef, useState } from "react";
 
+import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import {
   MailboxMessageListInput,
   MailboxMessageView,
@@ -78,7 +79,6 @@ import {
   UpdateMailboxDraftCommand,
 } from "../mailboxes/draft-editing";
 import { MailboxDraftListInput } from "../mailboxes/draft-reading";
-import { MailboxMessageActionCommand } from "../mailboxes/message-actions";
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
 import { SendMailboxDraftCommand } from "../mailboxes/outbound-sending";
 import {

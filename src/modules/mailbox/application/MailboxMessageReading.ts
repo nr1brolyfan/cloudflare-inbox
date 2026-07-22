@@ -30,7 +30,7 @@ import {
 } from "#/mailboxes/core";
 import { MailboxDomainError } from "#/mailboxes/errors";
 import type { MailboxRepositoryError } from "#/mailboxes/errors";
-import { MailboxRepository } from "#/mailboxes/repository";
+import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
 export const MailboxMessageView = Schema.Union([
   Schema.Struct({
@@ -290,7 +290,7 @@ export class MailboxMessageReading extends Context.Service<
 >()("cloudflare-inbox/MailboxMessageReading", {
   make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxMessageRepository;
 
     const requireRead = (view: MailboxMessageView) =>
       view._tag === "Folder"

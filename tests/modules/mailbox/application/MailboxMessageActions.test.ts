@@ -9,14 +9,15 @@ import type { MailAuthorization as MailAuthorizationService } from "#/authorizat
 import { MailAuthorization } from "#/authorization/mail-authorization";
 import { FolderId } from "#/mailboxes/core";
 import { FolderList } from "#/mailboxes/directory";
+import { MessagePage } from "#/mailboxes/messages";
 import {
   MailboxMessageActionCommand,
   MailboxMessageActions,
-  MailboxMessageActionsLive,
-} from "#/mailboxes/message-actions";
-import { MessagePage } from "#/mailboxes/messages";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
+} from "#/modules/mailbox/application/MailboxMessageActions";
+import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
+import type { MailboxDirectoryRepositoryService } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
+import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
 const messagePage = Schema.decodeUnknownSync(MessagePage)({
   items: [
@@ -85,47 +86,33 @@ const unused = () => Effect.die(new Error("Unexpected repository operation"));
 const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
+type RepositoryOverrides = Partial<MailboxMessageRepositoryService> & {
+  readonly listFolders?: MailboxDirectoryRepositoryService["listFolders"];
+};
+
 const repositoryWith = (
-  overrides: Partial<MailboxRepositoryService>
-): MailboxRepositoryService =>
-  MailboxRepository.of({
-    addMessageLabel: unused,
-    cancelOutboundDelivery: unused,
-    completeDraftAttachment: unused,
-    createDraft: unused,
-    createFolder: unused,
-    createLabel: unused,
-    deleteFolder: unused,
-    deleteLabel: unused,
-    findAttachmentLocation: unused,
-    findDraftLocation: unused,
-    findFolderLocation: unused,
-    findMessageLocation: unused,
-    findRuleLocation: unused,
-    getAttachmentBlob: unused,
-    getDraft: unused,
-    getDraftAttachment: unused,
-    getMessage: unused,
-    getOutboundDelivery: unused,
-    getThread: unused,
-    listFolders: unused,
-    listDraftAttachments: unused,
-    listDrafts: unused,
-    listLabels: unused,
-    listMessages: unused,
-    moveMessage: unused,
-    removeMessageLabel: unused,
-    reserveDraftAttachment: unused,
-    renameFolder: unused,
-    renameLabel: unused,
-    resendOutbound: unused,
-    scheduleOutbound: unused,
-    searchMessages: unused,
-    setMessageRead: unused,
-    setMessageStarred: unused,
-    updateDraft: unused,
-    ...overrides,
-  });
+  overrides: RepositoryOverrides
+): {
+  readonly directory: MailboxDirectoryRepositoryService;
+  readonly messages: MailboxMessageRepositoryService;
+} => {
+  const { listFolders, ...messageOverrides } = overrides;
+  return {
+    directory: MailboxDirectoryRepository.of({
+      listFolders: listFolders ?? unused,
+    }),
+    messages: MailboxMessageRepository.of({
+      getMessage: unused,
+      getThread: unused,
+      listMessages: unused,
+      moveMessage: unused,
+      searchMessages: unused,
+      setMessageRead: unused,
+      setMessageStarred: unused,
+      ...messageOverrides,
+    }),
+  };
+};
 
 const authorizationWith = (
   overrides: Partial<MailAuthorizationService>
@@ -148,18 +135,19 @@ const authorizationWith = (
 
 const runAction = (
   authorization: MailAuthorizationService,
-  repository: MailboxRepositoryService,
+  repository: ReturnType<typeof repositoryWith>,
   command: Schema.Schema.Type<typeof MailboxMessageActionCommand>
 ) =>
   Effect.runPromise(
     MailboxMessageActions.pipe(
       Effect.flatMap((actions) => actions.execute(command)),
       Effect.provide(
-        MailboxMessageActionsLive.pipe(
+        MailboxMessageActions.layerNoDeps.pipe(
           Layer.provide(
-            Layer.merge(
+            Layer.mergeAll(
               Layer.succeed(MailAuthorization, authorization),
-              Layer.succeed(MailboxRepository, repository)
+              Layer.succeed(MailboxDirectoryRepository, repository.directory),
+              Layer.succeed(MailboxMessageRepository, repository.messages)
             )
           )
         )

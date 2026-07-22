@@ -18,6 +18,10 @@ import {
 } from "effect/unstable/httpapi";
 
 import {
+  MailboxMessageActionPayload,
+  MailboxMessageActionResult,
+} from "#/modules/mailbox/application/MailboxMessageActions";
+import {
   MailboxMessageListResult,
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
@@ -57,10 +61,6 @@ import {
   InboundProcessingResult,
   ReplayInboundInput,
 } from "../mailboxes/inbound";
-import {
-  MailboxMessageActionPayload,
-  MailboxMessageActionResult,
-} from "../mailboxes/message-actions";
 import { MailboxMessageHtmlResult } from "../mailboxes/message-html";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import {

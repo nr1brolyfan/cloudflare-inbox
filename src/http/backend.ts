@@ -24,6 +24,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import {
+  MailboxDirectoryRepositoryDoLayer,
+  MailboxMessageRepositoryDoLayer,
+} from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
+import { MailboxMessageActions } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 
 import { AiToolAuditD1Live } from "../ai/tool-audit";
@@ -91,7 +96,6 @@ import {
   InboundReplayPreparerDoLive,
 } from "../mailboxes/inbound-replay-do-live";
 import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
-import { MailboxMessageActionsLive } from "../mailboxes/message-actions";
 import { MailboxMessageHtmlReadingLive } from "../mailboxes/message-html";
 import {
   MailboxOutboundDeliveryReadingClockLive,
@@ -224,6 +228,14 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxRepositoryLive = MailboxRepositoryDoLive.pipe(
       Layer.provide(MailboxRegistryLive)
     );
+    const mailboxMessageRepositoryDoLayer =
+      MailboxMessageRepositoryDoLayer.pipe(
+        Layer.provide(mailboxRepositoryLive)
+      );
+    const mailboxDirectoryRepositoryDoLayer =
+      MailboxDirectoryRepositoryDoLayer.pipe(
+        Layer.provide(mailboxRepositoryLive)
+      );
     const resourceResolverLive = MailResourceResolverLive.pipe(
       Layer.provide(mailboxRepositoryLive)
     );
@@ -244,10 +256,18 @@ const BackendRoutesLive = Layer.unwrap(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
     );
     const mailboxMessageReadingLive = MailboxMessageReading.layerNoDeps.pipe(
-      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+      Layer.provide(
+        Layer.merge(mailAuthorizationLive, mailboxMessageRepositoryDoLayer)
+      )
     );
-    const mailboxMessageActionsLive = MailboxMessageActionsLive.pipe(
-      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+    const mailboxMessageActionsLive = MailboxMessageActions.layerNoDeps.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          mailAuthorizationLive,
+          mailboxDirectoryRepositoryDoLayer,
+          mailboxMessageRepositoryDoLayer
+        )
+      )
     );
     const mailboxDraftEditingLive = MailboxDraftEditingLive.pipe(
       Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))

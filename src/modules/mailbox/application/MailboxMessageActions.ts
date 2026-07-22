@@ -1,3 +1,4 @@
+/* oxlint-disable max-classes-per-file -- Action contract, error and service form one cohesive use case. */
 import type { CurrentPrincipal } from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -5,13 +6,20 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailAuthorization } from "../authorization/mail-authorization";
-import { FolderId, MailboxId, MessageId, OperationId, Version } from "./core";
-import { MailboxDomainError } from "./errors";
-import type { MailboxRepositoryError } from "./errors";
-import type { MessageMutationResult } from "./messages";
-import { MailboxRepository } from "./repository";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
+import {
+  FolderId,
+  MailboxId,
+  MessageId,
+  OperationId,
+  Version,
+} from "#/mailboxes/core";
+import { MailboxDomainError } from "#/mailboxes/errors";
+import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import type { MessageMutationResult } from "#/mailboxes/messages";
+import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
+import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
 const ActionFields = {
   expectedVersion: Version,
@@ -87,7 +95,7 @@ export class MailboxMessageActionError extends Data.TaggedError(
   readonly reason: "conflict" | "invalid-input" | "not-found" | "storage";
 }> {}
 
-export interface MailboxMessageActions {
+export interface MailboxMessageActionsService {
   readonly execute: (
     command: MailboxMessageActionCommand
   ) => Effect.Effect<
@@ -96,10 +104,6 @@ export interface MailboxMessageActions {
     CurrentPrincipal
   >;
 }
-
-export const MailboxMessageActions = Context.Service<MailboxMessageActions>(
-  "cloudflare-inbox/MailboxMessageActions"
-);
 
 const actionError = (
   reason: MailboxMessageActionError["reason"],
@@ -146,13 +150,16 @@ const projectResult = (result: MessageMutationResult) =>
   }).pipe(Effect.mapError((cause) => actionError("storage", cause)));
 
 /** Authorized message mutations with server-resolved archive and trash targets. */
-export const MailboxMessageActionsLive = Layer.effect(
+export class MailboxMessageActions extends Context.Service<
   MailboxMessageActions,
-  Effect.gen(function* () {
+  MailboxMessageActionsService
+>()("cloudflare-inbox/MailboxMessageActions", {
+  make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
-    const repository = yield* MailboxRepository;
+    const directory = yield* MailboxDirectoryRepository;
+    const messages = yield* MailboxMessageRepository;
 
-    return MailboxMessageActions.of({
+    return {
       execute: (command) =>
         Effect.gen(function* () {
           yield* authorization.requireMessage({
@@ -166,16 +173,16 @@ export const MailboxMessageActionsLive = Layer.effect(
 
           let result: MessageMutationResult;
           if (command._tag === "SetRead") {
-            result = yield* repository
+            result = yield* messages
               .setMessageRead(command)
               .pipe(Effect.mapError(mapRepositoryError));
           } else if (command._tag === "SetStarred") {
-            result = yield* repository
+            result = yield* messages
               .setMessageStarred(command)
               .pipe(Effect.mapError(mapRepositoryError));
           } else {
             const kind = command._tag === "Archive" ? "archive" : "trash";
-            const folders = yield* repository
+            const folders = yield* directory
               .listFolders({ mailboxId: command.mailboxId })
               .pipe(Effect.mapError(mapRepositoryError));
             const targets = folders.items.filter(
@@ -197,7 +204,7 @@ export const MailboxMessageActionsLive = Layer.effect(
                 mailboxId: command.mailboxId,
               },
             });
-            result = yield* repository
+            result = yield* messages
               .moveMessage({
                 expectedVersion: command.expectedVersion,
                 folderId: target.id,
@@ -219,6 +226,8 @@ export const MailboxMessageActionsLive = Layer.effect(
           }
           return yield* projectResult(result);
         }),
-    });
-  })
-);
+    } satisfies MailboxMessageActionsService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}
