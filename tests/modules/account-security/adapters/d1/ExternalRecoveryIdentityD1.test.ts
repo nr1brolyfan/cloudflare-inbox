@@ -717,6 +717,68 @@ describe("external recovery identity management", () => {
     }
   });
 
+  it("rechecks session revocation inside the verification batch", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      const baseD1 = makeTestD1Database(database);
+      await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.enroll(enrollmentCommand());
+          }).pipe(Effect.provide(managementLive(database, baseD1, []))),
+          session
+        )
+      );
+      const changedD1 = beforeBatch(baseD1, () => {
+        database
+          .prepare("update auth_session set revoked_at = ? where id = ?")
+          .run(now, session.actor.sessionId);
+      });
+
+      const error = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management
+              .verify(verificationCommand())
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(managementLive(database, changedD1, []))),
+          session
+        )
+      );
+
+      expect(error).toMatchObject({ reason: "restricted-session" });
+      expect(
+        database
+          .prepare(
+            `select
+               (select consumed_at from auth_verification
+                 where id = 'challenge-a') as consumed_at,
+               (select status from app_external_recovery_identity
+                 where challenge_id = 'challenge-a') as identity_status,
+               (select version from app_external_recovery_identity
+                 where challenge_id = 'challenge-a') as identity_version,
+               (select count(*) from app_external_recovery_operation_receipt)
+                 as receipts,
+               (select count(*) from app_administrative_audit_event) as audits`
+          )
+          .get()
+      ).toMatchObject({
+        audits: 1,
+        consumed_at: null,
+        identity_status: "pending",
+        identity_version: 1,
+        receipts: 1,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
   it("recovers an enrollment whose committed D1 response is lost", async () => {
     const database = new DatabaseSync(":memory:");
     try {

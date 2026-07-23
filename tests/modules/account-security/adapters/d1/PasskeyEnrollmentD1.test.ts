@@ -1121,6 +1121,55 @@ describe("guarded passkey enrollment", () => {
     }
   });
 
+  it("fails closed when the normal enrollment session is revoked before commit", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const baseD1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, baseD1, state, session)
+      );
+      let changed = false;
+      const changedD1: D1EffectQbDatabaseLike = {
+        batch: (statements) => {
+          if (!changed) {
+            changed = true;
+            database
+              .prepare("update auth_session set revoked_at = ? where id = ?")
+              .run(now, session.actor.sessionId);
+          }
+          return baseD1.batch(statements);
+        },
+        prepare: baseD1.prepare,
+      };
+
+      const failure = await Effect.runPromise(
+        finish(database, changedD1, state, session, started.challengeId).pipe(
+          Effect.flip
+        )
+      );
+
+      expect(failure).toMatchObject({
+        operation: "finish",
+        reason: "restricted-session",
+      });
+      expect(
+        database
+          .prepare("select consumed_at from auth_verification where id = ?")
+          .get(started.challengeId)
+      ).toMatchObject({ consumed_at: null });
+      expect(countRows(database, "auth_passkey_credential")).toBe(0);
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(0);
+      expect(countRows(database, "auth_audit_log")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
   it("fails closed when the restricted recovery session is revoked before commit", async () => {
     const database = new DatabaseSync(":memory:");
     try {

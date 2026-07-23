@@ -7,13 +7,13 @@ import {
   authRolePermission,
 } from "../../auth/schema/modules/permissions";
 import type { ControlPlaneDatabase } from "./ControlPlaneDatabase";
+import { controlPlaneDatabaseNow } from "./RequestAuthGuard";
 
 export const permissionPredicate = (
   database: ControlPlaneDatabase,
   principal: AuthPermission.PermissionSubject,
   permission: AuthPermission.PermissionId,
-  scope: AuthPermission.PermissionScope,
-  now: number
+  scope: AuthPermission.PermissionScope
 ) => {
   const scopeIdPresent = scope.id === undefined ? 0 : 1;
   const scopeId = scope.id ?? "";
@@ -71,7 +71,7 @@ export const permissionPredicate = (
             isNull(authPermissionGrant.revokedAt),
             or(
               isNull(authPermissionGrant.expiresAt),
-              gt(authPermissionGrant.expiresAt, now)
+              gt(authPermissionGrant.expiresAt, controlPlaneDatabaseNow)
             ),
             permissionGrantScope
           )
@@ -88,7 +88,7 @@ export const permissionPredicate = (
             isNull(authRoleGrant.revokedAt),
             or(
               isNull(authRoleGrant.expiresAt),
-              gt(authRoleGrant.expiresAt, now)
+              gt(authRoleGrant.expiresAt, controlPlaneDatabaseNow)
             ),
             roleGrantScope,
             rolePermission

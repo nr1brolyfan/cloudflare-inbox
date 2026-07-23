@@ -168,6 +168,8 @@ interface FixtureOptions {
     | "after-commit"
     | "before-commit"
     | "second-before-commit";
+  readonly databaseNow?: number;
+  readonly databaseTimes?: readonly number[];
   readonly invalidSessionBinding?: boolean;
   readonly raceMutation?: (database: DatabaseSync) => void;
 }
@@ -176,7 +178,33 @@ const makeFixture = async (options: FixtureOptions = {}) => {
   const database = new DatabaseSync(":memory:");
   await applyControlPlaneMigrations(database);
   insertEligibleAccount(database);
-  const baseD1 = makeTestD1Database(database);
+  const rawD1 = makeTestD1Database(database);
+  const { databaseNow, databaseTimes } = options;
+  let timeStatement = 0;
+  const baseD1 =
+    databaseNow === undefined && databaseTimes === undefined
+      ? rawD1
+      : {
+          ...rawD1,
+          prepare: (statement: string) => {
+            if (!statement.includes("unixepoch('subsec')")) {
+              return rawD1.prepare(statement);
+            }
+            const statementTime =
+              databaseTimes?.[timeStatement] ??
+              databaseTimes?.at(-1) ??
+              databaseNow;
+            timeStatement += 1;
+            return rawD1.prepare(
+              statementTime === undefined
+                ? statement
+                : statement.replaceAll(
+                    "unixepoch('subsec')",
+                    String(statementTime / 1000)
+                  )
+            );
+          },
+        };
   let batchQueue = Promise.resolve();
   let batchCalls = 0;
   const d1 = {
@@ -879,6 +907,83 @@ describe("account recovery completion receipts", () => {
       }
     }
   );
+
+  it("denies an exact flow that expires before D1 execution", async () => {
+    const fixture = await makeFixture({
+      databaseNow: Number(verification.expiresAt) + 1,
+    });
+    try {
+      await expect(Effect.runPromise(fixture.complete())).rejects.toMatchObject(
+        {
+          reason: "invalid-proof",
+        }
+      );
+      expect(
+        fixture.database
+          .prepare(
+            `select
+               (select consumed_at from auth_verification where id = ?) as flow_consumed_at,
+               (select used_at from auth_recovery_code where id = ?) as code_used_at,
+               (select count(*) from auth_session) as sessions,
+               (select count(*) from app_account_recovery_completion_receipt)
+                 as receipts,
+               (select count(*) from auth_audit_log
+                 where type = 'app.account_recovery.entered') as audits`
+          )
+          .get(flowId, codeId)
+      ).toMatchObject({
+        audits: 0,
+        code_used_at: null,
+        flow_consumed_at: null,
+        receipts: 0,
+        sessions: 0,
+      });
+    } finally {
+      fixture.database.close();
+    }
+  });
+
+  it("consumes both proofs when the authorized flow expires before its update", async () => {
+    const expiresAt = Number(verification.expiresAt);
+    const fixture = await makeFixture({
+      databaseTimes: [expiresAt - 1, expiresAt + 1],
+    });
+    try {
+      const result = await Effect.runPromise(fixture.complete());
+
+      expect(result).toMatchObject({
+        _tag: "AccountRecoveryCompleted",
+        receipt: { operationId },
+      });
+      const state = fixture.database
+        .prepare(
+          `select
+             (select consumed_at from auth_verification where id = ?) as flow_consumed_at,
+             (select used_at from auth_recovery_code where id = ?) as code_used_at,
+             (select count(*) from auth_session) as sessions,
+             (select count(*) from app_account_recovery_completion_receipt)
+               as receipts,
+             (select count(*) from auth_audit_log
+               where type = 'app.account_recovery.entered') as audits`
+        )
+        .get(flowId, codeId) as {
+        audits: number;
+        code_used_at: number | null;
+        flow_consumed_at: number | null;
+        receipts: number;
+        sessions: number;
+      };
+      expect(state).toMatchObject({
+        audits: 1,
+        receipts: 1,
+        sessions: 1,
+      });
+      expect(state.flow_consumed_at).not.toBeNull();
+      expect(state.code_used_at).toBe(state.flow_consumed_at);
+    } finally {
+      fixture.database.close();
+    }
+  });
 
   it("rolls every state change back when receipt binding fails", async () => {
     const fixture = await makeFixture({ invalidSessionBinding: true });

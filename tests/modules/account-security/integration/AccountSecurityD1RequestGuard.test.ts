@@ -16,7 +16,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { recoveryRemediationSessionPredicate } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
+import {
+  recoveryRemediationSessionPredicate,
+  transactionalSessionPredicate,
+} from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabase,
@@ -114,6 +117,148 @@ const predicateResult = (database: DatabaseSync, claims: SessionClaims) => {
     }).pipe(Effect.provide(databaseLayer(database)))
   );
 };
+
+const unrestrictedPredicateResult = (
+  database: DatabaseSync,
+  metadata: string | null
+) => {
+  database
+    .prepare("update auth_session set metadata = ? where id = ?")
+    .run(metadata, sessionId);
+
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const controlPlane = yield* ControlPlaneDatabase;
+      const rows = yield* controlPlane.all(sql`select cast(
+        ${transactionalSessionPredicate(controlPlane, requestAuth, now)}
+        as integer
+      ) as allowed`);
+      return yield* Schema.decodeUnknownEffect(Schema.Array(PredicateRow))(
+        rows
+      );
+    }).pipe(Effect.provide(databaseLayer(database)))
+  );
+};
+
+describe("unrestricted D1 session predicate", () => {
+  it.each([
+    ["absent metadata", null],
+    ["ordinary object metadata", JSON.stringify({ purpose: "ordinary" })],
+    ["absent claims", JSON.stringify({ __effectAuthSession: { version: 1 } })],
+    [
+      "absent requirements",
+      JSON.stringify({
+        __effectAuthSession: { claims: {}, version: 1 },
+      }),
+    ],
+    [
+      "exact empty requirements",
+      JSON.stringify({
+        __effectAuthSession: { claims: { requirements: [] }, version: 1 },
+      }),
+    ],
+  ] as const)("accepts %s", async (_, metadata) => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertSession(database);
+      const [row] = await unrestrictedPredicateResult(database, metadata);
+      expect(row?.allowed).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each([
+    ["JSON null metadata", "null"],
+    ["scalar metadata root", JSON.stringify("ordinary")],
+    ["array metadata root", JSON.stringify([])],
+    ["JSON null auth envelope", JSON.stringify({ __effectAuthSession: null })],
+    [
+      "scalar auth envelope",
+      JSON.stringify({ __effectAuthSession: "unrestricted" }),
+    ],
+    [
+      "missing auth envelope version",
+      JSON.stringify({ __effectAuthSession: {} }),
+    ],
+    [
+      "unsupported auth envelope version",
+      JSON.stringify({ __effectAuthSession: { version: 2 } }),
+    ],
+    [
+      "JSON null claims",
+      JSON.stringify({
+        __effectAuthSession: { claims: null, version: 1 },
+      }),
+    ],
+    [
+      "scalar claims",
+      JSON.stringify({
+        __effectAuthSession: { claims: "unrestricted", version: 1 },
+      }),
+    ],
+    [
+      "non-array requirements",
+      JSON.stringify({
+        __effectAuthSession: {
+          claims: { requirements: "email_verification" },
+          version: 1,
+        },
+      }),
+    ],
+    [
+      "JSON null requirements",
+      JSON.stringify({
+        __effectAuthSession: { claims: { requirements: null }, version: 1 },
+      }),
+    ],
+    [
+      "dangling recovery enrollment",
+      JSON.stringify({
+        __effectAuthSession: {
+          claims: {
+            recoveryEnrollment: { allowed: ["recovery-codes"] },
+            requirements: [],
+          },
+          version: 1,
+        },
+      }),
+    ],
+    [
+      "dangling recovery remediation",
+      JSON.stringify({
+        __effectAuthSession: {
+          claims: {
+            recoveryRemediation: { allowed: ["second-passkey"] },
+            requirements: [],
+          },
+          version: 1,
+        },
+      }),
+    ],
+    [
+      "malformed recovery container",
+      JSON.stringify({
+        __effectAuthSession: {
+          claims: { recoveryRemediation: "second-passkey", requirements: [] },
+          version: 1,
+        },
+      }),
+    ],
+    ["malformed metadata JSON", "{not-json"],
+  ] as const)("denies %s", async (_, metadata) => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertSession(database);
+      const [row] = await unrestrictedPredicateResult(database, metadata);
+      expect(row?.allowed).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+});
 
 describe("recovery remediation D1 session predicate", () => {
   it.each([

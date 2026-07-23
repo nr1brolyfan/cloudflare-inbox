@@ -9,12 +9,57 @@ export const controlPlaneDatabaseNow = sql<number>`cast(
   unixepoch('subsec') * 1000 as integer
  )`;
 
-const unrestrictedSession = sql<boolean>`coalesce(json_array_length(
-  json_extract(
-    ${authSession.metadata},
-    '$.__effectAuthSession.claims.requirements'
-  )
-), 0) = 0`;
+const unrestrictedSession = sql<boolean>`case
+  when ${authSession.metadata} is null then true
+  when json_valid(${authSession.metadata})
+    and json_type(${authSession.metadata}) = 'object' then
+    json_type(
+      ${authSession.metadata},
+      '$.__effectAuthSession'
+    ) is null or (
+      json_type(
+        ${authSession.metadata},
+        '$.__effectAuthSession'
+      ) = 'object'
+      and json_type(
+        ${authSession.metadata},
+        '$.__effectAuthSession.version'
+      ) = 'integer'
+      and json_extract(
+        ${authSession.metadata},
+        '$.__effectAuthSession.version'
+      ) = 1
+      and (json_type(
+        ${authSession.metadata},
+        '$.__effectAuthSession.claims'
+      ) is null or json_type(
+        ${authSession.metadata},
+        '$.__effectAuthSession.claims'
+      ) = 'object')
+      and (json_type(
+        ${authSession.metadata},
+        '$.__effectAuthSession.claims.requirements'
+      ) is null or (
+        json_type(
+          ${authSession.metadata},
+          '$.__effectAuthSession.claims.requirements'
+        ) = 'array'
+        and json_array_length(
+          ${authSession.metadata},
+          '$.__effectAuthSession.claims.requirements'
+        ) = 0
+      ))
+      and json_type(
+        ${authSession.metadata},
+        '$.__effectAuthSession.claims.recoveryEnrollment'
+      ) is null
+      and json_type(
+        ${authSession.metadata},
+        '$.__effectAuthSession.claims.recoveryRemediation'
+      ) is null
+    )
+  else false
+end`;
 
 export interface GuardedRequestAuth {
   readonly aal: string;

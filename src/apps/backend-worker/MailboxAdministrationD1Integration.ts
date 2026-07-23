@@ -22,7 +22,6 @@ import {
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
 import {
   sensitiveSessionPredicate,
-  sessionPredicate,
   transactionalSessionPredicate,
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
@@ -880,7 +879,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const timestamp = Schema.decodeUnknownSync(UnixMillis)(now());
           const nonce = randomId();
           const scope = mailboxScope(location.mailboxId);
-          const trustedSession = sessionPredicate(
+          const trustedSession = transactionalSessionPredicate(
             database,
             requestAuth,
             timestamp
@@ -889,8 +888,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             database,
             principal,
             MailPermission.mailboxManageSettings,
-            scope,
-            timestamp
+            scope
           );
           const auditEvent = yield* audit
             .prepare({
@@ -1067,14 +1065,14 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             "rename"
           );
 
-          if (status?.session_valid !== 1) {
-            return yield* new MailboxAdministrationError({
-              message: "Session changed before mailbox mutation",
-              operation: "rename",
-              reason: "session-recheck",
-            });
-          }
-          if (status.permission_valid !== 1 || status.authorized !== 1) {
+          if (status?.authorized !== 1) {
+            if (status?.session_valid !== 1) {
+              return yield* new MailboxAdministrationError({
+                message: "Session changed before mailbox mutation",
+                operation: "rename",
+                reason: "session-recheck",
+              });
+            }
             if (status.operation_available !== 1) {
               const concurrentReplay = yield* readReceipt(
                 input.operationId,

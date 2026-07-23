@@ -16,7 +16,7 @@ import {
 import { withRecoveryRemediationRequirement } from "@effect-auth/core/RecoveryPolicy";
 import { Sessions } from "@effect-auth/core/Sessions";
 import { VerificationStore } from "@effect-auth/core/Storage";
-import { and, eq, exists, isNull, notExists, sql } from "drizzle-orm";
+import { and, eq, exists, gt, isNull, notExists, sql } from "drizzle-orm";
 import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
@@ -50,6 +50,7 @@ import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/Rec
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { controlPlaneDatabaseNow } from "#/platform/control-plane-d1/RequestAuthGuard";
 import { EmailAddress } from "#/shared/EmailAddress";
 
 import {
@@ -521,7 +522,7 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
               .from(appAuthorizationGuard)
               .where(eq(appAuthorizationGuard.nonce, nonce))
           );
-          const exactVerificationRow = and(
+          const stableVerificationRow = and(
             eq(authVerification.id, verification.id),
             eq(authVerification.type, verification.type),
             eq(authVerification.subject, verification.subject),
@@ -537,13 +538,18 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
                   JSON.stringify(verification.metadata)
                 ),
             isNull(authVerification.consumedAt),
-            sql`${authVerification.expiresAt} > ${completedAt}`
+            gt(authVerification.expiresAt, completedAt)
           );
           const exactVerification = exists(
             database
               .select({ value: sql`1` })
               .from(authVerification)
-              .where(exactVerificationRow)
+              .where(
+                and(
+                  stableVerificationRow,
+                  gt(authVerification.expiresAt, controlPlaneDatabaseNow)
+                )
+              )
           );
           const recoveryStillValid = exists(
             database
@@ -645,7 +651,7 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
             database
               .update(authVerification)
               .set({ consumedAt: completedAt })
-              .where(and(exactVerificationRow, authorized)),
+              .where(and(stableVerificationRow, authorized)),
             database
               .update(authRecoveryCode)
               .set({

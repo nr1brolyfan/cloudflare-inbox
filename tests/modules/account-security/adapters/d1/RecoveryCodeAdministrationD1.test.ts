@@ -451,6 +451,42 @@ describe("recovery-code administration", () => {
     }
   });
 
+  it("preserves the active set when the session is revoked before the batch", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertAccount(database, session);
+      const previousSetId = "00000000-0000-4000-8000-000000000055";
+      seedActiveSet(database, session.actor.userId, previousSetId);
+      const d1 = beforeBatch(makeTestD1Database(database), () => {
+        database
+          .prepare("update auth_session set revoked_at = ? where id = ?")
+          .run(now, session.actor.sessionId);
+      });
+
+      const error = await Effect.runPromise(
+        generate(liveLayer(d1), session).pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({ reason: "unauthenticated" });
+      expect(
+        database
+          .prepare(
+            `select
+               (select count(*) from auth_recovery_code
+                 where revoked_at is null and metadata = ?) as active_codes,
+               (select count(*) from app_recovery_code_rotation_receipt)
+                 as receipts,
+               (select count(*) from auth_audit_log) as audits`
+          )
+          .get(JSON.stringify({ setId: previousSetId }))
+      ).toMatchObject({ active_codes: 10, audits: 0, receipts: 0 });
+    } finally {
+      database.close();
+    }
+  });
+
   it("rejects malformed or mixed active-set metadata before generating material", async () => {
     const database = new DatabaseSync(":memory:");
     try {

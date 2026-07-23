@@ -256,6 +256,31 @@ const controlPlaneBatchLive = (database: D1EffectQbDatabaseLike) =>
     )
   );
 
+const withDatabaseTimes = (
+  database: D1EffectQbDatabaseLike,
+  databaseTimes: readonly number[]
+): D1EffectQbDatabaseLike => {
+  let timeStatement = 0;
+  return {
+    ...database,
+    prepare: (statement) => {
+      if (!statement.includes("unixepoch('subsec')")) {
+        return database.prepare(statement);
+      }
+      const databaseNow = databaseTimes[timeStatement] ?? databaseTimes.at(-1);
+      timeStatement += 1;
+      return database.prepare(
+        databaseNow === undefined
+          ? statement
+          : statement.replaceAll(
+              "unixepoch('subsec')",
+              String(databaseNow / 1000)
+            )
+      );
+    },
+  };
+};
+
 const provideRequestAuth = <A, E, R>(
   effect: Effect.Effect<
     A,
@@ -1584,6 +1609,51 @@ describe("mailbox administration", () => {
     }
   });
 
+  it("denies a mutation when its role grant expires before the D1 batch", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+      const mailAuthorizationLive = makePermissionRaceLive(() => {
+        database
+          .prepare(
+            `update auth_role_grant
+                set expires_at = ?
+              where subject_id = ? and role_id = ?`
+          )
+          .run(Date.now() - 1, "user-a", MailRole.owner);
+      });
+
+      const error = await Effect.runPromise(
+        rename(
+          d1,
+          validated,
+          mailAuthorizationLive,
+          "primary",
+          "Attacker Name"
+        ).pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({
+        operation: "rename",
+        reason: "authorization-recheck",
+      });
+      expect(
+        database
+          .prepare("select display_name from app_mailbox where id = ?")
+          .get("primary")
+      ).toMatchObject({ display_name: "Inbox" });
+      expect(countRows(database, "app_mailbox_administration_receipt")).toBe(1);
+      expect(countRows(database, "app_administrative_audit_event")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
   it("denies a mutation when its session is revoked after the policy check", async () => {
     const database = new DatabaseSync(":memory:");
 
@@ -1618,6 +1688,111 @@ describe("mailbox administration", () => {
           .prepare("select display_name from app_mailbox where id = ?")
           .get("primary")
       ).toMatchObject({ display_name: "Inbox" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("denies a mutation when its session expires before the D1 batch", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+      const mailAuthorizationLive = makePermissionRaceLive(() => {
+        database
+          .prepare("update auth_session set expires_at = ? where id = ?")
+          .run(Date.now() - 1, "session-a");
+      });
+
+      const error = await Effect.runPromise(
+        rename(
+          d1,
+          validated,
+          mailAuthorizationLive,
+          "primary",
+          "Attacker Name"
+        ).pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({
+        operation: "rename",
+        reason: "session-recheck",
+      });
+      expect(
+        database
+          .prepare("select display_name from app_mailbox where id = ?")
+          .get("primary")
+      ).toMatchObject({ display_name: "Inbox" });
+      expect(countRows(database, "app_mailbox_administration_receipt")).toBe(1);
+      expect(countRows(database, "app_administrative_audit_event")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps guard authorization authoritative after session and grant expiry", async () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const baseD1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(baseD1, validated, "bootstrap-guard"));
+      const expiresAt = Date.now() + 60_000;
+      database
+        .prepare("update auth_session set expires_at = ? where id = ?")
+        .run(expiresAt, "session-a");
+      database
+        .prepare(
+          `update auth_role_grant
+              set expires_at = ?
+            where subject_id = ? and role_id = ?`
+        )
+        .run(expiresAt, "user-a", MailRole.owner);
+      const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
+        Layer.provide(
+          Layer.merge(
+            MailPermissionsEffectAuthLayer.pipe(
+              Layer.provide(D1EffectQbSqliteAuthStorageLive(baseD1))
+            ),
+            makeResolverLive()
+          )
+        )
+      );
+      const movingTimeD1 = withDatabaseTimes(baseD1, [
+        expiresAt - 1,
+        expiresAt + 1,
+      ]);
+
+      const mailbox = await Effect.runPromise(
+        rename(
+          movingTimeD1,
+          validated,
+          mailAuthorizationLive,
+          "primary",
+          "Recruiting"
+        )
+      );
+      const replay = await Effect.runPromise(
+        rename(
+          baseD1,
+          validated,
+          unavailableMailAuthorizationLive,
+          "primary",
+          "Recruiting"
+        )
+      );
+
+      expect(mailbox).toMatchObject({ displayName: "Recruiting", version: 2 });
+      expect(replay).toStrictEqual(mailbox);
+      expect(countRows(database, "app_mailbox_administration_receipt")).toBe(2);
+      expect(countRows(database, "app_administrative_audit_event")).toBe(2);
+      expect(countRows(database, "app_authorization_guard")).toBe(0);
     } finally {
       database.close();
     }
@@ -1661,12 +1836,14 @@ describe("mailbox administration", () => {
           .prepare("select display_name from app_mailbox where id = ?")
           .get("primary")
       ).toMatchObject({ display_name: "Inbox" });
+      expect(countRows(database, "app_mailbox_administration_receipt")).toBe(1);
+      expect(countRows(database, "app_administrative_audit_event")).toBe(1);
     } finally {
       database.close();
     }
   });
 
-  it("denies new session requirements added after the policy check", async () => {
+  it("denies a dangling recovery capability added after the policy check", async () => {
     const database = new DatabaseSync(":memory:");
 
     try {
@@ -1681,7 +1858,10 @@ describe("mailbox administration", () => {
           .run(
             JSON.stringify({
               __effectAuthSession: {
-                claims: { requirements: ["email_verification"] },
+                claims: {
+                  recoveryRemediation: { allowed: ["second-passkey"] },
+                  requirements: [],
+                },
                 version: 1,
               },
             }),
@@ -1708,6 +1888,8 @@ describe("mailbox administration", () => {
           .prepare("select display_name from app_mailbox where id = ?")
           .get("primary")
       ).toMatchObject({ display_name: "Inbox" });
+      expect(countRows(database, "app_mailbox_administration_receipt")).toBe(1);
+      expect(countRows(database, "app_administrative_audit_event")).toBe(1);
     } finally {
       database.close();
     }
