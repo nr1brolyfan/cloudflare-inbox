@@ -23,6 +23,10 @@ import {
   StartPasskeyEnrollmentCommand,
 } from "#/modules/account-security/application/PasskeyEnrollment";
 import {
+  GenerateRecoveryCodesCommand,
+  ReadRecoveryCodeRotationQuery,
+} from "#/modules/account-security/application/RecoveryCodeAdministration";
+import {
   CompleteAccountRecoveryCommand,
   StartAccountRecoveryCommand,
 } from "#/modules/account-security/domain/AccountRecovery";
@@ -119,9 +123,30 @@ const applicationAuthExtension = defineAuthHttpApiExtension(
           }),
         options
       ),
-    generateRecoveryCodes: (options?: AuthClientRequestOptions) =>
+    generateRecoveryCodes: (
+      payload: Schema.Codec.Encoded<typeof GenerateRecoveryCodesCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
       run(
-        (client) => client.recoveryCodeManagement.generate({ payload: {} }),
+        (client) =>
+          client.recoveryCodeManagement.generate({
+            payload: Schema.decodeUnknownSync(GenerateRecoveryCodesCommand)(
+              payload
+            ),
+          }),
+        options
+      ),
+    readRecoveryCodeRotation: (
+      query: Schema.Codec.Encoded<typeof ReadRecoveryCodeRotationQuery>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.recoveryCodeManagement.readOperation({
+            params: Schema.decodeUnknownSync(ReadRecoveryCodeRotationQuery)(
+              query
+            ),
+          }),
         options
       ),
     startAccountRecovery: (

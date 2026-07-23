@@ -669,9 +669,38 @@ function PasskeyCredentialManagement({ userId }: { readonly userId: string }) {
 function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
+  const [operationId, setOperationId] = useState(() => crypto.randomUUID());
   const generation = useMutation({
     gcTime: 0,
-    mutationFn: () => authClient.extensions.generateRecoveryCodes(),
+    mutationFn: async (activeOperationId: string) => {
+      try {
+        return await authClient.extensions.generateRecoveryCodes({
+          operationId: activeOperationId,
+        });
+      } catch (error) {
+        const isDefinitive = [
+          "bad_request",
+          "conflict",
+          "policy_denied",
+          "rate_limited",
+          "step_up_required",
+          "unauthenticated",
+        ].some((code) => hasAuthErrorCode(error, code));
+        if (isDefinitive) {
+          throw error;
+        }
+        const receipt = await authClient.extensions
+          .readRecoveryCodeRotation({ operationId: activeOperationId })
+          .catch(() => null);
+        if (receipt === null) {
+          throw error;
+        }
+        return {
+          _tag: "RecoveryCodesAlreadyGenerated" as const,
+          receipt,
+        };
+      }
+    },
     retry: false,
   });
   const stepUpRequired = hasAuthErrorCode(generation.error, "step_up_required");
@@ -700,7 +729,7 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
         Account recovery will also require access to your verified external
         recovery address.
       </p>
-      {generation.data ? (
+      {generation.data?._tag === "RecoveryCodesGenerated" ? (
         <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5">
           <p className="font-bold text-amber-950">
             Save these codes now. They will not be shown again.
@@ -714,10 +743,36 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
           </div>
           <button
             type="button"
-            onClick={() => generation.reset()}
+            onClick={() => {
+              setOperationId(crypto.randomUUID());
+              generation.reset();
+            }}
             className="mt-5 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-bold text-amber-950"
           >
             I saved these codes
+          </button>
+        </div>
+      ) : generation.data?._tag === "RecoveryCodesAlreadyGenerated" ? (
+        <div className="mt-5 rounded-2xl border border-amber-300 bg-amber-50 p-5">
+          <p className="font-bold text-amber-950">
+            The replacement committed, but its one-time codes cannot be
+            recovered.
+          </p>
+          <p className="mt-2 text-sm leading-6 text-amber-900">
+            Create a fresh replacement set and save the new codes when they are
+            shown.
+          </p>
+          <button
+            type="button"
+            disabled={generation.isPending}
+            onClick={() => {
+              const freshOperationId = crypto.randomUUID();
+              setOperationId(freshOperationId);
+              generation.mutate(freshOperationId);
+            }}
+            className="mt-5 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-bold text-amber-950 disabled:opacity-50"
+          >
+            Generate a fresh replacement
           </button>
         </div>
       ) : (
@@ -728,7 +783,7 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
           <button
             type="button"
             disabled={generation.isPending}
-            onClick={() => generation.mutate()}
+            onClick={() => generation.mutate(operationId)}
             className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/80 px-5 py-3 font-bold shadow-sm disabled:opacity-50"
           >
             {generation.isPending ? (

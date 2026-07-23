@@ -1,6 +1,8 @@
 import {
   AuthBadRequestError,
+  AuthConflictError,
   AuthInternalError,
+  AuthNotFoundError,
   AuthPolicyDeniedError,
   AuthRateLimitedError,
   AuthStepUpRequiredError,
@@ -14,8 +16,9 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import {
-  GeneratedRecoveryCodeSet,
+  GenerateRecoveryCodesResult,
   RecoveryCodeAdministration,
+  RecoveryCodeRotationReceiptSchema,
 } from "#/modules/account-security/application/RecoveryCodeAdministration";
 import type { RecoveryCodeAdministrationError } from "#/modules/account-security/application/RecoveryCodeAdministration";
 
@@ -23,7 +26,9 @@ import { RecoveryCodeManagementHttpApi } from "./RecoveryCodeManagementHttpApi";
 
 type PublicError =
   | AuthBadRequestError
+  | AuthConflictError
   | AuthInternalError
+  | AuthNotFoundError
   | AuthPolicyDeniedError
   | AuthRateLimitedError
   | AuthStepUpRequiredError
@@ -66,6 +71,23 @@ const mapError = (
         })
       );
     }
+    case "operation-conflict":
+    case "state-conflict": {
+      return Effect.fail(
+        new AuthConflictError({
+          code: "conflict",
+          message: "Recovery-code rotation conflict",
+        })
+      );
+    }
+    case "not-found": {
+      return Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Recovery-code rotation not found",
+        })
+      );
+    }
     case "rate-limited": {
       return Effect.fail(
         new AuthRateLimitedError({
@@ -83,7 +105,7 @@ const mapError = (
         new AuthInternalError({
           code: "internal_error",
           message:
-            "Recovery-code replacement may have completed. Generate a new set before relying on any codes.",
+            "Recovery-code replacement outcome is unknown. Check the operation before rotating again.",
         })
       );
     }
@@ -103,21 +125,38 @@ export const RecoveryCodeManagementHttpHandlersLayer = HttpApiBuilder.group(
   "recoveryCodeManagement",
   Effect.fn("auth.http.recovery_code_management")(function* (handlers) {
     const administration = yield* RecoveryCodeAdministration;
-    return handlers.handle("generate", ({ payload }) =>
-      Effect.gen(function* () {
-        const result = yield* administration
-          .generate(payload)
-          .pipe(Effect.catchTag("RecoveryCodeAdministrationError", mapError));
-        const encoded = yield* Schema.encodeEffect(GeneratedRecoveryCodeSet)(
-          result
-        ).pipe(Effect.orDie);
-        return yield* HttpServerResponse.json(encoded, {
-          headers: {
-            "cache-control": "private, no-store",
-            pragma: "no-cache",
-          },
-        }).pipe(Effect.orDie);
-      })
-    );
+    return handlers
+      .handle("generate", ({ payload }) =>
+        Effect.gen(function* () {
+          const result = yield* administration
+            .generate(payload)
+            .pipe(Effect.catchTag("RecoveryCodeAdministrationError", mapError));
+          const encoded = yield* Schema.encodeEffect(
+            GenerateRecoveryCodesResult
+          )(result).pipe(Effect.orDie);
+          return yield* HttpServerResponse.json(encoded, {
+            headers: {
+              "cache-control": "private, no-store",
+              pragma: "no-cache",
+            },
+          }).pipe(Effect.orDie);
+        })
+      )
+      .handle("readOperation", ({ params }) =>
+        Effect.gen(function* () {
+          const receipt = yield* administration
+            .readOperation(params)
+            .pipe(Effect.catchTag("RecoveryCodeAdministrationError", mapError));
+          const encoded = yield* Schema.encodeEffect(
+            RecoveryCodeRotationReceiptSchema
+          )(receipt).pipe(Effect.orDie);
+          return yield* HttpServerResponse.json(encoded, {
+            headers: {
+              "cache-control": "private, no-store",
+              pragma: "no-cache",
+            },
+          }).pipe(Effect.orDie);
+        })
+      );
   })
 );
