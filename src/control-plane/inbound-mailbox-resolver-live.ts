@@ -3,7 +3,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { MailboxId, normalizeEmailAddressDomain } from "../mailboxes/core";
+import {
+  MailboxId,
+  normalizeEmailAddressDomain,
+} from "#/modules/mailbox/domain/Mailbox";
+
 import {
   InboundEmailRejected,
   InboundMailboxResolver,

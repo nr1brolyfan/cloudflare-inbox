@@ -7,12 +7,13 @@ import type * as Effect from "effect/Effect";
 import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import type { ControlPlaneCommitState } from "../control-plane/batch";
 import {
   AdministrativeOperationId,
   EmailAddress,
   Version,
-} from "../mailboxes/core";
+} from "#/modules/mailbox/domain/Mailbox";
+
+import type { ControlPlaneCommitState } from "../control-plane/batch";
 import type { BackendRequestContext } from "../observability/request-context";
 import type { ExternalRecoveryIdentitySchema } from "./external-recovery-identity";
 import type { CurrentRequestAuthShape } from "./session";

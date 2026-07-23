@@ -1,8 +1,10 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { DeliveryProviderUnavailableError as ProviderUnavailableError } from "#/mailboxes/errors";
-import { OutboundEmailProvider } from "#/modules/mailbox/ports/OutboundEmailProvider";
+import {
+  DeliveryProviderUnavailableError as ProviderUnavailableError,
+  OutboundEmailProvider,
+} from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 /** Explicit failure for runtimes where no outbound transport is configured. */
 export const OutboundEmailProviderUnavailableLayer = Layer.succeed(

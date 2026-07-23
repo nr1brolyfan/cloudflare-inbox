@@ -4,15 +4,19 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { MailAuthorization } from "../authorization/mail-authorization";
-import { MailboxDisplayName, MailboxId } from "../mailboxes/core";
-import { MailboxDomainError } from "../mailboxes/errors";
+import {
+  MailboxDisplayName,
+  MailboxId,
+} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import {
   MailboxNavigation,
   MailboxNavigationError,
   MailboxNavigationResult,
-} from "../mailboxes/navigation";
-import { MailboxRepository } from "../mailboxes/repository";
+} from "#/modules/organization/application/MailboxNavigation";
+
+import { MailAuthorization } from "../authorization/mail-authorization";
 import { ControlPlaneDatabase } from "./database";
 import { appMailbox, appMailboxMember } from "./schema";
 
@@ -37,7 +41,7 @@ export const MailboxNavigationLive = Layer.effect(
   Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
     const controlPlane = yield* ControlPlaneDatabase;
-    const repository = yield* MailboxRepository;
+    const directoryRepository = yield* MailboxDirectoryRepository;
 
     return MailboxNavigation.of({
       getCurrent: Effect.gen(function* () {
@@ -75,8 +79,8 @@ export const MailboxNavigationLive = Layer.effect(
         });
         const directory = yield* Effect.all(
           {
-            folders: repository.listFolders({ mailboxId: mailbox.id }),
-            labels: repository.listLabels({ mailboxId: mailbox.id }),
+            folders: directoryRepository.listFolders({ mailboxId: mailbox.id }),
+            labels: directoryRepository.listLabels({ mailboxId: mailbox.id }),
           },
           { concurrency: 2 }
         ).pipe(Effect.mapError(mapDirectoryError));

@@ -17,6 +17,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { UnixMillis } from "#/modules/mailbox/domain/Mailbox";
+
 import {
   ListPasskeyCredentialsQuery,
   PasskeyCredentialAdministration,
@@ -37,7 +39,6 @@ import {
   requireSensitiveOperationStepUp,
   SensitiveOperationStepUpClock,
 } from "../auth/step-up-policy";
-import { UnixMillis } from "../mailboxes/core";
 import * as ControlPlane from "./batch";
 import { ControlPlaneDatabase } from "./database";
 import {

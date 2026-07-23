@@ -15,7 +15,7 @@ import {
   ThreadId,
   UnixMillis,
   Version,
-} from "../mailboxes/core";
+} from "#/modules/mailbox/domain/Mailbox";
 
 export const mailSearchDefaultLimit = Schema.decodeUnknownSync(PageSize)(10);
 export const mailSearchMaxResults = 10;

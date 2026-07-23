@@ -4,10 +4,6 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  BootstrapOwnerMailboxCommand,
-  RenameMailboxCommand,
-} from "#/mailboxes/administration";
-import {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
@@ -25,6 +21,10 @@ import {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { GetDraftAttachmentInput } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import {
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "#/modules/organization/application/MailboxAdministration";
 import type { MailboxBackendOperationsShape } from "#/server/mailbox-backend";
 import {
   MailboxBackendOperations,

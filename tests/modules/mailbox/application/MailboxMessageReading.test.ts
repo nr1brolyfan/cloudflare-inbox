@@ -8,9 +8,6 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { FolderId } from "#/mailboxes/core";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import { GetThreadResult, MessagePage } from "#/mailboxes/messages";
 import {
   MailboxMessageReading,
   MailboxMessageListInput,
@@ -22,6 +19,12 @@ import {
   ReadMailboxMessageInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import type { MailboxMessageReadingService } from "#/modules/mailbox/application/MailboxMessageReading";
+import { FolderId } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import {
+  GetThreadResult,
+  MessagePage,
+} from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 

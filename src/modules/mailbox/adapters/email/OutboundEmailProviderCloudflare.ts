@@ -7,18 +7,16 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAddress } from "#/mailboxes/core";
-import type { DeliveryProviderUnavailableError } from "#/mailboxes/errors";
+import type { MailAddress } from "#/modules/mailbox/domain/Mailbox";
 import {
   DeliveryIndeterminateError,
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
-} from "#/mailboxes/errors";
-import {
   OutboundEmailProvider,
   OutboundProviderAcceptance,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";
 import type {
+  DeliveryProviderUnavailableError,
   OutboundEmailAttachment,
   OutboundEmailMessage,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";

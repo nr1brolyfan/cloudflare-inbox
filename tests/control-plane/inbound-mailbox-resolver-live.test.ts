@@ -10,8 +10,8 @@ import {
   ControlPlaneDatabaseLive,
 } from "#/control-plane/database";
 import { InboundMailboxResolverLive } from "#/control-plane/inbound-mailbox-resolver-live";
-import { EmailAddress } from "#/mailboxes/core";
 import { InboundMailboxResolver } from "#/mailboxes/inbound";
+import { EmailAddress } from "#/modules/mailbox/domain/Mailbox";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 

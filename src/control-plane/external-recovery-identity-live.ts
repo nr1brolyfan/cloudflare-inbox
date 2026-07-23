@@ -15,6 +15,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import {
+  EmailAddress,
+  UnixMillis,
+  Version,
+  normalizeEmailAddressDomain,
+} from "#/modules/mailbox/domain/Mailbox";
+
 import { AdministrativeAudit } from "../audit/administrative-audit";
 import type { AdministrativeAuditError } from "../audit/administrative-audit-error";
 import {
@@ -40,12 +47,6 @@ import {
   requireSensitiveOperationStepUp,
   SensitiveOperationStepUpClock,
 } from "../auth/step-up-policy";
-import {
-  EmailAddress,
-  UnixMillis,
-  Version,
-  normalizeEmailAddressDomain,
-} from "../mailboxes/core";
 import { administrativeAuditInsertStatement } from "./administrative-audit-d1";
 import * as ControlPlane from "./batch";
 import { ControlPlaneDatabase } from "./database";

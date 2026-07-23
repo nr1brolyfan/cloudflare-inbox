@@ -18,11 +18,11 @@ import {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { ReserveDraftAttachmentCommand } from "#/modules/mailbox/domain/MailboxDraftAttachment";
-
 import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
-} from "../mailboxes/administration";
+} from "#/modules/organization/application/MailboxAdministration";
+
 import { websiteBackend } from "./backend";
 
 export type { DevEmailInboxResult } from "./dev-email-backend";

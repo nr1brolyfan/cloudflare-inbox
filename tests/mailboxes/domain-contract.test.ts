@@ -7,10 +7,7 @@ import {
   MailboxAddressList,
   MailboxAddressSchema,
 } from "#/mailboxes/addresses";
-import {
-  BootstrapOwnerMailboxCommand,
-  RenameMailboxCommand,
-} from "#/mailboxes/administration";
+import { ParsedInboundMessageV1 } from "#/mailboxes/inbound";
 import {
   EmailAddress,
   MailboxDisplayName,
@@ -19,10 +16,13 @@ import {
   PageSize,
   Version,
   normalizeEmailAddressDomain,
-} from "#/mailboxes/core";
-import { CreateFolderInput, Folder, FolderSchema } from "#/mailboxes/directory";
-import { CreateDraftInput } from "#/mailboxes/drafts";
-import { ParsedInboundMessageV1 } from "#/mailboxes/inbound";
+} from "#/modules/mailbox/domain/Mailbox";
+import {
+  CreateFolderInput,
+  Folder,
+  FolderSchema,
+} from "#/modules/mailbox/domain/MailboxDirectory";
+import { CreateDraftInput } from "#/modules/mailbox/domain/MailboxDraft";
 import {
   AttachmentMetadata,
   ListMessagesInput,
@@ -32,7 +32,11 @@ import {
   SearchMessagesInput,
   SetMessageReadInput,
   ThreadDetailSchema,
-} from "#/mailboxes/messages";
+} from "#/modules/mailbox/domain/MailboxMessage";
+import {
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "#/modules/organization/application/MailboxAdministration";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,

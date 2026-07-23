@@ -15,7 +15,7 @@ import type {
   ResolvableMailResourceLookup,
   RuleLocation,
   RuleLookup,
-} from "../mailboxes/resource-location";
+} from "#/modules/mailbox/domain/MailboxResource";
 
 export type MailboxRef = MailboxLocation;
 export type FolderRef = FolderLookup;

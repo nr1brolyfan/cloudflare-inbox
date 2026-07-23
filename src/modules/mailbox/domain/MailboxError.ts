@@ -1,0 +1,62 @@
+import * as Data from "effect/Data";
+
+import type { Version } from "./Mailbox";
+
+export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
+  readonly operation:
+    | "create-address"
+    | "set-address-enabled"
+    | "set-primary-address"
+    | "create-folder"
+    | "list-folders"
+    | "rename-folder"
+    | "delete-folder"
+    | "create-label"
+    | "list-labels"
+    | "rename-label"
+    | "delete-label"
+    | "list-messages"
+    | "search-messages"
+    | "get-attachment"
+    | "get-message"
+    | "get-thread"
+    | "mutate-message"
+    | "create-draft"
+    | "list-drafts"
+    | "get-draft"
+    | "update-draft"
+    | "reserve-draft-attachment"
+    | "get-draft-attachment"
+    | "list-draft-attachments"
+    | "complete-draft-attachment"
+    | "schedule-outbound"
+    | "get-outbound"
+    | "cancel-outbound"
+    | "resend-outbound"
+    | "record-inbound"
+    | "commit-inbound"
+    | "replay-inbound";
+  readonly reason:
+    | "validation"
+    | "not-found"
+    | "version-conflict"
+    | "idempotency-conflict"
+    | "invalid-state"
+    | "system-folder"
+    | "folder-not-empty";
+  readonly message: string;
+  readonly resourceType?:
+    | "mailbox"
+    | "address"
+    | "folder"
+    | "label"
+    | "message"
+    | "attachment"
+    | "thread"
+    | "draft"
+    | "inbound"
+    | "outbound";
+  readonly resourceId?: string;
+  readonly expectedVersion?: Version;
+  readonly actualVersion?: Version;
+}> {}

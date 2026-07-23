@@ -2,7 +2,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { BlobStoreError } from "./errors";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+
 import { InboundRawMessageReader } from "./inbound";
 
 export interface InboundRawMessageR2Object {

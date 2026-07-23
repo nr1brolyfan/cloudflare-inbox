@@ -11,7 +11,7 @@ import {
   OperationId,
   UnixMillis,
   Version,
-} from "./core";
+} from "./Mailbox";
 
 export class Folder extends Schema.Class<Folder>("cloudflare-inbox/Folder")({
   id: FolderId,

@@ -6,9 +6,12 @@ import { describe, expect, it } from "vitest";
 
 import { MailResourceResolverLive } from "#/authorization/mail-resource-resolver-live";
 import { MailResourceResolver } from "#/authorization/resources";
-import { MailboxRepositoryError } from "#/mailboxes/errors";
 import { MailboxRepository } from "#/mailboxes/repository";
-import { MessageLocation, MessageLookup } from "#/mailboxes/resource-location";
+import {
+  MessageLocation,
+  MessageLookup,
+} from "#/modules/mailbox/domain/MailboxResource";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const unused = () => Effect.succeed(Option.none());
 const unusedDirectory = () => Effect.die(new Error("Directory RPC is unused"));

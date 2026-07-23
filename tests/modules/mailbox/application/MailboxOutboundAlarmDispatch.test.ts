@@ -4,13 +4,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  BlobStoreError,
-  DeliveryIndeterminateError,
-  DeliveryProviderUnavailableError,
-  DeliveryRejectedError,
-  DeliveryTemporaryFailureError,
-} from "#/mailboxes/errors";
 import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
 import { MailboxDatabase } from "#/mailboxes/sqlite-services";
 import { MailboxOutboundLifecycleStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundLifecycleStoreSqlite";
@@ -19,6 +12,7 @@ import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/Mai
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import type { MailboxOutboundDispatcherService as Dispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import { MailboxAlarmStorage } from "#/modules/mailbox/ports/MailboxAlarmStorage";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
 import { OutboundDispatchSnapshotError } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 import {
@@ -26,7 +20,13 @@ import {
   outboundRetryMaxAttempts,
   outboundSendingStaleTimeoutMillis,
 } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
-import { OutboundProviderAcceptance } from "#/modules/mailbox/ports/OutboundEmailProvider";
+import {
+  DeliveryIndeterminateError,
+  DeliveryProviderUnavailableError,
+  DeliveryRejectedError,
+  DeliveryTemporaryFailureError,
+  OutboundProviderAcceptance,
+} from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 import { MailboxDatabaseTestLive } from "../../../support/mailbox-sqlite";
 

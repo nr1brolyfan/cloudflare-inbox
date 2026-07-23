@@ -13,8 +13,9 @@ import {
   RuleId,
   UnixMillis,
   Version,
-} from "./core";
-import type { WorkflowStartError } from "./errors";
+} from "#/modules/mailbox/domain/Mailbox";
+import type { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
+
 import { AiRuleInstruction, RuleActions } from "./rules";
 
 export const AsyncRuleCandidate = Schema.Struct({

@@ -3,13 +3,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailAddress } from "#/modules/mailbox/domain/Mailbox";
+import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   MailboxSenderIdentity,
   MailboxSenderIdentityError,
 } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 
-import { MailAddress } from "../mailboxes/core";
-import type { MailboxId } from "../mailboxes/core";
 import { ControlPlaneDatabase } from "./database";
 import { appMailbox, appMailboxAddress } from "./schema";
 

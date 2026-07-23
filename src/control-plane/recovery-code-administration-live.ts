@@ -8,6 +8,8 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+import { UnixMillis } from "#/modules/mailbox/domain/Mailbox";
+
 import {
   GeneratedRecoveryCodeSet,
   GenerateRecoveryCodesCommand,
@@ -24,7 +26,6 @@ import {
   requireSensitiveOperationStepUp,
   SensitiveOperationStepUpClock,
 } from "../auth/step-up-policy";
-import { UnixMillis } from "../mailboxes/core";
 import * as ControlPlane from "./batch";
 import { ControlPlaneDatabase } from "./database";
 import {

@@ -16,8 +16,8 @@ import {
 import { useState } from "react";
 
 import type { MailboxMessageListResult } from "#/modules/mailbox/application/MailboxMessageReading";
+import { hasSearchableMessageTerm } from "#/modules/mailbox/domain/Mailbox";
 
-import { hasSearchableMessageTerm } from "../mailboxes/core";
 import type {
   MailboxMessageQueryState,
   MailboxViewSelection,

@@ -8,9 +8,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+
 import { ControlPlaneDatabase } from "../control-plane/database";
 import { appAiToolAudit } from "../control-plane/schema";
-import { MailboxId } from "../mailboxes/core";
 import { AiToolCallId, AiToolName, AiToolRunId } from "./tool-protocol";
 import type { AiToolKind } from "./tool-run-budget";
 

@@ -7,10 +7,13 @@ import * as Layer from "effect/Layer";
 
 import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { DraftPage, ListDraftsInput } from "#/mailboxes/drafts";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import {
+  DraftPage,
+  ListDraftsInput,
+} from "#/modules/mailbox/domain/MailboxDraft";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 export const MailboxDraftListInput = ListDraftsInput;
 export type MailboxDraftListInput = ListDraftsInput;

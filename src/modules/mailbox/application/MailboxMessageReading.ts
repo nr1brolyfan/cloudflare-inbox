@@ -27,10 +27,10 @@ import {
   ThreadId,
   UnixMillis,
   Version,
-} from "#/mailboxes/core";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepositoryError } from "#/mailboxes/errors";
+} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 export const MailboxMessageView = Schema.Union([
   Schema.Struct({

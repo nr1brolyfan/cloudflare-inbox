@@ -5,7 +5,18 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { MailboxId } from "./core";
+import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import {
+  MailboxResourceLookup,
+  MailboxResourceLookupResult,
+} from "#/modules/mailbox/domain/MailboxResource";
+import type {
+  MailboxResourceLookup as MailboxResourceLookupType,
+  MailboxResourceLookupResult as MailboxResourceLookupResultType,
+} from "#/modules/mailbox/domain/MailboxResource";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+
 import {
   decodeMailboxDomainError,
   DirectoryRpcRequest,
@@ -24,16 +35,7 @@ import type {
   MailDataRpcResponse as MailDataRpcResponseType,
   MailboxDomainErrorDto,
 } from "./do-protocol";
-import { MailboxDomainError, MailboxRepositoryError } from "./errors";
 import { MailboxRepository } from "./repository";
-import {
-  MailboxResourceLookup,
-  MailboxResourceLookupResult,
-} from "./resource-location";
-import type {
-  MailboxResourceLookup as MailboxResourceLookupType,
-  MailboxResourceLookupResult as MailboxResourceLookupResultType,
-} from "./resource-location";
 
 export interface MailboxRegistry {
   readonly exists: (mailboxId: MailboxId) => Effect.Effect<boolean, unknown>;

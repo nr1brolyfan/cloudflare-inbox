@@ -8,17 +8,6 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { MailboxId } from "#/mailboxes/core";
-import {
-  CreateFolderInput,
-  CreateLabelInput,
-  DeleteFolderInput,
-  DeleteLabelInput,
-  RenameFolderInput,
-  RenameLabelInput,
-} from "#/mailboxes/directory";
-import type { MailboxDomainError } from "#/mailboxes/errors";
-import { MailboxResourceLookup } from "#/mailboxes/resource-location";
 import {
   attachment,
   draft,
@@ -39,6 +28,17 @@ import {
   MailboxRuntime,
 } from "#/mailboxes/sqlite-services";
 import type { MailboxRuntime as MailboxRuntimeType } from "#/mailboxes/sqlite-services";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import {
+  CreateFolderInput,
+  CreateLabelInput,
+  DeleteFolderInput,
+  DeleteLabelInput,
+  RenameFolderInput,
+  RenameLabelInput,
+} from "#/modules/mailbox/domain/MailboxDirectory";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxResourceLookup } from "#/modules/mailbox/domain/MailboxResource";
 
 import {
   MailboxDatabaseTestLive,

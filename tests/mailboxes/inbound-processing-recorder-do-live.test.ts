@@ -5,12 +5,12 @@ import { describe, expect, it } from "vitest";
 
 import type { MailboxDoStub } from "#/mailboxes/do-client";
 import { MailboxDoNamespace } from "#/mailboxes/do-client";
-import { MailboxRepositoryError } from "#/mailboxes/errors";
 import {
   InboundProcessingRecorder,
   RecordInboundProcessingV1,
 } from "#/mailboxes/inbound";
 import { InboundProcessingRecorderDoLive } from "#/mailboxes/inbound-processing-recorder-do-live";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const input = Schema.decodeUnknownSync(RecordInboundProcessingV1)({
   _tag: "Checkpoint",

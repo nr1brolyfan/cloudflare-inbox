@@ -46,22 +46,22 @@ import {
   MailboxAdministrationRuntime,
 } from "#/control-plane/mailbox-administration-live";
 import {
-  MailboxAdministration,
-  MailboxAdministrationError,
-} from "#/mailboxes/administration";
-import {
   AdministrativeOperationId,
   MailboxDisplayName,
   MailboxId,
   Version,
-} from "#/mailboxes/core";
+} from "#/modules/mailbox/domain/Mailbox";
 import {
   AttachmentLocation,
   DraftLocation,
   FolderLocation,
   MessageLocation,
   RuleLocation,
-} from "#/mailboxes/resource-location";
+} from "#/modules/mailbox/domain/MailboxResource";
+import {
+  MailboxAdministration,
+  MailboxAdministrationError,
+} from "#/modules/organization/application/MailboxAdministration";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,

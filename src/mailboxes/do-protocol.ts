@@ -1,16 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import {
-  CompleteDraftAttachmentInput,
-  DraftAttachmentList,
-  DraftAttachmentReservationSchema,
-  DraftAttachmentUploadResult,
-  GetDraftAttachmentInput,
-  ListDraftAttachmentsInput,
-  ReserveDraftAttachmentCommand,
-} from "#/modules/mailbox/domain/MailboxDraftAttachment";
-
-import { Version } from "./core";
+import { Version } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateFolderInput,
   CreateLabelInput,
@@ -26,7 +16,7 @@ import {
   ListLabelsInput,
   RenameFolderInput,
   RenameLabelInput,
-} from "./directory";
+} from "#/modules/mailbox/domain/MailboxDirectory";
 import {
   CreateDraftInput,
   DraftPage,
@@ -34,15 +24,17 @@ import {
   GetDraftInput,
   ListDraftsInput,
   UpdateDraftInput,
-} from "./drafts";
-import { MailboxDomainError } from "./errors";
+} from "#/modules/mailbox/domain/MailboxDraft";
 import {
-  CommitInboundMessage,
-  InboundProcessingResult,
-  PreparedInboundReplayV1,
-  RecordInboundProcessing,
-  ReplayInboundInput,
-} from "./inbound";
+  CompleteDraftAttachmentInput,
+  DraftAttachmentList,
+  DraftAttachmentReservationSchema,
+  DraftAttachmentUploadResult,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+  ReserveDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   AddMessageLabelInput,
   AttachmentBlobLocation,
@@ -59,7 +51,7 @@ import {
   SearchMessagesInput,
   SetMessageReadInput,
   SetMessageStarredInput,
-} from "./messages";
+} from "#/modules/mailbox/domain/MailboxMessage";
 import {
   CancelOutboundDeliveryInput,
   GetOutboundDeliveryInput,
@@ -68,7 +60,15 @@ import {
   ResendOutboundResult,
   ScheduleOutboundInput,
   ScheduleOutboundResult,
-} from "./outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
+
+import {
+  CommitInboundMessage,
+  InboundProcessingResult,
+  PreparedInboundReplayV1,
+  RecordInboundProcessing,
+  ReplayInboundInput,
+} from "./inbound";
 
 export const MailboxDomainErrorDto = Schema.Struct({
   _tag: Schema.Literal("DomainError"),

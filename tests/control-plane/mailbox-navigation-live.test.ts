@@ -19,10 +19,13 @@ import {
   ControlPlaneDatabaseLive,
 } from "#/control-plane/database";
 import { MailboxNavigationLive } from "#/control-plane/mailbox-navigation-live";
-import { FolderList, LabelList } from "#/mailboxes/directory";
-import { MailboxNavigation } from "#/mailboxes/navigation";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
+import {
+  FolderList,
+  LabelList,
+} from "#/modules/mailbox/domain/MailboxDirectory";
+import type { MailboxDirectoryRepositoryService } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
+import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
+import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -53,50 +56,16 @@ const labels = Schema.decodeUnknownSync(LabelList)({
     },
   ],
 });
-const unused = () => Effect.die(new Error("Unexpected repository operation"));
 const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
 const repositoryWith = (
-  listFolders: MailboxRepositoryService["listFolders"],
-  listLabels: MailboxRepositoryService["listLabels"]
+  listFolders: MailboxDirectoryRepositoryService["listFolders"],
+  listLabels: MailboxDirectoryRepositoryService["listLabels"]
 ) =>
-  MailboxRepository.of({
-    addMessageLabel: unused,
-    cancelOutboundDelivery: unused,
-    completeDraftAttachment: unused,
-    createDraft: unused,
-    createFolder: unused,
-    createLabel: unused,
-    deleteFolder: unused,
-    deleteLabel: unused,
-    findAttachmentLocation: unused,
-    findDraftLocation: unused,
-    findFolderLocation: unused,
-    findMessageLocation: unused,
-    findRuleLocation: unused,
-    getAttachmentBlob: unused,
-    getDraft: unused,
-    getDraftAttachment: unused,
-    getMessage: unused,
-    getOutboundDelivery: unused,
-    getThread: unused,
+  MailboxDirectoryRepository.of({
     listFolders,
-    listDraftAttachments: unused,
-    listDrafts: unused,
     listLabels,
-    listMessages: unused,
-    moveMessage: unused,
-    removeMessageLabel: unused,
-    reserveDraftAttachment: unused,
-    renameFolder: unused,
-    renameLabel: unused,
-    resendOutbound: unused,
-    scheduleOutbound: unused,
-    searchMessages: unused,
-    setMessageRead: unused,
-    setMessageStarred: unused,
-    updateDraft: unused,
   });
 
 const authorizationWith = (
@@ -120,7 +89,7 @@ const authorizationWith = (
 const navigationEffect = (
   database: DatabaseSync,
   authorization: MailAuthorizationService,
-  repository: MailboxRepositoryService
+  repository: MailboxDirectoryRepositoryService
 ) => {
   const bindingLive = Layer.succeed(
     ControlPlaneD1Binding,
@@ -136,7 +105,7 @@ const navigationEffect = (
       Layer.mergeAll(
         databaseLive,
         Layer.succeed(MailAuthorization, authorization),
-        Layer.succeed(MailboxRepository, repository)
+        Layer.succeed(MailboxDirectoryRepository, repository)
       )
     )
   );

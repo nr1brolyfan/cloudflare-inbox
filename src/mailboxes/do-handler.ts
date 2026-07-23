@@ -5,8 +5,13 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
+import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import {
+  MailboxResourceLookup,
+  MailboxResourceLookupResult,
+} from "#/modules/mailbox/domain/MailboxResource";
 
-import type { MailboxId } from "./core";
 import {
   DirectoryRpcRequest,
   DirectoryRpcResponse,
@@ -22,11 +27,6 @@ import type {
   MailDataRpcRequest as MailDataRpcRequestType,
   MailDataRpcResponse as MailDataRpcResponseType,
 } from "./do-protocol";
-import type { MailboxDomainError } from "./errors";
-import {
-  MailboxResourceLookup,
-  MailboxResourceLookupResult,
-} from "./resource-location";
 import {
   MailboxDirectoryStore,
   MailboxDraftAttachmentStore,

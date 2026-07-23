@@ -18,7 +18,10 @@ import {
   MailboxAdministrationOwnerEmail,
 } from "#/control-plane/mailbox-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "#/control-plane/recovery-safe-identity-live";
-import { EmailAddress, normalizeEmailAddressDomain } from "#/mailboxes/core";
+import {
+  EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/modules/mailbox/domain/Mailbox";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 

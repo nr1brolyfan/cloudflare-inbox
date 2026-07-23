@@ -24,6 +24,46 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import {
+  AsyncRuleJobId,
+  Cursor,
+  DraftId,
+  MailAddress,
+  MailboxId,
+  MessageId,
+  OperationId,
+  UnixMillis,
+  Version,
+} from "#/modules/mailbox/domain/Mailbox";
+import type { RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
+import type {
+  CreateFolderInput,
+  CreateLabelInput,
+} from "#/modules/mailbox/domain/MailboxDirectory";
+import {
+  DeletedFolder,
+  DeletedLabel,
+  DeleteFolderInput,
+  DeleteLabelInput,
+  FolderList,
+  FolderSchema,
+  FolderSummarySchema,
+  LabelList,
+  LabelSchema,
+  RenameFolderInput,
+  RenameLabelInput,
+} from "#/modules/mailbox/domain/MailboxDirectory";
+import {
+  CreateDraftInput,
+  DraftPage,
+  DraftSchema,
+  DraftSummary,
+  UpdateDraftInput,
+} from "#/modules/mailbox/domain/MailboxDraft";
+import type {
+  GetDraftInput,
+  ListDraftsInput,
+} from "#/modules/mailbox/domain/MailboxDraft";
+import {
   DraftAttachmentList,
   DraftAttachmentReservationSchema,
   DraftAttachmentUploadResult,
@@ -38,54 +78,7 @@ import type {
   GetDraftAttachmentInput,
   ListDraftAttachmentsInput,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
-
-import { AsyncRuleJob, AsyncRulePlanV1 } from "./async-rules";
-import {
-  AsyncRuleJobId,
-  Cursor,
-  DraftId,
-  MailAddress,
-  MailboxId,
-  MessageId,
-  OperationId,
-  UnixMillis,
-  Version,
-} from "./core";
-import type { RfcMessageId } from "./core";
-import type { CreateFolderInput, CreateLabelInput } from "./directory";
-import {
-  DeletedFolder,
-  DeletedLabel,
-  DeleteFolderInput,
-  DeleteLabelInput,
-  FolderList,
-  FolderSchema,
-  FolderSummarySchema,
-  LabelList,
-  LabelSchema,
-  RenameFolderInput,
-  RenameLabelInput,
-} from "./directory";
-import {
-  CreateDraftInput,
-  DraftPage,
-  DraftSchema,
-  DraftSummary,
-  UpdateDraftInput,
-} from "./drafts";
-import type { GetDraftInput, ListDraftsInput } from "./drafts";
-import { MailboxDomainError } from "./errors";
-import {
-  CommitInboundMessageV1,
-  InboundProcessingSchema,
-  InboundWorkflowParamsV1,
-  PreparedInboundReplayV1,
-} from "./inbound";
-import type {
-  CommitInboundMessage as CommitInboundMessageType,
-  RecordInboundProcessing,
-  ReplayInboundInput,
-} from "./inbound";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   AddMessageLabelInput,
   AttachmentBlobLocation,
@@ -101,7 +94,7 @@ import {
   SetMessageStarredInput,
   ThreadDetailSchema,
   ThreadSummarySchema,
-} from "./messages";
+} from "#/modules/mailbox/domain/MailboxMessage";
 import type {
   GetMessageInput,
   GetAttachmentBlobInput,
@@ -109,7 +102,7 @@ import type {
   ListMessagesInput,
   MessageFilters,
   SearchMessagesInput,
-} from "./messages";
+} from "#/modules/mailbox/domain/MailboxMessage";
 import {
   CancelOutboundDeliveryInput,
   OutboundDeliveryFailure,
@@ -121,22 +114,35 @@ import {
   ScheduleOutboundResult,
   outboundMaxRecipientCount,
   outboundUndoWindowMillis,
-} from "./outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
 import type {
   GetOutboundDeliveryInput,
   ScheduleOutboundInput,
-} from "./outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
 import {
   AttachmentLocation,
   DraftLocation,
   FolderLocation,
   MessageLocation,
   RuleLocation,
-} from "./resource-location";
+} from "#/modules/mailbox/domain/MailboxResource";
 import type {
   MailboxResourceLookup,
   MailboxResourceLookupResult as MailboxResourceLookupResultType,
-} from "./resource-location";
+} from "#/modules/mailbox/domain/MailboxResource";
+
+import { AsyncRuleJob, AsyncRulePlanV1 } from "./async-rules";
+import {
+  CommitInboundMessageV1,
+  InboundProcessingSchema,
+  InboundWorkflowParamsV1,
+  PreparedInboundReplayV1,
+} from "./inbound";
+import type {
+  CommitInboundMessage as CommitInboundMessageType,
+  RecordInboundProcessing,
+  ReplayInboundInput,
+} from "./inbound";
 import {
   EvaluateRulesInput,
   RuleAction,

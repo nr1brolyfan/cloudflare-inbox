@@ -7,17 +7,21 @@ import * as Layer from "effect/Layer";
 
 import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import type { AttachmentId, DraftId, MailboxId } from "#/mailboxes/core";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import type {
+  AttachmentId,
+  DraftId,
+  MailboxId,
+} from "#/modules/mailbox/domain/Mailbox";
 import type {
   DraftAttachmentReservation,
   DraftAttachmentUploadResult,
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 export class MailboxDraftAttachmentError extends Data.TaggedError(
   "MailboxDraftAttachmentError"

@@ -21,14 +21,12 @@ import {
   RfcMessageId,
   UnixMillis,
   Version,
-} from "./core";
-import type {
-  BlobStoreError,
-  MailboxDomainError,
-  MailboxRepositoryError,
-  MimeParseError,
-  WorkflowStartError,
-} from "./errors";
+} from "#/modules/mailbox/domain/Mailbox";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import type { MimeParseError } from "#/modules/mailbox/ports/InboundEmailProcessing";
+import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import type { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
 
 export const InboundFailureCode = Schema.Literals([
   "malformed_message",

@@ -39,20 +39,8 @@ import { MailResourceResolveError } from "#/authorization/resources";
 import { MailboxGroup } from "#/http/mailbox-contract";
 import { MailboxGroupLive } from "#/http/mailboxes";
 import { HttpApiPlatformLive } from "#/http/platform";
-import type { MailboxAdministration as MailboxAdministrationService } from "#/mailboxes/administration";
-import {
-  MailboxAdministration,
-  MailboxAdministrationError,
-} from "#/mailboxes/administration";
-import { MailboxRecordSchema, MimeType } from "#/mailboxes/core";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
-import {
-  MailboxNavigation,
-  MailboxNavigationError,
-  MailboxNavigationResult,
-} from "#/mailboxes/navigation";
-import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import {
@@ -96,10 +84,26 @@ import {
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
 import {
+  MailboxRecordSchema,
+  MimeType,
+} from "#/modules/mailbox/domain/Mailbox";
+import {
   DraftAttachmentReservationSchema,
   DraftAttachmentUploadResult,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
 import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
+import type { MailboxAdministrationService } from "#/modules/organization/application/MailboxAdministration";
+import {
+  MailboxAdministration,
+  MailboxAdministrationError,
+} from "#/modules/organization/application/MailboxAdministration";
+import {
+  MailboxNavigation,
+  MailboxNavigationError,
+  MailboxNavigationResult,
+} from "#/modules/organization/application/MailboxNavigation";
+import type { MailboxNavigationService } from "#/modules/organization/application/MailboxNavigation";
 import {
   BackendRequestContextMiddlewareLive,
   backendRequestContext,
@@ -317,7 +321,7 @@ const makeHandler = (
   administration: MailboxAdministrationService,
   validate: SessionsService["validate"] = () =>
     Effect.succeed(validatedSession),
-  navigation: MailboxNavigation = MailboxNavigation.of({
+  navigation: MailboxNavigationService = MailboxNavigation.of({
     getCurrent: Effect.succeed(mailboxNavigation),
   }),
   messageReading: MailboxMessageReadingService = MailboxMessageReading.of({

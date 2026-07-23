@@ -17,7 +17,7 @@ import {
   UnixMillis,
   Version,
   normalizeEmailAddressDomain,
-} from "./core";
+} from "#/modules/mailbox/domain/Mailbox";
 
 export const RuleAddressCondition = Schema.Struct({
   _tag: Schema.Literal("Address"),

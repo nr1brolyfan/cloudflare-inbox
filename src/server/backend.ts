@@ -25,11 +25,11 @@ import type {
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
-
 import type {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
-} from "../mailboxes/administration";
+} from "#/modules/organization/application/MailboxAdministration";
+
 import {
   DevEmailOperations,
   DevEmailOperationsLive,

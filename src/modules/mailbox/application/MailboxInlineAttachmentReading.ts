@@ -14,19 +14,17 @@ import {
   LabelId,
   MailboxId,
   MessageId,
-} from "#/mailboxes/core";
-import type { MimeType } from "#/mailboxes/core";
-import type {
-  BlobStoreError,
-  MailboxRepositoryError,
-} from "#/mailboxes/errors";
-import { MailboxDomainError } from "#/mailboxes/errors";
+} from "#/modules/mailbox/domain/Mailbox";
+import type { MimeType } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
   AttachmentBlobLocation,
   MessageDetail,
-} from "#/mailboxes/messages";
+} from "#/modules/mailbox/domain/MailboxMessage";
 import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
+import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 export const MailboxInlineAttachmentInput = Schema.Union([
   Schema.Struct({

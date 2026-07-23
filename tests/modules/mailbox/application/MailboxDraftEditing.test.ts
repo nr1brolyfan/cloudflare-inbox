@@ -7,8 +7,6 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { DraftSchema } from "#/mailboxes/drafts";
-import { MailboxDomainError } from "#/mailboxes/errors";
 import {
   CreateMailboxDraftCommand,
   MailboxDraftEditing,
@@ -20,6 +18,8 @@ import {
   MailboxDraftListResult,
   MailboxDraftReading,
 } from "#/modules/mailbox/application/MailboxDraftReading";
+import { DraftSchema } from "#/modules/mailbox/domain/MailboxDraft";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import type { MailboxDraftRepositoryService } from "#/modules/mailbox/ports/MailboxDraftRepository";
 

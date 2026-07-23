@@ -8,15 +8,15 @@ import * as Schema from "effect/Schema";
 
 import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { UnixMillis } from "#/mailboxes/core";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import { UnixMillis } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   GetOutboundDeliveryInput,
   OutboundDeliverySchema,
-} from "#/mailboxes/outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxOutboundDeliveryReadingClock } from "#/modules/mailbox/ports/MailboxOutboundDeliveryReadingClock";
 import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 export const GetMailboxOutboundDeliveryQuery = GetOutboundDeliveryInput;
 export type GetMailboxOutboundDeliveryQuery = Schema.Schema.Type<

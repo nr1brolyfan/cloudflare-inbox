@@ -3,7 +3,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { BlobStoreError } from "#/mailboxes/errors";
 import {
   InboundRawMessageReader,
   ReadInboundRawMessageInput,
@@ -13,6 +12,7 @@ import {
   InboundRawMessageR2Client,
   InboundRawMessageReaderR2Live,
 } from "#/mailboxes/inbound-raw-message-reader-r2-live";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 
 const input = Schema.decodeUnknownSync(ReadInboundRawMessageInput)({
   inboundIngestId: "ingest-1",

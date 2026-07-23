@@ -31,24 +31,22 @@ import type { MailboxOutboundDeliveryReadingError } from "#/modules/mailbox/appl
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type { MailboxOutboundSendingError } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   CurrentMailboxOperationProvenance,
   ExplicitUserAction,
 } from "#/modules/mailbox/ports/MailboxOperationProvenance";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import type { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
+import type { MailboxAdministrationError } from "#/modules/organization/application/MailboxAdministration";
+import { MailboxAdministration } from "#/modules/organization/application/MailboxAdministration";
+import type { MailboxNavigationError } from "#/modules/organization/application/MailboxNavigation";
+import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
-import type { MailboxAdministrationError } from "../mailboxes/administration";
-import { MailboxAdministration } from "../mailboxes/administration";
-import type {
-  MailboxDomainError,
-  MailboxRepositoryError,
-  WorkflowStartError,
-} from "../mailboxes/errors";
 import { InboundReplay } from "../mailboxes/inbound";
 import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
-import type { MailboxNavigationError } from "../mailboxes/navigation";
-import { MailboxNavigation } from "../mailboxes/navigation";
 import { BackendHttpApi } from "./api";
 
 const internalError = () =>

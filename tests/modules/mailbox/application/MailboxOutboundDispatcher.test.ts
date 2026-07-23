@@ -3,7 +3,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { DeliveryTemporaryFailureError } from "#/mailboxes/errors";
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import type { MailboxOutboundDispatcherService } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import {
@@ -12,6 +11,7 @@ import {
 } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";
 import {
+  DeliveryTemporaryFailureError,
   OutboundEmailProvider,
   OutboundProviderAcceptance,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";

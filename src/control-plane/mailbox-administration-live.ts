@@ -16,6 +16,19 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import {
+  EmailAddress,
+  MailboxDisplayName,
+  MailboxId,
+  MailboxRecordSchema,
+  UnixMillis,
+  normalizeEmailAddressDomain,
+} from "#/modules/mailbox/domain/Mailbox";
+import {
+  MailboxAdministration,
+  MailboxAdministrationError,
+} from "#/modules/organization/application/MailboxAdministration";
+
 import { AdministrativeAudit } from "../audit/administrative-audit";
 import type { AdministrativeAuditError } from "../audit/administrative-audit-error";
 import { authUserIdentity } from "../auth/schema/modules/core";
@@ -37,18 +50,6 @@ import {
   mailboxScope,
 } from "../authorization/catalog";
 import { MailAuthorization } from "../authorization/mail-authorization";
-import {
-  MailboxAdministration,
-  MailboxAdministrationError,
-} from "../mailboxes/administration";
-import {
-  EmailAddress,
-  MailboxDisplayName,
-  MailboxId,
-  MailboxRecordSchema,
-  UnixMillis,
-  normalizeEmailAddressDomain,
-} from "../mailboxes/core";
 import { administrativeAuditInsertStatement } from "./administrative-audit-d1";
 import * as ControlPlane from "./batch";
 import { ControlPlaneDatabase } from "./database";

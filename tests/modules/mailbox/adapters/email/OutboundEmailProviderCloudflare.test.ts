@@ -5,13 +5,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { DeliveryProviderUnavailableError } from "#/mailboxes/errors";
 import {
   MailboxEmailSendClient,
   OutboundEmailProviderCloudflareLayer,
 } from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
 import type { MailboxEmailSendClientService } from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
 import {
+  DeliveryProviderUnavailableError,
   OutboundEmailMessage,
   OutboundEmailProvider,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";

@@ -4,7 +4,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxId } from "#/mailboxes/core";
 import type { InboundMailboxResolver as InboundMailboxResolverShape } from "#/mailboxes/inbound";
 import {
   InboundEmailRejected,
@@ -16,6 +15,7 @@ import {
   InboundEmailIngress,
   InboundEmailIngressUnavailableLive,
 } from "#/mailboxes/inbound-email-routing";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 
 type ForwardableEmailMessage = CloudflareWorkers.ForwardableEmailMessage;
 const primaryMailboxId = Schema.decodeUnknownSync(MailboxId)("primary");

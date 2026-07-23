@@ -6,7 +6,7 @@ import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import {
   FolderId,
   FolderKind,
@@ -15,7 +15,7 @@ import {
   LabelName,
   MailboxDisplayName,
   MailboxId,
-} from "./core";
+} from "#/modules/mailbox/domain/Mailbox";
 
 export class MailboxNavigationMailbox extends Schema.Class<MailboxNavigationMailbox>(
   "cloudflare-inbox/MailboxNavigationMailbox"
@@ -72,7 +72,7 @@ export class MailboxNavigationError extends Data.TaggedError(
   readonly reason: "not-found" | "storage";
 }> {}
 
-export interface MailboxNavigation {
+export interface MailboxNavigationService {
   readonly getCurrent: Effect.Effect<
     MailboxNavigationResult,
     MailAuthorizationError | MailboxNavigationError,
@@ -81,6 +81,7 @@ export interface MailboxNavigation {
 }
 
 /** Current mailbox discovery and authorized directory navigation. */
-export const MailboxNavigation = Context.Service<MailboxNavigation>(
-  "cloudflare-inbox/MailboxNavigation"
-);
+export class MailboxNavigation extends Context.Service<
+  MailboxNavigation,
+  MailboxNavigationService
+>()("cloudflare-inbox/MailboxNavigation") {}

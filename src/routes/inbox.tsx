@@ -36,10 +36,20 @@ import {
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import { SendMailboxDraftCommand } from "#/modules/mailbox/application/MailboxOutboundSending";
 import {
+  FolderId,
+  DraftId,
+  LabelId,
+  MessageId,
+  OutboundDeliveryId,
+  SearchQuery,
+  ThreadId,
+} from "#/modules/mailbox/domain/Mailbox";
+import {
   DraftAttachmentUploadResult,
   draftAttachmentMaxBytes,
   ReserveDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import type { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 
 import {
   authClient,
@@ -71,16 +81,6 @@ import {
   outboundDeliveryQueryKey,
 } from "../inbox/outbound-delivery-tracker";
 import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
-import {
-  FolderId,
-  DraftId,
-  LabelId,
-  MessageId,
-  OutboundDeliveryId,
-  SearchQuery,
-  ThreadId,
-} from "../mailboxes/core";
-import type { MailboxNavigationResult } from "../mailboxes/navigation";
 import {
   getMailboxNavigation,
   getMailboxOutboundDelivery,

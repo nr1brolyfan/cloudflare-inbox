@@ -4,7 +4,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { BlobStoreError } from "./errors";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+
 import { InboundAttachmentStore, ParsedInboundAttachmentV1 } from "./inbound";
 import type {
   ExtractedInboundAttachmentV1,

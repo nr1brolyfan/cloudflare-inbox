@@ -6,24 +6,23 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import type { AsyncRuleJobId } from "#/modules/mailbox/domain/Mailbox";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import {
+  InboundManifestMismatchError,
+  InboundRetryableStepError,
+} from "#/modules/mailbox/ports/InboundEmailProcessing";
+import type { MimeParseError } from "#/modules/mailbox/ports/InboundEmailProcessing";
+import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+
 import { RawMessagesBucket } from "../infra/resources";
 import {
   AsyncRuleWorkflowClient,
   AsyncRuleWorkflowStarterLive,
 } from "../mailboxes/async-rule-workflow-starter-live";
 import { AsyncRuleWorkflowStarter } from "../mailboxes/async-rules";
-import type { AsyncRuleJobId } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
-import type {
-  BlobStoreError,
-  MailboxDomainError,
-  MailboxRepositoryError,
-  MimeParseError,
-} from "../mailboxes/errors";
-import {
-  InboundManifestMismatchError,
-  InboundRetryableStepError,
-} from "../mailboxes/errors";
 import type { ParsedInboundMessageV1 as ParsedInboundMessageV1Type } from "../mailboxes/inbound";
 import {
   InboundAttachmentStore,

@@ -18,6 +18,8 @@ import type {
   MailboxThreadMessage,
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import { MailboxId, OperationId } from "#/modules/mailbox/domain/Mailbox";
+import type { MailAddress } from "#/modules/mailbox/domain/Mailbox";
 import {
   AiToolExecution,
   CurrentMailboxOperationProvenance,
@@ -25,8 +27,6 @@ import {
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
-import { MailboxId, OperationId } from "../mailboxes/core";
-import type { MailAddress } from "../mailboxes/core";
 import {
   MailCreateDraftArguments,
   MailCreateDraftSuccess,

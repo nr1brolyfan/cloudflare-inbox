@@ -1,4 +1,4 @@
-/* oxlint-disable max-classes-per-file -- Core domain schemas are intentionally consolidated. */
+/* oxlint-disable max-classes-per-file -- Mailbox domain schemas are intentionally consolidated. */
 import { UserIdSchema } from "@effect-auth/core/Identifiers";
 import * as Schema from "effect/Schema";
 

@@ -38,7 +38,7 @@ import type {
   AiToolResult as AiToolResultValue,
 } from "#/ai/tool-protocol";
 import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
-import { MailboxId } from "#/mailboxes/core";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 
 const call = Schema.decodeUnknownSync(AiToolCall)({
   arguments: { query: "synthetic query" },

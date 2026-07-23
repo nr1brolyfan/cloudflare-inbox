@@ -20,6 +20,8 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
+import { EmailAddress } from "#/modules/mailbox/domain/Mailbox";
+
 import {
   AccountRecovery,
   accountRecoveryAccepted,
@@ -39,7 +41,6 @@ import { authUser } from "../auth/schema/modules/core";
 import { authRecoveryCode } from "../auth/schema/modules/recovery-codes";
 import { authSession } from "../auth/schema/modules/sessions";
 import { authVerification } from "../auth/schema/modules/verification";
-import { EmailAddress } from "../mailboxes/core";
 import * as ControlPlane from "./batch";
 import { ControlPlaneDatabase } from "./database";
 import { appAuthorizationGuard, appExternalRecoveryIdentity } from "./schema";

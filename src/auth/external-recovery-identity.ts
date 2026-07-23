@@ -9,7 +9,8 @@ import {
   UnixMillis,
   Version,
   normalizeEmailAddressDomain,
-} from "../mailboxes/core";
+} from "#/modules/mailbox/domain/Mailbox";
+
 import type { RecoverySafeIdentityRejected } from "./recovery-safe-identity-error";
 
 const RecoveryResourceId = Schema.Trimmed.pipe(

@@ -3,6 +3,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+
 import { MailboxDoNamespace, MailboxRegistry } from "./do-client";
 import {
   decodeMailboxDomainError,
@@ -10,7 +13,6 @@ import {
   MailDataRpcResponse,
   mailDataResponseMatchesRequest,
 } from "./do-protocol";
-import { MailboxDomainError, MailboxRepositoryError } from "./errors";
 import {
   InboundReplay,
   InboundReplayPreparer,

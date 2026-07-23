@@ -4,7 +4,8 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 
-import { WorkflowStartError } from "./errors";
+import { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
+
 import type { InboundWorkflowParams } from "./inbound";
 import { InboundWorkflowStarter } from "./inbound";
 

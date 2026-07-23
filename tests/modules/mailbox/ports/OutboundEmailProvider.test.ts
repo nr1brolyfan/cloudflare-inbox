@@ -2,6 +2,9 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
+  DeliveryIndeterminateError,
+  DeliveryRejectedError,
+  DeliveryTemporaryFailureError,
   OutboundEmailAttachment,
   OutboundEmailMessage,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";
@@ -9,6 +12,29 @@ import {
 const address = (value: string) => ({ address: value });
 
 describe("outbound email provider contract", () => {
+  it("keeps provider outcomes distinct in the error channel", () => {
+    const cause = new Error("provider result");
+    const rejected = new DeliveryRejectedError({
+      reason: "provider-rejected",
+      message: "Provider rejected the message",
+      cause,
+    });
+    const temporary = new DeliveryTemporaryFailureError({
+      message: "Provider proved that the message was not accepted",
+      cause,
+    });
+    const indeterminate = new DeliveryIndeterminateError({
+      message: "Provider acceptance could not be determined",
+      cause,
+    });
+
+    expect([rejected._tag, temporary._tag, indeterminate._tag]).toStrictEqual([
+      "DeliveryRejectedError",
+      "DeliveryTemporaryFailureError",
+      "DeliveryIndeterminateError",
+    ]);
+  });
+
   it("accepts one through fifty combined recipients and either body form", () => {
     const one = Schema.decodeUnknownSync(OutboundEmailMessage)({
       attachments: [],

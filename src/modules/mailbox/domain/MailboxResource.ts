@@ -7,7 +7,7 @@ import {
   MailboxId,
   MessageId,
   RuleId,
-} from "./core";
+} from "./Mailbox";
 
 export const MailboxLocation = Schema.Struct({
   _tag: Schema.Literal("Mailbox"),

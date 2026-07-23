@@ -16,13 +16,13 @@ import {
   OperationId,
   UnixMillis,
   Version,
-} from "#/mailboxes/core";
-import type { Draft as DraftType } from "#/mailboxes/drafts";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepositoryError } from "#/mailboxes/errors";
+} from "#/modules/mailbox/domain/Mailbox";
+import type { Draft as DraftType } from "#/modules/mailbox/domain/MailboxDraft";
 import type { DraftAttachmentList } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { StoredDraftAttachment } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const DraftRecipients = Schema.Array(MailAddress).check(
   Schema.makeFilter((recipients) =>

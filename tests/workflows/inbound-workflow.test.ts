@@ -6,13 +6,6 @@ import { describe, expect, it } from "vitest";
 
 import { AsyncRuleWorkflowStarter } from "#/mailboxes/async-rules";
 import type { AsyncRuleWorkflowStarter as AsyncRuleWorkflowStarterShape } from "#/mailboxes/async-rules";
-import {
-  BlobStoreError,
-  MailboxDomainError,
-  MailboxRepositoryError,
-  MimeParseError,
-  WorkflowStartError,
-} from "#/mailboxes/errors";
 import type {
   InboundAttachmentStore as InboundAttachmentStoreShape,
   InboundMessageCommitter as InboundMessageCommitterShape,
@@ -31,6 +24,11 @@ import {
   ParsedInboundMessageV1,
   InboundProcessingSchema,
 } from "#/mailboxes/inbound";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MimeParseError } from "#/modules/mailbox/ports/InboundEmailProcessing";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
 import { inboundWorkflowProgram } from "#/workflows/inbound-workflow";
 
 const validInput = {

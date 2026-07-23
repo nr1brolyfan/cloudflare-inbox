@@ -5,12 +5,13 @@ import { describe, expect, it } from "vitest";
 
 import type { MailboxDoStub } from "#/mailboxes/do-client";
 import { MailboxDoNamespace } from "#/mailboxes/do-client";
-import { MailboxDomainError, MailboxRepositoryError } from "#/mailboxes/errors";
 import {
   CommitInboundMessageV1,
   InboundMessageCommitter,
 } from "#/mailboxes/inbound";
 import { InboundMessageCommitterDoLive } from "#/mailboxes/inbound-message-committer-do-live";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const input = Schema.decodeUnknownSync(CommitInboundMessageV1)({
   envelope: {

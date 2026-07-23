@@ -9,7 +9,7 @@ import {
   InboundAttachmentR2ReadClient,
 } from "#/mailboxes/inbound-attachment-reader-r2-live";
 import { InboundAttachmentStoreRuntimeLive } from "#/mailboxes/inbound-attachment-store-r2-live";
-import { AttachmentBlobLocation } from "#/mailboxes/messages";
+import { AttachmentBlobLocation } from "#/modules/mailbox/domain/MailboxMessage";
 import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
 
 const location = Schema.decodeUnknownSync(AttachmentBlobLocation)({

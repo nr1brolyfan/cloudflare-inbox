@@ -2,7 +2,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
-import type { MailboxRepositoryError } from "../mailboxes/errors";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+
 import { MailboxRepository } from "../mailboxes/repository";
 import * as Resources from "./resources";
 

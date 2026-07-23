@@ -10,8 +10,9 @@ import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { AdministrativeOperationId } from "#/modules/mailbox/domain/Mailbox";
+
 import type { ControlPlaneCommitState } from "../control-plane/batch";
-import { AdministrativeOperationId } from "../mailboxes/core";
 import type { BackendRequestContext } from "../observability/request-context";
 import { RecoveryCodeText } from "./recovery-code-administration";
 import type { CurrentRequestAuthShape } from "./session";

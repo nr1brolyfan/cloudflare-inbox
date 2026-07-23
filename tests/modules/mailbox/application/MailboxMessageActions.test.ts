@@ -7,13 +7,13 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { FolderId } from "#/mailboxes/core";
-import { FolderList } from "#/mailboxes/directory";
-import { MessagePage } from "#/mailboxes/messages";
 import {
   MailboxMessageActionCommand,
   MailboxMessageActions,
 } from "#/modules/mailbox/application/MailboxMessageActions";
+import { FolderId } from "#/modules/mailbox/domain/Mailbox";
+import { FolderList } from "#/modules/mailbox/domain/MailboxDirectory";
+import { MessagePage } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import type { MailboxDirectoryRepositoryService } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
@@ -100,6 +100,7 @@ const repositoryWith = (
   return {
     directory: MailboxDirectoryRepository.of({
       listFolders: listFolders ?? unused,
+      listLabels: unused,
     }),
     messages: MailboxMessageRepository.of({
       getAttachmentBlob: unused,

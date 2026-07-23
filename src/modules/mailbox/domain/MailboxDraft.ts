@@ -15,7 +15,7 @@ import {
   ThreadId,
   UnixMillis,
   Version,
-} from "./core";
+} from "./Mailbox";
 
 export class Draft extends Schema.Class<Draft>("cloudflare-inbox/Draft")({
   id: DraftId,

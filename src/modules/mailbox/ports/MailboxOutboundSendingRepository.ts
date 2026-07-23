@@ -1,16 +1,14 @@
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
-import type {
-  MailboxDomainError,
-  MailboxRepositoryError,
-} from "#/mailboxes/errors";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
   CancelOutboundDeliveryInput,
   OutboundDeliveryResult,
   ScheduleOutboundInput,
   ScheduleOutboundResult,
-} from "#/mailboxes/outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 type RepositoryError = MailboxDomainError | MailboxRepositoryError;
 

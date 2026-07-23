@@ -265,7 +265,9 @@ const BackendRoutesLive = Layer.unwrap(
       )
     );
     const mailboxNavigationLive = MailboxNavigationLive.pipe(
-      Layer.provide(Layer.merge(mailAuthorizationLive, mailboxRepositoryLive))
+      Layer.provide(
+        Layer.merge(mailAuthorizationLive, mailboxDirectoryRepositoryDoLayer)
+      )
     );
     const mailboxMessageReadingLive = MailboxMessageReading.layerNoDeps.pipe(
       Layer.provide(

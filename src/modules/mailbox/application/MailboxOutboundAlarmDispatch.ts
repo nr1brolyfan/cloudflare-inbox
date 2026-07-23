@@ -3,10 +3,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 
-import type { OutboundFailureCode } from "#/mailboxes/outbound";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import type { MailboxOutboundDispatcherError } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import type { OutboundFailureCode } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxOutboundLifecycleStore } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 import type { OutboundDeliverySettlement } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 

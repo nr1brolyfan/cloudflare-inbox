@@ -8,7 +8,7 @@ import {
   OperationId,
   UnixMillis,
   Version,
-} from "./core";
+} from "#/modules/mailbox/domain/Mailbox";
 
 export class MailboxAddress extends Schema.Class<MailboxAddress>(
   "cloudflare-inbox/MailboxAddress"

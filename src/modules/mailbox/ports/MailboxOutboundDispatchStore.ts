@@ -16,8 +16,8 @@ import {
   MimeType,
   OutboundDeliveryId,
   Sha256Digest,
-} from "#/mailboxes/core";
-import { outboundMaxRecipientCount } from "#/mailboxes/outbound";
+} from "#/modules/mailbox/domain/Mailbox";
+import { outboundMaxRecipientCount } from "#/modules/mailbox/domain/MailboxOutbound";
 
 export class OutboundDraftAttachmentLocation extends Schema.Class<OutboundDraftAttachmentLocation>(
   "cloudflare-inbox/OutboundDraftAttachmentLocation"

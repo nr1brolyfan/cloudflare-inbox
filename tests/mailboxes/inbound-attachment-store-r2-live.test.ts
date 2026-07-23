@@ -3,7 +3,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { BlobStoreError } from "#/mailboxes/errors";
 import {
   InboundAttachmentStore,
   StoreInboundAttachmentsInput,
@@ -17,6 +16,7 @@ import {
   InboundAttachmentStoreR2Live,
   InboundAttachmentStoreRuntime,
 } from "#/mailboxes/inbound-attachment-store-r2-live";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 
 type PutOptions = Parameters<InboundAttachmentR2ClientShape["put"]>[2];
 

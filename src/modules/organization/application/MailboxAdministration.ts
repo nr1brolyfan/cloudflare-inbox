@@ -1,19 +1,20 @@
+/* oxlint-disable max-classes-per-file -- Administration error and service form one cohesive use case. */
 import type * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { CurrentRequestAuthShape } from "../auth/session";
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import type { BackendRequestContext } from "../observability/request-context";
+import type { CurrentRequestAuthShape } from "#/auth/session";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import {
   AdministrativeOperationId,
   MailboxDisplayName,
   MailboxId,
   Version,
-} from "./core";
-import type { MailboxRecord } from "./core";
+} from "#/modules/mailbox/domain/Mailbox";
+import type { MailboxRecord } from "#/modules/mailbox/domain/Mailbox";
+import type { BackendRequestContext } from "#/observability/request-context";
 
 export const BootstrapOwnerMailboxCommand = Schema.Struct({
   displayName: MailboxDisplayName,
@@ -59,7 +60,7 @@ export class MailboxAdministrationError extends Data.TaggedError(
   readonly scope?: AuthPermission.PermissionScope;
 }> {}
 
-export interface MailboxAdministration {
+export interface MailboxAdministrationService {
   // Trusted auth and authorization capabilities are application dependencies;
   // HTTP middleware is only one adapter that supplies them.
   readonly bootstrapOwner: (
@@ -83,6 +84,7 @@ export interface MailboxAdministration {
 }
 
 /** Transactional mailbox writes with in-transaction session and permission checks. */
-export const MailboxAdministration = Context.Service<MailboxAdministration>(
-  "cloudflare-inbox/MailboxAdministration"
-);
+export class MailboxAdministration extends Context.Service<
+  MailboxAdministration,
+  MailboxAdministrationService
+>()("cloudflare-inbox/MailboxAdministration") {}

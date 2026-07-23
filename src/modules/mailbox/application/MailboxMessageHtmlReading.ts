@@ -10,11 +10,16 @@ import type { DefaultTreeAdapterTypes } from "parse5";
 
 import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { FolderId, LabelId, MailboxId, MessageId } from "#/mailboxes/core";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepositoryError } from "#/mailboxes/errors";
 import { isSafeInlineImageMimeType } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
+import {
+  FolderId,
+  LabelId,
+  MailboxId,
+  MessageId,
+} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const messageHtmlCsp = (imageSource: string) =>
   [

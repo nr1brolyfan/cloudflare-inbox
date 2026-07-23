@@ -4,8 +4,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailboxId } from "./core";
-import { ByteSize, EmailAddress } from "./core";
+import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { ByteSize, EmailAddress } from "#/modules/mailbox/domain/Mailbox";
+
 import type { ReceiveInboundEmailInput as ReceiveInboundEmailInputType } from "./inbound";
 import {
   InboundEmailRejected,

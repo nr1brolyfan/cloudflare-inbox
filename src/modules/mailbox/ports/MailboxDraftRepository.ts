@@ -8,11 +8,7 @@ import type {
   GetDraftInput,
   ListDraftsInput,
   UpdateDraftInput,
-} from "#/mailboxes/drafts";
-import type {
-  MailboxDomainError,
-  MailboxRepositoryError,
-} from "#/mailboxes/errors";
+} from "#/modules/mailbox/domain/MailboxDraft";
 import type {
   CompleteDraftAttachmentInput,
   DraftAttachmentList,
@@ -22,6 +18,8 @@ import type {
   ListDraftAttachmentsInput,
   ReserveDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 type RepositoryError = MailboxDomainError | MailboxRepositoryError;
 

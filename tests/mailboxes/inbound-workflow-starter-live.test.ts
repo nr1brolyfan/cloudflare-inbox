@@ -3,7 +3,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { WorkflowStartError } from "#/mailboxes/errors";
 import {
   InboundWorkflowParamsV1,
   InboundWorkflowParamsV2,
@@ -14,6 +13,7 @@ import {
   InboundWorkflowClient,
   InboundWorkflowStarterLive,
 } from "#/mailboxes/inbound-workflow-starter-live";
+import { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
 
 const params = Schema.decodeUnknownSync(InboundWorkflowParamsV1)({
   envelope: {

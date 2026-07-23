@@ -1,8 +1,8 @@
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
-import type { BlobStoreError } from "#/mailboxes/errors";
-import type { AttachmentBlobLocation } from "#/mailboxes/messages";
+import type { AttachmentBlobLocation } from "#/modules/mailbox/domain/MailboxMessage";
+import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 
 export interface InboundAttachmentBlobReaderService {
   readonly read: (

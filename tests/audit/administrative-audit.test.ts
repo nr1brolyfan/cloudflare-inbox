@@ -26,7 +26,7 @@ import {
   AdministrativeOperationId,
   MailboxId,
   UnixMillis,
-} from "#/mailboxes/core";
+} from "#/modules/mailbox/domain/Mailbox";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,

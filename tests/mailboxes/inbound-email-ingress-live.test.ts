@@ -4,8 +4,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxId } from "#/mailboxes/core";
-import { BlobStoreError, WorkflowStartError } from "#/mailboxes/errors";
 import type { InboundWorkflowStarter as InboundWorkflowStarterShape } from "#/mailboxes/inbound";
 import {
   InboundEmailRejected,
@@ -23,6 +21,9 @@ import {
 } from "#/mailboxes/inbound-email-ingress-live";
 import type { InboundEmailRoutingMessage } from "#/mailboxes/inbound-email-routing";
 import { InboundEmailIngress } from "#/mailboxes/inbound-email-routing";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
 
 type ForwardableEmailMessage = CloudflareWorkers.ForwardableEmailMessage;
 type PutOptions = Parameters<RawMessagesR2ClientShape["put"]>[2];

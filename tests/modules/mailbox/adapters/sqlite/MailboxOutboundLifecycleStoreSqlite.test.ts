@@ -4,10 +4,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { OutboundProviderMessageId } from "#/mailboxes/outbound";
 import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
 import { MailboxDatabase } from "#/mailboxes/sqlite-services";
 import { MailboxOutboundLifecycleStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundLifecycleStoreSqlite";
+import { OutboundProviderMessageId } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
 import {
   MailboxOutboundLifecycleStore,

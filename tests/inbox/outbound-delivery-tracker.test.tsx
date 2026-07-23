@@ -21,7 +21,7 @@ import type {
   OutboundDeliverySnapshot,
   OutboundDeliveryView,
 } from "#/inbox/outbound-delivery-tracker";
-import type { OutboundFailureCode } from "#/mailboxes/outbound";
+import type { OutboundFailureCode } from "#/modules/mailbox/domain/MailboxOutbound";
 
 type TrackerProps = ComponentProps<typeof OutboundDeliveryTracker>;
 type GetStatus = TrackerProps["getStatus"];

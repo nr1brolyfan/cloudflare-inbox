@@ -14,12 +14,12 @@ import {
   MessageId,
   OperationId,
   Version,
-} from "#/mailboxes/core";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepositoryError } from "#/mailboxes/errors";
-import type { MessageMutationResult } from "#/mailboxes/messages";
+} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import type { MessageMutationResult } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const ActionFields = {
   expectedVersion: Version,

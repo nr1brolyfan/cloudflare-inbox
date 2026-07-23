@@ -3,23 +3,13 @@ import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 
 import type {
-  CompleteDraftAttachmentInput,
-  DraftAttachmentList,
-  DraftAttachmentReservation,
-  DraftAttachmentUploadResult,
-  GetDraftAttachmentInput,
-  ListDraftAttachmentsInput,
-  ReserveDraftAttachmentCommand,
-} from "#/modules/mailbox/domain/MailboxDraftAttachment";
-
-import type {
   AttachmentId,
   DraftId,
   FolderId,
   MailboxId,
   MessageId,
   RuleId,
-} from "./core";
+} from "#/modules/mailbox/domain/Mailbox";
 import type {
   CreateFolderInput,
   CreateLabelInput,
@@ -35,7 +25,7 @@ import type {
   RenameLabelInput,
   Folder,
   Label,
-} from "./directory";
+} from "#/modules/mailbox/domain/MailboxDirectory";
 import type {
   CreateDraftInput,
   DraftPage,
@@ -43,8 +33,17 @@ import type {
   GetDraftInput,
   ListDraftsInput,
   UpdateDraftInput,
-} from "./drafts";
-import type { MailboxDomainError, MailboxRepositoryError } from "./errors";
+} from "#/modules/mailbox/domain/MailboxDraft";
+import type {
+  CompleteDraftAttachmentInput,
+  DraftAttachmentList,
+  DraftAttachmentReservation,
+  DraftAttachmentUploadResult,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+  ReserveDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
   AddMessageLabelInput,
   AttachmentBlobLocation,
@@ -61,7 +60,7 @@ import type {
   SearchMessagesInput,
   SetMessageReadInput,
   SetMessageStarredInput,
-} from "./messages";
+} from "#/modules/mailbox/domain/MailboxMessage";
 import type {
   CancelOutboundDeliveryInput,
   GetOutboundDeliveryInput,
@@ -70,14 +69,15 @@ import type {
   ResendOutboundResult,
   ScheduleOutboundInput,
   ScheduleOutboundResult,
-} from "./outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
 import type {
   AttachmentLocation,
   DraftLocation,
   FolderLocation,
   MessageLocation,
   RuleLocation,
-} from "./resource-location";
+} from "#/modules/mailbox/domain/MailboxResource";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 export interface MailboxRepository {
   readonly addMessageLabel: (

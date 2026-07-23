@@ -1,7 +1,7 @@
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
-import type { BlobStoreError } from "#/mailboxes/errors";
+import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import type { OutboundDraftAttachmentLocation } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 
 export interface OutboundDraftAttachmentBlobReaderService {

@@ -2,16 +2,16 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailAddress } from "#/mailboxes/core";
 import {
   canTransitionInbound,
   InboundProcessingSchema,
   InboundProcessingStatus,
 } from "#/mailboxes/inbound";
+import { MailAddress } from "#/modules/mailbox/domain/Mailbox";
 import {
   MessageDetailSchema,
   MessageSummarySchema,
-} from "#/mailboxes/messages";
+} from "#/modules/mailbox/domain/MailboxMessage";
 import {
   canTransitionOutbound,
   OutboundDeliverySchema,
@@ -20,7 +20,7 @@ import {
   ResendOutboundResult,
   ScheduleOutboundInput,
   outboundUndoWindowMillis,
-} from "#/mailboxes/outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
 
 const decodes = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,

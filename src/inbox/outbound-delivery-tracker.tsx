@@ -13,11 +13,10 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { UndoMailboxSendCommand } from "#/modules/mailbox/application/MailboxOutboundSending";
-
 import type {
   OutboundDeliveryStatus,
   OutboundFailureCode,
-} from "../mailboxes/outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
 
 type UndoCommand = Schema.Schema.Type<typeof UndoMailboxSendCommand>;
 

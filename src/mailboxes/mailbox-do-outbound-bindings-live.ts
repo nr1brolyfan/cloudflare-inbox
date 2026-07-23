@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { DeliveryProviderUnavailableError } from "./errors";
+import { DeliveryProviderUnavailableError } from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 interface RawMessagesBinding {
   readonly get: (key: string) => Promise<CloudflareWorkers.R2ObjectBody | null>;

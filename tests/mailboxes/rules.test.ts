@@ -2,7 +2,6 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { RulePriority } from "#/mailboxes/core";
 import {
   EvaluateRulesInput,
   Rule,
@@ -12,6 +11,7 @@ import {
   evaluateAsyncRuleCandidates,
   evaluateRules,
 } from "#/mailboxes/rules";
+import { RulePriority } from "#/modules/mailbox/domain/Mailbox";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,

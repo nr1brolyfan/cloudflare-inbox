@@ -6,16 +6,17 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { FolderId, MailboxId } from "#/mailboxes/core";
-import { CreateFolderInput } from "#/mailboxes/directory";
 import {
   MailboxDoNamespace,
   MailboxRegistry,
   MailboxRepositoryDoLive,
 } from "#/mailboxes/do-client";
-import { CreateDraftInput } from "#/mailboxes/drafts";
-import { MailboxDomainError, MailboxRepositoryError } from "#/mailboxes/errors";
 import { MailboxRepository } from "#/mailboxes/repository";
+import { FolderId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { CreateFolderInput } from "#/modules/mailbox/domain/MailboxDirectory";
+import { CreateDraftInput } from "#/modules/mailbox/domain/MailboxDraft";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const unusedRpc = () => Effect.die(new Error("RPC is unused"));
 

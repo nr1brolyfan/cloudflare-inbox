@@ -32,6 +32,7 @@ export const MailboxDirectoryRepositoryDoLayer = Layer.effect(
     const repository = yield* MailboxRepository;
     return MailboxDirectoryRepository.of({
       listFolders: repository.listFolders,
+      listLabels: repository.listLabels,
     });
   })
 );

@@ -19,7 +19,8 @@ import {
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { MailboxNavigationResult } from "../mailboxes/navigation";
+import type { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
+
 import type { MailboxViewSelection } from "./mailbox-view-links";
 import { mailboxViewHref } from "./mailbox-view-links";
 

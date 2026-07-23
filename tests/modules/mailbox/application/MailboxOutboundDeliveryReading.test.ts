@@ -7,16 +7,17 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { MailboxDomainError, MailboxRepositoryError } from "#/mailboxes/errors";
-import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import {
   GetMailboxOutboundDeliveryQuery,
   MailboxOutboundDeliveryReading,
 } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type { MailboxOutboundDeliveryReadingService } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxOutboundDeliveryReadingClock } from "#/modules/mailbox/ports/MailboxOutboundDeliveryReadingClock";
 import type { MailboxOutboundDeliveryRepositoryService } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
 import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const delivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
   attemptCount: 0,

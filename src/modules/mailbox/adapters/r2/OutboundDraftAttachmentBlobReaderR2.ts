@@ -3,7 +3,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { BlobStoreError } from "#/mailboxes/errors";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";
 
 import { draftAttachmentObjectKey } from "./DraftAttachmentR2Object";

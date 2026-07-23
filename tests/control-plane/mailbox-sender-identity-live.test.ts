@@ -10,7 +10,7 @@ import {
   ControlPlaneDatabaseLive,
 } from "#/control-plane/database";
 import { MailboxSenderIdentityLive } from "#/control-plane/mailbox-sender-identity-live";
-import { MailboxId } from "#/mailboxes/core";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";

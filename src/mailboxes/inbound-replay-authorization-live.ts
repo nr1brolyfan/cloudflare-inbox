@@ -3,9 +3,10 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import { MailAuthorization } from "../authorization/mail-authorization";
-import type { MailboxId } from "./core";
 
 export interface InboundReplayAuthorization {
   readonly require: (

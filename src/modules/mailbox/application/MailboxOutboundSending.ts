@@ -15,15 +15,15 @@ import {
   OperationId,
   OutboundDeliveryId,
   Version,
-} from "#/mailboxes/core";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import type { MailboxRepositoryError } from "#/mailboxes/errors";
+} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   OutboundDeliverySchema,
   ScheduleOutboundResult,
-} from "#/mailboxes/outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
 import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import type { MailboxSenderIdentityError } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 

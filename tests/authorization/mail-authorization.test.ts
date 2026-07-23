@@ -26,7 +26,7 @@ import {
   MessageLocation,
   RuleLookup,
   RuleLocation,
-} from "#/mailboxes/resource-location";
+} from "#/modules/mailbox/domain/MailboxResource";
 
 const principal = AuthPermission.PermissionSubject.make("user", "user-a");
 const mailboxRef: Resources.MailboxRef = Schema.decodeUnknownSync(

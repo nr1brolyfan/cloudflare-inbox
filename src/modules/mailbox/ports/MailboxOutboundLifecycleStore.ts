@@ -8,11 +8,11 @@ import {
   OutboundDeliveryId,
   UnixMillis,
   Version,
-} from "#/mailboxes/core";
+} from "#/modules/mailbox/domain/Mailbox";
 import {
   OutboundFailureCode,
   OutboundProviderMessageId,
-} from "#/mailboxes/outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
 
 export const outboundRetryBaseDelayMillis = 30_000;
 export const outboundRetryMaxDelayMillis = 30 * 60_000;

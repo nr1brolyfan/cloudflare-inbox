@@ -26,8 +26,8 @@ import {
   ThreadId,
   UnixMillis,
   Version,
-} from "./core";
-import { OutboundDeliveryStatus } from "./outbound";
+} from "./Mailbox";
+import { OutboundDeliveryStatus } from "./MailboxOutbound";
 
 export class AttachmentMetadata extends Schema.Class<AttachmentMetadata>(
   "cloudflare-inbox/AttachmentMetadata"

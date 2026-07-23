@@ -4,7 +4,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxId, OutboundDeliveryId } from "#/mailboxes/core";
 import {
   attachment,
   draft,
@@ -15,6 +14,10 @@ import {
 } from "#/mailboxes/sqlite-schema";
 import { MailboxDatabase, MailboxIdentity } from "#/mailboxes/sqlite-services";
 import { MailboxOutboundDispatchStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundDispatchStoreSqlite";
+import {
+  MailboxId,
+  OutboundDeliveryId,
+} from "#/modules/mailbox/domain/Mailbox";
 import { MailboxOutboundDispatchStore } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 
 import { MailboxDatabaseTestLive } from "../../../../support/mailbox-sqlite";

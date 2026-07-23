@@ -4,14 +4,15 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { ExternalRecoveryIdentityId } from "../auth/external-recovery-identity";
-import type { CurrentRequestAuthShape } from "../auth/session";
 import {
   AdministrativeOperationId,
   MailboxId,
   UnixMillis,
   Version,
-} from "../mailboxes/core";
+} from "#/modules/mailbox/domain/Mailbox";
+
+import { ExternalRecoveryIdentityId } from "../auth/external-recovery-identity";
+import type { CurrentRequestAuthShape } from "../auth/session";
 import {
   BackendCorrelationId,
   BackendRequestId,

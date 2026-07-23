@@ -1,10 +1,7 @@
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 
-import type {
-  MailboxDomainError,
-  MailboxRepositoryError,
-} from "#/mailboxes/errors";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
   AttachmentBlobLocation,
   GetAttachmentBlobInput,
@@ -19,7 +16,8 @@ import type {
   SearchMessagesInput,
   SetMessageReadInput,
   SetMessageStarredInput,
-} from "#/mailboxes/messages";
+} from "#/modules/mailbox/domain/MailboxMessage";
+import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 type RepositoryError = MailboxDomainError | MailboxRepositoryError;
 

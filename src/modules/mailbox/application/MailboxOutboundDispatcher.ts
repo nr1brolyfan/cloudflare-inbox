@@ -2,8 +2,8 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { OutboundDeliveryId } from "#/mailboxes/core";
-import type { BlobStoreError } from "#/mailboxes/errors";
+import type { OutboundDeliveryId } from "#/modules/mailbox/domain/Mailbox";
+import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import { MailboxOutboundDispatchStore } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 import type { OutboundDispatchSnapshotError } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";

@@ -37,6 +37,7 @@ import {
   SendMailboxDraftResult,
   UndoMailboxSendResult,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
+import { MailboxRecordSchema } from "#/modules/mailbox/domain/Mailbox";
 import type {
   DraftAttachmentReservationSchema,
   ReserveDraftAttachmentCommand,
@@ -47,15 +48,14 @@ import {
   draftAttachmentMaxBytes,
   ReservedDraftAttachment,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
-
-import type { MailboxPublicError } from "../http/mailbox-contract";
-import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import type {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
-} from "../mailboxes/administration";
-import { MailboxRecordSchema } from "../mailboxes/core";
-import { MailboxNavigationResult } from "../mailboxes/navigation";
+} from "#/modules/organization/application/MailboxAdministration";
+import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
+
+import type { MailboxPublicError } from "../http/mailbox-contract";
+import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import { BackendClient } from "./website-platform";
 
 export type MailboxPublicStatus = 400 | 401 | 403 | 404 | 409 | 500 | 502;

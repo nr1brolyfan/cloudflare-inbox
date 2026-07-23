@@ -22,6 +22,7 @@ import { OutboundEmailProviderUnavailableLayer } from "#/modules/mailbox/adapter
 import type { DraftAttachmentR2Object } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { DraftAttachmentR2Client } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { OutboundDraftAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
+import { EmailAddress } from "#/modules/mailbox/domain/Mailbox";
 
 import { AiInferenceUnavailableLive } from "../ai/inference";
 import {
@@ -46,7 +47,6 @@ import {
   MailboxEmailSender,
   RawMessagesBucket,
 } from "../infra/resources";
-import { EmailAddress } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
 import { InboundAttachmentR2ReadClient } from "../mailboxes/inbound-attachment-reader-r2-live";
 import {

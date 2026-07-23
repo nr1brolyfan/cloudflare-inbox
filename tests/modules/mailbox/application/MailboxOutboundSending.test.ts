@@ -8,21 +8,21 @@ import { describe, expect, it } from "vitest";
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
-  DraftId,
-  MailAddress,
-  MailboxId,
-  OperationId,
-  Version,
-} from "#/mailboxes/core";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import { OutboundDeliverySchema } from "#/mailboxes/outbound";
-import {
   MailboxOutboundSending,
   SendMailboxDraftCommand,
   SendMailboxDraftResult,
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
+import {
+  DraftId,
+  MailAddress,
+  MailboxId,
+  OperationId,
+  Version,
+} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
 import {
   AiToolExecution,
   CurrentMailboxOperationProvenance,

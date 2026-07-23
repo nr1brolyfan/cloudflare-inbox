@@ -8,14 +8,14 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { FolderId } from "#/mailboxes/core";
-import { GetMessageResult } from "#/mailboxes/messages";
 import {
   MailboxMessageHtmlInput,
   MailboxMessageHtmlReading,
   mailboxMessageHtmlCsp,
   renderSandboxedMessageHtml,
 } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
+import { FolderId } from "#/modules/mailbox/domain/Mailbox";
+import { GetMessageResult } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 

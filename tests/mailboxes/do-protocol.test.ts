@@ -10,7 +10,7 @@ import type {
   MailDataRpcRequest,
   MailDataRpcResponse,
 } from "#/mailboxes/do-protocol";
-import type { MailboxDomainError } from "#/mailboxes/errors";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 
 interface DirectoryMetadata {
   readonly operation: MailboxDomainError["operation"];

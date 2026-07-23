@@ -43,18 +43,6 @@ import {
   UndoMailboxSendResult,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import {
-  DraftAttachmentUploadResult,
-  ReserveDraftAttachmentCommand,
-  ReservedDraftAttachment,
-  UploadDraftAttachmentCommand,
-} from "#/modules/mailbox/domain/MailboxDraftAttachment";
-
-import { CurrentRequestAuthMiddleware } from "../auth/session";
-import {
-  BootstrapOwnerMailboxCommand,
-  RenameMailboxCommand,
-} from "../mailboxes/administration";
-import {
   Cursor,
   AttachmentId,
   DraftId,
@@ -67,12 +55,24 @@ import {
   PageSize,
   SearchQuery,
   ThreadId,
-} from "../mailboxes/core";
+} from "#/modules/mailbox/domain/Mailbox";
+import {
+  DraftAttachmentUploadResult,
+  ReserveDraftAttachmentCommand,
+  ReservedDraftAttachment,
+  UploadDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import {
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "#/modules/organization/application/MailboxAdministration";
+import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
+
+import { CurrentRequestAuthMiddleware } from "../auth/session";
 import {
   InboundProcessingResult,
   ReplayInboundInput,
 } from "../mailboxes/inbound";
-import { MailboxNavigationResult } from "../mailboxes/navigation";
 import { BackendRequestContextMiddleware } from "../observability/request-context-middleware";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });

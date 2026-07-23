@@ -11,7 +11,7 @@ import {
   OutboundDeliveryId,
   UnixMillis,
   Version,
-} from "./core";
+} from "./Mailbox";
 
 export const outboundUndoWindowMillis = 10_000;
 export const outboundMaxRecipientCount = 50;

@@ -1,4 +1,6 @@
+/* oxlint-disable max-classes-per-file -- Provider outcomes and capability form one port contract. */
 import * as Context from "effect/Context";
+import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -8,17 +10,47 @@ import {
   MailAddress,
   MessageSubject,
   MimeType,
-} from "#/mailboxes/core";
-import type {
-  DeliveryIndeterminateError,
-  DeliveryProviderUnavailableError,
-  DeliveryRejectedError,
-  DeliveryTemporaryFailureError,
-} from "#/mailboxes/errors";
+} from "#/modules/mailbox/domain/Mailbox";
+import type { UnixMillis } from "#/modules/mailbox/domain/Mailbox";
 import {
   OutboundProviderMessageId,
   outboundMaxRecipientCount,
-} from "#/mailboxes/outbound";
+} from "#/modules/mailbox/domain/MailboxOutbound";
+
+export class DeliveryIndeterminateError extends Data.TaggedError(
+  "DeliveryIndeterminateError"
+)<{
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
+
+export class DeliveryRejectedError extends Data.TaggedError(
+  "DeliveryRejectedError"
+)<{
+  readonly reason:
+    | "invalid-message"
+    | "message-too-large"
+    | "invalid-sender"
+    | "recipient-suppressed"
+    | "provider-rejected";
+  readonly message: string;
+  readonly cause?: unknown;
+}> {}
+
+export class DeliveryTemporaryFailureError extends Data.TaggedError(
+  "DeliveryTemporaryFailureError"
+)<{
+  readonly message: string;
+  readonly retryAt?: UnixMillis;
+  readonly cause: unknown;
+}> {}
+
+export class DeliveryProviderUnavailableError extends Data.TaggedError(
+  "DeliveryProviderUnavailableError"
+)<{
+  readonly message: string;
+  readonly cause: unknown;
+}> {}
 
 export const OutboundEmailAttachment = Schema.Struct({
   content: Schema.Uint8Array,

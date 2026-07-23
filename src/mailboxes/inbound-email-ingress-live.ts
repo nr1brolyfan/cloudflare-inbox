@@ -3,8 +3,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { InboundIngestId, UnixMillis } from "./core";
-import { BlobStoreError } from "./errors";
+import { InboundIngestId, UnixMillis } from "#/modules/mailbox/domain/Mailbox";
+import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+
 import { InboundEmailRejected, InboundWorkflowStarter } from "./inbound";
 import type { InboundEmailRoutingMessage } from "./inbound-email-routing";
 import { InboundEmailIngress } from "./inbound-email-routing";

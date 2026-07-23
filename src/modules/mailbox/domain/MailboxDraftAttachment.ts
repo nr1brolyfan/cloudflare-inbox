@@ -12,7 +12,7 @@ import {
   Sha256Digest,
   UnixMillis,
   Version,
-} from "#/mailboxes/core";
+} from "./Mailbox";
 
 export const draftAttachmentMaxBytes = 10 * 1024 * 1024;
 export const draftAttachmentMaxCount = 10;

@@ -6,7 +6,6 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailAddress, MailboxId } from "#/mailboxes/core";
 import {
   MailboxDoNamespace,
   MailboxRegistry,
@@ -14,29 +13,6 @@ import {
 } from "#/mailboxes/do-client";
 import { MailboxDoHandler, MailboxDoHandlerLive } from "#/mailboxes/do-handler";
 import { MailDataRpcResponse } from "#/mailboxes/do-protocol";
-import {
-  CreateDraftInput,
-  GetDraftInput,
-  ListDraftsInput,
-  UpdateDraftInput,
-} from "#/mailboxes/drafts";
-import { MailboxDomainError } from "#/mailboxes/errors";
-import {
-  AddMessageLabelInput,
-  GetMessageInput,
-  GetThreadInput,
-  ListMessagesInput,
-  MoveMessageInput,
-  SearchMessagesInput,
-  SetMessageReadInput,
-} from "#/mailboxes/messages";
-import {
-  CancelOutboundDeliveryInput,
-  GetOutboundDeliveryInput,
-  ResendOutboundInput,
-  ScheduleOutboundInput,
-  outboundUndoWindowMillis,
-} from "#/mailboxes/outbound";
 import { MailboxRepository } from "#/mailboxes/repository";
 import {
   attachment,
@@ -59,12 +35,36 @@ import {
   MailboxRuntime,
 } from "#/mailboxes/sqlite-services";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
+import { MailAddress, MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import {
+  CreateDraftInput,
+  GetDraftInput,
+  ListDraftsInput,
+  UpdateDraftInput,
+} from "#/modules/mailbox/domain/MailboxDraft";
 import {
   CompleteDraftAttachmentInput,
   GetDraftAttachmentInput,
   ListDraftAttachmentsInput,
   ReserveDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import {
+  AddMessageLabelInput,
+  GetMessageInput,
+  GetThreadInput,
+  ListMessagesInput,
+  MoveMessageInput,
+  SearchMessagesInput,
+  SetMessageReadInput,
+} from "#/modules/mailbox/domain/MailboxMessage";
+import {
+  CancelOutboundDeliveryInput,
+  GetOutboundDeliveryInput,
+  ResendOutboundInput,
+  ScheduleOutboundInput,
+  outboundUndoWindowMillis,
+} from "#/modules/mailbox/domain/MailboxOutbound";
 
 import {
   MailboxDatabaseTestLive,

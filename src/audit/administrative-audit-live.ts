@@ -4,8 +4,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { Version } from "#/modules/mailbox/domain/Mailbox";
+
 import { CurrentRequestAuth } from "../auth/session";
-import { Version } from "../mailboxes/core";
 import { CurrentBackendRequestContext } from "../observability/request-context";
 import {
   AdministrativeAudit,

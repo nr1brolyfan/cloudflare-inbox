@@ -17,8 +17,9 @@ import {
   MimeType,
   RfcMessageId,
   UnixMillis,
-} from "./core";
-import { MimeParseError } from "./errors";
+} from "#/modules/mailbox/domain/Mailbox";
+import { MimeParseError } from "#/modules/mailbox/ports/InboundEmailProcessing";
+
 import {
   ExtractedInboundMessageV1,
   InboundMimeAttachmentExtractor,

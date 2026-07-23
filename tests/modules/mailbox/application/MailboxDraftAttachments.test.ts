@@ -7,9 +7,9 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { Sha256Digest } from "#/mailboxes/core";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
+import { Sha256Digest } from "#/modules/mailbox/domain/Mailbox";
 import {
   DraftAttachmentReservationSchema,
   DraftAttachmentUploadResult,

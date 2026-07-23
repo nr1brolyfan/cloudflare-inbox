@@ -7,12 +7,15 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import { FolderId } from "#/mailboxes/core";
-import { AttachmentBlobLocation, GetMessageResult } from "#/mailboxes/messages";
 import {
   MailboxInlineAttachmentInput,
   MailboxInlineAttachmentReading,
 } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
+import { FolderId } from "#/modules/mailbox/domain/Mailbox";
+import {
+  AttachmentBlobLocation,
+  GetMessageResult,
+} from "#/modules/mailbox/domain/MailboxMessage";
 import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
