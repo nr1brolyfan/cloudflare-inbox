@@ -1,3 +1,4 @@
+/* oxlint-disable max-classes-per-file -- Send binding and transport clients form one Cloudflare adapter. */
 import type * as CloudflareWorkers from "@cloudflare/workers-types";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -6,23 +7,23 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAddress } from "./core";
-import type { DeliveryProviderUnavailableError } from "./errors";
+import type { MailAddress } from "#/mailboxes/core";
+import type { DeliveryProviderUnavailableError } from "#/mailboxes/errors";
 import {
   DeliveryIndeterminateError,
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
-} from "./errors";
+} from "#/mailboxes/errors";
 import {
   OutboundEmailProvider,
   OutboundProviderAcceptance,
-} from "./outbound-email-provider";
+} from "#/modules/mailbox/ports/OutboundEmailProvider";
 import type {
   OutboundEmailAttachment,
   OutboundEmailMessage,
-} from "./outbound-email-provider";
+} from "#/modules/mailbox/ports/OutboundEmailProvider";
 
-export interface MailboxEmailSendClient {
+export interface MailboxEmailSendClientService {
   readonly send: (
     message: CloudflareWorkers.EmailMessageBuilder
   ) => Effect.Effect<
@@ -31,17 +32,18 @@ export interface MailboxEmailSendClient {
   >;
 }
 
-export const MailboxEmailSendClient = Context.Service<MailboxEmailSendClient>(
-  "cloudflare-inbox/MailboxEmailSendClient"
-);
+export class MailboxEmailSendClient extends Context.Service<
+  MailboxEmailSendClient,
+  MailboxEmailSendClientService
+>()("cloudflare-inbox/MailboxEmailSendClient") {}
 
-export const MailboxEmailSendBindingClient =
-  Context.Service<Cloudflare.Email.SendClient>(
-    "cloudflare-inbox/MailboxEmailSendBindingClient"
-  );
+export class MailboxEmailSendBindingClient extends Context.Service<
+  MailboxEmailSendBindingClient,
+  Cloudflare.Email.SendClient
+>()("cloudflare-inbox/MailboxEmailSendBindingClient") {}
 
 /** Adapts an explicitly acquired production send_email binding. */
-export const MailboxEmailSendClientLive = Layer.effect(
+export const MailboxEmailSendClientCloudflareLayer = Layer.effect(
   MailboxEmailSendClient,
   Effect.gen(function* () {
     const client = yield* MailboxEmailSendBindingClient;
@@ -49,6 +51,7 @@ export const MailboxEmailSendClientLive = Layer.effect(
     return MailboxEmailSendClient.of({
       send: (message) =>
         client.raw.pipe(
+          Effect.provide(RuntimeContext.phantom),
           Effect.flatMap((binding) =>
             Effect.tryPromise({
               try: () => binding.send(message),
@@ -61,8 +64,7 @@ export const MailboxEmailSendClientLive = Layer.effect(
                       : "Unknown send_email error",
                 }),
             })
-          ),
-          Effect.provide(RuntimeContext.phantom)
+          )
         ),
     });
   })
@@ -219,7 +221,7 @@ const malformedAcceptance = (cause: unknown) =>
     message: "Email provider returned a malformed acceptance",
   });
 
-export const CloudflareOutboundEmailProviderLive = Layer.effect(
+export const OutboundEmailProviderCloudflareLayer = Layer.effect(
   OutboundEmailProvider,
   Effect.gen(function* () {
     const client = yield* MailboxEmailSendClient;

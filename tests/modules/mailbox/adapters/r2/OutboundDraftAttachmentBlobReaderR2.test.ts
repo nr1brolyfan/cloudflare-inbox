@@ -3,13 +3,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { OutboundDraftAttachmentLocation } from "#/mailboxes/outbound-dispatch-snapshot";
 import {
-  OutboundDraftAttachmentBlobReader,
-  OutboundDraftAttachmentBlobReaderR2Live,
+  OutboundDraftAttachmentBlobReaderR2Layer,
   OutboundDraftAttachmentR2ReadClient,
-  OutboundDraftAttachmentReaderRuntimeLive,
-} from "#/mailboxes/outbound-draft-attachment-reader-r2-live";
+} from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
+import type { OutboundDraftAttachmentR2ReadClientService } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
+import { OutboundDraftAttachmentLocation } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
+import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";
 
 const bytes = new Uint8Array([1, 2, 3]);
 const checksum = async (value: Uint8Array) => {
@@ -24,20 +24,17 @@ const checksum = async (value: Uint8Array) => {
 
 const runRead = (
   location: OutboundDraftAttachmentLocation,
-  get: OutboundDraftAttachmentR2ReadClient["get"]
+  get: OutboundDraftAttachmentR2ReadClientService["get"]
 ) =>
   Effect.runPromise(
     OutboundDraftAttachmentBlobReader.pipe(
       Effect.flatMap((reader) => reader.read(location)),
       Effect.provide(
-        OutboundDraftAttachmentBlobReaderR2Live.pipe(
+        OutboundDraftAttachmentBlobReaderR2Layer.pipe(
           Layer.provide(
-            Layer.merge(
-              Layer.succeed(
-                OutboundDraftAttachmentR2ReadClient,
-                OutboundDraftAttachmentR2ReadClient.of({ get })
-              ),
-              OutboundDraftAttachmentReaderRuntimeLive
+            Layer.succeed(
+              OutboundDraftAttachmentR2ReadClient,
+              OutboundDraftAttachmentR2ReadClient.of({ get })
             )
           )
         )

@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { draftAttachmentObjectKey } from "#/modules/mailbox/adapters/r2/DraftAttachmentR2Object";
 import type { DraftAttachmentBlobReservation } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
 import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
 
@@ -64,9 +65,6 @@ export const DraftAttachmentBlobRuntimeLive = Layer.succeed(
       }).pipe(Effect.map(toHex)),
   })
 );
-
-export const draftAttachmentObjectKey = (attachmentId: string) =>
-  `draft-attachments/${attachmentId}.bin`;
 
 const blobError = (
   operation: "head" | "write",

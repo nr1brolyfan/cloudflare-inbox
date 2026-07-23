@@ -3,15 +3,19 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "./core";
-import type { OutboundDeliveryId } from "./core";
+import { MailAddress } from "#/mailboxes/core";
+import type { OutboundDeliveryId } from "#/mailboxes/core";
+import {
+  attachment,
+  message,
+  outboundDelivery,
+} from "#/mailboxes/sqlite-schema";
+import { MailboxDatabase, MailboxIdentity } from "#/mailboxes/sqlite-services";
 import {
   MailboxOutboundDispatchStore,
   OutboundDispatchSnapshotError,
   OutboundDispatchSnapshotSchema,
-} from "./outbound-dispatch-snapshot";
-import { attachment, message, outboundDelivery } from "./sqlite-schema";
-import { MailboxDatabase, MailboxIdentity } from "./sqlite-services";
+} from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 
 const AddressList = Schema.Array(MailAddress);
 
@@ -35,7 +39,7 @@ const snapshotError = (
 const decodeJson = <A>(schema: Schema.Decoder<A>, value: string): A =>
   Schema.decodeUnknownSync(schema)(JSON.parse(value));
 
-export const MailboxOutboundDispatchStoreSqliteLive = Layer.effect(
+export const MailboxOutboundDispatchStoreSqliteLayer = Layer.effect(
   MailboxOutboundDispatchStore,
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;

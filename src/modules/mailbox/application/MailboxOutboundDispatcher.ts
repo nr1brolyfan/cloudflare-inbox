@@ -2,27 +2,23 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { OutboundDeliveryId } from "./core";
-import type { BlobStoreError } from "./errors";
-import { MailboxOutboundDispatchStore } from "./outbound-dispatch-snapshot";
-import type { OutboundDispatchSnapshotError } from "./outbound-dispatch-snapshot";
-import { MailboxOutboundDispatchStoreSqliteLive } from "./outbound-dispatch-store-sqlite-live";
-import {
-  OutboundDraftAttachmentBlobReader,
-  OutboundDraftAttachmentBlobReaderR2WithRuntimeLive,
-} from "./outbound-draft-attachment-reader-r2-live";
+import type { OutboundDeliveryId } from "#/mailboxes/core";
+import type { BlobStoreError } from "#/mailboxes/errors";
+import { MailboxOutboundDispatchStore } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
+import type { OutboundDispatchSnapshotError } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
+import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";
+import { OutboundEmailProvider } from "#/modules/mailbox/ports/OutboundEmailProvider";
 import type {
   OutboundEmailProviderError,
   OutboundProviderAcceptance,
-} from "./outbound-email-provider";
-import { OutboundEmailProvider } from "./outbound-email-provider";
+} from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 export type MailboxOutboundDispatcherError =
   | BlobStoreError
   | OutboundDispatchSnapshotError
   | OutboundEmailProviderError;
 
-export interface MailboxOutboundDispatcher {
+export interface MailboxOutboundDispatcherService {
   readonly dispatch: (
     outboundDeliveryId: OutboundDeliveryId
   ) => Effect.Effect<
@@ -31,19 +27,16 @@ export interface MailboxOutboundDispatcher {
   >;
 }
 
-export const MailboxOutboundDispatcher =
-  Context.Service<MailboxOutboundDispatcher>(
-    "cloudflare-inbox/MailboxOutboundDispatcher"
-  );
-
-export const MailboxOutboundDispatcherLive = Layer.effect(
+export class MailboxOutboundDispatcher extends Context.Service<
   MailboxOutboundDispatcher,
-  Effect.gen(function* () {
+  MailboxOutboundDispatcherService
+>()("cloudflare-inbox/MailboxOutboundDispatcher", {
+  make: Effect.gen(function* () {
     const store = yield* MailboxOutboundDispatchStore;
     const attachmentReader = yield* OutboundDraftAttachmentBlobReader;
     const provider = yield* OutboundEmailProvider;
 
-    return MailboxOutboundDispatcher.of({
+    return {
       dispatch: (outboundDeliveryId) =>
         Effect.gen(function* () {
           const snapshot = yield* store.load(outboundDeliveryId);
@@ -79,17 +72,8 @@ export const MailboxOutboundDispatcherLive = Layer.effect(
             to: snapshot.to,
           });
         }),
-    });
-  })
-);
-
-/** SQLite snapshot and verified R2 reader; callers provide DO-local clients and provider. */
-export const MailboxOutboundDispatcherWithStorageLive =
-  MailboxOutboundDispatcherLive.pipe(
-    Layer.provide(
-      Layer.merge(
-        MailboxOutboundDispatchStoreSqliteLive,
-        OutboundDraftAttachmentBlobReaderR2WithRuntimeLive
-      )
-    )
-  );
+    } satisfies MailboxOutboundDispatcherService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

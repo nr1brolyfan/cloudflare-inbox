@@ -5,16 +5,17 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  CloudflareOutboundEmailProviderLive,
-  MailboxEmailSendClient,
-} from "#/mailboxes/cloudflare-email-sending-live";
-import type { MailboxEmailSendClient as MailboxEmailSendClientService } from "#/mailboxes/cloudflare-email-sending-live";
 import { DeliveryProviderUnavailableError } from "#/mailboxes/errors";
+import {
+  MailboxEmailSendClient,
+  OutboundEmailProviderCloudflareLayer,
+} from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
+import type { MailboxEmailSendClientService } from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
 import {
   OutboundEmailMessage,
   OutboundEmailProvider,
-} from "#/mailboxes/outbound-email-provider";
+} from "#/modules/mailbox/ports/OutboundEmailProvider";
+import type { OutboundEmailProviderService } from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 const baseMessage = Schema.decodeUnknownSync(OutboundEmailMessage)({
   attachments: [],
@@ -28,14 +29,19 @@ const baseMessage = Schema.decodeUnknownSync(OutboundEmailMessage)({
 
 const runProvider = <A>(
   client: MailboxEmailSendClientService,
-  use: (provider: OutboundEmailProvider) => Effect.Effect<A, unknown>
+  use: (provider: OutboundEmailProviderService) => Effect.Effect<A, unknown>
 ) =>
   Effect.runPromise(
     OutboundEmailProvider.pipe(
       Effect.flatMap(use),
       Effect.provide(
-        CloudflareOutboundEmailProviderLive.pipe(
-          Layer.provide(Layer.succeed(MailboxEmailSendClient, client))
+        OutboundEmailProviderCloudflareLayer.pipe(
+          Layer.provide(
+            Layer.succeed(
+              MailboxEmailSendClient,
+              MailboxEmailSendClient.of(client)
+            )
+          )
         )
       )
     )

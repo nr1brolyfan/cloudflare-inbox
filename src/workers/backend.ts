@@ -13,6 +13,14 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
+import {
+  MailboxEmailSendBindingClient,
+  MailboxEmailSendClientCloudflareLayer,
+  OutboundEmailProviderCloudflareLayer,
+} from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
+import { OutboundEmailProviderUnavailableLayer } from "#/modules/mailbox/adapters/email/OutboundEmailProviderUnavailable";
+import { OutboundDraftAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
+
 import { AiInferenceUnavailableLive } from "../ai/inference";
 import {
   WorkersAiClientLive,
@@ -36,11 +44,6 @@ import {
   MailboxEmailSender,
   RawMessagesBucket,
 } from "../infra/resources";
-import {
-  CloudflareOutboundEmailProviderLive,
-  MailboxEmailSendBindingClient,
-  MailboxEmailSendClientLive,
-} from "../mailboxes/cloudflare-email-sending-live";
 import { EmailAddress } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
 import type { DraftAttachmentR2Object } from "../mailboxes/draft-attachment-store-r2-live";
@@ -57,8 +60,6 @@ import {
   InboundWorkflowStarterLive,
 } from "../mailboxes/inbound-workflow-starter-live";
 import { MailboxDO } from "../mailboxes/mailbox-do";
-import { OutboundDraftAttachmentR2ReadClient } from "../mailboxes/outbound-draft-attachment-reader-r2-live";
-import { OutboundEmailProviderUnavailableLive } from "../mailboxes/outbound-email-provider";
 import {
   BackendObservabilityConfig,
   BackendObservabilityLive,
@@ -297,9 +298,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     );
     const mailboxOutboundProviderLive =
       mailboxEmailSendBinding === undefined
-        ? OutboundEmailProviderUnavailableLive
-        : CloudflareOutboundEmailProviderLive.pipe(
-            Layer.provide(MailboxEmailSendClientLive),
+        ? OutboundEmailProviderUnavailableLayer
+        : OutboundEmailProviderCloudflareLayer.pipe(
+            Layer.provide(MailboxEmailSendClientCloudflareLayer),
             Layer.provide(
               Layer.succeed(
                 MailboxEmailSendBindingClient,

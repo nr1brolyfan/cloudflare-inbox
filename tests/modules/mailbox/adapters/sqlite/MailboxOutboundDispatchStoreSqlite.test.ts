@@ -5,8 +5,6 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { MailboxId, OutboundDeliveryId } from "#/mailboxes/core";
-import { MailboxOutboundDispatchStore } from "#/mailboxes/outbound-dispatch-snapshot";
-import { MailboxOutboundDispatchStoreSqliteLive } from "#/mailboxes/outbound-dispatch-store-sqlite-live";
 import {
   attachment,
   draft,
@@ -16,12 +14,14 @@ import {
   outboundDelivery,
 } from "#/mailboxes/sqlite-schema";
 import { MailboxDatabase, MailboxIdentity } from "#/mailboxes/sqlite-services";
+import { MailboxOutboundDispatchStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundDispatchStoreSqlite";
+import { MailboxOutboundDispatchStore } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 
-import { MailboxDatabaseTestLive } from "../support/mailbox-sqlite";
+import { MailboxDatabaseTestLive } from "../../../../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
 const digest = "a".repeat(64);
-const testLive = MailboxOutboundDispatchStoreSqliteLive.pipe(
+const testLive = MailboxOutboundDispatchStoreSqliteLayer.pipe(
   Layer.provide(
     Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId }))
   ),

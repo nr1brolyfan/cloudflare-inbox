@@ -16,8 +16,8 @@ import {
   MimeType,
   OutboundDeliveryId,
   Sha256Digest,
-} from "./core";
-import { outboundMaxRecipientCount } from "./outbound";
+} from "#/mailboxes/core";
+import { outboundMaxRecipientCount } from "#/mailboxes/outbound";
 
 export class OutboundDraftAttachmentLocation extends Schema.Class<OutboundDraftAttachmentLocation>(
   "cloudflare-inbox/OutboundDraftAttachmentLocation"
@@ -85,14 +85,14 @@ export class OutboundDispatchSnapshotError extends Data.TaggedError(
   readonly reason: "invalid-snapshot" | "not-found" | "storage";
 }> {}
 
-export interface MailboxOutboundDispatchStore {
+export interface MailboxOutboundDispatchStoreService {
   readonly load: (
     outboundDeliveryId: OutboundDeliveryId
   ) => Effect.Effect<OutboundDispatchSnapshot, OutboundDispatchSnapshotError>;
 }
 
 /** Internal-only snapshot access; it is intentionally absent from repository and RPC contracts. */
-export const MailboxOutboundDispatchStore =
-  Context.Service<MailboxOutboundDispatchStore>(
-    "cloudflare-inbox/MailboxOutboundDispatchStore"
-  );
+export class MailboxOutboundDispatchStore extends Context.Service<
+  MailboxOutboundDispatchStore,
+  MailboxOutboundDispatchStoreService
+>()("cloudflare-inbox/MailboxOutboundDispatchStore") {}

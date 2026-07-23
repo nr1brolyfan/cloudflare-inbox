@@ -3,8 +3,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 
-import type { MailboxOutboundDispatcherError } from "./mailbox-outbound-dispatcher";
-import { MailboxOutboundDispatcher } from "./mailbox-outbound-dispatcher";
+import type { MailboxOutboundDispatcherError } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+
 import type { OutboundFailureCode } from "./outbound";
 import { MailboxOutboundAlarmScheduler } from "./outbound-alarm-live";
 import { MailboxOutboundLifecycleStore } from "./outbound-lifecycle-store-sqlite-live";

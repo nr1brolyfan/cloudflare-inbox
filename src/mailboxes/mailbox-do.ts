@@ -4,15 +4,17 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import {
-  CloudflareOutboundEmailProviderLive,
   MailboxEmailSendClient,
-} from "./cloudflare-email-sending-live";
+  OutboundEmailProviderCloudflareLayer,
+} from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
+import { OutboundDraftAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
+import { MailboxOutboundDispatcherLayer } from "#/modules/mailbox/layers/MailboxOutboundDispatcherLayer";
+
 import { MailboxDoHandler, MailboxDoHandlerLive } from "./do-handler";
 import {
   MailboxDoOutboundBindings,
   MailboxDoOutboundBindingsLive,
 } from "./mailbox-do-outbound-bindings-live";
-import { MailboxOutboundDispatcherWithStorageLive } from "./mailbox-outbound-dispatcher";
 import {
   MailboxOutboundAlarmDispatch,
   MailboxOutboundAlarmDispatchLive,
@@ -22,7 +24,6 @@ import {
   MailboxOutboundAlarmScheduler,
   MailboxOutboundAlarmSchedulerLive,
 } from "./outbound-alarm-live";
-import { OutboundDraftAttachmentR2ReadClient } from "./outbound-draft-attachment-reader-r2-live";
 import {
   MailboxOutboundLifecycleStore,
   MailboxOutboundLifecycleStoreSqliteLive,
@@ -176,13 +177,13 @@ const mailboxDoLive = Effect.gen(function* () {
         ),
     })
   );
-  const outboundProviderLive = CloudflareOutboundEmailProviderLive.pipe(
+  const outboundProviderLive = OutboundEmailProviderCloudflareLayer.pipe(
     Layer.provide(emailSendClientLive)
   );
   const outboundLifecycleLive = MailboxOutboundLifecycleStoreSqliteLive.pipe(
     Layer.provide(MailboxInfrastructureLive)
   );
-  const outboundDispatcherLive = MailboxOutboundDispatcherWithStorageLive.pipe(
+  const outboundDispatcherLive = MailboxOutboundDispatcherLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
         MailboxInfrastructureLive,

@@ -11,8 +11,6 @@ import {
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
 } from "#/mailboxes/errors";
-import { MailboxOutboundDispatcher } from "#/mailboxes/mailbox-outbound-dispatcher";
-import type { MailboxOutboundDispatcher as Dispatcher } from "#/mailboxes/mailbox-outbound-dispatcher";
 import {
   MailboxOutboundAlarmDispatch,
   MailboxOutboundAlarmDispatchLive,
@@ -22,8 +20,6 @@ import {
   MailboxOutboundAlarmScheduler,
   MailboxOutboundAlarmSchedulerLive,
 } from "#/mailboxes/outbound-alarm-live";
-import { OutboundDispatchSnapshotError } from "#/mailboxes/outbound-dispatch-snapshot";
-import { OutboundProviderAcceptance } from "#/mailboxes/outbound-email-provider";
 import {
   MailboxOutboundLifecycleStoreSqliteLive,
   outboundRetryDelayMillis,
@@ -32,6 +28,10 @@ import {
 } from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
 import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
 import { MailboxDatabase, MailboxRuntime } from "#/mailboxes/sqlite-services";
+import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import type { MailboxOutboundDispatcherService as Dispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import { OutboundDispatchSnapshotError } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
+import { OutboundProviderAcceptance } from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 import { MailboxDatabaseTestLive } from "../support/mailbox-sqlite";
 

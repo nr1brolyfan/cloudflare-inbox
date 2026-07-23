@@ -1,10 +1,12 @@
+/* oxlint-disable max-classes-per-file -- R2 client and hashing runtime are cohesive adapter internals. */
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { draftAttachmentObjectKey } from "./draft-attachment-store-r2-live";
-import { BlobStoreError } from "./errors";
-import type { OutboundDraftAttachmentLocation } from "./outbound-dispatch-snapshot";
+import { BlobStoreError } from "#/mailboxes/errors";
+import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";
+
+import { draftAttachmentObjectKey } from "./DraftAttachmentR2Object";
 
 export interface OutboundDraftAttachmentR2ReadObject {
   readonly arrayBuffer: () => Effect.Effect<ArrayBuffer, unknown>;
@@ -14,43 +16,32 @@ export interface OutboundDraftAttachmentR2ReadObject {
   readonly size: number;
 }
 
-export interface OutboundDraftAttachmentR2ReadClient {
+export interface OutboundDraftAttachmentR2ReadClientService {
   readonly get: (
     key: string
   ) => Effect.Effect<OutboundDraftAttachmentR2ReadObject | null, unknown>;
 }
 
-export const OutboundDraftAttachmentR2ReadClient =
-  Context.Service<OutboundDraftAttachmentR2ReadClient>(
-    "cloudflare-inbox/OutboundDraftAttachmentR2ReadClient"
-  );
+export class OutboundDraftAttachmentR2ReadClient extends Context.Service<
+  OutboundDraftAttachmentR2ReadClient,
+  OutboundDraftAttachmentR2ReadClientService
+>()("cloudflare-inbox/OutboundDraftAttachmentR2ReadClient") {}
 
-export interface OutboundDraftAttachmentReaderRuntime {
+interface OutboundDraftAttachmentReaderRuntimeService {
   readonly sha256: (value: Uint8Array) => Effect.Effect<string, unknown>;
 }
 
-export const OutboundDraftAttachmentReaderRuntime =
-  Context.Service<OutboundDraftAttachmentReaderRuntime>(
-    "cloudflare-inbox/OutboundDraftAttachmentReaderRuntime"
-  );
-
-export interface OutboundDraftAttachmentBlobReader {
-  readonly read: (
-    location: OutboundDraftAttachmentLocation
-  ) => Effect.Effect<Uint8Array, BlobStoreError>;
-}
-
-export const OutboundDraftAttachmentBlobReader =
-  Context.Service<OutboundDraftAttachmentBlobReader>(
-    "cloudflare-inbox/OutboundDraftAttachmentBlobReader"
-  );
+class OutboundDraftAttachmentReaderRuntime extends Context.Service<
+  OutboundDraftAttachmentReaderRuntime,
+  OutboundDraftAttachmentReaderRuntimeService
+>()("cloudflare-inbox/OutboundDraftAttachmentReaderRuntime") {}
 
 const toHex = (value: ArrayBuffer) =>
   [...new Uint8Array(value)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
-export const OutboundDraftAttachmentReaderRuntimeLive = Layer.succeed(
+const OutboundDraftAttachmentReaderRuntimeWebCryptoLayer = Layer.succeed(
   OutboundDraftAttachmentReaderRuntime,
   OutboundDraftAttachmentReaderRuntime.of({
     sha256: (value) =>
@@ -72,7 +63,7 @@ const readError = (cause: unknown, retryable: boolean) =>
   });
 
 /** Reads a frozen draft locator and fails closed on R2 bytes or metadata drift. */
-export const OutboundDraftAttachmentBlobReaderR2Live = Layer.effect(
+export const OutboundDraftAttachmentBlobReaderR2Layer = Layer.effect(
   OutboundDraftAttachmentBlobReader,
   Effect.gen(function* () {
     const client = yield* OutboundDraftAttachmentR2ReadClient;
@@ -147,9 +138,4 @@ export const OutboundDraftAttachmentBlobReaderR2Live = Layer.effect(
         }),
     });
   })
-);
-
-export const OutboundDraftAttachmentBlobReaderR2WithRuntimeLive =
-  OutboundDraftAttachmentBlobReaderR2Live.pipe(
-    Layer.provide(OutboundDraftAttachmentReaderRuntimeLive)
-  );
+).pipe(Layer.provide(OutboundDraftAttachmentReaderRuntimeWebCryptoLayer));

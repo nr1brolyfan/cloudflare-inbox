@@ -4,20 +4,18 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { DeliveryTemporaryFailureError } from "#/mailboxes/errors";
-import {
-  MailboxOutboundDispatcher,
-  MailboxOutboundDispatcherLive,
-} from "#/mailboxes/mailbox-outbound-dispatcher";
+import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import type { MailboxOutboundDispatcherService } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import {
   MailboxOutboundDispatchStore,
   OutboundDispatchSnapshotSchema,
-} from "#/mailboxes/outbound-dispatch-snapshot";
-import { OutboundDraftAttachmentBlobReader } from "#/mailboxes/outbound-draft-attachment-reader-r2-live";
+} from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
+import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";
 import {
   OutboundEmailProvider,
   OutboundProviderAcceptance,
-} from "#/mailboxes/outbound-email-provider";
-import type { OutboundEmailProvider as OutboundEmailProviderService } from "#/mailboxes/outbound-email-provider";
+} from "#/modules/mailbox/ports/OutboundEmailProvider";
+import type { OutboundEmailProviderService } from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 const digest = "a".repeat(64);
 const snapshot = Schema.decodeUnknownSync(OutboundDispatchSnapshotSchema)({
@@ -51,11 +49,11 @@ const runDispatch = (
 ) =>
   Effect.runPromise(
     MailboxOutboundDispatcher.pipe(
-      Effect.flatMap((dispatcher) =>
+      Effect.flatMap((dispatcher: MailboxOutboundDispatcherService) =>
         dispatcher.dispatch(snapshot.outboundDeliveryId)
       ),
       Effect.provide(
-        MailboxOutboundDispatcherLive.pipe(
+        MailboxOutboundDispatcher.layerNoDeps.pipe(
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(

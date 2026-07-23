@@ -1,6 +1,5 @@
 import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
+import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import {
@@ -9,18 +8,17 @@ import {
   MailAddress,
   MessageSubject,
   MimeType,
-} from "./core";
+} from "#/mailboxes/core";
 import type {
   DeliveryIndeterminateError,
   DeliveryProviderUnavailableError,
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
-} from "./errors";
-import { DeliveryProviderUnavailableError as ProviderUnavailableError } from "./errors";
+} from "#/mailboxes/errors";
 import {
   OutboundProviderMessageId,
   outboundMaxRecipientCount,
-} from "./outbound";
+} from "#/mailboxes/outbound";
 
 export const OutboundEmailAttachment = Schema.Struct({
   content: Schema.Uint8Array,
@@ -81,26 +79,13 @@ export type OutboundEmailProviderError =
   | DeliveryRejectedError
   | DeliveryTemporaryFailureError;
 
-export interface OutboundEmailProvider {
+export interface OutboundEmailProviderService {
   readonly send: (
     message: OutboundEmailMessage
   ) => Effect.Effect<OutboundProviderAcceptance, OutboundEmailProviderError>;
 }
 
-export const OutboundEmailProvider = Context.Service<OutboundEmailProvider>(
-  "cloudflare-inbox/OutboundEmailProvider"
-);
-
-/** Explicit failure for runtimes where no outbound transport is configured. */
-export const OutboundEmailProviderUnavailableLive = Layer.succeed(
+export class OutboundEmailProvider extends Context.Service<
   OutboundEmailProvider,
-  OutboundEmailProvider.of({
-    send: () =>
-      Effect.fail(
-        new ProviderUnavailableError({
-          cause: new Error("Outbound email provider is not configured"),
-          message: "Outbound email provider is unavailable",
-        })
-      ),
-  })
-);
+  OutboundEmailProviderService
+>()("cloudflare-inbox/OutboundEmailProvider") {}
