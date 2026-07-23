@@ -28,7 +28,9 @@ import {
   MailboxDirectoryRepositoryDoLayer,
   MailboxDraftRepositoryDoLayer,
   MailboxMessageRepositoryDoLayer,
+  MailboxOutboundDeliveryRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
+import { MailboxOutboundDeliveryReadingClockSystemLayer } from "#/modules/mailbox/adapters/system/MailboxOutboundDeliveryReadingClockSystem";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxDraftReading } from "#/modules/mailbox/application/MailboxDraftReading";
@@ -36,6 +38,7 @@ import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/Ma
 import { MailboxMessageActions } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
+import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 
 import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
@@ -98,10 +101,6 @@ import {
   InboundReplayPreparerDoLive,
 } from "../mailboxes/inbound-replay-do-live";
 import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
-import {
-  MailboxOutboundDeliveryReadingClockLive,
-  MailboxOutboundDeliveryReadingLive,
-} from "../mailboxes/outbound-delivery-reading";
 import { MailboxOutboundSendingLive } from "../mailboxes/outbound-sending";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendRequestContextMiddlewareLive } from "../observability/backend-request-live";
@@ -240,6 +239,10 @@ const BackendRoutesLive = Layer.unwrap(
     const mailboxDraftRepositoryDoLayer = MailboxDraftRepositoryDoLayer.pipe(
       Layer.provide(mailboxRepositoryLive)
     );
+    const mailboxOutboundDeliveryRepositoryDoLayer =
+      MailboxOutboundDeliveryRepositoryDoLayer.pipe(
+        Layer.provide(mailboxRepositoryLive)
+      );
     const resourceResolverLive = MailResourceResolverLive.pipe(
       Layer.provide(mailboxRepositoryLive)
     );
@@ -293,12 +296,12 @@ const BackendRoutesLive = Layer.unwrap(
       )
     );
     const mailboxOutboundDeliveryReadingLive =
-      MailboxOutboundDeliveryReadingLive.pipe(
+      MailboxOutboundDeliveryReading.layerNoDeps.pipe(
         Layer.provide(
           Layer.mergeAll(
             mailAuthorizationLive,
-            mailboxRepositoryLive,
-            MailboxOutboundDeliveryReadingClockLive
+            mailboxOutboundDeliveryRepositoryDoLayer,
+            MailboxOutboundDeliveryReadingClockSystemLayer
           )
         )
       );

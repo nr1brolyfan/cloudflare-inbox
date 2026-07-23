@@ -33,6 +33,10 @@ import {
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import {
+  GetMailboxOutboundDeliveryQuery,
+  GetMailboxOutboundDeliveryResult,
+} from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import {
   DraftAttachmentUploadResult,
   ReserveDraftAttachmentCommand,
   ReservedDraftAttachment,
@@ -63,10 +67,6 @@ import {
   ReplayInboundInput,
 } from "../mailboxes/inbound";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
-import {
-  GetMailboxOutboundDeliveryQuery,
-  GetMailboxOutboundDeliveryResult,
-} from "../mailboxes/outbound-delivery-reading";
 import {
   SendMailboxDraftCommand,
   SendMailboxDraftResult,

@@ -27,6 +27,8 @@ import type { MailboxMessageHtmlError } from "#/modules/mailbox/application/Mail
 import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import type { MailboxMessageReadingError } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
+import type { MailboxOutboundDeliveryReadingError } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
@@ -45,8 +47,6 @@ import {
   CurrentMailboxOperationProvenance,
   ExplicitUserAction,
 } from "../mailboxes/operation-provenance";
-import type { MailboxOutboundDeliveryReadingError } from "../mailboxes/outbound-delivery-reading";
-import { MailboxOutboundDeliveryReading } from "../mailboxes/outbound-delivery-reading";
 import type { MailboxOutboundSendingError } from "../mailboxes/outbound-sending";
 import { MailboxOutboundSending } from "../mailboxes/outbound-sending";
 import { BackendHttpApi } from "./api";

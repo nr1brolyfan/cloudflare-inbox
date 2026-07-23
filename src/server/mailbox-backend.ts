@@ -27,6 +27,8 @@ import {
   MailboxMessageListResult,
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import type { GetMailboxOutboundDeliveryQuery } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import { GetMailboxOutboundDeliveryResult } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type {
   DraftAttachmentReservationSchema,
   ReserveDraftAttachmentCommand,
@@ -46,8 +48,6 @@ import type {
 } from "../mailboxes/administration";
 import { MailboxRecordSchema } from "../mailboxes/core";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
-import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
-import { GetMailboxOutboundDeliveryResult } from "../mailboxes/outbound-delivery-reading";
 import type {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,

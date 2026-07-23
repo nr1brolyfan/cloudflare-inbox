@@ -16,6 +16,7 @@ import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import type { GetMailboxOutboundDeliveryQuery } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type {
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
@@ -25,7 +26,6 @@ import type {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
-import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import type {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,

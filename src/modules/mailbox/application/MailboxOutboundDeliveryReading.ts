@@ -1,3 +1,4 @@
+/* oxlint-disable max-classes-per-file -- Result, error and service form one cohesive use case. */
 import type { CurrentPrincipal } from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
@@ -5,13 +6,17 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailAuthorization } from "../authorization/mail-authorization";
-import { UnixMillis } from "./core";
-import { MailboxDomainError } from "./errors";
-import type { MailboxRepositoryError } from "./errors";
-import { GetOutboundDeliveryInput, OutboundDeliverySchema } from "./outbound";
-import { MailboxRepository } from "./repository";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
+import { UnixMillis } from "#/mailboxes/core";
+import { MailboxDomainError } from "#/mailboxes/errors";
+import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import {
+  GetOutboundDeliveryInput,
+  OutboundDeliverySchema,
+} from "#/mailboxes/outbound";
+import { MailboxOutboundDeliveryReadingClock } from "#/modules/mailbox/ports/MailboxOutboundDeliveryReadingClock";
+import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
 
 export const GetMailboxOutboundDeliveryQuery = GetOutboundDeliveryInput;
 export type GetMailboxOutboundDeliveryQuery = Schema.Schema.Type<
@@ -34,7 +39,7 @@ export class MailboxOutboundDeliveryReadingError extends Data.TaggedError(
   readonly reason: "not-found" | "storage";
 }> {}
 
-export interface MailboxOutboundDeliveryReading {
+export interface MailboxOutboundDeliveryReadingService {
   readonly get: (
     query: GetMailboxOutboundDeliveryQuery
   ) => Effect.Effect<
@@ -43,26 +48,6 @@ export interface MailboxOutboundDeliveryReading {
     CurrentPrincipal
   >;
 }
-
-export const MailboxOutboundDeliveryReading =
-  Context.Service<MailboxOutboundDeliveryReading>(
-    "cloudflare-inbox/MailboxOutboundDeliveryReading"
-  );
-
-export interface MailboxOutboundDeliveryReadingClock {
-  readonly now: () => number;
-}
-
-/** Explicit clock used to produce the client-visible observation time. */
-export const MailboxOutboundDeliveryReadingClock =
-  Context.Service<MailboxOutboundDeliveryReadingClock>(
-    "cloudflare-inbox/MailboxOutboundDeliveryReadingClock"
-  );
-
-export const MailboxOutboundDeliveryReadingClockLive = Layer.succeed(
-  MailboxOutboundDeliveryReadingClock,
-  MailboxOutboundDeliveryReadingClock.of({ now: Date.now })
-);
 
 const readingError = (
   reason: MailboxOutboundDeliveryReadingError["reason"],
@@ -84,14 +69,16 @@ const mapRepositoryError = (
     ? readingError("not-found")
     : readingError("storage", error);
 
-export const MailboxOutboundDeliveryReadingLive = Layer.effect(
+export class MailboxOutboundDeliveryReading extends Context.Service<
   MailboxOutboundDeliveryReading,
-  Effect.gen(function* () {
+  MailboxOutboundDeliveryReadingService
+>()("cloudflare-inbox/MailboxOutboundDeliveryReading", {
+  make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
     const clock = yield* MailboxOutboundDeliveryReadingClock;
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxOutboundDeliveryRepository;
 
-    return MailboxOutboundDeliveryReading.of({
+    return {
       get: (query) =>
         Effect.gen(function* () {
           yield* authorization.requireMailboxDraftSend({
@@ -114,6 +101,8 @@ export const MailboxOutboundDeliveryReadingLive = Layer.effect(
           ).pipe(Effect.mapError((cause) => readingError("storage", cause)));
           return { delivery, serverNow };
         }),
-    });
-  })
-);
+    } satisfies MailboxOutboundDeliveryReadingService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

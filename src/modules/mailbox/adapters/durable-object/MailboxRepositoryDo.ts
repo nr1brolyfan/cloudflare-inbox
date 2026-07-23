@@ -5,6 +5,7 @@ import { MailboxRepository } from "#/mailboxes/repository";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
+import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
 
 /** Incremental projections over the existing aggregate DO transport adapter. */
 export const MailboxMessageRepositoryDoLayer = Layer.effect(
@@ -47,6 +48,16 @@ export const MailboxDraftRepositoryDoLayer = Layer.effect(
       listDrafts: repository.listDrafts,
       reserveDraftAttachment: repository.reserveDraftAttachment,
       updateDraft: repository.updateDraft,
+    });
+  })
+);
+
+export const MailboxOutboundDeliveryRepositoryDoLayer = Layer.effect(
+  MailboxOutboundDeliveryRepository,
+  Effect.gen(function* () {
+    const repository = yield* MailboxRepository;
+    return MailboxOutboundDeliveryRepository.of({
+      getOutboundDelivery: repository.getOutboundDelivery,
     });
   })
 );

@@ -12,11 +12,11 @@ import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import {
   GetMailboxOutboundDeliveryQuery,
   MailboxOutboundDeliveryReading,
-  MailboxOutboundDeliveryReadingClock,
-  MailboxOutboundDeliveryReadingLive,
-} from "#/mailboxes/outbound-delivery-reading";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
+} from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import type { MailboxOutboundDeliveryReadingService } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import { MailboxOutboundDeliveryReadingClock } from "#/modules/mailbox/ports/MailboxOutboundDeliveryReadingClock";
+import type { MailboxOutboundDeliveryRepositoryService } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
+import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
 
 const delivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
   attemptCount: 0,
@@ -38,44 +38,10 @@ const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
 const repositoryWith = (
-  overrides: Partial<MailboxRepositoryService>
-): MailboxRepositoryService =>
-  MailboxRepository.of({
-    addMessageLabel: unused,
-    cancelOutboundDelivery: unused,
-    completeDraftAttachment: unused,
-    createDraft: unused,
-    createFolder: unused,
-    createLabel: unused,
-    deleteFolder: unused,
-    deleteLabel: unused,
-    findAttachmentLocation: unused,
-    findDraftLocation: unused,
-    findFolderLocation: unused,
-    findMessageLocation: unused,
-    findRuleLocation: unused,
-    getAttachmentBlob: unused,
-    getDraft: unused,
-    getDraftAttachment: unused,
-    getMessage: unused,
+  overrides: Partial<MailboxOutboundDeliveryRepositoryService>
+): MailboxOutboundDeliveryRepositoryService =>
+  MailboxOutboundDeliveryRepository.of({
     getOutboundDelivery: unused,
-    getThread: unused,
-    listDraftAttachments: unused,
-    listDrafts: unused,
-    listFolders: unused,
-    listLabels: unused,
-    listMessages: unused,
-    moveMessage: unused,
-    removeMessageLabel: unused,
-    reserveDraftAttachment: unused,
-    renameFolder: unused,
-    renameLabel: unused,
-    resendOutbound: unused,
-    scheduleOutbound: unused,
-    searchMessages: unused,
-    setMessageRead: unused,
-    setMessageStarred: unused,
-    updateDraft: unused,
     ...overrides,
   });
 
@@ -100,20 +66,20 @@ const authorizationWith = (
 
 const runReading = <A>(
   authorization: MailAuthorizationService,
-  repository: MailboxRepositoryService,
+  repository: MailboxOutboundDeliveryRepositoryService,
   use: (
-    service: MailboxOutboundDeliveryReading
+    service: MailboxOutboundDeliveryReadingService
   ) => Effect.Effect<A, unknown, AuthPermission.CurrentPrincipal>
 ) =>
   Effect.runPromise(
     MailboxOutboundDeliveryReading.pipe(
       Effect.flatMap(use),
       Effect.provide(
-        MailboxOutboundDeliveryReadingLive.pipe(
+        MailboxOutboundDeliveryReading.layerNoDeps.pipe(
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(MailAuthorization, authorization),
-              Layer.succeed(MailboxRepository, repository),
+              Layer.succeed(MailboxOutboundDeliveryRepository, repository),
               Layer.succeed(
                 MailboxOutboundDeliveryReadingClock,
                 MailboxOutboundDeliveryReadingClock.of({ now: () => 2500 })
