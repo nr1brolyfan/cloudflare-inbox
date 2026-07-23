@@ -592,6 +592,85 @@ describe("mailbox administration", () => {
     }
   });
 
+  it("rejects a distinct second owner bootstrap without partial writes", async () => {
+    const database = new DatabaseSync(":memory:");
+    const operationB = "00000000-0000-4000-8000-000000000020";
+
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard-a"));
+
+      const error = await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "bootstrap-guard-b",
+          "user-a@example.test",
+          operationB
+        ).pipe(Effect.flip)
+      );
+
+      expect(error).toBeInstanceOf(MailboxAdministrationError);
+      expect(error).toMatchObject({
+        operation: "bootstrap-owner",
+        reason: "conflict",
+      });
+      expect({
+        adminAudits: countRows(database, "app_administrative_audit_event"),
+        authorizationGuards: countRows(database, "app_authorization_guard"),
+        mailboxReceipts: countRows(
+          database,
+          "app_mailbox_administration_receipt"
+        ),
+        mailboxes: countRows(database, "app_mailbox"),
+        members: countRows(database, "app_mailbox_member"),
+        ownerGrants: (
+          database
+            .prepare(
+              `select count(*) as count
+                 from auth_role_grant
+                where role_id = ? and scope_type = 'mailbox'
+                  and scope_id = 'primary' and subject_id = 'user-a'`
+            )
+            .get(MailRole.owner) as { count: number }
+        ).count,
+        primaryAddresses: (
+          database
+            .prepare(
+              `select count(*) as count
+                 from app_mailbox_address
+                where mailbox_id = 'primary' and is_primary = 1`
+            )
+            .get() as { count: number }
+        ).count,
+      }).toStrictEqual({
+        adminAudits: 1,
+        authorizationGuards: 0,
+        mailboxReceipts: 1,
+        mailboxes: 1,
+        members: 1,
+        ownerGrants: 1,
+        primaryAddresses: 1,
+      });
+      expect(
+        database
+          .prepare(
+            `select
+               (select count(*) from app_mailbox_administration_receipt
+                 where operation_id = ?) as receipts,
+               (select count(*) from app_administrative_audit_event
+                 where operation_id = ?) as audits`
+          )
+          .get(operationB, operationB)
+      ).toMatchObject({ audits: 0, receipts: 0 });
+    } finally {
+      database.close();
+    }
+  });
+
   it("returns an exact bootstrap replay before step-up checks", async () => {
     const database = new DatabaseSync(":memory:");
     try {

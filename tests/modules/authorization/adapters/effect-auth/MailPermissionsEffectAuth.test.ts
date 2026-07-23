@@ -58,11 +58,15 @@ describe("D1 mail authorization", () => {
         database
           .prepare(
             `insert into app_mailbox
-              (id, display_name, status, created_by_user_id, created_at, updated_at)
-             values (?, ?, ?, ?, ?, ?)`
+              (id, display_name, status, created_by_user_id, created_at,
+               updated_at, deleted_at, version)
+             values (?, ?, ?, ?, ?, ?, ?, ?)`
           )
-          .run("mailbox-b", "Broken", "deleted", "user-a", 1, 1)
-      ).toThrow(/constraint/iu);
+          .run("mailbox-b", "Second Inbox", "active", "user-a", 2, 2, null, 1)
+      ).toThrow(/UNIQUE constraint failed: index 'app_mailbox_singleton_idx'/u);
+      expect(
+        database.prepare("select count(*) as count from app_mailbox").get()
+      ).toMatchObject({ count: 1 });
       expect(() =>
         database
           .prepare(
