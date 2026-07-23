@@ -3,14 +3,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
 import {
   attachment,
   message,
   outboundDelivery,
-} from "#/mailboxes/sqlite-schema";
-import { MailboxDatabase, MailboxIdentity } from "#/mailboxes/sqlite-services";
+} from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailAddress } from "#/modules/mailbox/domain/Mailbox";
 import type { OutboundDeliveryId } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import {
   MailboxOutboundDispatchStore,
   OutboundDispatchSnapshotError,

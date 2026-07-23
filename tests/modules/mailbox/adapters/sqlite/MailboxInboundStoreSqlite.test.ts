@@ -12,6 +12,11 @@ import {
   RecordInboundProcessingV1,
   ReplayInboundInput,
 } from "#/mailboxes/inbound";
+import { MailboxDoHandler } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
+import { MailboxInboundStore } from "#/modules/mailbox/adapters/sqlite/MailboxInboundStoreSqlite";
+import { MailboxMessageStore } from "#/modules/mailbox/adapters/sqlite/MailboxMessageStoreSqlite";
+import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
+import { MailboxRuntime } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteRuntime";
 import {
   asyncRuleJob,
   attachment,
@@ -23,22 +28,15 @@ import {
   messageLabel,
   ruleApplication,
   ruleEvaluation,
-} from "#/mailboxes/sqlite-schema";
-import {
-  MailboxDatabase,
-  MailboxIdentity,
-  MailboxInboundStore,
-  MailboxMessageStore,
-  MailboxRuntime,
-} from "#/mailboxes/sqlite-services";
-import { MailboxDoHandler } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
+} from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 
 import {
   MailboxDatabaseTestLive,
   MailboxDoHandlerTestLive,
   MailboxStoresTestLive,
-} from "../support/mailbox-sqlite";
+} from "../../../../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
 

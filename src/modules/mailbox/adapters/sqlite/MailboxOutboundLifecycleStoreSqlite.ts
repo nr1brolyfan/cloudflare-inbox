@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { outboundDelivery } from "#/mailboxes/sqlite-schema";
-import { MailboxDatabase } from "#/mailboxes/sqlite-services";
+import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
+import { outboundDelivery } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
 import {
   MailboxOutboundLifecycleStore,

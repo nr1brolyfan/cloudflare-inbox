@@ -12,33 +12,24 @@ import {
   OutboundEmailProviderCloudflareLayer,
 } from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
 import { OutboundDraftAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
+import { MailboxDirectoryStore } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
+import { MailboxResourceIndex } from "#/modules/mailbox/adapters/sqlite/MailboxResourceIndexSqlite";
+import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
+import { mailboxSchemaVersion } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteMigrations";
+import { mailboxSchemaMigration } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxOutboundAlarmDispatch } from "#/modules/mailbox/application/MailboxOutboundAlarmDispatch";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import { MailboxOutboundAlarmLayer } from "#/modules/mailbox/layers/MailboxOutboundAlarmLayer";
+import {
+  MailboxSqliteInfrastructureLayer,
+  MailboxSqliteLayer,
+} from "#/modules/mailbox/layers/MailboxSqliteLayer";
 import { MailboxOutboundLifecycleStore } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
 import {
   MailboxDoOutboundBindings,
   MailboxDoOutboundBindingsLive,
 } from "./mailbox-do-outbound-bindings-live";
-import { mailboxSchemaVersion } from "./sqlite-migrations";
-import { mailboxSchemaMigration } from "./sqlite-schema";
-import {
-  MailboxDatabase,
-  MailboxDatabaseLive,
-  MailboxDirectoryStore,
-  MailboxDirectoryStoreLive,
-  MailboxDraftStoreLive,
-  MailboxDraftAttachmentStoreLive,
-  MailboxIdentityLive,
-  MailboxInboundStoreLive,
-  MailboxMessageStoreLive,
-  MailboxOperationStoreLive,
-  MailboxOutboundStoreLive,
-  MailboxResourceIndex,
-  MailboxResourceIndexLive,
-  MailboxRuntimeLive,
-} from "./sqlite-services";
 
 const mailboxDoImplementation = Effect.gen(function* () {
   const database = yield* MailboxDatabase;
@@ -77,30 +68,6 @@ const mailboxDoImplementation = Effect.gen(function* () {
       }).pipe(Effect.orDie),
   };
 });
-
-const MailboxInfrastructureLive = Layer.mergeAll(
-  MailboxDatabaseLive,
-  MailboxRuntimeLive,
-  MailboxIdentityLive
-);
-
-const MailboxStoresLive = Layer.mergeAll(
-  MailboxResourceIndexLive,
-  MailboxDirectoryStoreLive,
-  MailboxMessageStoreLive,
-  MailboxInboundStoreLive,
-  MailboxDraftStoreLive,
-  MailboxDraftAttachmentStoreLive,
-  MailboxOutboundStoreLive
-).pipe(
-  Layer.provide(MailboxOperationStoreLive),
-  Layer.provide(MailboxInfrastructureLive)
-);
-
-const MailboxSqliteLive = Layer.merge(
-  MailboxInfrastructureLive,
-  MailboxStoresLive
-);
 
 const mailboxDoLive = Effect.gen(function* () {
   const bindings = yield* MailboxDoOutboundBindings;
@@ -167,20 +134,20 @@ const mailboxDoLive = Effect.gen(function* () {
   const outboundAlarmLive = MailboxOutboundAlarmLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        MailboxInfrastructureLive,
+        MailboxSqliteInfrastructureLayer,
         outboundAttachmentClientLive,
         outboundProviderLive
       )
     )
   );
   const mailboxHandlerLive = MailboxDoHandlerLayer.pipe(
-    Layer.provide(Layer.merge(MailboxSqliteLive, outboundAlarmLive))
+    Layer.provide(Layer.merge(MailboxSqliteLayer, outboundAlarmLive))
   );
 
   return mailboxDoImplementation.pipe(
     Effect.orDie,
     Effect.provide(
-      Layer.mergeAll(MailboxSqliteLive, mailboxHandlerLive, outboundAlarmLive)
+      Layer.mergeAll(MailboxSqliteLayer, mailboxHandlerLive, outboundAlarmLive)
     )
   );
 }).pipe(Effect.provide(MailboxDoOutboundBindingsLive), Effect.orDie);

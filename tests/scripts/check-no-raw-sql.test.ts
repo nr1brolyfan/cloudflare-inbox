@@ -100,7 +100,7 @@ describe("raw SQL source policy", () => {
   it("allows storage SQL execution in mailbox migrations", () => {
     expect(
       checkSourcePolicy(
-        "src/mailboxes/sqlite-migrations.ts",
+        "src/modules/mailbox/adapters/sqlite/MailboxSqliteMigrations.ts",
         "storage.sql.exec(statement);"
       )
     ).toStrictEqual([]);
@@ -244,7 +244,7 @@ describe("raw SQL source policy", () => {
       source: 'database.batch([{ sql: "select 1", params: [] }]);',
     },
     {
-      file: "src/mailboxes/sqlite-migrations.ts",
+      file: "src/modules/mailbox/adapters/sqlite/MailboxSqliteMigrations.ts",
       message: messages.native,
       source: "database.prepare(query.sql);",
     },

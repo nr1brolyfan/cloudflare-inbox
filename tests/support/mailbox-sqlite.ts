@@ -9,20 +9,18 @@ import * as DrizzleNode from "drizzle-orm/effect-sqlite-node";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { applyMailboxMigrations } from "#/mailboxes/sqlite-migrations";
-import { mailboxRelations } from "#/mailboxes/sqlite-schema";
-import {
-  MailboxDatabase,
-  MailboxDirectoryStoreLive,
-  MailboxDraftAttachmentStoreLive,
-  MailboxDraftStoreLive,
-  MailboxInboundStoreLive,
-  MailboxMessageStoreLive,
-  MailboxOperationStoreLive,
-  MailboxOutboundStoreLive,
-  MailboxResourceIndexLive,
-} from "#/mailboxes/sqlite-services";
 import { MailboxDoHandlerLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
+import { MailboxDirectoryStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
+import { MailboxDraftAttachmentStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDraftAttachmentStoreSqlite";
+import { MailboxDraftStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDraftStoreSqlite";
+import { MailboxInboundStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxInboundStoreSqlite";
+import { MailboxMessageStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxMessageStoreSqlite";
+import { MailboxOperationStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOperationStoreSqlite";
+import { MailboxOutboundStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundStoreSqlite";
+import { MailboxResourceIndexSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxResourceIndexSqlite";
+import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
+import { applyMailboxMigrations } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteMigrations";
+import { mailboxRelations } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 
 const acquireDatabase = () => {
@@ -87,14 +85,14 @@ export const MailboxDatabaseTestLive = Layer.unwrap(
 
 /** All SQLite mailbox stores; callers provide database, identity, and runtime. */
 export const MailboxStoresTestLive = Layer.mergeAll(
-  MailboxResourceIndexLive,
-  MailboxDirectoryStoreLive,
-  MailboxMessageStoreLive,
-  MailboxInboundStoreLive,
-  MailboxDraftStoreLive,
-  MailboxDraftAttachmentStoreLive,
-  MailboxOutboundStoreLive
-).pipe(Layer.provide(MailboxOperationStoreLive));
+  MailboxResourceIndexSqliteLayer,
+  MailboxDirectoryStoreSqliteLayer,
+  MailboxMessageStoreSqliteLayer,
+  MailboxInboundStoreSqliteLayer,
+  MailboxDraftStoreSqliteLayer,
+  MailboxDraftAttachmentStoreSqliteLayer,
+  MailboxOutboundStoreSqliteLayer
+).pipe(Layer.provide(MailboxOperationStoreSqliteLayer));
 
 /** SQLite stores plus the in-process Durable Object protocol handler. */
 export const MailboxDoHandlerTestLive = MailboxDoHandlerLayer.pipe(

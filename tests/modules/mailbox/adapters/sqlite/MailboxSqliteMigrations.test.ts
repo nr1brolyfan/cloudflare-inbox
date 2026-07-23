@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   applyMailboxMigrations,
   mailboxSchemaVersion,
-} from "#/mailboxes/sqlite-migrations";
+} from "#/modules/mailbox/adapters/sqlite/MailboxSqliteMigrations";
 
 const makeStorage = (database: DatabaseSync) => ({
   transactionSync: <A>(run: () => A) => {

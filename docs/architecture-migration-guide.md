@@ -211,7 +211,7 @@ export const MailboxMessageRepositoryDoLayer = Layer.effect(
 
 File length alone is not a split criterion. Prefer fewer, longer, self-contained modules with one reason to change.
 
-Acceptable long modules: one domain topic, one use case including projections/error/service/make, one wire protocol, one transport client, or one cohesive page controller. Split modules that combine independent stores/features/lifetimes. In particular, split the current `mailboxes/sqlite-services.ts` by existing store seams; narrow the current broad `MailboxRepository` by consumer capability, while allowing one DO adapter/transport to implement several narrow ports.
+Acceptable long modules: one domain topic, one use case including projections/error/service/make, one wire protocol, one transport client, or one cohesive page controller. Split modules that combine independent stores/features/lifetimes. Keep mailbox SQLite persistence split by its existing store seams; narrow the current broad `MailboxRepository` by consumer capability, while allowing one DO adapter/transport to implement several narrow ports.
 
 Avoid one-file-per-schema/error/interface. Also avoid generic names such as `Core.ts`, `Utils.ts`, `Services.ts`, `Interfaces.ts`, or `Errors.ts` when a precise PascalCase topic name exists.
 

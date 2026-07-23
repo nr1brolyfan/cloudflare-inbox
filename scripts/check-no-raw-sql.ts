@@ -7,7 +7,8 @@ import * as ts from "typescript";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const sourceDirectory = path.join(root, "src");
 const nativeD1AdapterFile = "src/control-plane/batch.ts";
-const storageSqlExecutionFile = "src/mailboxes/sqlite-migrations.ts";
+const storageSqlExecutionFile =
+  "src/modules/mailbox/adapters/sqlite/MailboxSqliteMigrations.ts";
 const controlPlaneD1BindingFiles = new Set([
   "src/auth/storage-live.ts",
   "src/control-plane/batch.ts",

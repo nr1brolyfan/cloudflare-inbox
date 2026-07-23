@@ -8,6 +8,11 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { MailboxDirectoryStore } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
+import { MailboxResourceIndex } from "#/modules/mailbox/adapters/sqlite/MailboxResourceIndexSqlite";
+import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
+import { MailboxRuntime } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteRuntime";
+import type { MailboxRuntime as MailboxRuntimeType } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteRuntime";
 import {
   attachment,
   draft,
@@ -19,15 +24,7 @@ import {
   message,
   messageLabel,
   outboundDelivery,
-} from "#/mailboxes/sqlite-schema";
-import {
-  MailboxDatabase,
-  MailboxDirectoryStore,
-  MailboxIdentity,
-  MailboxResourceIndex,
-  MailboxRuntime,
-} from "#/mailboxes/sqlite-services";
-import type { MailboxRuntime as MailboxRuntimeType } from "#/mailboxes/sqlite-services";
+} from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateFolderInput,
@@ -39,11 +36,12 @@ import {
 } from "#/modules/mailbox/domain/MailboxDirectory";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxResourceLookup } from "#/modules/mailbox/domain/MailboxResource";
+import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 
 import {
   MailboxDatabaseTestLive,
   MailboxStoresTestLive,
-} from "../support/mailbox-sqlite";
+} from "../../../../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
 const initializationRuntime = MailboxRuntime.of({

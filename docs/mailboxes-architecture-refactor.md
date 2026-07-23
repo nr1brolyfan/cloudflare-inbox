@@ -13,12 +13,27 @@ src/modules/mailbox/
   domain/                 # mailbox entities, value objects and domain errors
   application/            # mailbox use cases
   ports/                  # narrow, consumer-facing repository capabilities
+    MailboxIdentity.ts
   adapters/durable-object/
     MailboxDoProtocol.ts  # stable Durable Object request/response schemas
     MailboxDoClient.ts    # registry-gated Worker-side transport
     MailboxRepositoryDo.ts # direct narrow-port adapters
     MailboxDoHandler.ts   # Durable Object-side protocol adapter
-
+    MailboxIdentityDo.ts  # canonical identity from the addressed DO name
+  adapters/sqlite/
+    MailboxSqliteSchema.ts
+    MailboxSqliteMigrations.ts
+    MailboxSqliteDatabase.ts
+    MailboxOperationStoreSqlite.ts
+    MailboxDirectoryStoreSqlite.ts
+    MailboxResourceIndexSqlite.ts
+    MailboxMessageStoreSqlite.ts
+    MailboxInboundStoreSqlite.ts
+    MailboxDraftStoreSqlite.ts
+    MailboxDraftAttachmentStoreSqlite.ts
+    MailboxOutboundStoreSqlite.ts
+  layers/
+    MailboxSqliteLayer.ts
 src/modules/authorization/ports/
   MailboxResourceRepository.ts # trusted resource ancestry capability
 
@@ -27,9 +42,6 @@ src/modules/organization/
   adapters/d1/MailboxRegistryD1.ts
 
 src/mailboxes/
-  sqlite-schema.ts        # Drizzle schema
-  sqlite-migrations.ts    # synchronous Durable Object migrations
-  sqlite-services.ts      # cohesive DO-side SQLite stores
   mailbox-do.ts           # thin Durable Object composition root
 
 src/control-plane/
@@ -64,7 +76,7 @@ Loose groups of SQLite functions become internal services:
 - `MailboxRuntime`
 - `MailboxIdentity`
 
-Their implementations and named `XLive` layers may share the larger `sqlite-services.ts` module. Database access, time, ID generation, and canonical mailbox identity must be acquired from Effect context rather than passed manually.
+Their SQLite implementations are separated by store seam under `adapters/sqlite`. Database access, time, ID generation, and canonical mailbox identity must be acquired from Effect context rather than passed manually.
 
 `MailboxOperationStoreLive` captures `MailboxDatabase` once and exposes environment-free replay and persistence methods. Directory, draft, and outbound store layers acquire this shared service explicitly; operation-ID behavior is not hidden in standalone database helpers.
 

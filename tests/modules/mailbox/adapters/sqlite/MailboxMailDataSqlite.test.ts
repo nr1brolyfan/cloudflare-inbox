@@ -7,26 +7,6 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  attachment,
-  draft,
-  draftAttachment,
-  folder,
-  label,
-  message,
-  messageLabel,
-  outboundDelivery,
-} from "#/mailboxes/sqlite-schema";
-import {
-  MailboxDatabase,
-  MailboxDirectoryStore,
-  MailboxDraftStore,
-  MailboxDraftAttachmentStore,
-  MailboxIdentity,
-  MailboxMessageStore,
-  MailboxOutboundStore,
-  MailboxRuntime,
-} from "#/mailboxes/sqlite-services";
-import {
   MailboxDoClientLayer,
   MailboxDoNamespace,
 } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
@@ -36,6 +16,23 @@ import {
 } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
 import { MailDataRpcResponse } from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
 import { MailboxDraftRepositoryDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
+import { MailboxDirectoryStore } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
+import { MailboxDraftAttachmentStore } from "#/modules/mailbox/adapters/sqlite/MailboxDraftAttachmentStoreSqlite";
+import { MailboxDraftStore } from "#/modules/mailbox/adapters/sqlite/MailboxDraftStoreSqlite";
+import { MailboxMessageStore } from "#/modules/mailbox/adapters/sqlite/MailboxMessageStoreSqlite";
+import { MailboxOutboundStore } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundStoreSqlite";
+import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
+import { MailboxRuntime } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteRuntime";
+import {
+  attachment,
+  draft,
+  draftAttachment,
+  folder,
+  label,
+  message,
+  messageLabel,
+  outboundDelivery,
+} from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import { MailAddress, MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
@@ -68,13 +65,14 @@ import {
   outboundUndoWindowMillis,
 } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
+import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 
 import {
   MailboxDatabaseTestLive,
   MailboxDoHandlerTestLive,
   MailboxStoresTestLive,
-} from "../support/mailbox-sqlite";
+} from "../../../../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
 const sender = Schema.decodeUnknownSync(MailAddress)({

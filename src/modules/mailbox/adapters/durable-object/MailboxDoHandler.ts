@@ -4,16 +4,13 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import {
-  MailboxDirectoryStore,
-  MailboxDraftAttachmentStore,
-  MailboxDraftStore,
-  MailboxIdentity,
-  MailboxInboundStore,
-  MailboxMessageStore,
-  MailboxOutboundStore,
-  MailboxResourceIndex,
-} from "#/mailboxes/sqlite-services";
+import { MailboxDirectoryStore } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
+import { MailboxDraftAttachmentStore } from "#/modules/mailbox/adapters/sqlite/MailboxDraftAttachmentStoreSqlite";
+import { MailboxDraftStore } from "#/modules/mailbox/adapters/sqlite/MailboxDraftStoreSqlite";
+import { MailboxInboundStore } from "#/modules/mailbox/adapters/sqlite/MailboxInboundStoreSqlite";
+import { MailboxMessageStore } from "#/modules/mailbox/adapters/sqlite/MailboxMessageStoreSqlite";
+import { MailboxOutboundStore } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundStoreSqlite";
+import { MailboxResourceIndex } from "#/modules/mailbox/adapters/sqlite/MailboxResourceIndexSqlite";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
@@ -21,6 +18,7 @@ import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
 } from "#/modules/mailbox/domain/MailboxResource";
+import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 
 import {
   DirectoryRpcRequest,
