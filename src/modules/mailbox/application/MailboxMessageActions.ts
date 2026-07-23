@@ -6,8 +6,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   FolderId,
   MailboxId,
@@ -16,6 +14,8 @@ import {
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type { MessageMutationResult } from "#/modules/mailbox/domain/MailboxMessage";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
@@ -100,7 +100,7 @@ export interface MailboxMessageActionsService {
     command: MailboxMessageActionCommand
   ) => Effect.Effect<
     MailboxMessageActionResult,
-    MailAuthorizationError | MailboxMessageActionError,
+    MailboxAuthorizationError | MailboxMessageActionError,
     CurrentPrincipal
   >;
 }
@@ -155,7 +155,7 @@ export class MailboxMessageActions extends Context.Service<
   MailboxMessageActionsService
 >()("cloudflare-inbox/MailboxMessageActions", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const directory = yield* MailboxDirectoryRepository;
     const messages = yield* MailboxMessageRepository;
 

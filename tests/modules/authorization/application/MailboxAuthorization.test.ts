@@ -7,13 +7,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailPermission } from "#/authorization/catalog";
-import type { MailboxAction } from "#/authorization/mail-authorization";
-import {
-  MailAuthorization,
-  MailAuthorizationLive,
-} from "#/authorization/mail-authorization";
-import * as Resources from "#/authorization/resources";
+import { MailboxAuthorizationApplicationLayer } from "#/modules/authorization/application/MailboxAuthorization";
+import { MailPermission } from "#/modules/authorization/domain/MailPermissionCatalog";
+import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
+import type { TrustedMailResourceResolverService } from "#/modules/authorization/ports/TrustedMailResourceResolver";
 import {
   AttachmentLookup,
   AttachmentLocation,
@@ -27,6 +24,15 @@ import {
   RuleLookup,
   RuleLocation,
 } from "#/modules/mailbox/domain/MailboxResource";
+import {
+  MailboxAuthorization,
+  MailResourceResolveError,
+} from "#/modules/mailbox/ports/MailboxAuthorization";
+import type {
+  MailboxAction,
+  MailboxAuthorizationService,
+} from "#/modules/mailbox/ports/MailboxAuthorization";
+import type * as Resources from "#/modules/mailbox/ports/MailboxAuthorization";
 
 const principal = AuthPermission.PermissionSubject.make("user", "user-a");
 const mailboxRef: Resources.MailboxRef = Schema.decodeUnknownSync(
@@ -81,9 +87,9 @@ const folderPermission = (
 ) => permissionKey(permission, "folder", JSON.stringify([mailboxId, folderId]));
 
 const makeResolver = (
-  overrides: Partial<Resources.MailResourceResolver> = {}
+  overrides: Partial<TrustedMailResourceResolverService> = {}
 ) =>
-  Resources.MailResourceResolver.of({
+  TrustedMailResourceResolver.of({
     resolveAttachment: (resource) =>
       Effect.succeed(
         Schema.decodeUnknownSync(AttachmentLocation)({
@@ -165,22 +171,24 @@ const makePermissions = (
 };
 
 const authorizationEffect = <A, E>(
-  resolver: Resources.MailResourceResolver,
+  resolver: TrustedMailResourceResolverService,
   permissions: AuthPermission.PermissionsService,
   use: (
-    authorization: MailAuthorization
+    authorization: MailboxAuthorizationService
   ) => Effect.Effect<A, E, AuthPermission.CurrentPrincipal>
 ) => {
   const dependenciesLive = Layer.merge(
-    Layer.succeed(Resources.MailResourceResolver, resolver),
+    Layer.succeed(TrustedMailResourceResolver, resolver),
     Layer.succeed(AuthPermission.Permissions, permissions)
   );
 
   return Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     return yield* use(authorization);
   }).pipe(
-    Effect.provide(MailAuthorizationLive.pipe(Layer.provide(dependenciesLive))),
+    Effect.provide(
+      MailboxAuthorizationApplicationLayer.pipe(Layer.provide(dependenciesLive))
+    ),
     Effect.provideService(
       AuthPermission.CurrentPrincipal,
       AuthPermission.CurrentPrincipal.of(principal)
@@ -189,10 +197,10 @@ const authorizationEffect = <A, E>(
 };
 
 const runAuthorization = <A, E>(
-  resolver: Resources.MailResourceResolver,
+  resolver: TrustedMailResourceResolverService,
   permissions: AuthPermission.PermissionsService,
   use: (
-    authorization: MailAuthorization
+    authorization: MailboxAuthorizationService
   ) => Effect.Effect<A, E, AuthPermission.CurrentPrincipal>
 ) => Effect.runPromise(authorizationEffect(resolver, permissions, use));
 
@@ -444,7 +452,7 @@ describe("mail authorization policies", () => {
 
   it("preserves resolver errors without checking permissions", async () => {
     const fixture = makePermissions([]);
-    const resolutionError = new Resources.MailResourceResolveError({
+    const resolutionError = new MailResourceResolveError({
       message: "Message was not found",
       reason: "not-found",
       resource: messageRef,

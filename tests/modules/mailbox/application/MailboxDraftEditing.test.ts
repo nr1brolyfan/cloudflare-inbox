@@ -5,8 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   CreateMailboxDraftCommand,
   MailboxDraftEditing,
@@ -20,6 +18,8 @@ import {
 } from "#/modules/mailbox/application/MailboxDraftReading";
 import { DraftSchema } from "#/modules/mailbox/domain/MailboxDraft";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import type { MailboxDraftRepositoryService } from "#/modules/mailbox/ports/MailboxDraftRepository";
 
@@ -79,9 +79,9 @@ const repositoryWith = (
   });
 
 const authorizationWith = (
-  overrides: Partial<MailAuthorizationService>
-): MailAuthorizationService =>
-  MailAuthorization.of({
+  overrides: Partial<MailboxAuthorizationService>
+): MailboxAuthorizationService =>
+  MailboxAuthorization.of({
     requireAttachmentRead: unusedAuthorization,
     requireAttachmentUpload: unusedAuthorization,
     requireDraft: unusedAuthorization,
@@ -98,7 +98,7 @@ const authorizationWith = (
   });
 
 const runEditing = <A>(
-  authorization: MailAuthorizationService,
+  authorization: MailboxAuthorizationService,
   repository: MailboxDraftRepositoryService,
   effect: (
     service: MailboxDraftEditingService
@@ -111,7 +111,7 @@ const runEditing = <A>(
         MailboxDraftEditing.layerNoDeps.pipe(
           Layer.provide(
             Layer.merge(
-              Layer.succeed(MailAuthorization, authorization),
+              Layer.succeed(MailboxAuthorization, authorization),
               Layer.succeed(MailboxDraftRepository, repository)
             )
           )
@@ -155,7 +155,7 @@ describe("mailbox draft editing", () => {
             Layer.provide(
               Layer.merge(
                 Layer.succeed(
-                  MailAuthorization,
+                  MailboxAuthorization,
                   authorizationWith({
                     requireDraftCreate: ({ resource }) => {
                       calls.push(`authorize:${resource.mailboxId}`);

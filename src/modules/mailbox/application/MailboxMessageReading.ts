@@ -6,8 +6,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   AttachmentId,
   ByteSize,
@@ -28,6 +26,8 @@ import {
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import { UnixMillis } from "#/shared/Temporal";
@@ -236,21 +236,21 @@ export interface MailboxMessageReadingService {
     input: MailboxMessageListInput
   ) => Effect.Effect<
     MailboxMessageListResult,
-    MailAuthorizationError | MailboxMessageReadingError,
+    MailboxAuthorizationError | MailboxMessageReadingError,
     CurrentPrincipal
   >;
   readonly openThread: (
     input: OpenMailboxThreadInput
   ) => Effect.Effect<
     MailboxThreadResult,
-    MailAuthorizationError | MailboxMessageReadingError,
+    MailboxAuthorizationError | MailboxMessageReadingError,
     CurrentPrincipal
   >;
   readonly readMessage: (
     input: ReadMailboxMessageInput
   ) => Effect.Effect<
     MailboxMessageReadResult,
-    MailAuthorizationError | MailboxMessageReadingError,
+    MailboxAuthorizationError | MailboxMessageReadingError,
     CurrentPrincipal
   >;
 }
@@ -289,7 +289,7 @@ export class MailboxMessageReading extends Context.Service<
   MailboxMessageReadingService
 >()("cloudflare-inbox/MailboxMessageReading", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const repository = yield* MailboxMessageRepository;
 
     const requireRead = (view: MailboxMessageView) =>

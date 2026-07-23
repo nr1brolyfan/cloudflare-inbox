@@ -8,8 +8,6 @@ import * as Schema from "effect/Schema";
 import { parse, serialize } from "parse5";
 import type { DefaultTreeAdapterTypes } from "parse5";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import { isSafeInlineImageMimeType } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import {
   FolderId,
@@ -18,6 +16,8 @@ import {
   MessageId,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
@@ -100,7 +100,7 @@ export interface MailboxMessageHtmlReadingService {
     input: MailboxMessageHtmlInput
   ) => Effect.Effect<
     MailboxMessageHtmlResult,
-    MailAuthorizationError | MailboxMessageHtmlError,
+    MailboxAuthorizationError | MailboxMessageHtmlError,
     CurrentPrincipal
   >;
 }
@@ -310,7 +310,7 @@ export class MailboxMessageHtmlReading extends Context.Service<
   MailboxMessageHtmlReadingService
 >()("cloudflare-inbox/MailboxMessageHtmlReading", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const repository = yield* MailboxMessageRepository;
 
     return {

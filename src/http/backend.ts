@@ -28,7 +28,11 @@ import {
   AdministrativeAuditLayer,
   AdministrativeAuditRuntimeLayer,
 } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
+import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
+import { MailboxAuthorizationLayer } from "#/modules/authorization/layers/MailboxAuthorizationLayer";
+import { MailboxDoClientLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { MailboxHttpLayer } from "#/modules/mailbox/layers/MailboxHttpLayer";
+import { MailboxRegistryD1Layer } from "#/modules/organization/adapters/d1/MailboxRegistryD1";
 
 import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
@@ -52,7 +56,6 @@ import {
   D1DevEmailStoreLive,
   EffectAuthStorageLive,
 } from "../auth/storage-live";
-import { MailPermissionsLive } from "../authorization/permissions-live";
 import { AccountRecoveryLive } from "../control-plane/account-recovery-live";
 import {
   ExternalRecoveryIdentityManagementLive,
@@ -188,10 +191,17 @@ const BackendRoutesLive = Layer.unwrap(
     const administrativeAuditLayer = AdministrativeAuditLayer.pipe(
       Layer.provide(AdministrativeAuditRuntimeLayer)
     );
-    const permissionsLive = MailPermissionsLive.pipe(
+    const permissionsLive = MailPermissionsEffectAuthLayer.pipe(
       Layer.provide(authStorageLive)
     );
+    const mailboxDoClientLayer = MailboxDoClientLayer.pipe(
+      Layer.provide(MailboxRegistryD1Layer)
+    );
+    const mailboxAuthorizationLayer = MailboxAuthorizationLayer.pipe(
+      Layer.provide(mailboxDoClientLayer)
+    );
     const mailboxHttpLayer = MailboxHttpLayer.pipe(
+      Layer.provide(mailboxAuthorizationLayer),
       Layer.provide(permissionsLive),
       Layer.provide(currentRequestAuthLive),
       Layer.provide(BackendRequestContextMiddlewareLive),

@@ -9,6 +9,7 @@ import {
   MailboxId,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import {
   MailboxNavigation,
@@ -16,7 +17,6 @@ import {
   MailboxNavigationResult,
 } from "#/modules/organization/application/MailboxNavigation";
 
-import { MailAuthorization } from "../authorization/mail-authorization";
 import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
 import {
   appMailbox,
@@ -42,7 +42,7 @@ const mapDirectoryError = (error: MailboxDomainError | unknown) =>
 export const MailboxNavigationLive = Layer.effect(
   MailboxNavigation,
   Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const controlPlane = yield* ControlPlaneDatabase;
     const directoryRepository = yield* MailboxDirectoryRepository;
 

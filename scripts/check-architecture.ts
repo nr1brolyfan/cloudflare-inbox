@@ -60,6 +60,7 @@ export const checkArchitectureImports = (
   );
   const violations = new Set<string>();
   const inModules = normalizedFile.startsWith("src/modules/");
+  const inMailbox = normalizedFile.startsWith("src/modules/mailbox/");
   const inDomain = inModules && normalizedFile.includes("/domain/");
   const inApplication = inModules && normalizedFile.includes("/application/");
   const inPorts = inModules && normalizedFile.includes("/ports/");
@@ -73,6 +74,11 @@ export const checkArchitectureImports = (
       if (target !== undefined) {
         if (inModules && target.startsWith("src/apps/")) {
           violations.add("business modules must not import runtime apps");
+        }
+        if (inMailbox && target.startsWith("src/modules/authorization/")) {
+          violations.add(
+            "mailbox must depend on its authorization port, not the authorization context"
+          );
         }
         if (
           (inDomain || inApplication || inPorts) &&

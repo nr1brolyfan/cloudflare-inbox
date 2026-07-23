@@ -6,8 +6,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   MailboxMessageHtmlInput,
   MailboxMessageHtmlReading,
@@ -16,6 +14,8 @@ import {
 } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { FolderId } from "#/modules/mailbox/domain/Mailbox";
 import { GetMessageResult } from "#/modules/mailbox/domain/MailboxMessage";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
@@ -67,7 +67,7 @@ const repositoryWithMessage = (
     setMessageStarred: unused,
   });
 
-const authorization = MailAuthorization.of({
+const authorization = MailboxAuthorization.of({
   requireAttachmentRead: unusedAuthorization,
   requireAttachmentUpload: unusedAuthorization,
   requireDraft: unusedAuthorization,
@@ -86,7 +86,7 @@ const authorization = MailAuthorization.of({
   requireMessage: ({ resource }) =>
     Effect.succeed({ ...resource, folderId: inboxFolderId }),
   requireRuleManage: unusedAuthorization,
-}) satisfies MailAuthorizationService;
+}) satisfies MailboxAuthorizationService;
 
 const runHtmlRead = (
   input: Schema.Schema.Type<typeof MailboxMessageHtmlInput>,
@@ -100,7 +100,7 @@ const runHtmlRead = (
         MailboxMessageHtmlReading.layerNoDeps.pipe(
           Layer.provide(
             Layer.merge(
-              Layer.succeed(MailAuthorization, authorizationService),
+              Layer.succeed(MailboxAuthorization, authorizationService),
               Layer.succeed(MailboxMessageRepository, repository)
             )
           )
@@ -263,7 +263,7 @@ describe("mailbox message HTML", () => {
       mailboxId: "primary",
       messageId: "message-1",
     });
-    const deniedAuthorization = MailAuthorization.of({
+    const deniedAuthorization = MailboxAuthorization.of({
       ...authorization,
       requireMessage: () =>
         Effect.fail(

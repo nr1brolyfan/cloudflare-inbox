@@ -5,8 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   MailboxMessageActionCommand,
   MailboxMessageActions,
@@ -14,6 +12,8 @@ import {
 import { FolderId } from "#/modules/mailbox/domain/Mailbox";
 import { FolderList } from "#/modules/mailbox/domain/MailboxDirectory";
 import { MessagePage } from "#/modules/mailbox/domain/MailboxMessage";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import type { MailboxDirectoryRepositoryService } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
@@ -125,9 +125,9 @@ const repositoryWith = (
 };
 
 const authorizationWith = (
-  overrides: Partial<MailAuthorizationService>
-): MailAuthorizationService =>
-  MailAuthorization.of({
+  overrides: Partial<MailboxAuthorizationService>
+): MailboxAuthorizationService =>
+  MailboxAuthorization.of({
     requireAttachmentRead: unusedAuthorization,
     requireAttachmentUpload: unusedAuthorization,
     requireDraft: unusedAuthorization,
@@ -144,7 +144,7 @@ const authorizationWith = (
   });
 
 const runAction = (
-  authorization: MailAuthorizationService,
+  authorization: MailboxAuthorizationService,
   repository: ReturnType<typeof repositoryWith>,
   command: Schema.Schema.Type<typeof MailboxMessageActionCommand>
 ) =>
@@ -155,7 +155,7 @@ const runAction = (
         MailboxMessageActions.layerNoDeps.pipe(
           Layer.provide(
             Layer.mergeAll(
-              Layer.succeed(MailAuthorization, authorization),
+              Layer.succeed(MailboxAuthorization, authorization),
               Layer.succeed(MailboxDirectoryRepository, repository.directory),
               Layer.succeed(MailboxMessageRepository, repository.messages)
             )

@@ -5,8 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { Sha256Digest } from "#/modules/mailbox/domain/Mailbox";
@@ -18,6 +16,8 @@ import {
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
 import type { DraftAttachmentBlobStoreService } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import type { MailboxDraftRepositoryService } from "#/modules/mailbox/ports/MailboxDraftRepository";
 
@@ -62,9 +62,9 @@ const repositoryWith = (
   });
 
 const authorizationWith = (
-  requireAttachmentUpload: MailAuthorizationService["requireAttachmentUpload"]
+  requireAttachmentUpload: MailboxAuthorizationService["requireAttachmentUpload"]
 ) =>
-  MailAuthorization.of({
+  MailboxAuthorization.of({
     requireAttachmentRead: unusedAuthorization,
     requireAttachmentUpload,
     requireDraft: unusedAuthorization,
@@ -80,7 +80,7 @@ const authorizationWith = (
   });
 
 const runAttachments = <A>(
-  authorization: MailAuthorizationService,
+  authorization: MailboxAuthorizationService,
   repository: MailboxDraftRepositoryService,
   blobs: DraftAttachmentBlobStoreService,
   effect: (
@@ -94,7 +94,7 @@ const runAttachments = <A>(
         MailboxDraftAttachments.layerNoDeps.pipe(
           Layer.provide(
             Layer.mergeAll(
-              Layer.succeed(MailAuthorization, authorization),
+              Layer.succeed(MailboxAuthorization, authorization),
               Layer.succeed(MailboxDraftRepository, repository),
               Layer.succeed(DraftAttachmentBlobStore, blobs)
             )

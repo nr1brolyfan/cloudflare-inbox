@@ -35,7 +35,6 @@ import {
   CurrentRequestAuthMiddlewareLive,
   RequestSessionAuthenticatorLive,
 } from "#/auth/session";
-import { MailResourceResolveError } from "#/authorization/resources";
 import { HttpApiPlatformLive } from "#/http/platform";
 import { MailboxGroup } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
 import { MailboxHttpHandlersLayer } from "#/modules/mailbox/adapters/http/MailboxHttpHandlers";
@@ -95,6 +94,7 @@ import {
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { InboundProcessingSchema } from "#/modules/mailbox/domain/MailboxInbound";
 import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailResourceResolveError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import type { MailboxAdministrationService } from "#/modules/organization/application/MailboxAdministration";
 import {

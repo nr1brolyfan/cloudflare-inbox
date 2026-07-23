@@ -6,13 +6,13 @@ import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuthShape } from "#/auth/session";
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import {
   MailboxDisplayName,
   MailboxId,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxRecord } from "#/modules/mailbox/domain/Mailbox";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { BackendRequestContext } from "#/observability/request-context";
 import { AdministrativeOperationId } from "#/shared/Operation";
 
@@ -76,7 +76,7 @@ export interface MailboxAdministrationService {
     input: RenameMailboxCommand
   ) => Effect.Effect<
     MailboxRecord,
-    MailAuthorizationError | MailboxAdministrationError,
+    MailboxAuthorizationError | MailboxAdministrationError,
     | AuthPermission.CurrentPrincipal
     | BackendRequestContext
     | CurrentRequestAuthShape

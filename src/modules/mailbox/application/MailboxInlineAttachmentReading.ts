@@ -6,8 +6,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   AttachmentId,
   FolderId,
@@ -22,6 +20,8 @@ import type {
   MessageDetail,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
@@ -64,7 +64,7 @@ export interface MailboxInlineAttachmentReadingService {
     input: MailboxInlineAttachmentInput
   ) => Effect.Effect<
     MailboxInlineAttachmentContent,
-    MailAuthorizationError | MailboxInlineAttachmentError,
+    MailboxAuthorizationError | MailboxInlineAttachmentError,
     CurrentPrincipal
   >;
 }
@@ -151,7 +151,7 @@ export class MailboxInlineAttachmentReading extends Context.Service<
   MailboxInlineAttachmentReadingService
 >()("cloudflare-inbox/MailboxInlineAttachmentReading", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const blobs = yield* InboundAttachmentBlobReader;
     const repository = yield* MailboxMessageRepository;
 

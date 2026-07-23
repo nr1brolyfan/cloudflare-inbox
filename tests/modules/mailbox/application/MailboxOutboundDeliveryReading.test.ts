@@ -5,8 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   GetMailboxOutboundDeliveryQuery,
   MailboxOutboundDeliveryReading,
@@ -14,6 +12,8 @@ import {
 import type { MailboxOutboundDeliveryReadingService } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxOutboundDeliveryReadingClock } from "#/modules/mailbox/ports/MailboxOutboundDeliveryReadingClock";
 import type { MailboxOutboundDeliveryRepositoryService } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
 import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
@@ -47,9 +47,9 @@ const repositoryWith = (
   });
 
 const authorizationWith = (
-  overrides: Partial<MailAuthorizationService>
-): MailAuthorizationService =>
-  MailAuthorization.of({
+  overrides: Partial<MailboxAuthorizationService>
+): MailboxAuthorizationService =>
+  MailboxAuthorization.of({
     requireAttachmentRead: unusedAuthorization,
     requireAttachmentUpload: unusedAuthorization,
     requireDraft: unusedAuthorization,
@@ -66,7 +66,7 @@ const authorizationWith = (
   });
 
 const runReading = <A>(
-  authorization: MailAuthorizationService,
+  authorization: MailboxAuthorizationService,
   repository: MailboxOutboundDeliveryRepositoryService,
   use: (
     service: MailboxOutboundDeliveryReadingService
@@ -79,7 +79,7 @@ const runReading = <A>(
         MailboxOutboundDeliveryReading.layerNoDeps.pipe(
           Layer.provide(
             Layer.mergeAll(
-              Layer.succeed(MailAuthorization, authorization),
+              Layer.succeed(MailboxAuthorization, authorization),
               Layer.succeed(MailboxOutboundDeliveryRepository, repository),
               Layer.succeed(
                 MailboxOutboundDeliveryReadingClock,

@@ -23,17 +23,6 @@ import {
   SensitiveOperationStepUpClock,
 } from "#/auth/step-up-policy";
 import {
-  MailPermission,
-  MailRole,
-  mailboxScope,
-} from "#/authorization/catalog";
-import {
-  MailAuthorization,
-  MailAuthorizationLive,
-} from "#/authorization/mail-authorization";
-import { MailPermissionsLive } from "#/authorization/permissions-live";
-import * as Resources from "#/authorization/resources";
-import {
   MailboxAdministrationConfig,
   MailboxAdministrationLive,
   MailboxAdministrationOwnerEmail,
@@ -43,6 +32,14 @@ import {
   AdministrativeAuditLayer,
   AdministrativeAuditRuntimeLayer,
 } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
+import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
+import { MailboxAuthorizationApplicationLayer } from "#/modules/authorization/application/MailboxAuthorization";
+import {
+  MailPermission,
+  MailRole,
+  mailboxScope,
+} from "#/modules/authorization/domain/MailPermissionCatalog";
+import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
 import {
   MailboxDisplayName,
   MailboxId,
@@ -55,6 +52,8 @@ import {
   MessageLocation,
   RuleLocation,
 } from "#/modules/mailbox/domain/MailboxResource";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
   MailboxAdministration,
   MailboxAdministrationError,
@@ -176,8 +175,8 @@ const insertCurrentSession = (
 
 const makeResolverLive = () =>
   Layer.succeed(
-    Resources.MailResourceResolver,
-    Resources.MailResourceResolver.of({
+    TrustedMailResourceResolver,
+    TrustedMailResourceResolver.of({
       resolveAttachment: (resource) =>
         Effect.succeed(
           Schema.decodeUnknownSync(AttachmentLocation)({
@@ -225,7 +224,7 @@ const makeResolverLive = () =>
   );
 
 const makePermissionRaceLive = (mutation: () => void) =>
-  MailAuthorizationLive.pipe(
+  MailboxAuthorizationApplicationLayer.pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(
@@ -245,8 +244,8 @@ const makePermissionRaceLive = (mutation: () => void) =>
   );
 
 const unavailableMailAuthorizationLive = Layer.succeed(
-  MailAuthorization,
-  MailAuthorization.of({} as MailAuthorization)
+  MailboxAuthorization,
+  MailboxAuthorization.of({} as MailboxAuthorizationService)
 );
 
 const controlPlaneBatchLive = (database: D1EffectQbDatabaseLike) =>
@@ -339,7 +338,7 @@ const bootstrap = (
 const rename = (
   database: D1EffectQbDatabaseLike,
   validated: ValidatedSession,
-  mailAuthorizationLive: Layer.Layer<MailAuthorization>,
+  mailAuthorizationLive: Layer.Layer<MailboxAuthorization>,
   mailboxId: string,
   displayName: string,
   expectedVersion = 1,
@@ -423,7 +422,7 @@ describe("mailbox administration", () => {
           });
         }).pipe(
           Effect.provide(
-            MailPermissionsLive.pipe(
+            MailPermissionsEffectAuthLayer.pipe(
               Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
             )
           )
@@ -1063,10 +1062,10 @@ describe("mailbox administration", () => {
       const validated = makeValidatedSession("user-a", "session-a");
       insertCurrentSession(database, validated);
       await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
-      const mailAuthorizationLive = MailAuthorizationLive.pipe(
+      const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
           Layer.merge(
-            MailPermissionsLive.pipe(
+            MailPermissionsEffectAuthLayer.pipe(
               Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
             ),
             makeResolverLive()
@@ -1112,10 +1111,10 @@ describe("mailbox administration", () => {
       const validated = makeValidatedSession("user-a", "session-a");
       insertCurrentSession(database, validated);
       await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
-      const mailAuthorizationLive = MailAuthorizationLive.pipe(
+      const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
           Layer.merge(
-            MailPermissionsLive.pipe(
+            MailPermissionsEffectAuthLayer.pipe(
               Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
             ),
             makeResolverLive()
@@ -1185,10 +1184,10 @@ describe("mailbox administration", () => {
           JSON.stringify(ordinary.issued.amr),
           ordinary.issued.sessionId
         );
-      const mailAuthorizationLive = MailAuthorizationLive.pipe(
+      const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
           Layer.merge(
-            MailPermissionsLive.pipe(
+            MailPermissionsEffectAuthLayer.pipe(
               Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
             ),
             makeResolverLive()

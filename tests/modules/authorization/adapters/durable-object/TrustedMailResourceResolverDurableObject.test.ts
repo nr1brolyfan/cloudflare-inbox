@@ -1,25 +1,24 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailResourceResolverLive } from "#/authorization/mail-resource-resolver-live";
-import { MailResourceResolver } from "#/authorization/resources";
-import { MailboxResourceRepository } from "#/modules/authorization/ports/MailboxResourceRepository";
-import type { MailboxResourceRepositoryService } from "#/modules/authorization/ports/MailboxResourceRepository";
+import { TrustedMailResourceResolverDurableObjectLayer } from "#/modules/authorization/adapters/durable-object/TrustedMailResourceResolverDurableObject";
+import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
+import { MailboxDoClient } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import type { MailboxDoClientService } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import {
   MessageLocation,
   MessageLookup,
 } from "#/modules/mailbox/domain/MailboxResource";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
-const unused = () => Effect.succeed(Option.none());
+const unused = () => Effect.die(new Error("RPC is unused"));
 const resolverWith = (
-  findMessageLocation: MailboxResourceRepositoryService["findMessageLocation"]
+  resolveMailResource: MailboxDoClientService["resolveMailResource"]
 ) =>
   Effect.gen(function* () {
-    const resolver = yield* MailResourceResolver;
+    const resolver = yield* TrustedMailResourceResolver;
     return yield* resolver.resolveMessage(
       Schema.decodeUnknownSync(MessageLookup)({
         _tag: "Message",
@@ -29,16 +28,14 @@ const resolverWith = (
     );
   }).pipe(
     Effect.provide(
-      MailResourceResolverLive.pipe(
+      TrustedMailResourceResolverDurableObjectLayer.pipe(
         Layer.provide(
           Layer.succeed(
-            MailboxResourceRepository,
-            MailboxResourceRepository.of({
-              findAttachmentLocation: unused,
-              findDraftLocation: unused,
-              findFolderLocation: unused,
-              findMessageLocation,
-              findRuleLocation: unused,
+            MailboxDoClient,
+            MailboxDoClient.of({
+              executeDirectory: unused,
+              executeMailData: unused,
+              resolveMailResource,
             })
           )
         )
@@ -56,9 +53,7 @@ describe("MailboxDO mail resource resolver", () => {
     });
 
     await expect(
-      Effect.runPromise(
-        resolverWith(() => Effect.succeed(Option.some(location)))
-      )
+      Effect.runPromise(resolverWith(() => Effect.succeed(location)))
     ).resolves.toStrictEqual({
       _tag: "Message",
       mailboxId: "mailbox-a",
@@ -69,7 +64,7 @@ describe("MailboxDO mail resource resolver", () => {
 
   it("distinguishes missing resources from repository failures", async () => {
     const missing = await Effect.runPromise(
-      resolverWith(() => Effect.succeed(Option.none())).pipe(Effect.flip)
+      resolverWith(() => Effect.succeed({ _tag: "NotFound" })).pipe(Effect.flip)
     );
     const storage = await Effect.runPromise(
       resolverWith(() =>

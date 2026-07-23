@@ -6,8 +6,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   DraftId,
   MailAddress,
@@ -19,6 +17,8 @@ import type { Draft as DraftType } from "#/modules/mailbox/domain/MailboxDraft";
 import type { DraftAttachmentList } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { StoredDraftAttachment } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import { OperationId } from "#/shared/Operation";
@@ -95,21 +95,21 @@ export interface MailboxDraftEditingService {
     command: CreateMailboxDraftCommand
   ) => Effect.Effect<
     DraftEditorDraft,
-    MailAuthorizationError | MailboxDraftEditingError,
+    MailboxAuthorizationError | MailboxDraftEditingError,
     CurrentPrincipal
   >;
   readonly get: (
     query: GetMailboxDraftQuery
   ) => Effect.Effect<
     DraftEditorDraft,
-    MailAuthorizationError | MailboxDraftEditingError,
+    MailboxAuthorizationError | MailboxDraftEditingError,
     CurrentPrincipal
   >;
   readonly update: (
     command: UpdateMailboxDraftCommand
   ) => Effect.Effect<
     DraftEditorDraft,
-    MailAuthorizationError | MailboxDraftEditingError,
+    MailboxAuthorizationError | MailboxDraftEditingError,
     CurrentPrincipal
   >;
 }
@@ -188,14 +188,14 @@ export class MailboxDraftEditing extends Context.Service<
   MailboxDraftEditingService
 >()("cloudflare-inbox/MailboxDraftEditing", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const repository = yield* MailboxDraftRepository;
     const loadConsistentDraft = (
       query: GetMailboxDraftQuery,
       attempts = 0
     ): Effect.Effect<
       DraftEditorDraft,
-      MailboxDraftEditingError | MailAuthorizationError,
+      MailboxDraftEditingError | MailboxAuthorizationError,
       CurrentPrincipal
     > =>
       Effect.gen(function* () {

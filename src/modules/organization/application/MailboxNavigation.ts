@@ -6,7 +6,6 @@ import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import {
   FolderId,
   FolderKind,
@@ -16,6 +15,7 @@ import {
   MailboxDisplayName,
   MailboxId,
 } from "#/modules/mailbox/domain/Mailbox";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 
 export class MailboxNavigationMailbox extends Schema.Class<MailboxNavigationMailbox>(
   "cloudflare-inbox/MailboxNavigationMailbox"
@@ -75,7 +75,7 @@ export class MailboxNavigationError extends Data.TaggedError(
 export interface MailboxNavigationService {
   readonly getCurrent: Effect.Effect<
     MailboxNavigationResult,
-    MailAuthorizationError | MailboxNavigationError,
+    MailboxAuthorizationError | MailboxNavigationError,
     CurrentActor | CurrentPrincipal
   >;
 }

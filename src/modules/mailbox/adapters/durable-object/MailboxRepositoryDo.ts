@@ -1,8 +1,6 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 
-import { MailboxResourceRepository } from "#/modules/authorization/ports/MailboxResourceRepository";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type { MessageMutationResult } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
@@ -51,16 +49,6 @@ const mailDataProtocolError = (
       commitState: mutation ? "unknown" : "not-committed",
       message: "Mail data RPC returned the wrong response type",
       operation: mutation ? "write" : "read",
-    })
-  );
-
-const wrongResource = (result: unknown) =>
-  Effect.fail(
-    new MailboxRepositoryError({
-      cause: result,
-      commitState: "not-committed",
-      message: "Mailbox lookup returned the wrong resource type",
-      operation: "read",
     })
   );
 
@@ -439,77 +427,6 @@ export const MailboxOutboundSendingRepositoryDoLayer = Layer.effect(
                 : response._tag === "OutboundScheduled"
                   ? Effect.succeed(response.value)
                   : mailDataProtocolError(response, true)
-            )
-          ),
-    });
-  })
-);
-
-/** Direct Durable Object implementation of trusted authorization ancestry. */
-export const MailboxResourceRepositoryDoLayer = Layer.effect(
-  MailboxResourceRepository,
-  Effect.gen(function* () {
-    const client = yield* MailboxDoClient;
-
-    return MailboxResourceRepository.of({
-      findAttachmentLocation: (input) =>
-        client
-          .resolveMailResource({ _tag: "Attachment", ...input })
-          .pipe(
-            Effect.flatMap((result) =>
-              result._tag === "NotFound"
-                ? Effect.succeed(Option.none())
-                : result._tag === "Attachment"
-                  ? Effect.succeed(Option.some(result))
-                  : wrongResource(result)
-            )
-          ),
-      findDraftLocation: (input) =>
-        client
-          .resolveMailResource({ _tag: "Draft", ...input })
-          .pipe(
-            Effect.flatMap((result) =>
-              result._tag === "NotFound"
-                ? Effect.succeed(Option.none())
-                : result._tag === "Draft"
-                  ? Effect.succeed(Option.some(result))
-                  : wrongResource(result)
-            )
-          ),
-      findFolderLocation: (input) =>
-        client
-          .resolveMailResource({ _tag: "Folder", ...input })
-          .pipe(
-            Effect.flatMap((result) =>
-              result._tag === "NotFound"
-                ? Effect.succeed(Option.none())
-                : result._tag === "Folder"
-                  ? Effect.succeed(Option.some(result))
-                  : wrongResource(result)
-            )
-          ),
-      findMessageLocation: (input) =>
-        client
-          .resolveMailResource({ _tag: "Message", ...input })
-          .pipe(
-            Effect.flatMap((result) =>
-              result._tag === "NotFound"
-                ? Effect.succeed(Option.none())
-                : result._tag === "Message"
-                  ? Effect.succeed(Option.some(result))
-                  : wrongResource(result)
-            )
-          ),
-      findRuleLocation: (input) =>
-        client
-          .resolveMailResource({ _tag: "Rule", ...input })
-          .pipe(
-            Effect.flatMap((result) =>
-              result._tag === "NotFound"
-                ? Effect.succeed(Option.none())
-                : result._tag === "Rule"
-                  ? Effect.succeed(Option.some(result))
-                  : wrongResource(result)
             )
           ),
     });

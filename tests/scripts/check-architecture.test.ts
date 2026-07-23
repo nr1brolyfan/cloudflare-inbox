@@ -42,4 +42,15 @@ describe("architecture policy", () => {
       )
     ).toStrictEqual(["business modules must not import runtime apps"]);
   });
+
+  it("rejects mailbox imports from the authorization context", () => {
+    expect(
+      checkArchitectureImports(
+        "src/modules/mailbox/application/MailboxMessageReading.ts",
+        'import { Policy } from "../../authorization/application/Policy";'
+      )
+    ).toStrictEqual([
+      "mailbox must depend on its authorization port, not the authorization context",
+    ]);
+  });
 });

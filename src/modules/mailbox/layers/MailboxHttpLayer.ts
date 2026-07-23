@@ -1,8 +1,6 @@
 import * as Layer from "effect/Layer";
 
 import { SensitiveOperationStepUpClockLive } from "#/auth/step-up-policy";
-import { MailAuthorizationLive } from "#/authorization/mail-authorization";
-import { MailResourceResolverLive } from "#/authorization/mail-resource-resolver-live";
 import {
   MailboxAdministrationLive,
   MailboxAdministrationRuntimeLive,
@@ -21,7 +19,6 @@ import {
   MailboxMessageRepositoryDoLayer,
   MailboxOutboundDeliveryRepositoryDoLayer,
   MailboxOutboundSendingRepositoryDoLayer,
-  MailboxResourceRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { MailboxHttpHandlersLayer } from "#/modules/mailbox/adapters/http/MailboxHttpHandlers";
 import { DraftAttachmentBlobStoreR2Layer } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
@@ -64,16 +61,6 @@ const MailboxOutboundSendingRepositoryLayer =
   MailboxOutboundSendingRepositoryDoLayer.pipe(
     Layer.provide(MailboxDoClientWithRegistryLayer)
   );
-const MailboxResourceRepositoryLayer = MailboxResourceRepositoryDoLayer.pipe(
-  Layer.provide(MailboxDoClientWithRegistryLayer)
-);
-
-const MailResourceResolverLayer = MailResourceResolverLive.pipe(
-  Layer.provide(MailboxResourceRepositoryLayer)
-);
-const MailAuthorizationLayer = MailAuthorizationLive.pipe(
-  Layer.provide(MailResourceResolverLayer)
-);
 const AdministrativeAuditWithRuntimeLayer = AdministrativeAuditLayer.pipe(
   Layer.provide(AdministrativeAuditRuntimeLayer)
 );
@@ -82,45 +69,34 @@ const MailboxAdministrationLayer = MailboxAdministrationLive.pipe(
     Layer.mergeAll(
       AdministrativeAuditWithRuntimeLayer,
       MailboxAdministrationRuntimeLive,
-      MailAuthorizationLayer,
       SensitiveOperationStepUpClockLive
     )
   )
 );
 const MailboxNavigationLayer = MailboxNavigationLive.pipe(
-  Layer.provide(
-    Layer.merge(MailAuthorizationLayer, MailboxDirectoryRepositoryLayer)
-  )
+  Layer.provide(MailboxDirectoryRepositoryLayer)
 );
 
 const MailboxMessageReadingLayer = MailboxMessageReading.layerNoDeps.pipe(
-  Layer.provide(
-    Layer.merge(MailAuthorizationLayer, MailboxMessageRepositoryLayer)
-  )
+  Layer.provide(MailboxMessageRepositoryLayer)
 );
 const MailboxMessageActionsLayer = MailboxMessageActions.layerNoDeps.pipe(
   Layer.provide(
     Layer.mergeAll(
-      MailAuthorizationLayer,
       MailboxDirectoryRepositoryLayer,
       MailboxMessageRepositoryLayer
     )
   )
 );
 const MailboxDraftEditingLayer = MailboxDraftEditing.layerNoDeps.pipe(
-  Layer.provide(
-    Layer.merge(MailAuthorizationLayer, MailboxDraftRepositoryLayer)
-  )
+  Layer.provide(MailboxDraftRepositoryLayer)
 );
 const MailboxDraftReadingLayer = MailboxDraftReading.layerNoDeps.pipe(
-  Layer.provide(
-    Layer.merge(MailAuthorizationLayer, MailboxDraftRepositoryLayer)
-  )
+  Layer.provide(MailboxDraftRepositoryLayer)
 );
 const MailboxOutboundSendingLayer = MailboxOutboundSending.layerNoDeps.pipe(
   Layer.provide(
     Layer.mergeAll(
-      MailAuthorizationLayer,
       MailboxOutboundSendingRepositoryLayer,
       MailboxSenderIdentityLive
     )
@@ -130,7 +106,6 @@ const MailboxOutboundDeliveryReadingLayer =
   MailboxOutboundDeliveryReading.layerNoDeps.pipe(
     Layer.provide(
       Layer.mergeAll(
-        MailAuthorizationLayer,
         MailboxOutboundDeliveryRepositoryLayer,
         MailboxOutboundDeliveryReadingClockSystemLayer
       )
@@ -138,23 +113,16 @@ const MailboxOutboundDeliveryReadingLayer =
   );
 const MailboxDraftAttachmentsLayer = MailboxDraftAttachments.layerNoDeps.pipe(
   Layer.provide(
-    Layer.mergeAll(
-      MailAuthorizationLayer,
-      MailboxDraftRepositoryLayer,
-      DraftAttachmentBlobStoreR2Layer
-    )
+    Layer.mergeAll(MailboxDraftRepositoryLayer, DraftAttachmentBlobStoreR2Layer)
   )
 );
 const MailboxMessageHtmlLayer = MailboxMessageHtmlReading.layerNoDeps.pipe(
-  Layer.provide(
-    Layer.merge(MailAuthorizationLayer, MailboxMessageRepositoryLayer)
-  )
+  Layer.provide(MailboxMessageRepositoryLayer)
 );
 const MailboxInlineAttachmentLayer =
   MailboxInlineAttachmentReading.layerNoDeps.pipe(
     Layer.provide(
       Layer.mergeAll(
-        MailAuthorizationLayer,
         MailboxMessageRepositoryLayer,
         InboundAttachmentBlobReaderR2WithRuntimeLayer
       )
@@ -169,9 +137,7 @@ const MailboxInboundReplayLayer = MailboxInboundReplay.layerNoDeps.pipe(
   )
 );
 const MailboxInboundReplayAuthorizationLayer =
-  MailboxInboundReplayAuthorization.layerNoDeps.pipe(
-    Layer.provide(MailAuthorizationLayer)
-  );
+  MailboxInboundReplayAuthorization.layerNoDeps;
 
 /** Mailbox HTTP handlers with concrete mailbox and organization adapters selected. */
 export const MailboxHttpLayer = MailboxHttpHandlersLayer.pipe(

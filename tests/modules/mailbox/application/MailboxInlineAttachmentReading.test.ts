@@ -5,8 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   MailboxInlineAttachmentInput,
   MailboxInlineAttachmentReading,
@@ -17,6 +15,8 @@ import {
   GetMessageResult,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
@@ -85,7 +85,7 @@ const repository = MailboxMessageRepository.of({
   setMessageStarred: unused,
 }) satisfies MailboxMessageRepositoryService;
 
-const authorization = MailAuthorization.of({
+const authorization = MailboxAuthorization.of({
   requireAttachmentRead: () =>
     Effect.succeed({
       _tag: "Attachment" as const,
@@ -110,7 +110,7 @@ const authorization = MailAuthorization.of({
   requireMailboxMessageRead: ({ resource }) => Effect.succeed(resource),
   requireMessage: ({ resource }) => Effect.succeed({ ...resource, folderId }),
   requireRuleManage: unusedAuthorization,
-}) satisfies MailAuthorizationService;
+}) satisfies MailboxAuthorizationService;
 
 const runRead = (input: unknown) =>
   Effect.runPromise(
@@ -124,7 +124,7 @@ const runRead = (input: unknown) =>
         MailboxInlineAttachmentReading.layerNoDeps.pipe(
           Layer.provide(
             Layer.mergeAll(
-              Layer.succeed(MailAuthorization, authorization),
+              Layer.succeed(MailboxAuthorization, authorization),
               Layer.succeed(MailboxMessageRepository, repository),
               Layer.succeed(
                 InboundAttachmentBlobReader,

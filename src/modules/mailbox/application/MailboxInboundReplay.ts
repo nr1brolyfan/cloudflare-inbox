@@ -4,8 +4,6 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
@@ -13,6 +11,8 @@ import type {
   ReplayInboundInput,
 } from "#/modules/mailbox/domain/MailboxInbound";
 import { InboundWorkflowStarter } from "#/modules/mailbox/ports/InboundWorkflowStarter";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { InboundReplayPreparer } from "#/modules/mailbox/ports/MailboxInboundRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import type { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
@@ -50,7 +50,7 @@ export interface MailboxInboundReplayAuthorizationService {
     mailboxId: MailboxId
   ) => Effect.Effect<
     void,
-    MailAuthorizationError,
+    MailboxAuthorizationError,
     AuthPermission.CurrentPrincipal
   >;
 }
@@ -60,7 +60,7 @@ export class MailboxInboundReplayAuthorization extends Context.Service<
   MailboxInboundReplayAuthorizationService
 >()("cloudflare-inbox/InboundReplayAuthorization", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     return {
       require: (mailboxId) =>
         authorization

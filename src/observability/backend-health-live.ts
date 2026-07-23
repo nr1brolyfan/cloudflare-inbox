@@ -16,6 +16,10 @@ import * as Schema from "effect/Schema";
 
 import type { MailboxDONamespace } from "#/apps/mailbox-do/MailboxDO";
 import {
+  MailPermission,
+  mailboxScope,
+} from "#/modules/authorization/domain/MailPermissionCatalog";
+import {
   DirectoryRpcRequest,
   DirectoryRpcResponse,
   MailDataRpcRequest,
@@ -26,7 +30,6 @@ import {
   MailboxResourceLookupResult,
 } from "#/modules/mailbox/domain/MailboxResource";
 
-import { MailPermission, mailboxScope } from "../authorization/catalog";
 import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
 import { BackendHealth } from "./health";
 import type { StorageHealth } from "./health";

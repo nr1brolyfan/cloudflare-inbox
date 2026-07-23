@@ -5,8 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   MailboxOutboundSending,
   SendMailboxDraftCommand,
@@ -22,6 +20,8 @@ import {
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
   AiToolExecution,
   CurrentMailboxOperationProvenance,
@@ -76,9 +76,9 @@ const repositoryWith = (
   });
 
 const authorizationWith = (
-  overrides: Partial<MailAuthorizationService>
-): MailAuthorizationService =>
-  MailAuthorization.of({
+  overrides: Partial<MailboxAuthorizationService>
+): MailboxAuthorizationService =>
+  MailboxAuthorization.of({
     requireAttachmentRead: unusedAuthorization,
     requireAttachmentUpload: unusedAuthorization,
     requireDraft: unusedAuthorization,
@@ -95,7 +95,7 @@ const authorizationWith = (
   });
 
 const runSending = <A>(
-  authorization: MailAuthorizationService,
+  authorization: MailboxAuthorizationService,
   senderIdentity: MailboxSenderIdentityService,
   repository: MailboxOutboundSendingRepositoryService,
   use: (
@@ -109,7 +109,7 @@ const runSending = <A>(
       MailboxOutboundSending.layerNoDeps.pipe(
         Layer.provide(
           Layer.mergeAll(
-            Layer.succeed(MailAuthorization, authorization),
+            Layer.succeed(MailboxAuthorization, authorization),
             Layer.succeed(MailboxSenderIdentity, senderIdentity),
             Layer.succeed(MailboxOutboundSendingRepository, repository)
           )

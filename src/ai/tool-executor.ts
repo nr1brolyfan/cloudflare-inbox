@@ -20,14 +20,16 @@ import type {
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailAddress } from "#/modules/mailbox/domain/Mailbox";
+import type {
+  MailboxAuthorizationError,
+  MailResourceResolveError,
+} from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
   AiToolExecution,
   CurrentMailboxOperationProvenance,
 } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import { OperationId } from "#/shared/Operation";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import type { MailResourceResolveError } from "../authorization/resources";
 import {
   MailCreateDraftArguments,
   MailCreateDraftSuccess,
@@ -490,7 +492,7 @@ const projectMessageContent = (
 });
 
 type ExpectedToolError =
-  | MailAuthorizationError
+  | MailboxAuthorizationError
   | MailboxDraftEditingError
   | MailboxMessageReadingError;
 

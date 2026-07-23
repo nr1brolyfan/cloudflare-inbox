@@ -1,118 +1,17 @@
 import * as AuthPermission from "@effect-auth/core/Permission";
 import * as AuthPolicy from "@effect-auth/core/Policy";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 
-import { MailPermission, folderScope, mailboxScope } from "./catalog";
-import * as Resources from "./resources";
-
-export const MailboxAction = Schema.Literals([
-  "read",
-  "modify",
-  "send",
-  "manage-settings",
-  "manage-members",
-]);
-export type MailboxAction = Schema.Schema.Type<typeof MailboxAction>;
-export const FolderAction = Schema.Literals(["read", "modify"]);
-export type FolderAction = Schema.Schema.Type<typeof FolderAction>;
-export const MessageAction = Schema.Literals(["read", "modify"]);
-export type MessageAction = Schema.Schema.Type<typeof MessageAction>;
-export const DraftAction = Schema.Literals(["edit", "send"]);
-export type DraftAction = Schema.Schema.Type<typeof DraftAction>;
-
-export type MailboxMessageReadAccess =
-  | {
-      readonly _tag: "MailboxMessageRead";
-      readonly mailboxId: Resources.TrustedMailboxLocation["mailboxId"];
-    }
-  | {
-      readonly _tag: "FolderMessageRead";
-      readonly folderId: Resources.TrustedFolderLocation["folderId"];
-      readonly mailboxId: Resources.TrustedFolderLocation["mailboxId"];
-    };
-
-export type MailAuthorizationError =
-  | AuthPolicy.AuthorizationError
-  | AuthPermission.PermissionCheckError
-  | Resources.MailResourceResolveError;
-
-type MailPolicy<A, E = never> = Effect.Effect<
-  A,
-  AuthPolicy.AuthorizationError | AuthPermission.PermissionCheckError | E,
-  AuthPermission.CurrentPrincipal
->;
-
-export interface MailAuthorization {
-  readonly requireAttachmentRead: (input: {
-    readonly resource: Resources.AttachmentRef;
-  }) => MailPolicy<
-    Resources.TrustedAttachmentLocation,
-    Resources.MailResourceResolveError
-  >;
-  readonly requireAttachmentUpload: (input: {
-    readonly resource: Resources.DraftRef;
-  }) => MailPolicy<
-    Resources.TrustedDraftLocation,
-    Resources.MailResourceResolveError
-  >;
-  readonly requireDraft: (input: {
-    readonly action: DraftAction;
-    readonly resource: Resources.DraftRef;
-  }) => MailPolicy<
-    Resources.TrustedDraftLocation,
-    Resources.MailResourceResolveError
-  >;
-  readonly requireDraftCreate: (input: {
-    readonly resource: Resources.MailboxRef;
-  }) => MailPolicy<Resources.TrustedMailboxLocation>;
-  readonly requireExport: (input: {
-    readonly resource: Resources.MailboxRef;
-  }) => MailPolicy<Resources.TrustedMailboxLocation>;
-  readonly requireFolder: (input: {
-    readonly action: FolderAction;
-    readonly resource: Resources.FolderRef;
-  }) => MailPolicy<
-    Resources.TrustedFolderLocation,
-    Resources.MailResourceResolveError
-  >;
-  readonly requireFolderMessageRead: (input: {
-    readonly resource: Resources.FolderRef;
-  }) => MailPolicy<
-    MailboxMessageReadAccess,
-    Resources.MailResourceResolveError
-  >;
-  readonly requireMailbox: (input: {
-    readonly action: MailboxAction;
-    readonly resource: Resources.MailboxRef;
-  }) => MailPolicy<Resources.TrustedMailboxLocation>;
-  readonly requireMailboxDraftSend: (input: {
-    readonly resource: Resources.MailboxRef;
-  }) => MailPolicy<Resources.TrustedMailboxLocation>;
-  readonly requireMailboxMessageRead: (input: {
-    readonly resource: Resources.MailboxRef;
-  }) => MailPolicy<Resources.TrustedMailboxLocation>;
-  readonly requireMessage: (input: {
-    readonly action: MessageAction;
-    readonly resource: Resources.MessageRef;
-  }) => MailPolicy<
-    Resources.TrustedMessageLocation,
-    Resources.MailResourceResolveError
-  >;
-  readonly requireRuleManage: (input: {
-    readonly resource: Resources.RuleRef;
-  }) => MailPolicy<
-    Resources.TrustedRuleLocation,
-    Resources.MailResourceResolveError
-  >;
-}
-
-/** Resolves resource ownership and enforces the matching mail permission. */
-export const MailAuthorization = Context.Service<MailAuthorization>(
-  "cloudflare-inbox/MailAuthorization"
-);
+import {
+  MailPermission,
+  folderScope,
+  mailboxScope,
+} from "#/modules/authorization/domain/MailPermissionCatalog";
+import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxMessageReadAccess } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type * as MailboxPort from "#/modules/mailbox/ports/MailboxAuthorization";
 
 const mailboxPermissionByAction = {
   "manage-members": MailPermission.mailboxManageMembers,
@@ -124,7 +23,7 @@ const mailboxPermissionByAction = {
 
 const ensureResolverInvariant = (
   valid: boolean,
-  resource: Resources.ResolvableMailResourceRef
+  resource: MailboxPort.ResolvableMailResourceRef
 ) =>
   valid
     ? Effect.void
@@ -132,12 +31,12 @@ const ensureResolverInvariant = (
         new Error(`Mail resource resolver violated ${resource._tag} invariant`)
       );
 
-/** Policy implementation backed by effect-auth permissions and resource resolution. */
-export const MailAuthorizationLive = Layer.effect(
-  MailAuthorization,
+/** Adapts the mailbox capability to permission checks and trusted ancestry. */
+export const MailboxAuthorizationApplicationLayer = Layer.effect(
+  MailboxAuthorization,
   Effect.gen(function* () {
     const permissions = yield* AuthPermission.Permissions;
-    const resolver = yield* Resources.MailResourceResolver;
+    const resolver = yield* TrustedMailResourceResolver;
     const requirePermission = (
       permission: AuthPermission.PermissionId,
       scope: AuthPermission.PermissionScope
@@ -146,7 +45,7 @@ export const MailAuthorizationLive = Layer.effect(
         Effect.provideService(AuthPermission.Permissions, permissions)
       );
     const requireMailboxDraftSendPermissions = (
-      mailboxId: Resources.TrustedMailboxLocation["mailboxId"]
+      mailboxId: MailboxPort.TrustedMailboxLocation["mailboxId"]
     ) => {
       const scope = mailboxScope(mailboxId);
       return AuthPolicy.all(
@@ -154,7 +53,7 @@ export const MailAuthorizationLive = Layer.effect(
         requirePermission(MailPermission.mailboxSend, scope)
       );
     };
-    const resolveFolder = (resource: Resources.FolderRef) =>
+    const resolveFolder = (resource: MailboxPort.FolderRef) =>
       resolver
         .resolveFolder(resource)
         .pipe(
@@ -166,7 +65,7 @@ export const MailAuthorizationLive = Layer.effect(
             )
           )
         );
-    const resolveMessage = (resource: Resources.MessageRef) =>
+    const resolveMessage = (resource: MailboxPort.MessageRef) =>
       resolver
         .resolveMessage(resource)
         .pipe(
@@ -178,7 +77,7 @@ export const MailAuthorizationLive = Layer.effect(
             )
           )
         );
-    const resolveDraft = (resource: Resources.DraftRef) =>
+    const resolveDraft = (resource: MailboxPort.DraftRef) =>
       resolver
         .resolveDraft(resource)
         .pipe(
@@ -190,7 +89,7 @@ export const MailAuthorizationLive = Layer.effect(
             )
           )
         );
-    const resolveRule = (resource: Resources.RuleRef) =>
+    const resolveRule = (resource: MailboxPort.RuleRef) =>
       resolver
         .resolveRule(resource)
         .pipe(
@@ -202,7 +101,7 @@ export const MailAuthorizationLive = Layer.effect(
             )
           )
         );
-    const resolveAttachment = (resource: Resources.AttachmentRef) =>
+    const resolveAttachment = (resource: MailboxPort.AttachmentRef) =>
       resolver
         .resolveAttachment(resource)
         .pipe(
@@ -215,7 +114,7 @@ export const MailAuthorizationLive = Layer.effect(
           )
         );
 
-    return MailAuthorization.of({
+    return MailboxAuthorization.of({
       requireAttachmentRead: ({ resource }) =>
         resolveAttachment(resource).pipe(
           Effect.flatMap((location) =>

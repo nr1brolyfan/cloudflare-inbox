@@ -5,13 +5,13 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   DraftPage,
   ListDraftsInput,
 } from "#/modules/mailbox/domain/MailboxDraft";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
@@ -33,7 +33,7 @@ export interface MailboxDraftReadingService {
     input: MailboxDraftListInput
   ) => Effect.Effect<
     MailboxDraftListResult,
-    MailAuthorizationError | MailboxDraftReadingError,
+    MailboxAuthorizationError | MailboxDraftReadingError,
     CurrentPrincipal
   >;
 }
@@ -64,7 +64,7 @@ export class MailboxDraftReading extends Context.Service<
   MailboxDraftReadingService
 >()("cloudflare-inbox/MailboxDraftReading", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const repository = yield* MailboxDraftRepository;
 
     return {

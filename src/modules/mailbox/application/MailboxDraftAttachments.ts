@@ -5,8 +5,6 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import type {
   AttachmentId,
   DraftId,
@@ -20,6 +18,8 @@ import type {
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
@@ -41,14 +41,14 @@ export interface MailboxDraftAttachmentsService {
     command: ReserveDraftAttachmentCommand
   ) => Effect.Effect<
     DraftAttachmentReservation,
-    MailAuthorizationError | MailboxDraftAttachmentError,
+    MailboxAuthorizationError | MailboxDraftAttachmentError,
     CurrentPrincipal
   >;
   readonly upload: (
     command: UploadDraftAttachmentCommand
   ) => Effect.Effect<
     DraftAttachmentUploadResult,
-    MailAuthorizationError | MailboxDraftAttachmentError,
+    MailboxAuthorizationError | MailboxDraftAttachmentError,
     CurrentPrincipal
   >;
 }
@@ -117,7 +117,7 @@ export class MailboxDraftAttachments extends Context.Service<
   MailboxDraftAttachmentsService
 >()("cloudflare-inbox/MailboxDraftAttachments", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const repository = yield* MailboxDraftRepository;
     const blobs = yield* DraftAttachmentBlobStore;
     const authorize = (mailboxId: MailboxId, draftId: DraftId) =>

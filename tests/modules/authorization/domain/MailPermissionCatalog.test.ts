@@ -10,7 +10,7 @@ import {
   mailPermissionDefinitions,
   mailRoleDefinitions,
   mailRolePermissions,
-} from "#/authorization/catalog";
+} from "#/modules/authorization/domain/MailPermissionCatalog";
 
 const rolePermissionKey = (role: string, permission: string) =>
   `${role}:${permission}`;

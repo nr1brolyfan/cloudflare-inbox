@@ -2,19 +2,17 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
-import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxResourceRepository } from "#/modules/authorization/ports/MailboxResourceRepository";
 import {
+  MailboxDoClient,
   MailboxDoClientLayer,
   MailboxDoNamespace,
 } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import {
   MailboxDirectoryRepositoryDoLayer,
   MailboxDraftRepositoryDoLayer,
-  MailboxResourceRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { FolderId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { CreateFolderInput } from "#/modules/mailbox/domain/MailboxDirectory";
@@ -57,16 +55,14 @@ const findFolder = (
       )
     )
   );
-  const live = MailboxResourceRepositoryDoLayer.pipe(
-    Layer.provide(clientLayer)
-  );
   const effect = Effect.gen(function* () {
-    const repository = yield* MailboxResourceRepository;
-    return yield* repository.findFolderLocation({
+    const client = yield* MailboxDoClient;
+    return yield* client.resolveMailResource({
+      _tag: "Folder",
       mailboxId: Schema.decodeUnknownSync(MailboxId)("mailbox-a"),
       folderId: Schema.decodeUnknownSync(FolderId)("folder-a"),
     });
-  }).pipe(Effect.provide(live));
+  }).pipe(Effect.provide(clientLayer));
 
   return { addressedNames, effect };
 };
@@ -185,7 +181,7 @@ describe("MailboxDO repository RPC adapter", () => {
 
     const result = await Effect.runPromise(fixture.effect);
 
-    expect(Option.isNone(result)).toBeTruthy();
+    expect(result).toStrictEqual({ _tag: "NotFound" });
     expect(fixture.addressedNames).toStrictEqual([]);
   });
 
@@ -200,7 +196,7 @@ describe("MailboxDO repository RPC adapter", () => {
 
     const result = await Effect.runPromise(fixture.effect);
 
-    expect(Option.getOrThrow(result)).toStrictEqual({
+    expect(result).toStrictEqual({
       _tag: "Folder",
       mailboxId: "mailbox-a",
       folderId: "folder-a",

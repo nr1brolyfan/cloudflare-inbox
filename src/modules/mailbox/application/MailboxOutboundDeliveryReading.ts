@@ -6,13 +6,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   GetOutboundDeliveryInput,
   OutboundDeliverySchema,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxOutboundDeliveryReadingClock } from "#/modules/mailbox/ports/MailboxOutboundDeliveryReadingClock";
 import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
@@ -44,7 +44,7 @@ export interface MailboxOutboundDeliveryReadingService {
     query: GetMailboxOutboundDeliveryQuery
   ) => Effect.Effect<
     GetMailboxOutboundDeliveryResult,
-    MailAuthorizationError | MailboxOutboundDeliveryReadingError,
+    MailboxAuthorizationError | MailboxOutboundDeliveryReadingError,
     CurrentPrincipal
   >;
 }
@@ -74,7 +74,7 @@ export class MailboxOutboundDeliveryReading extends Context.Service<
   MailboxOutboundDeliveryReadingService
 >()("cloudflare-inbox/MailboxOutboundDeliveryReading", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const clock = yield* MailboxOutboundDeliveryReadingClock;
     const repository = yield* MailboxOutboundDeliveryRepository;
 

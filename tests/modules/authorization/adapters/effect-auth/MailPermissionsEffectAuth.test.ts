@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
+import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
 import {
   MailPermission,
   MailRole,
@@ -18,10 +19,12 @@ import {
   mailboxScope,
   mailPermissionDefinitions,
   mailRolePermissions,
-} from "#/authorization/catalog";
-import { MailPermissionsLive } from "#/authorization/permissions-live";
+} from "#/modules/authorization/domain/MailPermissionCatalog";
 
-import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
+import {
+  applyControlPlaneMigrations,
+  makeTestD1Database,
+} from "../../../../support/d1";
 
 describe("D1 mail authorization", () => {
   it("applies mailbox registry constraints and seeds the typed catalog", async () => {
@@ -201,7 +204,7 @@ describe("D1 mail authorization", () => {
         ).toBeFalsy();
       }).pipe(
         Effect.provide(
-          MailPermissionsLive.pipe(
+          MailPermissionsEffectAuthLayer.pipe(
             Layer.provide(
               D1EffectQbSqliteAuthStorageLive(makeTestD1Database(database))
             )

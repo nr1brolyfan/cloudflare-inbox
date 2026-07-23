@@ -12,13 +12,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import { MailboxNavigationLive } from "#/control-plane/mailbox-navigation-live";
 import {
   FolderList,
   LabelList,
 } from "#/modules/mailbox/domain/MailboxDirectory";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxDirectoryRepositoryService } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
@@ -75,9 +75,9 @@ const repositoryWith = (
   });
 
 const authorizationWith = (
-  requireMailbox: MailAuthorizationService["requireMailbox"]
+  requireMailbox: MailboxAuthorizationService["requireMailbox"]
 ) =>
-  MailAuthorization.of({
+  MailboxAuthorization.of({
     requireAttachmentRead: unusedAuthorization,
     requireAttachmentUpload: unusedAuthorization,
     requireDraft: unusedAuthorization,
@@ -94,7 +94,7 @@ const authorizationWith = (
 
 const navigationEffect = (
   database: DatabaseSync,
-  authorization: MailAuthorizationService,
+  authorization: MailboxAuthorizationService,
   repository: MailboxDirectoryRepositoryService
 ) => {
   const bindingLive = Layer.succeed(
@@ -110,7 +110,7 @@ const navigationEffect = (
     Layer.provide(
       Layer.mergeAll(
         databaseLive,
-        Layer.succeed(MailAuthorization, authorization),
+        Layer.succeed(MailboxAuthorization, authorization),
         Layer.succeed(MailboxDirectoryRepository, repository)
       )
     )

@@ -7,8 +7,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   DraftId,
   MailboxId,
@@ -20,6 +18,8 @@ import {
   OutboundDeliverySchema,
   ScheduleOutboundResult,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
@@ -76,14 +76,14 @@ export interface MailboxOutboundSendingService {
     command: SendMailboxDraftCommand
   ) => Effect.Effect<
     SendMailboxDraftResult,
-    MailAuthorizationError | MailboxOutboundSendingError,
+    MailboxAuthorizationError | MailboxOutboundSendingError,
     CurrentPrincipal
   >;
   readonly undo: (
     command: UndoMailboxSendCommand
   ) => Effect.Effect<
     UndoMailboxSendResult,
-    MailAuthorizationError | MailboxOutboundSendingError,
+    MailboxAuthorizationError | MailboxOutboundSendingError,
     CurrentPrincipal
   >;
 }
@@ -189,7 +189,7 @@ export class MailboxOutboundSending extends Context.Service<
   MailboxOutboundSendingService
 >()("cloudflare-inbox/MailboxOutboundSending", {
   make: Effect.gen(function* () {
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const repository = yield* MailboxOutboundSendingRepository;
     const senderIdentity = yield* MailboxSenderIdentity;
 

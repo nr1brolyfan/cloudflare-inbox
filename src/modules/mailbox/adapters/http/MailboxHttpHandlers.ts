@@ -13,8 +13,6 @@ import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import type { MailAuthorizationError } from "#/authorization/mail-authorization";
-import type { MailResourceResolveError } from "#/authorization/resources";
 import { BackendHttpApi } from "#/http/api";
 import type { MailboxDraftAttachmentError } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
@@ -39,6 +37,10 @@ import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/Ma
 import type { MailboxOutboundSendingError } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import type {
+  MailboxAuthorizationError,
+  MailResourceResolveError,
+} from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
   CurrentMailboxOperationProvenance,
   ExplicitUserAction,
@@ -139,7 +141,7 @@ const mapAdministrationError = (
 type MailboxHandlerError =
   | AuthInternalError
   | AuthUnauthenticatedError
-  | MailAuthorizationError
+  | MailboxAuthorizationError
   | MailboxAdministrationError
   | MailboxNavigationError
   | MailboxMessageReadingError

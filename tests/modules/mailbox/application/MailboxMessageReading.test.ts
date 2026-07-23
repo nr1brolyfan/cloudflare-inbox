@@ -6,8 +6,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
-import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   MailboxMessageReading,
   MailboxMessageListInput,
@@ -25,6 +23,8 @@ import {
   GetThreadResult,
   MessagePage,
 } from "#/modules/mailbox/domain/MailboxMessage";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxMessageRepositoryService } from "#/modules/mailbox/ports/MailboxMessageRepository";
 
@@ -121,9 +121,9 @@ const repositoryWith = (
   });
 
 const authorizationWith = (
-  requireMailboxMessageRead: MailAuthorizationService["requireMailboxMessageRead"],
-  requireFolderMessageRead?: MailAuthorizationService["requireFolderMessageRead"],
-  requireMessage: MailAuthorizationService["requireMessage"] = unusedAuthorization
+  requireMailboxMessageRead: MailboxAuthorizationService["requireMailboxMessageRead"],
+  requireFolderMessageRead?: MailboxAuthorizationService["requireFolderMessageRead"],
+  requireMessage: MailboxAuthorizationService["requireMessage"] = unusedAuthorization
 ) => {
   const folderMessageRead =
     requireFolderMessageRead ??
@@ -137,7 +137,7 @@ const authorizationWith = (
         }))
       ));
 
-  return MailAuthorization.of({
+  return MailboxAuthorization.of({
     requireAttachmentRead: unusedAuthorization,
     requireAttachmentUpload: unusedAuthorization,
     requireDraft: unusedAuthorization,
@@ -154,7 +154,7 @@ const authorizationWith = (
 };
 
 const runReading = <A, E>(
-  authorization: MailAuthorizationService,
+  authorization: MailboxAuthorizationService,
   repository: MailboxMessageRepositoryService,
   use: (
     reading: MailboxMessageReadingService
@@ -167,7 +167,7 @@ const runReading = <A, E>(
         MailboxMessageReading.layerNoDeps.pipe(
           Layer.provide(
             Layer.merge(
-              Layer.succeed(MailAuthorization, authorization),
+              Layer.succeed(MailboxAuthorization, authorization),
               Layer.succeed(MailboxMessageRepository, repository)
             )
           )

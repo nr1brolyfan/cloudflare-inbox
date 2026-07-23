@@ -18,12 +18,18 @@ import { administrativeAuditInsertStatement } from "#/modules/administrative-aud
 import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
 import type { AdministrativeAuditError } from "#/modules/administrative-audit/application/AdministrativeAuditError";
 import {
+  MailPermission,
+  MailRole,
+  mailboxScope,
+} from "#/modules/authorization/domain/MailPermissionCatalog";
+import {
   EmailAddress,
   MailboxDisplayName,
   MailboxId,
   MailboxRecordSchema,
   normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
   MailboxAdministration,
   MailboxAdministrationError,
@@ -41,12 +47,6 @@ import {
   requireSensitiveOperationStepUp,
   SensitiveOperationStepUpClock,
 } from "../auth/step-up-policy";
-import {
-  MailPermission,
-  MailRole,
-  mailboxScope,
-} from "../authorization/catalog";
-import { MailAuthorization } from "../authorization/mail-authorization";
 import * as ControlPlane from "../platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
 import {
@@ -263,7 +263,7 @@ export const MailboxAdministrationLive = Layer.effect(
     const stepUpClock = yield* SensitiveOperationStepUpClock;
     const batch = yield* ControlPlane.ControlPlaneBatch;
     const database = yield* ControlPlaneDatabase;
-    const authorization = yield* MailAuthorization;
+    const authorization = yield* MailboxAuthorization;
     const audit = yield* AdministrativeAudit;
     const { ownerEmail: configuredOwnerEmail } = options;
     const { now, randomId } = runtime;
