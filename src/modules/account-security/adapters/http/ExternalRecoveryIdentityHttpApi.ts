@@ -2,12 +2,14 @@ import {
   AuthBadRequestError,
   AuthConflictError,
   AuthInternalError,
+  AuthNotFoundError,
   AuthOriginCheckMiddleware,
   AuthPolicyDeniedError,
   AuthSchemaErrorMiddleware,
   AuthStepUpRequiredError,
   AuthUnauthenticatedError,
 } from "@effect-auth/core/HttpApi";
+import * as Schema from "effect/Schema";
 import {
   HttpApi,
   HttpApiEndpoint,
@@ -17,6 +19,8 @@ import {
 
 import {
   EnrollExternalRecoveryIdentityCommand,
+  ExternalRecoveryIdentityOperationReceiptSchema,
+  ReadExternalRecoveryIdentityOperationQuery,
   VerifyExternalRecoveryIdentityCommand,
 } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
 import { CurrentRequestAuthMiddleware } from "#/modules/account-security/contracts/RequestAuthMiddleware";
@@ -29,6 +33,7 @@ const ExternalRecoveryIdentityErrors = [
   AuthPolicyDeniedError,
   AuthStepUpRequiredError,
   AuthConflictError,
+  AuthNotFoundError,
   AuthInternalError,
 ] as const;
 
@@ -52,11 +57,26 @@ export const VerifyExternalRecoveryIdentityEndpoint = HttpApiEndpoint.post(
   }
 );
 
+export const ReadExternalRecoveryIdentityOperationEndpoint =
+  HttpApiEndpoint.get(
+    "readOperation",
+    "/auth/external-recovery-identity/operations/:operationId",
+    {
+      error: ExternalRecoveryIdentityErrors,
+      params: Schema.Struct({
+        operationId:
+          ReadExternalRecoveryIdentityOperationQuery.fields.operationId,
+      }),
+      success: ExternalRecoveryIdentityOperationReceiptSchema,
+    }
+  );
+
 export class ExternalRecoveryIdentityGroup extends HttpApiGroup.make(
   "externalRecoveryIdentity"
 )
   .add(
     EnrollExternalRecoveryIdentityEndpoint,
+    ReadExternalRecoveryIdentityOperationEndpoint,
     VerifyExternalRecoveryIdentityEndpoint
   )
   .middleware(AuthSchemaErrorMiddleware)

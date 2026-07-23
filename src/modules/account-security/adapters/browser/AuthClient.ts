@@ -11,6 +11,7 @@ import * as Schema from "effect/Schema";
 import { ApplicationAuthClientExtensionApi } from "#/modules/account-security/adapters/http/AccountSecurityClientHttpApi";
 import {
   EnrollExternalRecoveryIdentityCommand,
+  ReadExternalRecoveryIdentityOperationQuery,
   VerifyExternalRecoveryIdentityCommand,
 } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
 import {
@@ -54,6 +55,21 @@ const applicationAuthExtension = defineAuthHttpApiExtension(
             payload: Schema.decodeUnknownSync(
               EnrollExternalRecoveryIdentityCommand
             )(payload),
+          }),
+        options
+      ),
+    readExternalRecoveryIdentityOperation: (
+      query: Schema.Codec.Encoded<
+        typeof ReadExternalRecoveryIdentityOperationQuery
+      >,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.externalRecoveryIdentity.readOperation({
+            params: Schema.decodeUnknownSync(
+              ReadExternalRecoveryIdentityOperationQuery
+            )(query),
           }),
         options
       ),

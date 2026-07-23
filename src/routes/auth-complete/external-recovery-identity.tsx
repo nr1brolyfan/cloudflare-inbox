@@ -19,13 +19,31 @@ function ExternalRecoveryIdentityCompletion() {
   const credentials = useCompletionCredentials();
   const [operationId] = useState(() => crypto.randomUUID());
   const verify = useMutation({
-    mutationFn: () =>
-      authClient.extensions.verifyExternalRecoveryIdentity({
-        challengeId: credentials.challengeId,
-        expectedVersion: 1,
-        operationId,
-        secret: credentials.secret ?? "",
-      }),
+    mutationFn: async () => {
+      try {
+        return await authClient.extensions.verifyExternalRecoveryIdentity({
+          challengeId: credentials.challengeId,
+          expectedVersion: 1,
+          operationId,
+          secret: credentials.secret ?? "",
+        });
+      } catch (error) {
+        const hasDefinitiveCode =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code !== "internal_error";
+        if (!hasDefinitiveCode) {
+          const receipt = await authClient.extensions
+            .readExternalRecoveryIdentityOperation({ operationId })
+            .catch(() => null);
+          if (receipt !== null) {
+            return receipt.result;
+          }
+        }
+        throw error;
+      }
+    },
     retry: false,
   });
 

@@ -32,6 +32,7 @@ import {
   EnrollExternalRecoveryIdentityCommand,
   ExternalRecoveryIdentityManagement,
   ExternalRecoveryIdentityManagementError,
+  ReadExternalRecoveryIdentityOperationQuery,
   VerifyExternalRecoveryIdentityCommand,
 } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
 import { ExternalRecoveryIdentityChallenge } from "#/modules/account-security/ports/ExternalRecoveryIdentityChallenge";
@@ -56,6 +57,33 @@ const now = Date.now();
 const challengeSecret = Schema.decodeUnknownSync(
   ExternalRecoveryChallengeSecret
 )("a".repeat(43));
+const enrollmentCommand = (
+  address = "person@external.test",
+  operationId = "00000000-0000-4000-8000-000000000031"
+) =>
+  Schema.decodeUnknownSync(EnrollExternalRecoveryIdentityCommand)({
+    address,
+    operationId,
+  });
+const verificationCommand = (
+  input: Partial<{
+    challengeId: string;
+    expectedVersion: number;
+    operationId: string;
+    secret: string;
+  }> = {}
+) =>
+  Schema.decodeUnknownSync(VerifyExternalRecoveryIdentityCommand)({
+    challengeId: "challenge-a",
+    expectedVersion: 1,
+    operationId: "00000000-0000-4000-8000-000000000032",
+    secret: challengeSecret,
+    ...input,
+  });
+const operationQuery = (operationId = "00000000-0000-4000-8000-000000000031") =>
+  Schema.decodeUnknownSync(ReadExternalRecoveryIdentityOperationQuery)({
+    operationId,
+  });
 const requestContext = Schema.decodeUnknownSync(RequestCorrelation)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
@@ -69,10 +97,12 @@ const validatedSession = (
       verifiedAt: AuthUnixMillis(now - 100),
       version: 1 as const,
     },
-  ]
+  ],
+  user = "user-a",
+  session = "session-a"
 ): ValidatedSession => {
-  const userId = UserId("user-a");
-  const sessionId = SessionId("session-a");
+  const userId = UserId(user);
+  const sessionId = SessionId(session);
   const currentSession = {
     aal: "aal1" as const,
     amr: authenticationEvents.length === 0 ? [] : ["pwd"],
@@ -87,7 +117,7 @@ const validatedSession = (
     currentSession,
     issued: {
       ...currentSession,
-      token: SessionToken("session-a.secret"),
+      token: SessionToken(`${session}.secret`),
     },
   };
 };
@@ -103,10 +133,17 @@ const insertSession = (database: DatabaseSync, session: ValidatedSession) => {
       `insert into auth_user_identity
         (id, user_id, scope_type, scope_id, kind, value, normalized_value,
          verified_at, is_primary_login, created_at, updated_at)
-       values ('login-a', ?, 'global', 'global', 'email', 'user@personal.test',
-               'user@personal.test', ?, 1, ?, ?)`
+       values (?, ?, 'global', 'global', 'email', ?, ?, ?, 1, ?, ?)`
     )
-    .run(session.actor.userId, now - 1000, now - 1000, now - 1000);
+    .run(
+      `login-${session.actor.userId}`,
+      session.actor.userId,
+      `${session.actor.userId}@personal.test`,
+      `${session.actor.userId}@personal.test`,
+      now - 1000,
+      now - 1000,
+      now - 1000
+    );
   database
     .prepare(
       `insert into auth_session
@@ -142,6 +179,8 @@ const managementLive = (
             )
             .run(now, challengeId);
         }),
+      hashSecret: (secret) =>
+        Effect.succeed(secret === challengeSecret ? "hash" : "different-hash"),
       inspect: ({ challengeId, identityId, secret, userId }) =>
         Effect.gen(function* () {
           const row = database
@@ -273,6 +312,13 @@ const loseResponseAfterCommit = (
   prepare: database.prepare,
 });
 
+const loseResponseWithoutCommit = (
+  database: D1EffectQbDatabaseLike
+): D1EffectQbDatabaseLike => ({
+  batch: () => Promise.reject(new Error("D1 request outcome unknown")),
+  prepare: database.prepare,
+});
+
 const runAuthenticated = <A, E, R>(
   effect: Effect.Effect<
     A,
@@ -364,6 +410,195 @@ describe("external recovery identity management", () => {
           )
           .get()
       ).toMatchObject({ audits: 2, consumed_at: now, login_identities: 0 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("replays enrollment without another challenge or delivery and rejects changed intent, kind, or actor", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const session = validatedSession();
+      const otherSession = validatedSession(undefined, "user-b", "session-b");
+      insertSession(database, session);
+      insertSession(database, otherSession);
+      const delivered: string[] = [];
+      const live = managementLive(database, d1, delivered);
+      const enroll = (activeSession: ValidatedSession, address: string) =>
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.enroll(
+              Schema.decodeUnknownSync(EnrollExternalRecoveryIdentityCommand)({
+                address,
+                operationId: "00000000-0000-4000-8000-000000000031",
+              })
+            );
+          }).pipe(Effect.provide(live)),
+          activeSession
+        );
+
+      const first = await Effect.runPromise(
+        enroll(session, "Person@external.test")
+      );
+      const replay = await Effect.runPromise(
+        enroll(session, "Person@external.test")
+      );
+      const changedAddress = await Effect.runPromise(
+        enroll(session, "other@external.test").pipe(Effect.flip)
+      );
+      const changedKind = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management
+              .verify(
+                Schema.decodeUnknownSync(VerifyExternalRecoveryIdentityCommand)(
+                  {
+                    challengeId: "challenge-a",
+                    expectedVersion: 1,
+                    operationId: "00000000-0000-4000-8000-000000000031",
+                    secret: challengeSecret,
+                  }
+                )
+              )
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(live)),
+          session
+        )
+      );
+      const changedActor = await Effect.runPromise(
+        enroll(otherSession, "Person@external.test").pipe(Effect.flip)
+      );
+
+      expect(replay).toStrictEqual(first);
+      expect([changedAddress, changedKind, changedActor]).toMatchObject([
+        { reason: "operation-conflict" },
+        { reason: "operation-conflict" },
+        { reason: "operation-conflict" },
+      ]);
+      expect(delivered).toStrictEqual(["Person@external.test"]);
+      expect(
+        database
+          .prepare("select count(*) as count from auth_verification")
+          .get()
+      ).toMatchObject({ count: 1 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("replays verification after challenge consumption and distinguishes operation conflicts from optimistic version conflicts", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      const live = managementLive(database, d1, []);
+      const run = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+        Effect.runPromise(
+          runAuthenticated(
+            effect.pipe(Effect.provide(live)) as Effect.Effect<
+              A,
+              E,
+              | AuthPermission.CurrentPrincipal
+              | CurrentRequestAuth
+              | RequestCorrelation
+            >,
+            session
+          )
+        );
+      await run(
+        Effect.gen(function* () {
+          const management = yield* ExternalRecoveryIdentityManagement;
+          return yield* management.enroll(enrollmentCommand());
+        })
+      );
+      const verifyCommand = verificationCommand();
+      const optimisticConflict = await run(
+        Effect.gen(function* () {
+          const management = yield* ExternalRecoveryIdentityManagement;
+          return yield* management
+            .verify(
+              verificationCommand({
+                expectedVersion: 2,
+                operationId: "00000000-0000-4000-8000-000000000033",
+              })
+            )
+            .pipe(Effect.flip);
+        })
+      );
+      const first = await run(
+        Effect.gen(function* () {
+          const management = yield* ExternalRecoveryIdentityManagement;
+          return yield* management.verify(verifyCommand);
+        })
+      );
+      const replay = await run(
+        Effect.gen(function* () {
+          const management = yield* ExternalRecoveryIdentityManagement;
+          return yield* management.verify(verifyCommand);
+        })
+      );
+      const changedChallenge = await run(
+        Effect.gen(function* () {
+          const management = yield* ExternalRecoveryIdentityManagement;
+          return yield* management
+            .verify(verificationCommand({ challengeId: "changed" }))
+            .pipe(Effect.flip);
+        })
+      );
+      const changedVersion = await run(
+        Effect.gen(function* () {
+          const management = yield* ExternalRecoveryIdentityManagement;
+          return yield* management
+            .verify(verificationCommand({ expectedVersion: 2 }))
+            .pipe(Effect.flip);
+        })
+      );
+      const changedSecret = await run(
+        Effect.gen(function* () {
+          const management = yield* ExternalRecoveryIdentityManagement;
+          return yield* management
+            .verify(verificationCommand({ secret: "b".repeat(43) }))
+            .pipe(Effect.flip);
+        })
+      );
+      expect(replay).toStrictEqual(first);
+      expect({
+        changedChallenge,
+        changedSecret,
+        changedVersion,
+        optimisticConflict,
+      }).toMatchObject({
+        changedChallenge: { reason: "operation-conflict" },
+        changedSecret: { reason: "operation-conflict" },
+        changedVersion: { reason: "operation-conflict" },
+        optimisticConflict: { reason: "version-conflict" },
+      });
+      expect(
+        database
+          .prepare(
+            "select count(*) as count from app_external_recovery_operation_receipt"
+          )
+          .get()
+      ).toMatchObject({ count: 2 });
+      expect(() =>
+        database.exec(
+          `insert into app_external_recovery_operation_receipt
+           select '00000000-0000-4000-8000-000000000034', operation_kind,
+             actor_user_id, identity_id, challenge_id, expected_identity_version,
+             'different-hash', result_user_id, result_status,
+             result_challenge_expires_at, result_created_at, result_updated_at,
+             result_verified_at, result_revoked_at, result_version,
+             committed_at, schema_version
+           from app_external_recovery_operation_receipt
+           where operation_kind = 'verify'`
+        )
+      ).toThrow(/binding/u);
     } finally {
       database.close();
     }
@@ -482,7 +717,7 @@ describe("external recovery identity management", () => {
     }
   });
 
-  it("does not compensate an enrollment whose commit result is unknown", async () => {
+  it("recovers an enrollment whose committed D1 response is lost", async () => {
     const database = new DatabaseSync(":memory:");
     try {
       await applyControlPlaneMigrations(database);
@@ -491,19 +726,61 @@ describe("external recovery identity management", () => {
       const d1 = loseResponseAfterCommit(makeTestD1Database(database));
       const live = managementLive(database, d1, []);
 
+      const result = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.enroll(
+              Schema.decodeUnknownSync(EnrollExternalRecoveryIdentityCommand)({
+                address: "person@external.test",
+                operationId: "00000000-0000-4000-8000-000000000031",
+              })
+            );
+          }).pipe(Effect.provide(live)),
+          session
+        )
+      );
+
+      expect(result.state._tag).toBe("Pending");
+      expect(
+        database
+          .prepare(
+            `select
+               (select count(*) from app_external_recovery_identity) as identities,
+               (select count(*) from app_administrative_audit_event) as audits,
+               (select count(*) from app_external_recovery_operation_receipt) as receipts,
+               (select count(*) from app_authorization_guard) as guards,
+               (select consumed_at from auth_verification
+                 where id = 'challenge-a') as consumed_at`
+          )
+          .get()
+      ).toMatchObject({
+        audits: 1,
+        consumed_at: null,
+        guards: 0,
+        identities: 1,
+        receipts: 1,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps an unknown commit state unknown when no receipt exists", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      const d1 = loseResponseWithoutCommit(makeTestD1Database(database));
+      const live = managementLive(database, d1, []);
+
       const error = await Effect.runPromise(
         runAuthenticated(
           Effect.gen(function* () {
             const management = yield* ExternalRecoveryIdentityManagement;
             return yield* management
-              .enroll(
-                Schema.decodeUnknownSync(EnrollExternalRecoveryIdentityCommand)(
-                  {
-                    address: "person@external.test",
-                    operationId: "00000000-0000-4000-8000-000000000031",
-                  }
-                )
-              )
+              .enroll(enrollmentCommand())
               .pipe(Effect.flip);
           }).pipe(Effect.provide(live)),
           session
@@ -519,17 +796,250 @@ describe("external recovery identity management", () => {
           .prepare(
             `select
                (select count(*) from app_external_recovery_identity) as identities,
+               (select count(*) from app_external_recovery_operation_receipt) as receipts,
+               (select count(*) from app_administrative_audit_event) as audits`
+          )
+          .get()
+      ).toMatchObject({ audits: 0, identities: 0, receipts: 0 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("recovers a committed verification after its challenge was consumed", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      const baseD1 = makeTestD1Database(database);
+      await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.enroll(enrollmentCommand());
+          }).pipe(Effect.provide(managementLive(database, baseD1, []))),
+          session
+        )
+      );
+
+      const verified = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.verify(verificationCommand());
+          }).pipe(
+            Effect.provide(
+              managementLive(database, loseResponseAfterCommit(baseD1), [])
+            )
+          ),
+          session
+        )
+      );
+
+      expect(verified).toMatchObject({
+        state: { _tag: "Verified", verifiedAt: now },
+        version: 2,
+      });
+      expect(
+        database
+          .prepare(
+            `select
+               (select consumed_at from auth_verification where id = 'challenge-a') as consumed_at,
+               (select count(*) from app_external_recovery_operation_receipt) as receipts`
+          )
+          .get()
+      ).toMatchObject({ consumed_at: now, receipts: 2 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps receipt readback actor-scoped and denies restricted sessions", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const session = validatedSession();
+      const otherSession = validatedSession(undefined, "user-b", "session-b");
+      insertSession(database, session);
+      insertSession(database, otherSession);
+      const live = managementLive(database, d1, []);
+      await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.enroll(enrollmentCommand());
+          }).pipe(Effect.provide(live)),
+          session
+        )
+      );
+      const read = (activeSession: ValidatedSession) =>
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.readOperation(operationQuery());
+          }).pipe(Effect.provide(live)),
+          activeSession
+        );
+      const receipt = await Effect.runPromise(read(session));
+      const isolated = await Effect.runPromise(
+        read(otherSession).pipe(Effect.flip)
+      );
+      const restricted = {
+        ...session,
+        currentSession: {
+          ...session.currentSession,
+          claims: { requirements: ["email_verification"] },
+        },
+        issued: {
+          ...session.issued,
+          claims: { requirements: ["email_verification"] },
+        },
+      } as ValidatedSession;
+      const restrictedRead = await Effect.runPromise(
+        read(restricted).pipe(Effect.flip)
+      );
+      const restrictedReplay = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management
+              .enroll(enrollmentCommand())
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(live)),
+          restricted
+        )
+      );
+
+      expect(receipt).toMatchObject({
+        actorUserId: "user-a",
+        operationKind: "enroll",
+        result: { email: { address: "person@external.test" } },
+      });
+      expect(receipt).not.toHaveProperty("verificationSecretHash");
+      expect(isolated).toMatchObject({ reason: "not-found" });
+      expect([restrictedRead, restrictedReplay]).toMatchObject([
+        { reason: "restricted-session" },
+        { reason: "restricted-session" },
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("enforces receipt state binding and immutability in D1", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.enroll(enrollmentCommand());
+          }).pipe(Effect.provide(managementLive(database, d1, []))),
+          session
+        )
+      );
+
+      expect(() =>
+        database.exec(
+          "update app_external_recovery_operation_receipt set committed_at = committed_at + 1"
+        )
+      ).toThrow(/immutable/u);
+      const receiptColumns = database
+        .prepare("pragma table_info(app_external_recovery_operation_receipt)")
+        .all();
+      const storedReceipt = database
+        .prepare("select * from app_external_recovery_operation_receipt")
+        .get();
+      const receiptColumnNames = receiptColumns.map(({ name }) => name);
+      expect({
+        containsAddress: receiptColumnNames.some((name) =>
+          [
+            "result_address",
+            "result_normalized_address",
+            "result_comparison_key",
+          ].includes(String(name))
+        ),
+        containsEmail: JSON.stringify(storedReceipt).includes(
+          "person@external.test"
+        ),
+      }).toStrictEqual({ containsAddress: false, containsEmail: false });
+      expect(() =>
+        database.exec("delete from app_external_recovery_operation_receipt")
+      ).toThrow(/retained/u);
+      expect(() =>
+        database.exec(
+          `insert or replace into app_external_recovery_operation_receipt
+           select * from app_external_recovery_operation_receipt`
+        )
+      ).toThrow(/immutable/u);
+      expect(() =>
+        database.exec(
+          `insert into app_external_recovery_operation_receipt
+           select '00000000-0000-4000-8000-000000000039', operation_kind,
+             actor_user_id, identity_id, challenge_id, expected_identity_version,
+             verification_secret_hash, result_user_id, result_status,
+             result_challenge_expires_at,
+             result_created_at, result_updated_at, result_verified_at,
+             result_revoked_at, result_version, committed_at, schema_version
+           from app_external_recovery_operation_receipt`
+        )
+      ).toThrow(/binding/u);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rolls back identity and audit when receipt insertion fails", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      database.exec(`create trigger fail_recovery_receipt
+        before insert on app_external_recovery_operation_receipt
+        begin
+          select raise(abort, 'receipt failed');
+        end`);
+      const live = managementLive(database, d1, []);
+
+      const error = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management
+              .enroll(enrollmentCommand())
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(live)),
+          session
+        )
+      );
+
+      expect(error).toMatchObject({
+        commitState: "unknown",
+        reason: "storage",
+      });
+      expect(
+        database
+          .prepare(
+            `select
+               (select count(*) from app_external_recovery_identity) as identities,
+               (select count(*) from app_external_recovery_operation_receipt) as receipts,
                (select count(*) from app_administrative_audit_event) as audits,
-               (select count(*) from app_authorization_guard) as guards,
-               (select consumed_at from auth_verification
-                 where id = 'challenge-a') as consumed_at`
+               (select consumed_at from auth_verification where id = 'challenge-a') as consumed_at`
           )
           .get()
       ).toMatchObject({
-        audits: 1,
+        audits: 0,
         consumed_at: null,
-        guards: 0,
-        identities: 1,
+        identities: 0,
+        receipts: 0,
       });
     } finally {
       database.close();
@@ -590,13 +1100,20 @@ describe("external recovery identity management", () => {
       expect(
         database
           .prepare(
-            `select recovery.status, recovery.version, challenge.consumed_at
+            `select recovery.status, recovery.version, challenge.consumed_at,
+                    (select count(*) from app_external_recovery_operation_receipt
+                      where operation_kind = 'verify') as verification_receipts
                from app_external_recovery_identity as recovery
                join auth_verification as challenge
                  on challenge.id = recovery.challenge_id`
           )
           .get()
-      ).toMatchObject({ consumed_at: null, status: "pending", version: 1 });
+      ).toMatchObject({
+        consumed_at: null,
+        status: "pending",
+        verification_receipts: 0,
+        version: 1,
+      });
     } finally {
       database.close();
     }

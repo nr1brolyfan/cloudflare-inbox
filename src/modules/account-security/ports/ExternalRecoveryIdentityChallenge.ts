@@ -17,6 +17,9 @@ export interface IssuedExternalRecoveryChallenge {
 
 export interface ExternalRecoveryIdentityChallengeShape {
   readonly consume: (challengeId: ChallengeId) => Effect.Effect<void>;
+  readonly hashSecret: (
+    secret: ExternalRecoveryChallengeSecret
+  ) => Effect.Effect<string, ExternalRecoveryIdentityManagementError>;
   readonly inspect: (input: {
     readonly challengeId: ChallengeId;
     readonly identityId: string;

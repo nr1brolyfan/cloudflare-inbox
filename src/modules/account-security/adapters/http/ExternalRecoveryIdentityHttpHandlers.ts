@@ -2,13 +2,19 @@ import {
   AuthBadRequestError,
   AuthConflictError,
   AuthInternalError,
+  AuthNotFoundError,
   AuthPolicyDeniedError,
   AuthStepUpRequiredError,
 } from "@effect-auth/core/HttpApi";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { ExternalRecoveryIdentityManagement } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
+import {
+  ExternalRecoveryIdentityManagement,
+  ExternalRecoveryIdentityOperationReceiptSchema,
+} from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
 import type { ExternalRecoveryIdentityManagementError } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
 
 import { ExternalRecoveryIdentityHttpApi } from "./ExternalRecoveryIdentityHttpApi";
@@ -17,6 +23,7 @@ type ExternalRecoveryIdentityPublicError =
   | AuthBadRequestError
   | AuthConflictError
   | AuthInternalError
+  | AuthNotFoundError
   | AuthPolicyDeniedError
   | AuthStepUpRequiredError;
 
@@ -44,6 +51,22 @@ const mapManagementError = (
         new AuthConflictError({
           code: "conflict",
           message: "External recovery identity changed",
+        })
+      );
+    }
+    case "operation-conflict": {
+      return Effect.fail(
+        new AuthConflictError({
+          code: "conflict",
+          message: "External recovery operation ID conflict",
+        })
+      );
+    }
+    case "not-found": {
+      return Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "External recovery operation not found",
         })
       );
     }
@@ -90,6 +113,27 @@ export const ExternalRecoveryIdentityHttpHandlersLayer = HttpApiBuilder.group(
               mapManagementError
             )
           )
+      )
+      .handle("readOperation", ({ params }) =>
+        Effect.gen(function* () {
+          const receipt = yield* management
+            .readOperation(params)
+            .pipe(
+              Effect.catchTag(
+                "ExternalRecoveryIdentityManagementError",
+                mapManagementError
+              )
+            );
+          const encoded = yield* Schema.encodeEffect(
+            ExternalRecoveryIdentityOperationReceiptSchema
+          )(receipt).pipe(Effect.orDie);
+          return yield* HttpServerResponse.json(encoded, {
+            headers: {
+              "cache-control": "private, no-store",
+              pragma: "no-cache",
+            },
+          }).pipe(Effect.orDie);
+        })
       )
       .handle("verify", ({ payload }) =>
         management

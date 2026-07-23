@@ -247,11 +247,29 @@ function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
   const [operationId] = useState(() => crypto.randomUUID());
   const [password, setPassword] = useState("");
   const enrollment = useMutation({
-    mutationFn: () =>
-      authClient.extensions.enrollExternalRecoveryIdentity({
-        address,
-        operationId,
-      }),
+    mutationFn: async () => {
+      try {
+        return await authClient.extensions.enrollExternalRecoveryIdentity({
+          address,
+          operationId,
+        });
+      } catch (error) {
+        const hasDefinitiveCode =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code !== "internal_error";
+        if (!hasDefinitiveCode) {
+          const receipt = await authClient.extensions
+            .readExternalRecoveryIdentityOperation({ operationId })
+            .catch(() => null);
+          if (receipt !== null) {
+            return receipt.result;
+          }
+        }
+        throw error;
+      }
+    },
     retry: false,
   });
   const stepUpRequired =

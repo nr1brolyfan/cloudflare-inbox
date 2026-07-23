@@ -1,3 +1,4 @@
+import { AuthSecrets } from "@effect-auth/core/AuthConfig";
 import { Challenge } from "@effect-auth/core/Challenge";
 import { Crypto } from "@effect-auth/core/Crypto";
 import * as Duration from "effect/Duration";
@@ -28,10 +29,15 @@ export const ExternalRecoveryIdentityChallengeEffectAuthLayer = Layer.effect(
   Effect.gen(function* () {
     const challenge = yield* Challenge;
     const crypto = yield* Crypto;
+    const secrets = yield* AuthSecrets;
 
     return ExternalRecoveryIdentityChallenge.of({
       consume: (challengeId) =>
         challenge.consume(challengeId).pipe(Effect.ignore),
+      hashSecret: (secret) =>
+        crypto
+          .hmacSha256({ data: secret, key: secrets.challenge })
+          .pipe(Effect.mapError((cause) => challengeError("verify", cause))),
       inspect: ({ challengeId, identityId, secret, userId }) =>
         challenge
           .inspect({

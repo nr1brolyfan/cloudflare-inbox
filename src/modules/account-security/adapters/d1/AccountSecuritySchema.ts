@@ -142,6 +142,93 @@ export const appExternalRecoveryIdentity = sqliteTable(
   ]
 );
 
+export const appExternalRecoveryOperationReceipt = sqliteTable(
+  "app_external_recovery_operation_receipt",
+  {
+    operationId: text("operation_id").primaryKey(),
+    operationKind: text("operation_kind", {
+      enum: ["enroll", "verify"],
+    }).notNull(),
+    actorUserId: text("actor_user_id").notNull(),
+    identityId: text("identity_id").notNull(),
+    challengeId: text("challenge_id"),
+    expectedIdentityVersion: integer("expected_identity_version"),
+    verificationSecretHash: text("verification_secret_hash"),
+    resultUserId: text("result_user_id").notNull(),
+    resultStatus: text("result_status", {
+      enum: ["pending", "verified"],
+    }).notNull(),
+    resultChallengeExpiresAt: integer("result_challenge_expires_at").notNull(),
+    resultCreatedAt: integer("result_created_at").notNull(),
+    resultUpdatedAt: integer("result_updated_at").notNull(),
+    resultVerifiedAt: integer("result_verified_at"),
+    resultRevokedAt: integer("result_revoked_at"),
+    resultVersion: integer("result_version").notNull(),
+    committedAt: integer("committed_at").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  (t) => [
+    check(
+      "app_external_recovery_operation_receipt_operation_id_check",
+      sql`length(operation_id) = 36
+        and operation_id = lower(trim(operation_id))
+        and substr(operation_id, 9, 1) = '-'
+        and substr(operation_id, 14, 1) = '-'
+        and substr(operation_id, 15, 1) = '4'
+        and substr(operation_id, 19, 1) = '-'
+        and substr(operation_id, 20, 1) in ('8', '9', 'a', 'b')
+        and substr(operation_id, 24, 1) = '-'
+        and length(replace(operation_id, '-', '')) = 32
+        and replace(operation_id, '-', '') not glob '*[^0-9a-f]*'`
+    ),
+    check(
+      "app_external_recovery_operation_receipt_kind_check",
+      sql`operation_kind in ('enroll', 'verify')`
+    ),
+    check(
+      "app_external_recovery_operation_receipt_actor_check",
+      sql`length(actor_user_id) between 1 and 128
+        and actor_user_id = trim(actor_user_id)`
+    ),
+    check(
+      "app_external_recovery_operation_receipt_intent_check",
+      sql`length(identity_id) between 1 and 128
+        and ((operation_kind = 'enroll'
+          and challenge_id is null
+          and expected_identity_version is null
+          and verification_secret_hash is null
+          and result_status = 'pending'
+          and result_verified_at is null
+          and result_revoked_at is null
+          and result_version = 1)
+        or (operation_kind = 'verify'
+          and length(challenge_id) between 1 and 128
+          and expected_identity_version >= 1
+          and length(verification_secret_hash) between 1 and 512
+          and result_status = 'verified'
+          and result_verified_at is not null
+          and result_revoked_at is null
+          and result_version = expected_identity_version + 1))`
+    ),
+    check(
+      "app_external_recovery_operation_receipt_result_check",
+      sql`result_user_id = actor_user_id
+        and result_challenge_expires_at > result_created_at
+        and result_created_at >= 0
+        and result_updated_at >= result_created_at
+        and (result_verified_at is null
+          or result_verified_at between result_created_at and result_updated_at)
+        and result_revoked_at is null
+        and committed_at = result_updated_at
+        and schema_version = 1`
+    ),
+    index("app_external_recovery_operation_receipt_actor_operation_idx").on(
+      t.actorUserId,
+      t.operationId
+    ),
+  ]
+);
+
 export const appPasskeyCredentialRevocation = sqliteTable(
   "app_passkey_credential_revocation",
   {
