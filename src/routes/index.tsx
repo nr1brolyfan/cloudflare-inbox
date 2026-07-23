@@ -19,7 +19,8 @@ import {
   currentSessionForQuery,
   emailIdentity,
   enrollRecoveryPasskey,
-} from "../auth/client";
+} from "#/modules/account-security/adapters/browser/AuthClient";
+
 import { getDevEmailInboxStatus } from "../server/tanstack-functions";
 import { SignedInOwnerBootstrap } from "./-index-owner-bootstrap";
 

@@ -95,9 +95,12 @@ describe("raw SQL source policy", () => {
       "});",
     ].join("\n");
 
-    expect(checkSourcePolicy("src/auth/storage-live.ts", source)).toStrictEqual(
-      [messages.native]
-    );
+    expect(
+      checkSourcePolicy(
+        "src/modules/account-security/adapters/d1/AccountSecurityStorageD1.ts",
+        source
+      )
+    ).toStrictEqual([messages.native]);
   });
 
   it("allows storage SQL execution in mailbox migrations", () => {
@@ -110,7 +113,7 @@ describe("raw SQL source policy", () => {
   });
 
   it.each([
-    "src/auth/storage-live.ts",
+    "src/modules/account-security/adapters/d1/AccountSecurityStorageD1.ts",
     "src/platform/control-plane-d1/ControlPlaneBatch.ts",
     "src/platform/control-plane-d1/ControlPlaneDatabase.ts",
     "src/workers/backend.ts",

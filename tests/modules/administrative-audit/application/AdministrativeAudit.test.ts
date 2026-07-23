@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { CurrentRequestAuth } from "#/auth/session";
+import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import {
   AdministrativeAudit,
   AdministrativeAuditEventSchema,

@@ -11,7 +11,7 @@ const nativeD1AdapterFile =
 const storageSqlExecutionFile =
   "src/modules/mailbox/adapters/sqlite/MailboxSqliteMigrations.ts";
 const controlPlaneD1BindingFiles = new Set([
-  "src/auth/storage-live.ts",
+  "src/modules/account-security/adapters/d1/AccountSecurityStorageD1.ts",
   "src/platform/control-plane-d1/ControlPlaneBatch.ts",
   "src/platform/control-plane-d1/ControlPlaneDatabase.ts",
   "src/workers/backend.ts",

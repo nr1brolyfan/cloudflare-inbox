@@ -22,6 +22,14 @@ import {
 import { useRef, useState } from "react";
 
 import {
+  authClient,
+  authSessionQueryKey,
+  clearCachedAuthSession,
+  currentSessionForQuery,
+  handleMailboxReadDenial,
+  mailboxReadDenialQueryKey,
+} from "#/modules/account-security/adapters/browser/AuthClient";
+import {
   CreateMailboxDraftCommand,
   DraftEditorContent,
   DraftEditorDraft,
@@ -51,14 +59,6 @@ import {
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 
-import {
-  authClient,
-  authSessionQueryKey,
-  clearCachedAuthSession,
-  currentSessionForQuery,
-  handleMailboxReadDenial,
-  mailboxReadDenialQueryKey,
-} from "../auth/client";
 import { DraftEditor } from "../inbox/draft-editor";
 import { DraftList } from "../inbox/draft-list";
 import {

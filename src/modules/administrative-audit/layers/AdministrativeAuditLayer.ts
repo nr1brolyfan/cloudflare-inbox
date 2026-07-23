@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { CurrentRequestAuth } from "#/auth/session";
+import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { Version } from "#/modules/mailbox/domain/Mailbox";
 import { CurrentBackendRequestContext } from "#/observability/request-context";
 

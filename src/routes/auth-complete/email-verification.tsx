@@ -6,11 +6,11 @@ import {
   authErrorMessage,
   authSessionQueryKey,
   clearMailboxReadDenial,
-} from "../../auth/client";
+} from "#/modules/account-security/adapters/browser/AuthClient";
 import {
   CompletionShell,
   useCompletionCredentials,
-} from "../../auth/completion";
+} from "#/modules/account-security/adapters/react/AuthCompletion";
 
 export const Route = createFileRoute("/auth-complete/email-verification")({
   component: EmailVerificationCompletion,

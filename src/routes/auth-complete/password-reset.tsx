@@ -2,15 +2,18 @@ import { useMutation } from "@tanstack/react-query";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 
-import { authClient, authErrorMessage } from "../../auth/client";
+import {
+  authClient,
+  authErrorMessage,
+} from "#/modules/account-security/adapters/browser/AuthClient";
 import {
   CompletionShell,
   useCompletionCredentials,
-} from "../../auth/completion";
+} from "#/modules/account-security/adapters/react/AuthCompletion";
 import {
   meetsPasswordPolicy,
   minimumPasswordCodePoints,
-} from "../../auth/password-policy";
+} from "#/modules/account-security/domain/PasswordPolicy";
 
 export const Route = createFileRoute("/auth-complete/password-reset")({
   component: PasswordResetCompletion,

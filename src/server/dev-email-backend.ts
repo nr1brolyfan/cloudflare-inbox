@@ -3,11 +3,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { DevEmailRecord } from "../http/dev-email-contract";
+import type { DevEmailRecord } from "#/modules/account-security/adapters/http/DevEmailHttpApi";
 import {
   DevEmailClearedSchema,
   DevEmailListSchema,
-} from "../http/dev-email-contract";
+} from "#/modules/account-security/adapters/http/DevEmailHttpApi";
+
 import { BackendClient, WebsiteConfig } from "./website-platform";
 
 export type DevEmailInboxResult =

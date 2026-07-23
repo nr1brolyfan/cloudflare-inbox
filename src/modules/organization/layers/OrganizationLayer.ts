@@ -1,6 +1,6 @@
 import * as Layer from "effect/Layer";
 
-import { SensitiveOperationStepUpClockLive } from "#/auth/step-up-policy";
+import { SensitiveOperationStepUpClockCloudflareLayer } from "#/modules/account-security/adapters/cloudflare/SensitiveOperationStepUpClockCloudflare";
 import {
   AdministrativeAuditLayer,
   AdministrativeAuditRuntimeLayer,
@@ -19,7 +19,7 @@ const MailboxAdministrationLayer = MailboxAdministrationD1Layer.pipe(
     Layer.mergeAll(
       AdministrativeAuditWithRuntimeLayer,
       MailboxAdministrationRuntimeLayer,
-      SensitiveOperationStepUpClockLive
+      SensitiveOperationStepUpClockCloudflareLayer
     )
   )
 );

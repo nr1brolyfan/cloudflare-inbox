@@ -14,6 +14,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
+import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
 import {
   EmailAddress,
@@ -44,12 +48,6 @@ import {
   authRoleDefinition,
   authRoleGrant,
 } from "../../../../auth/schema/modules/permissions";
-import type { CurrentRequestAuthShape } from "../../../../auth/session";
-import { CurrentRequestAuth } from "../../../../auth/session";
-import {
-  requireSensitiveOperationStepUp,
-  SensitiveOperationStepUpClock,
-} from "../../../../auth/step-up-policy";
 import * as ControlPlane from "../../../../platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "../../../../platform/control-plane-d1/ControlPlaneDatabase";
 import { appAuthorizationGuard } from "../../../../platform/control-plane-d1/ControlPlaneSchema";

@@ -10,7 +10,8 @@ import {
 } from "lucide-react";
 import { startTransition, useState } from "react";
 
-import type { DevEmailRecord } from "../http/dev-email-contract";
+import type { DevEmailRecord } from "#/modules/account-security/adapters/http/DevEmailHttpApi";
+
 import { clearDevEmails, listDevEmails } from "../server/tanstack-functions";
 
 const kindLabel = (kind: DevEmailRecord["kind"]) =>

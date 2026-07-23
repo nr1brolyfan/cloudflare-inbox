@@ -1,15 +1,15 @@
+import { AccountRecoveryGroup } from "#/modules/account-security/adapters/http/AccountRecoveryHttpApi";
+import { ApplicationAuthHttpApi } from "#/modules/account-security/adapters/http/AccountSecurityAuthHttpApi";
+import { DevEmailGroup } from "#/modules/account-security/adapters/http/DevEmailHttpApi";
+import { ExternalRecoveryIdentityGroup } from "#/modules/account-security/adapters/http/ExternalRecoveryIdentityHttpApi";
+import { PasskeyAuthenticationGroup } from "#/modules/account-security/adapters/http/PasskeyAuthenticationHttpApi";
+import { PasskeyCredentialManagementGroup } from "#/modules/account-security/adapters/http/PasskeyCredentialManagementHttpApi";
+import { PasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http/PasskeyEnrollmentHttpApi";
+import { RecoveryCodeManagementGroup } from "#/modules/account-security/adapters/http/RecoveryCodeManagementHttpApi";
+import { RecoveryPasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http/RecoveryPasskeyEnrollmentHttpApi";
 import { MailboxGroup } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
 
-import { AccountRecoveryGroup } from "./account-recovery-contract";
-import { ApplicationAuthHttpApi } from "./auth-contract";
-import { DevEmailGroup } from "./dev-email-contract";
-import { ExternalRecoveryIdentityGroup } from "./external-recovery-identity-contract";
 import { HealthGroup } from "./health-contract";
-import { PasskeyAuthenticationGroup } from "./passkey-authentication-contract";
-import { PasskeyCredentialManagementGroup } from "./passkey-credential-management-contract";
-import { PasskeyEnrollmentGroup } from "./passkey-enrollment-contract";
-import { RecoveryCodeManagementGroup } from "./recovery-code-management-contract";
-import { RecoveryPasskeyEnrollmentGroup } from "./recovery-passkey-enrollment-contract";
 
 /** The complete private Worker contract. Every route is registered by one builder. */
 export const BackendHttpApi = ApplicationAuthHttpApi.add(

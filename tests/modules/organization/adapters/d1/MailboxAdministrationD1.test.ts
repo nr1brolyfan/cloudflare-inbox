@@ -16,12 +16,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { CurrentRequestAuthShape } from "#/auth/session";
-import { CurrentRequestAuth } from "#/auth/session";
-import {
-  CONTROL_PLANE_STEP_UP_POLICY,
-  SensitiveOperationStepUpClock,
-} from "#/auth/step-up-policy";
+import { CONTROL_PLANE_STEP_UP_POLICY } from "#/modules/account-security/domain/StepUpPolicy";
+import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import {
   AdministrativeAuditLayer,
   AdministrativeAuditRuntimeLayer,
@@ -266,7 +263,7 @@ const provideRequestAuth = <A, E, R>(
     E,
     | AuthPermission.CurrentPrincipal
     | BackendRequestContext
-    | CurrentRequestAuthShape
+    | CurrentRequestAuth
     | R
   >,
   validated: ValidatedSession

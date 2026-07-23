@@ -17,7 +17,8 @@ import {
   authErrorMessage,
   authSessionQueryKey,
   clearCachedAuthSession,
-} from "../auth/client";
+} from "#/modules/account-security/adapters/browser/AuthClient";
+
 import { bootstrapMailboxOwner } from "../server/tanstack-functions";
 
 const subscribeToPasskeySupport = () => () => null;

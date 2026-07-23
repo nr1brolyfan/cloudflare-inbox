@@ -15,6 +15,11 @@ import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondab
 
 import InboundWorkflow from "#/apps/inbound-workflow/InboundWorkflow";
 import { MailboxDO } from "#/apps/mailbox-do/MailboxDO";
+import {
+  AuthRuntimeConfig,
+  AuthRuntimeConfigSchema,
+} from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
+import { DevEmailConfig } from "#/modules/account-security/adapters/http/DevEmailHttpHandlers";
 import { handleCloudflareEmailRoutingMessage } from "#/modules/address-routing/adapters/email/CloudflareEmailRouting";
 import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
@@ -55,9 +60,7 @@ import {
   WorkersAiGateway,
   WorkersAiInferenceLive,
 } from "../ai/workers-ai-live";
-import { AuthRuntimeConfig, AuthRuntimeConfigSchema } from "../auth/live";
-import { BackendHttpLive } from "../http/backend";
-import { DevEmailConfig } from "../http/dev-emails";
+import { BackendHttpLayer } from "../http/backend";
 import {
   AuthEmailSender,
   ControlPlaneDatabase as ControlPlaneDatabaseResource,
@@ -439,7 +442,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               backendRequestContextAnnotations(requestContext)
             );
             const controlPlaneDatabase = yield* controlPlane.raw;
-            const routesLive = BackendHttpLive.pipe(
+            const routesLive = BackendHttpLayer.pipe(
               Layer.provide(
                 Layer.succeed(
                   ControlPlaneD1Binding,

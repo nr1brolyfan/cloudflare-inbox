@@ -5,7 +5,7 @@ import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import type { CurrentRequestAuthShape } from "#/auth/session";
+import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
@@ -65,18 +65,14 @@ export interface MailboxAdministrationService {
   ) => Effect.Effect<
     MailboxRecord,
     MailboxAdministrationError,
-    | AuthPermission.CurrentPrincipal
-    | BackendRequestContext
-    | CurrentRequestAuthShape
+    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
   >;
   readonly rename: (
     input: RenameMailboxCommand
   ) => Effect.Effect<
     MailboxRecord,
     MailboxAuthorizationError | MailboxAdministrationError,
-    | AuthPermission.CurrentPrincipal
-    | BackendRequestContext
-    | CurrentRequestAuthShape
+    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
   >;
 }
 

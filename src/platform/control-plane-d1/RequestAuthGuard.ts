@@ -2,14 +2,15 @@ import { maximumSessionAuthenticationEvents } from "@effect-auth/core/Assurance"
 import { and, eq, exists, gt, isNull, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
-import { authUser } from "../../auth/schema/modules/core";
-import { authSession } from "../../auth/schema/modules/sessions";
-import type { CurrentRequestAuthShape } from "../../auth/session";
 import {
   AUTHENTICATION_EVENT_SCHEMA_VERSION,
   CONTROL_PLANE_STEP_UP_POLICY,
-} from "../../auth/step-up-policy";
-import type { SensitiveOperationEvidenceMethod } from "../../auth/step-up-policy";
+} from "#/modules/account-security/domain/StepUpPolicy";
+import type { SensitiveOperationEvidenceMethod } from "#/modules/account-security/domain/StepUpPolicy";
+import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
+
+import { authUser } from "../../auth/schema/modules/core";
+import { authSession } from "../../auth/schema/modules/sessions";
 import type { ControlPlaneDatabase } from "./ControlPlaneDatabase";
 
 export const controlPlaneDatabaseNow = sql<number>`cast(

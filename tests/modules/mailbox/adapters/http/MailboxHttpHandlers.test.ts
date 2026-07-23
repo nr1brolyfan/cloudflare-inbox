@@ -31,11 +31,11 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import {
-  CurrentRequestAuthMiddlewareLive,
-  RequestSessionAuthenticatorLive,
-} from "#/auth/session";
 import { HttpApiPlatformLive } from "#/http/platform";
+import {
+  CurrentRequestAuthMiddlewareLayer,
+  RequestSessionAuthenticatorEffectAuthLayer,
+} from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import { MailboxGroup } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
 import { MailboxHttpHandlersLayer } from "#/modules/mailbox/adapters/http/MailboxHttpHandlers";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
@@ -393,9 +393,11 @@ const makeHandler = (
       allowMissingOrigin: false,
       allowedOrigins: [publicOrigin],
     }),
-    CurrentRequestAuthMiddlewareLive.pipe(
+    CurrentRequestAuthMiddlewareLayer.pipe(
       Layer.provide(
-        RequestSessionAuthenticatorLive.pipe(Layer.provide(requestAuthLive))
+        RequestSessionAuthenticatorEffectAuthLayer.pipe(
+          Layer.provide(requestAuthLive)
+        )
       )
     )
   );

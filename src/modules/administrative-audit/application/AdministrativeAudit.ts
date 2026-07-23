@@ -4,8 +4,8 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { ExternalRecoveryIdentityId } from "#/auth/external-recovery-identity";
-import type { CurrentRequestAuthShape } from "#/auth/session";
+import { ExternalRecoveryIdentityId } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
+import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import {
   BackendCorrelationId,
@@ -216,9 +216,7 @@ export interface AdministrativeAudit {
   ) => Effect.Effect<
     AdministrativeAuditEvent,
     AdministrativeAuditError,
-    | AuthPermission.CurrentPrincipal
-    | BackendRequestContext
-    | CurrentRequestAuthShape
+    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
   >;
 }
 

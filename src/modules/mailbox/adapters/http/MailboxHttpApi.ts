@@ -17,7 +17,7 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
-import { CurrentRequestAuthMiddleware } from "#/auth/session";
+import { CurrentRequestAuthMiddleware } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import {
   CreateMailboxDraftCommand,
   DraftEditorDraft,
