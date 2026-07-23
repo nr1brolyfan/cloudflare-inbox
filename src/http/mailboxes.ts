@@ -19,6 +19,10 @@ import type { MailboxDraftEditingError } from "#/modules/mailbox/application/Mai
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type { MailboxDraftReadingError } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxDraftReading } from "#/modules/mailbox/application/MailboxDraftReading";
+import {
+  MailboxInboundReplay,
+  MailboxInboundReplayAuthorization,
+} from "#/modules/mailbox/application/MailboxInboundReplay";
 import type { MailboxInlineAttachmentError } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxMessageActionError } from "#/modules/mailbox/application/MailboxMessageActions";
@@ -45,8 +49,6 @@ import { MailboxNavigation } from "#/modules/organization/application/MailboxNav
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
-import { InboundReplay } from "../mailboxes/inbound";
-import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
 import { BackendHttpApi } from "./api";
 
 const internalError = () =>
@@ -478,8 +480,8 @@ export const MailboxGroupLive = HttpApiBuilder.group(
     const draftAttachments = yield* MailboxDraftAttachments;
     const outboundDeliveryReading = yield* MailboxOutboundDeliveryReading;
     const outboundSending = yield* MailboxOutboundSending;
-    const replayAuthorization = yield* InboundReplayAuthorization;
-    const inboundReplay = yield* InboundReplay;
+    const replayAuthorization = yield* MailboxInboundReplayAuthorization;
+    const inboundReplay = yield* MailboxInboundReplay;
 
     return handlers
       .handle("actOnMessage", ({ params, payload }) =>

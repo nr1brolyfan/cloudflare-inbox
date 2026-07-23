@@ -63,16 +63,16 @@ import {
   UploadDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
+  InboundProcessingResult,
+  ReplayInboundInput,
+} from "#/modules/mailbox/domain/MailboxInbound";
+import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 
 import { CurrentRequestAuthMiddleware } from "../auth/session";
-import {
-  InboundProcessingResult,
-  ReplayInboundInput,
-} from "../mailboxes/inbound";
 import { BackendRequestContextMiddleware } from "../observability/request-context-middleware";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });

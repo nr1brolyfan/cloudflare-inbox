@@ -25,6 +25,7 @@ import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { MailboxDoClientLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import { InboundReplayPreparerDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxInboundRepositoryDo";
 import {
   MailboxDirectoryRepositoryDoLayer,
   MailboxDraftRepositoryDoLayer,
@@ -34,10 +35,16 @@ import {
   MailboxResourceRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { DraftAttachmentBlobStoreR2Layer } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
+import { InboundAttachmentBlobReaderR2WithRuntimeLayer } from "#/modules/mailbox/adapters/r2/InboundAttachmentBlobReaderR2";
 import { MailboxOutboundDeliveryReadingClockSystemLayer } from "#/modules/mailbox/adapters/system/MailboxOutboundDeliveryReadingClockSystem";
+import { InboundWorkflowStarterCloudflareLayer } from "#/modules/mailbox/adapters/workflow/InboundWorkflowStarterCloudflare";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxDraftReading } from "#/modules/mailbox/application/MailboxDraftReading";
+import {
+  MailboxInboundReplay,
+  MailboxInboundReplayAuthorization,
+} from "#/modules/mailbox/application/MailboxInboundReplay";
 import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { MailboxMessageActions } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
@@ -97,13 +104,6 @@ import {
 } from "../control-plane/passkey-enrollment-live";
 import { RecoveryCodeAdministrationLive } from "../control-plane/recovery-code-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
-import { InboundAttachmentBlobReaderR2WithRuntimeLive } from "../mailboxes/inbound-attachment-reader-r2-live";
-import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
-import {
-  InboundReplayLive,
-  InboundReplayPreparerDoLive,
-} from "../mailboxes/inbound-replay-do-live";
-import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendRequestContextMiddlewareLive } from "../observability/backend-request-live";
 import { AccountRecoveryApiLayer } from "./account-recovery";
@@ -336,17 +336,17 @@ const BackendRoutesLive = Layer.unwrap(
           Layer.mergeAll(
             mailAuthorizationLive,
             mailboxMessageRepositoryDoLayer,
-            InboundAttachmentBlobReaderR2WithRuntimeLive
+            InboundAttachmentBlobReaderR2WithRuntimeLayer
           )
         )
       );
-    const inboundReplayLive = InboundReplayLive.pipe(
+    const inboundReplayLive = MailboxInboundReplay.layerNoDeps.pipe(
       Layer.provide(
         Layer.merge(
-          InboundReplayPreparerDoLive.pipe(
+          InboundReplayPreparerDoLayer.pipe(
             Layer.provide(MailboxRegistryD1Layer)
           ),
-          InboundWorkflowStarterLive
+          InboundWorkflowStarterCloudflareLayer
         )
       )
     );
@@ -364,7 +364,7 @@ const BackendRoutesLive = Layer.unwrap(
           mailboxDraftAttachmentsLive,
           mailboxMessageHtmlLive,
           mailboxInlineAttachmentLive,
-          InboundReplayAuthorizationLive.pipe(
+          MailboxInboundReplayAuthorization.layerNoDeps.pipe(
             Layer.provide(mailAuthorizationLive)
           ),
           inboundReplayLive

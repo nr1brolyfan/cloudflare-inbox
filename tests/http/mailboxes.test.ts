@@ -39,8 +39,6 @@ import { MailResourceResolveError } from "#/authorization/resources";
 import { MailboxGroup } from "#/http/mailbox-contract";
 import { MailboxGroupLive } from "#/http/mailboxes";
 import { HttpApiPlatformLive } from "#/http/platform";
-import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
-import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import {
@@ -53,6 +51,10 @@ import {
   MailboxDraftReading,
 } from "#/modules/mailbox/application/MailboxDraftReading";
 import type { MailboxDraftReadingService } from "#/modules/mailbox/application/MailboxDraftReading";
+import {
+  MailboxInboundReplay,
+  MailboxInboundReplayAuthorization,
+} from "#/modules/mailbox/application/MailboxInboundReplay";
 import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxInlineAttachmentReadingService } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import {
@@ -91,6 +93,7 @@ import {
   DraftAttachmentReservationSchema,
   DraftAttachmentUploadResult,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { InboundProcessingSchema } from "#/modules/mailbox/domain/MailboxInbound";
 import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
 import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import type { MailboxAdministrationService } from "#/modules/organization/application/MailboxAdministration";
@@ -413,14 +416,14 @@ const makeHandler = (
         Layer.succeed(MailboxOutboundSending, outboundSending),
         Layer.succeed(MailboxOutboundDeliveryReading, outboundDeliveryReading),
         Layer.succeed(
-          InboundReplay,
-          InboundReplay.of({
+          MailboxInboundReplay,
+          MailboxInboundReplay.of({
             replay: () => Effect.succeed(replayedProcessing),
           })
         ),
         Layer.succeed(
-          InboundReplayAuthorization,
-          InboundReplayAuthorization.of({ require: () => Effect.void })
+          MailboxInboundReplayAuthorization,
+          MailboxInboundReplayAuthorization.of({ require: () => Effect.void })
         ),
         requestAuthLive,
         middlewareLive

@@ -2,12 +2,12 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { MailAddress } from "#/modules/mailbox/domain/Mailbox";
 import {
   canTransitionInbound,
   InboundProcessingSchema,
   InboundProcessingStatus,
-} from "#/mailboxes/inbound";
-import { MailAddress } from "#/modules/mailbox/domain/Mailbox";
+} from "#/modules/mailbox/domain/MailboxInbound";
 import {
   MessageDetailSchema,
   MessageSummarySchema,

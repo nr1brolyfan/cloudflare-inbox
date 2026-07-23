@@ -13,6 +13,9 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
+import InboundWorkflow from "#/apps/inbound-workflow/InboundWorkflow";
+import { InboundMailboxResolverD1Layer } from "#/modules/address-routing/adapters/d1/InboundMailboxResolverD1";
+import { handleCloudflareEmailRoutingMessage } from "#/modules/address-routing/adapters/email/CloudflareEmailRouting";
 import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import {
   MailboxEmailSendBindingClient,
@@ -22,8 +25,26 @@ import {
 import { OutboundEmailProviderUnavailableLayer } from "#/modules/mailbox/adapters/email/OutboundEmailProviderUnavailable";
 import type { DraftAttachmentR2Object } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { DraftAttachmentR2Client } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
+import { InboundAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/InboundAttachmentBlobReaderR2";
+import {
+  InboundRawMessageR2WriteClient,
+  InboundRawMessageStoreR2Layer,
+  InboundRawMessageStoreRuntimeCloudflareLayer,
+} from "#/modules/mailbox/adapters/r2/InboundRawMessageStoreR2";
 import { OutboundDraftAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
+import {
+  InboundWorkflowClient,
+  InboundWorkflowStarterCloudflareLayer,
+} from "#/modules/mailbox/adapters/workflow/InboundWorkflowStarterCloudflare";
+import {
+  MailboxInboundEmailIngress,
+  MailboxInboundEmailIngressRuntimeSystemLayer,
+} from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { EmailAddress } from "#/modules/mailbox/domain/Mailbox";
+import {
+  EmailRoutingEventSource,
+  EmailRoutingEventSourceCloudflareLayer,
+} from "#/platform/cloudflare/EmailRoutingEventSource";
 
 import { AiInferenceUnavailableLive } from "../ai/inference";
 import {
@@ -37,7 +58,6 @@ import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLive,
 } from "../control-plane/database";
-import { InboundMailboxResolverLive } from "../control-plane/inbound-mailbox-resolver-live";
 import { MailboxAdministrationConfig } from "../control-plane/mailbox-administration-live";
 import { BackendHttpLive } from "../http/backend";
 import { DevEmailConfig } from "../http/dev-emails";
@@ -48,17 +68,6 @@ import {
   MailboxEmailSender,
   RawMessagesBucket,
 } from "../infra/resources";
-import { InboundAttachmentR2ReadClient } from "../mailboxes/inbound-attachment-reader-r2-live";
-import {
-  InboundEmailIngressLive,
-  InboundEmailIngressRuntimeLive,
-  RawMessagesR2Client,
-} from "../mailboxes/inbound-email-ingress-live";
-import { handleCloudflareEmailRoutingMessage } from "../mailboxes/inbound-email-routing";
-import {
-  InboundWorkflowClient,
-  InboundWorkflowStarterLive,
-} from "../mailboxes/inbound-workflow-starter-live";
 import { MailboxDO } from "../mailboxes/mailbox-do";
 import {
   BackendObservabilityConfig,
@@ -78,11 +87,6 @@ import {
   CurrentBackendRequestContext,
   backendRequestContextAnnotations,
 } from "../observability/request-context";
-import InboundWorkflow from "../workflows/inbound-workflow";
-import {
-  EmailRoutingEventSource,
-  EmailRoutingEventSourceLive,
-} from "./email-routing-event-source";
 
 const r2AttachmentObject = (object: {
   readonly checksums: { readonly sha256?: ArrayBuffer };
@@ -355,28 +359,37 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           )
         );
         const rawMessagesLive = Layer.succeed(
-          RawMessagesR2Client,
-          RawMessagesR2Client.of({
+          InboundRawMessageR2WriteClient,
+          InboundRawMessageR2WriteClient.of({
             put: (key, value, options) =>
               rawMessages
                 .put(key, value as unknown as ReadableStream, options)
                 .pipe(Effect.provide(RuntimeContext.phantom)),
           })
         );
-        const workflowStarterLive = InboundWorkflowStarterLive.pipe(
+        const workflowStarterLive = InboundWorkflowStarterCloudflareLayer.pipe(
           Layer.provide(workflowClientLive)
         );
-        const inboundEmailIngressLive = InboundEmailIngressLive.pipe(
+        const rawMessageStoreLayer = InboundRawMessageStoreR2Layer.pipe(
           Layer.provide(
-            Layer.mergeAll(
+            Layer.merge(
               rawMessagesLive,
-              InboundEmailIngressRuntimeLive,
-              workflowStarterLive
+              InboundRawMessageStoreRuntimeCloudflareLayer
             )
           )
         );
+        const inboundEmailIngressLive =
+          MailboxInboundEmailIngress.layerNoDeps.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                rawMessageStoreLayer,
+                MailboxInboundEmailIngressRuntimeSystemLayer,
+                workflowStarterLive
+              )
+            )
+          );
         const inboundServicesLive = Layer.merge(
-          InboundMailboxResolverLive.pipe(
+          InboundMailboxResolverD1Layer.pipe(
             Layer.provide(controlPlaneDatabaseLive)
           ),
           inboundEmailIngressLive
@@ -490,7 +503,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       }),
     };
   }).pipe(
-    Effect.provide(EmailRoutingEventSourceLive),
+    Effect.provide(EmailRoutingEventSourceCloudflareLayer),
     Effect.provide(Cloudflare.AI.QueryGatewayBinding),
     Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
     Effect.provide(Cloudflare.Email.SendBinding),

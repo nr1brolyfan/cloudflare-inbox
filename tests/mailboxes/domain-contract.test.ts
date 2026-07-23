@@ -7,7 +7,6 @@ import {
   MailboxAddressList,
   MailboxAddressSchema,
 } from "#/mailboxes/addresses";
-import { ParsedInboundMessageV1 } from "#/mailboxes/inbound";
 import {
   EmailAddress,
   MailboxDisplayName,
@@ -23,6 +22,7 @@ import {
   FolderSchema,
 } from "#/modules/mailbox/domain/MailboxDirectory";
 import { CreateDraftInput } from "#/modules/mailbox/domain/MailboxDraft";
+import { ParsedInboundMessageV1 } from "#/modules/mailbox/domain/MailboxInbound";
 import {
   AttachmentMetadata,
   ListMessagesInput,

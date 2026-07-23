@@ -1,12 +1,5 @@
 import * as Schema from "effect/Schema";
 
-import {
-  CommitInboundMessage,
-  InboundProcessingResult,
-  PreparedInboundReplayV1,
-  RecordInboundProcessing,
-  ReplayInboundInput,
-} from "#/mailboxes/inbound";
 import { Version } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateFolderInput,
@@ -42,6 +35,13 @@ import {
   ReserveDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import {
+  CommitInboundMessage,
+  InboundProcessingResult,
+  PreparedInboundReplayV1,
+  RecordInboundProcessing,
+  ReplayInboundInput,
+} from "#/modules/mailbox/domain/MailboxInbound";
 import {
   AddMessageLabelInput,
   AttachmentBlobLocation,

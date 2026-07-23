@@ -6,17 +6,6 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import {
-  CommitInboundMessageV1,
-  InboundProcessingSchema,
-  InboundWorkflowParamsV1,
-  PreparedInboundReplayV1,
-} from "#/mailboxes/inbound";
-import type {
-  CommitInboundMessage as CommitInboundMessageType,
-  RecordInboundProcessing,
-  ReplayInboundInput,
-} from "#/mailboxes/inbound";
-import {
   EvaluateRulesInput,
   evaluateAsyncRuleCandidates,
   evaluateRules,
@@ -33,6 +22,17 @@ import {
   AsyncRulePlanV1,
 } from "#/modules/mailbox/domain/MailboxAsyncRuleJob";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import {
+  CommitInboundMessageV1,
+  InboundProcessingSchema,
+  InboundWorkflowParamsV1,
+  PreparedInboundReplayV1,
+} from "#/modules/mailbox/domain/MailboxInbound";
+import type {
+  CommitInboundMessage as CommitInboundMessageType,
+  RecordInboundProcessing,
+  ReplayInboundInput,
+} from "#/modules/mailbox/domain/MailboxInbound";
 import {
   RuleAction,
   RuleActions,

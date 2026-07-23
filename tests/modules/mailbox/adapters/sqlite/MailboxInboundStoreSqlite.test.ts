@@ -5,13 +5,6 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  CommitInboundMessageV1,
-  CommitInboundMessageV2,
-  RecordInboundProcessing,
-  RecordInboundProcessingV1,
-  ReplayInboundInput,
-} from "#/mailboxes/inbound";
 import { MailboxDoHandler } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
 import { MailboxInboundStore } from "#/modules/mailbox/adapters/sqlite/MailboxInboundStoreSqlite";
 import { MailboxMessageStore } from "#/modules/mailbox/adapters/sqlite/MailboxMessageStoreSqlite";
@@ -30,6 +23,13 @@ import {
   ruleEvaluation,
 } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import {
+  CommitInboundMessageV1,
+  CommitInboundMessageV2,
+  RecordInboundProcessing,
+  RecordInboundProcessingV1,
+  ReplayInboundInput,
+} from "#/modules/mailbox/domain/MailboxInbound";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 
 import {
