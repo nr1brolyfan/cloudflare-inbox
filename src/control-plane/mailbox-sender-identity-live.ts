@@ -10,8 +10,11 @@ import {
   MailboxSenderIdentityError,
 } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 
-import { ControlPlaneDatabase } from "./database";
-import { appMailbox, appMailboxAddress } from "./schema";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import {
+  appMailbox,
+  appMailboxAddress,
+} from "../platform/control-plane-d1/ControlPlaneSchema";
 
 const senderIdentityError = (
   mailboxId: MailboxId,

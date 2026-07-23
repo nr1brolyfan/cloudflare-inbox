@@ -18,7 +18,6 @@ import {
   DraftId,
   MailAddress,
   MailboxId,
-  OperationId,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
@@ -34,6 +33,7 @@ import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/Mailbo
 import type { MailboxOutboundSendingRepositoryService } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import type { MailboxSenderIdentityService } from "#/modules/mailbox/ports/MailboxSenderIdentity";
+import { OperationId } from "#/shared/Operation";
 
 const scheduledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
   attemptCount: 0,

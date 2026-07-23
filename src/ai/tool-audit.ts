@@ -10,8 +10,8 @@ import * as Schema from "effect/Schema";
 
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 
-import { ControlPlaneDatabase } from "../control-plane/database";
-import { appAiToolAudit } from "../control-plane/schema";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import { appAiToolAudit } from "../platform/control-plane-d1/ControlPlaneSchema";
 import { AiToolCallId, AiToolName, AiToolRunId } from "./tool-protocol";
 import type { AiToolKind } from "./tool-run-budget";
 

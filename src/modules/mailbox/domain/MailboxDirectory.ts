@@ -1,6 +1,9 @@
 /* oxlint-disable max-classes-per-file -- Directory domain schemas are intentionally consolidated. */
 import * as Schema from "effect/Schema";
 
+import { OperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
+
 import {
   FolderId,
   FolderKind,
@@ -8,8 +11,6 @@ import {
   LabelId,
   LabelName,
   MailboxId,
-  OperationId,
-  UnixMillis,
   Version,
 } from "./Mailbox";
 

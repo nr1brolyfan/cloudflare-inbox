@@ -26,8 +26,6 @@ import {
 import type { CurrentRequestAuthShape } from "#/auth/session";
 import { CurrentRequestAuth } from "#/auth/session";
 import { SensitiveOperationStepUpClock } from "#/auth/step-up-policy";
-import { ControlPlaneLive } from "#/control-plane/batch";
-import { ControlPlaneD1Binding } from "#/control-plane/database";
 import {
   PasskeyCredentialAdministrationLive,
   PasskeyCredentialAdministrationRuntime,
@@ -36,6 +34,8 @@ import {
   BackendRequestContext,
   CurrentBackendRequestContext,
 } from "#/observability/request-context";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -169,7 +169,7 @@ const insertCredential = (
 };
 
 const administrationLive = (d1: D1EffectQbDatabaseLike, state: TestState) => {
-  const controlPlaneLive = ControlPlaneLive.pipe(
+  const controlPlaneLive = ControlPlaneD1Layer.pipe(
     Layer.provide(
       Layer.succeed(
         ControlPlaneD1Binding,

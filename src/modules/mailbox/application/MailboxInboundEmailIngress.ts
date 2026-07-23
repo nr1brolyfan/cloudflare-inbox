@@ -6,11 +6,12 @@ import * as Schema from "effect/Schema";
 
 import { InboundEmailRejected } from "#/modules/address-routing/ports/InboundMailboxResolver";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
-import { InboundIngestId, UnixMillis } from "#/modules/mailbox/domain/Mailbox";
+import { InboundIngestId } from "#/modules/mailbox/domain/Mailbox";
 import type { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
 import { InboundRawMessageStore } from "#/modules/mailbox/ports/InboundRawMessageStore";
 import { InboundWorkflowStarter } from "#/modules/mailbox/ports/InboundWorkflowStarter";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import { UnixMillis } from "#/shared/Temporal";
 
 export interface InboundEmailRoutingMessage {
   readonly envelope: ReceiveInboundEmailInput;

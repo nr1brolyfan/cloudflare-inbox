@@ -25,12 +25,12 @@ import {
   PageSize,
   SearchQuery,
   ThreadId,
-  UnixMillis,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import { UnixMillis } from "#/shared/Temporal";
 
 export const MailboxMessageView = Schema.Union([
   Schema.Struct({

@@ -90,7 +90,7 @@ Rejected because receiving and sending have different security requirements.
 ## References
 
 - `PLAN-FIRMOWEJ-POCZTY.md`
-- `src/control-plane/schema.ts`
+- `src/platform/control-plane-d1/ControlPlaneSchema.ts`
 - `src/control-plane/inbound-mailbox-resolver-live.ts`
 - `src/control-plane/mailbox-sender-identity-live.ts`
 - `src/mailboxes/inbound-email-routing.ts`

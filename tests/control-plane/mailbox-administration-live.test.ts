@@ -37,8 +37,6 @@ import {
 } from "#/authorization/mail-authorization";
 import { MailPermissionsLive } from "#/authorization/permissions-live";
 import * as Resources from "#/authorization/resources";
-import { ControlPlaneLive } from "#/control-plane/batch";
-import { ControlPlaneD1Binding } from "#/control-plane/database";
 import {
   MailboxAdministrationConfig,
   MailboxAdministrationLive,
@@ -46,7 +44,6 @@ import {
   MailboxAdministrationRuntime,
 } from "#/control-plane/mailbox-administration-live";
 import {
-  AdministrativeOperationId,
   MailboxDisplayName,
   MailboxId,
   Version,
@@ -66,6 +63,9 @@ import {
   BackendRequestContext,
   CurrentBackendRequestContext,
 } from "#/observability/request-context";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { AdministrativeOperationId } from "#/shared/Operation";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -250,7 +250,7 @@ const unavailableMailAuthorizationLive = Layer.succeed(
 );
 
 const controlPlaneBatchLive = (database: D1EffectQbDatabaseLike) =>
-  ControlPlaneLive.pipe(
+  ControlPlaneD1Layer.pipe(
     Layer.provide(
       Layer.succeed(
         ControlPlaneD1Binding,

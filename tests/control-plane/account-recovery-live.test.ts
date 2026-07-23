@@ -37,8 +37,8 @@ import {
 } from "#/auth/account-recovery";
 import { RecoverySafeIdentityPolicy } from "#/auth/external-recovery-identity";
 import { AccountRecoveryLive } from "#/control-plane/account-recovery-live";
-import { ControlPlaneLive } from "#/control-plane/batch";
-import { ControlPlaneD1Binding } from "#/control-plane/database";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -166,7 +166,7 @@ describe("account recovery", () => {
       insertEligibleAccount(database);
       const d1 = makeTestD1Database(database);
       let preparedTtl: SessionTtlPolicy | undefined;
-      const controlPlaneLive = ControlPlaneLive.pipe(
+      const controlPlaneLive = ControlPlaneD1Layer.pipe(
         Layer.provide(
           Layer.succeed(
             ControlPlaneD1Binding,

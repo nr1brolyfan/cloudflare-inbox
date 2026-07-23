@@ -8,9 +8,12 @@ import {
 } from "../auth/external-recovery-identity";
 import { RecoverySafeIdentityRejected } from "../auth/recovery-safe-identity-error";
 import { authUserIdentity } from "../auth/schema/modules/core";
-import { ControlPlaneDatabase } from "./database";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import {
+  appExternalRecoveryIdentity,
+  appMailboxAddress,
+} from "../platform/control-plane-d1/ControlPlaneSchema";
 import { MailboxAdministrationConfig } from "./mailbox-administration-live";
-import { appExternalRecoveryIdentity, appMailboxAddress } from "./schema";
 
 const storageError = (cause: unknown) =>
   new RecoverySafeIdentityRejected({ cause, reason: "storage" });

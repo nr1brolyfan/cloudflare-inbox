@@ -19,7 +19,6 @@ import {
   Cursor,
   MailboxId,
   MessageId,
-  UnixMillis,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
@@ -48,6 +47,7 @@ import type {
   SearchMessagesInput,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { UnixMillis } from "#/shared/Temporal";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";

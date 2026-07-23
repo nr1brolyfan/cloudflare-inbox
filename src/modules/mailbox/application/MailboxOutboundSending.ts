@@ -12,7 +12,6 @@ import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   DraftId,
   MailboxId,
-  OperationId,
   OutboundDeliveryId,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
@@ -26,6 +25,7 @@ import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/Mailbo
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import type { MailboxSenderIdentityError } from "#/modules/mailbox/ports/MailboxSenderIdentity";
+import { OperationId } from "#/shared/Operation";
 
 export const SendMailboxDraftCommand = Schema.Struct({
   mailboxId: MailboxId,

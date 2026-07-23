@@ -55,10 +55,6 @@ import {
   WorkersAiInferenceLive,
 } from "../ai/workers-ai-live";
 import { AuthRuntimeConfig, AuthRuntimeConfigSchema } from "../auth/live";
-import {
-  ControlPlaneD1Binding,
-  ControlPlaneDatabaseLive,
-} from "../control-plane/database";
 import { MailboxAdministrationConfig } from "../control-plane/mailbox-administration-live";
 import { BackendHttpLive } from "../http/backend";
 import { DevEmailConfig } from "../http/dev-emails";
@@ -87,6 +83,10 @@ import {
   CurrentBackendRequestContext,
   backendRequestContextAnnotations,
 } from "../observability/request-context";
+import {
+  ControlPlaneD1Binding,
+  ControlPlaneDatabaseLayer,
+} from "../platform/control-plane-d1/ControlPlaneDatabase";
 
 const r2AttachmentObject = (object: {
   readonly checksums: { readonly sha256?: ArrayBuffer };
@@ -350,7 +350,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     yield* emailRouting.listen((message) =>
       Effect.gen(function* () {
         const controlPlaneDatabase = yield* controlPlane.raw;
-        const controlPlaneDatabaseLive = ControlPlaneDatabaseLive.pipe(
+        const controlPlaneDatabaseLayer = ControlPlaneDatabaseLayer.pipe(
           Layer.provide(
             Layer.succeed(
               ControlPlaneD1Binding,
@@ -390,7 +390,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           );
         const inboundServicesLive = Layer.merge(
           InboundMailboxResolverD1Layer.pipe(
-            Layer.provide(controlPlaneDatabaseLive)
+            Layer.provide(controlPlaneDatabaseLayer)
           ),
           inboundEmailIngressLive
         );

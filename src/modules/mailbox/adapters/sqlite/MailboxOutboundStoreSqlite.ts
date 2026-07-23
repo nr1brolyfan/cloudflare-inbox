@@ -9,7 +9,6 @@ import {
   DraftId,
   MailAddress,
   MailboxId,
-  OperationId,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
@@ -30,6 +29,7 @@ import type {
   ScheduleOutboundInput,
 } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { OperationId } from "#/shared/Operation";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";

@@ -7,9 +7,9 @@ The Backend Worker is the composition root. It acquires Cloudflare resources and
 ```text
 Worker bindings and deployment config
   -> ControlPlaneD1Binding
-     -> ControlPlaneDatabaseLive
+     -> ControlPlaneDatabaseLayer
         -> auth storage, MailboxRegistryLive, health control-plane probe
-     -> ControlPlaneBatchLive
+     -> ControlPlaneBatchLayer
         -> D1DevEmailStoreLive, MailboxAdministrationLive
    -> AuthRuntimeConfig (schema-decoded origin and delivery mode)
       -> AuthServicesLive
@@ -43,8 +43,8 @@ Inside each `MailboxDO`, `MailboxDatabaseLive` feeds `MailboxOperationStoreLive`
 
 ## Boundaries
 
-- `src/control-plane/database.ts` owns the raw D1 binding, Effect Drizzle adapter, and mailbox registry query. It does not import HTTP modules.
-- `src/control-plane/batch.ts` owns the atomic D1 batch contract and adapter. Batch rows remain unknown until a use case decodes them with a concrete schema.
+- `src/platform/control-plane-d1/ControlPlaneDatabase.ts` owns the raw D1 binding and Effect Drizzle adapter. It does not import HTTP modules.
+- `src/platform/control-plane-d1/ControlPlaneBatch.ts` owns the atomic D1 batch contract and adapter. Batch rows remain unknown until a use case decodes them with a concrete schema.
 - `src/mailboxes/resource-location.ts` is the schema-backed source for branded resource lookup hints and trusted locations. A claimed mailbox ID selects a lookup target but is never authorization evidence; scopes use only ancestry returned by the trusted repository.
 - `src/observability/health.ts` contains transport-neutral health schemas and the service contract. `src/observability/backend-health-live.ts` owns concrete probes. HTTP status annotations and the 200/503 response selection remain in `src/http`.
 - `src/modules/mailbox/adapters/http/MailboxHttpApi.ts` owns the shared public mailbox error codec used by the Backend API contract and Website response decoder.

@@ -8,13 +8,13 @@ import * as Schema from "effect/Schema";
 import type { CurrentRequestAuthShape } from "#/auth/session";
 import type { MailAuthorizationError } from "#/authorization/mail-authorization";
 import {
-  AdministrativeOperationId,
   MailboxDisplayName,
   MailboxId,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxRecord } from "#/modules/mailbox/domain/Mailbox";
 import type { BackendRequestContext } from "#/observability/request-context";
+import { AdministrativeOperationId } from "#/shared/Operation";
 
 export const BootstrapOwnerMailboxCommand = Schema.Struct({
   displayName: MailboxDisplayName,

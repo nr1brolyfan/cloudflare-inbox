@@ -10,10 +10,6 @@ import {
   RecoverySafeIdentityPolicy,
 } from "#/auth/external-recovery-identity";
 import {
-  ControlPlaneD1Binding,
-  ControlPlaneDatabaseLive,
-} from "#/control-plane/database";
-import {
   MailboxAdministrationConfig,
   MailboxAdministrationOwnerEmail,
 } from "#/control-plane/mailbox-administration-live";
@@ -22,11 +18,15 @@ import {
   EmailAddress,
   normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
+import {
+  ControlPlaneD1Binding,
+  ControlPlaneDatabaseLayer,
+} from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
 const policyLive = (database: DatabaseSync) => {
-  const databaseLive = ControlPlaneDatabaseLive.pipe(
+  const databaseLive = ControlPlaneDatabaseLayer.pipe(
     Layer.provide(
       Layer.succeed(
         ControlPlaneD1Binding,

@@ -16,7 +16,6 @@ import {
   MailAddress,
   MimeType,
   RfcMessageId,
-  UnixMillis,
 } from "#/modules/mailbox/domain/Mailbox";
 import {
   ExtractedInboundMessageV1,
@@ -31,6 +30,7 @@ import {
   InboundMimeParser,
   MimeParseError,
 } from "#/modules/mailbox/ports/InboundMimeParser";
+import { UnixMillis } from "#/shared/Temporal";
 
 export interface InboundMimeParserConfig {
   readonly maximumAddresses: number;

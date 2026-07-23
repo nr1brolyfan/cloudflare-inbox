@@ -5,10 +5,10 @@ import {
   MailAddress,
   MailboxAddressId,
   MailboxId,
-  OperationId,
-  UnixMillis,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
+import { OperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
 
 export class MailboxAddress extends Schema.Class<MailboxAddress>(
   "cloudflare-inbox/MailboxAddress"

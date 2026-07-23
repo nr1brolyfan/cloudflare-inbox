@@ -1,6 +1,8 @@
 /* oxlint-disable max-classes-per-file -- Persisted rule contracts form one mailbox domain topic. */
 import * as Schema from "effect/Schema";
 
+import { UnixMillis } from "#/shared/Temporal";
+
 import {
   EmailAddress,
   FolderId,
@@ -11,7 +13,6 @@ import {
   RuleId,
   RuleName,
   RulePriority,
-  UnixMillis,
   Version,
 } from "./Mailbox";
 

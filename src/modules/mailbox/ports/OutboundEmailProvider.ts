@@ -11,11 +11,11 @@ import {
   MessageSubject,
   MimeType,
 } from "#/modules/mailbox/domain/Mailbox";
-import type { UnixMillis } from "#/modules/mailbox/domain/Mailbox";
 import {
   OutboundProviderMessageId,
   outboundMaxRecipientCount,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import type { UnixMillis } from "#/shared/Temporal";
 
 export class DeliveryIndeterminateError extends Data.TaggedError(
   "DeliveryIndeterminateError"

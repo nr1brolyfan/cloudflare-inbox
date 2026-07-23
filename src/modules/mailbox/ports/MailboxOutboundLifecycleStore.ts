@@ -6,13 +6,13 @@ import * as Schema from "effect/Schema";
 import {
   AttemptCount,
   OutboundDeliveryId,
-  UnixMillis,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import {
   OutboundFailureCode,
   OutboundProviderMessageId,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { UnixMillis } from "#/shared/Temporal";
 
 export const outboundRetryBaseDelayMillis = 30_000;
 export const outboundRetryMaxDelayMillis = 30 * 60_000;

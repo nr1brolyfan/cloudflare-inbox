@@ -8,8 +8,8 @@ import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
 import { D1DevEmailStoreLive } from "#/auth/storage-live";
-import { ControlPlaneLive } from "#/control-plane/batch";
-import { ControlPlaneD1Binding } from "#/control-plane/database";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -17,7 +17,7 @@ const makeStoreLive = (
   database: DatabaseSync,
   d1: D1EffectQbDatabaseLike = makeTestD1Database(database)
 ) => {
-  const controlPlaneLive = ControlPlaneLive.pipe(
+  const controlPlaneLive = ControlPlaneD1Layer.pipe(
     Layer.provide(
       Layer.succeed(
         ControlPlaneD1Binding,

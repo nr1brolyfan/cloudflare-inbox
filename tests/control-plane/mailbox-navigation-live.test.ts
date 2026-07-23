@@ -14,10 +14,6 @@ import { describe, expect, it } from "vitest";
 
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
-import {
-  ControlPlaneD1Binding,
-  ControlPlaneDatabaseLive,
-} from "#/control-plane/database";
 import { MailboxNavigationLive } from "#/control-plane/mailbox-navigation-live";
 import {
   FolderList,
@@ -26,6 +22,10 @@ import {
 import type { MailboxDirectoryRepositoryService } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
+import {
+  ControlPlaneD1Binding,
+  ControlPlaneDatabaseLayer,
+} from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -103,7 +103,7 @@ const navigationEffect = (
       database: makeTestD1Database(database) as unknown as D1Database,
     })
   );
-  const databaseLive = ControlPlaneDatabaseLive.pipe(
+  const databaseLive = ControlPlaneDatabaseLayer.pipe(
     Layer.provide(bindingLive)
   );
   const navigationLive = MailboxNavigationLive.pipe(

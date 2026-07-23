@@ -1,6 +1,9 @@
 /* oxlint-disable max-classes-per-file -- Message domain schemas are intentionally consolidated. */
 import * as Schema from "effect/Schema";
 
+import { OperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
+
 import {
   AttachmentId,
   ByteSize,
@@ -18,13 +21,11 @@ import {
   MessageSnippet,
   MessageSubject,
   MimeType,
-  OperationId,
   OutboundDeliveryId,
   PageSize,
   RfcMessageId,
   SearchQuery,
   ThreadId,
-  UnixMillis,
   Version,
 } from "./Mailbox";
 import { OutboundDeliveryStatus } from "./MailboxOutbound";

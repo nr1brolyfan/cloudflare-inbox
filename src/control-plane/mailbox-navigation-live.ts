@@ -17,8 +17,11 @@ import {
 } from "#/modules/organization/application/MailboxNavigation";
 
 import { MailAuthorization } from "../authorization/mail-authorization";
-import { ControlPlaneDatabase } from "./database";
-import { appMailbox, appMailboxMember } from "./schema";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import {
+  appMailbox,
+  appMailboxMember,
+} from "../platform/control-plane-d1/ControlPlaneSchema";
 
 const navigationError = (reason: "not-found" | "storage", cause?: unknown) =>
   new MailboxNavigationError({

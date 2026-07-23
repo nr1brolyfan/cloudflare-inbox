@@ -11,11 +11,7 @@ import {
   evaluateRules,
 } from "#/modules/automation/application/RuleEvaluation";
 import type { RuleEvaluationResult } from "#/modules/automation/application/RuleEvaluation";
-import {
-  AsyncRuleJobId,
-  MailAddress,
-  OperationId,
-} from "#/modules/mailbox/domain/Mailbox";
+import { AsyncRuleJobId, MailAddress } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxId, RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
 import {
   AsyncRuleJob,
@@ -43,6 +39,7 @@ import {
 } from "#/modules/mailbox/domain/MailboxRule";
 import type { RuleApplicationOutcome } from "#/modules/mailbox/domain/MailboxRule";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { OperationId } from "#/shared/Operation";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";

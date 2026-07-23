@@ -3,8 +3,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { ControlPlaneDatabase } from "#/control-plane/database";
-import { appMailbox, appMailboxAddress } from "#/control-plane/schema";
 import {
   InboundEmailRejected,
   InboundMailboxResolver,
@@ -13,6 +11,11 @@ import {
   MailboxId,
   normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
+import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import {
+  appMailbox,
+  appMailboxAddress,
+} from "#/platform/control-plane-d1/ControlPlaneSchema";
 
 const resolutionError = (
   reason: "processing-unavailable" | "unknown-recipient",

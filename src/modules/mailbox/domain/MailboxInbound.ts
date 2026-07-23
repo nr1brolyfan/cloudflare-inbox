@@ -14,11 +14,11 @@ import {
   MessageSubject,
   MessageId,
   MimeType,
-  OperationId,
   RfcMessageId,
-  UnixMillis,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
+import { OperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
 
 export const InboundFailureCode = Schema.Literals([
   "malformed_message",

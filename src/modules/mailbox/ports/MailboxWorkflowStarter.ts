@@ -3,9 +3,9 @@ import * as Data from "effect/Data";
 import type {
   AsyncRuleJobId,
   InboundIngestId,
-  OperationId,
   OutboundDeliveryId,
 } from "#/modules/mailbox/domain/Mailbox";
+import type { OperationId } from "#/shared/Operation";
 
 export class WorkflowStartError extends Data.TaggedError("WorkflowStartError")<{
   readonly workflow: "async-rules" | "inbound" | "outbound";

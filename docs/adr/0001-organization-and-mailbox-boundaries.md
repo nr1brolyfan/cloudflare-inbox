@@ -51,6 +51,6 @@ Rejected because HR, accounting, and personal mailboxes require configuration ad
 ## References
 
 - `PLAN-FIRMOWEJ-POCZTY.md`
-- `src/control-plane/schema.ts`
+- `src/platform/control-plane-d1/ControlPlaneSchema.ts`
 - `src/mailboxes/mailbox-do.ts`
 - `src/authorization/catalog.ts`

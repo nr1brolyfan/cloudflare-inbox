@@ -7,18 +7,18 @@ import { describe, expect, it } from "vitest";
 import {
   ControlPlaneBatch,
   ControlPlaneBatchError,
-  ControlPlaneBatchLive,
-} from "#/control-plane/batch";
+  ControlPlaneBatchLayer,
+} from "#/platform/control-plane-d1/ControlPlaneBatch";
 import type {
   ControlPlaneStatement,
   ControlPlaneStatements,
-} from "#/control-plane/batch";
+} from "#/platform/control-plane-d1/ControlPlaneBatch";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabase,
-  ControlPlaneDatabaseLive,
-} from "#/control-plane/database";
-import { appMailbox } from "#/control-plane/schema";
+  ControlPlaneDatabaseLayer,
+} from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { appMailbox } from "#/platform/control-plane-d1/ControlPlaneSchema";
 
 const query = (statement: SQL): ControlPlaneStatement => ({
   _: { dialect: "sqlite", result: undefined },
@@ -29,7 +29,7 @@ const bindingLayer = (database: D1Database) =>
   Layer.succeed(ControlPlaneD1Binding, ControlPlaneD1Binding.of({ database }));
 
 const layer = (database: D1Database) =>
-  ControlPlaneBatchLive.pipe(Layer.provide(bindingLayer(database)));
+  ControlPlaneBatchLayer.pipe(Layer.provide(bindingLayer(database)));
 
 const executeEffect = (
   database: D1Database,
@@ -77,7 +77,7 @@ describe("D1 batch adapter", () => {
     const controlPlane = await Effect.runPromise(
       ControlPlaneDatabase.pipe(
         Effect.provide(
-          ControlPlaneDatabaseLive.pipe(Layer.provide(bindingLayer(database)))
+          ControlPlaneDatabaseLayer.pipe(Layer.provide(bindingLayer(database)))
         )
       )
     );

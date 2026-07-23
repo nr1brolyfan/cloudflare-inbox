@@ -25,8 +25,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { ControlPlaneDatabase } from "../control-plane/database";
-import { appExternalRecoveryIdentity } from "../control-plane/schema";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import { appExternalRecoveryIdentity } from "../platform/control-plane-d1/ControlPlaneSchema";
 import { PasskeyRuntimeConfig } from "./passkey-config";
 import { PasskeyClientCredential } from "./passkey-enrollment";
 import { authUser, authUserIdentity } from "./schema/modules/core";

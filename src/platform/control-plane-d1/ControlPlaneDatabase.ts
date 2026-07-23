@@ -4,7 +4,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { relations } from "../auth/schema/index.js";
+import { relations } from "../../auth/schema/index.js";
 
 export interface ControlPlaneD1Binding {
   readonly database: D1Database;
@@ -27,7 +27,7 @@ export const ControlPlaneDatabase = Context.Service<ControlPlaneDatabase>(
 );
 
 /** Effect-native Drizzle adapter built directly from the raw D1 binding. */
-export const ControlPlaneDatabaseLive = Layer.unwrap(
+export const ControlPlaneDatabaseLayer = Layer.unwrap(
   Effect.gen(function* () {
     const { database } = yield* ControlPlaneD1Binding;
     const clientLive = D1Client.layer({ db: database }).pipe(Layer.orDie);

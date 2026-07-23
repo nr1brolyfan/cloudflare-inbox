@@ -6,10 +6,10 @@ import * as Schema from "effect/Schema";
 import {
   DraftId,
   MailboxId,
-  OperationId,
   OutboundDeliveryId,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
+import { OperationId } from "#/shared/Operation";
 
 const ExplicitUserActionResource = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Draft"), draftId: DraftId }),

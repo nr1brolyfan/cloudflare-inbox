@@ -22,15 +22,13 @@ import {
   AdministrativeAuditRuntimeLive,
 } from "#/audit/administrative-audit-live";
 import { CurrentRequestAuth } from "#/auth/session";
-import {
-  AdministrativeOperationId,
-  MailboxId,
-  UnixMillis,
-} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,
 } from "#/observability/request-context";
+import { AdministrativeOperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
 
 import { applyControlPlaneMigrations } from "../support/d1";
 

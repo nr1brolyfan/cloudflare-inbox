@@ -15,12 +15,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { ControlPlaneBatch } from "../control-plane/batch";
+import { ControlPlaneBatch } from "../platform/control-plane-d1/ControlPlaneBatch";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabase,
-} from "../control-plane/database";
-import { appDevEmailMessage } from "../control-plane/schema";
+} from "../platform/control-plane-d1/ControlPlaneDatabase";
+import { appDevEmailMessage } from "../platform/control-plane-d1/ControlPlaneSchema";
 
 const DevEmailKindSchema = Schema.Literals([
   "EmailAuth",

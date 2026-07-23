@@ -10,7 +10,6 @@ import {
   DraftId,
   MailAddress,
   MailboxId,
-  UnixMillis,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import {
@@ -26,6 +25,7 @@ import type {
 } from "#/modules/mailbox/domain/MailboxDraft";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { UnixMillis } from "#/shared/Temporal";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";

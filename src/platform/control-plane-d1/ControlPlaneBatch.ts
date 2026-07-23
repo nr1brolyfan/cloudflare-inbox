@@ -7,7 +7,10 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { ControlPlaneD1Binding, ControlPlaneDatabaseLive } from "./database";
+import {
+  ControlPlaneD1Binding,
+  ControlPlaneDatabaseLayer,
+} from "./ControlPlaneDatabase";
 
 export type ControlPlaneCommitState = "not-committed" | "committed" | "unknown";
 
@@ -48,7 +51,7 @@ export const ControlPlaneBatch = Context.Service<ControlPlaneBatch>(
 );
 
 /** Cloudflare D1 atomic batch adapter. */
-export const ControlPlaneBatchLive = Layer.effect(
+export const ControlPlaneBatchLayer = Layer.effect(
   ControlPlaneBatch,
   Effect.gen(function* () {
     const { database } = yield* ControlPlaneD1Binding;
@@ -110,6 +113,6 @@ export const ControlPlaneBatchLive = Layer.effect(
 );
 
 /** Shared control-plane adapters; the Worker must provide ControlPlaneD1Binding. */
-export const ControlPlaneLive = ControlPlaneBatchLive.pipe(
-  Layer.provideMerge(ControlPlaneDatabaseLive)
+export const ControlPlaneD1Layer = ControlPlaneBatchLayer.pipe(
+  Layer.provideMerge(ControlPlaneDatabaseLayer)
 );

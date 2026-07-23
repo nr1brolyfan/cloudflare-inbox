@@ -54,7 +54,6 @@ import {
 } from "../auth/storage-live";
 import { MailPermissionsLive } from "../authorization/permissions-live";
 import { AccountRecoveryLive } from "../control-plane/account-recovery-live";
-import { ControlPlaneLive } from "../control-plane/batch";
 import {
   ExternalRecoveryIdentityManagementLive,
   ExternalRecoveryIdentityRuntimeLive,
@@ -71,6 +70,7 @@ import { RecoveryCodeAdministrationLive } from "../control-plane/recovery-code-a
 import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendRequestContextMiddlewareLive } from "../observability/backend-request-live";
+import { ControlPlaneD1Layer } from "../platform/control-plane-d1/ControlPlaneBatch";
 import { AccountRecoveryApiLayer } from "./account-recovery";
 import { BackendHttpApi } from "./api";
 import {
@@ -342,6 +342,6 @@ const BackendRoutesLive = Layer.unwrap(
 
 /** Complete private Backend HTTP router, including platform response support. */
 export const BackendHttpLive = BackendRoutesLive.pipe(
-  Layer.provide(ControlPlaneLive),
+  Layer.provide(ControlPlaneD1Layer),
   Layer.provide(HttpApiPlatformLive)
 );

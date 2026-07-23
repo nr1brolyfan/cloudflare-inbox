@@ -14,14 +14,14 @@ import {
   aiToolAuditRetentionMillis,
 } from "#/ai/tool-audit";
 import { AiToolExecutor } from "#/ai/tool-executor";
-import {
-  ControlPlaneD1Binding,
-  ControlPlaneDatabaseLive,
-} from "#/control-plane/database";
-import type { ControlPlaneDatabase } from "#/control-plane/database";
 import { BackendAiInteractiveToolkitLive } from "#/http/backend";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
+import {
+  ControlPlaneD1Binding,
+  ControlPlaneDatabaseLayer,
+} from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -51,7 +51,7 @@ describe("D1 AI tool audit", () => {
         database: makeTestD1Database(database) as unknown as D1Database,
       })
     );
-    databaseLive = ControlPlaneDatabaseLive.pipe(Layer.provide(bindingLive));
+    databaseLive = ControlPlaneDatabaseLayer.pipe(Layer.provide(bindingLive));
     auditLive = AiToolAuditD1Live.pipe(Layer.provide(databaseLive));
   });
 

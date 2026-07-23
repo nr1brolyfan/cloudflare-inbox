@@ -5,13 +5,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  ControlPlaneD1Binding,
-  ControlPlaneDatabaseLive,
-} from "#/control-plane/database";
 import { MailboxSenderIdentityLive } from "#/control-plane/mailbox-sender-identity-live";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
+import {
+  ControlPlaneD1Binding,
+  ControlPlaneDatabaseLayer,
+} from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -22,7 +22,7 @@ const senderIdentityLive = (database: DatabaseSync) => {
       database: makeTestD1Database(database) as unknown as D1Database,
     })
   );
-  const databaseLive = ControlPlaneDatabaseLive.pipe(
+  const databaseLive = ControlPlaneDatabaseLayer.pipe(
     Layer.provide(bindingLive)
   );
 

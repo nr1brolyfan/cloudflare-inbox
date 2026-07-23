@@ -8,7 +8,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { UnixMillis } from "#/modules/mailbox/domain/Mailbox";
+import { UnixMillis } from "#/shared/Temporal";
 
 import {
   GeneratedRecoveryCodeSet,
@@ -26,14 +26,17 @@ import {
   requireSensitiveOperationStepUp,
   SensitiveOperationStepUpClock,
 } from "../auth/step-up-policy";
-import * as ControlPlane from "./batch";
-import { ControlPlaneDatabase } from "./database";
+import * as ControlPlane from "../platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import {
+  appAuthorizationGuard,
+  appExternalRecoveryIdentity,
+} from "../platform/control-plane-d1/ControlPlaneSchema";
 import {
   controlPlaneDatabaseNow,
   sensitiveSessionPredicate,
   transactionalSessionPredicate,
-} from "./request-auth-guard-d1";
-import { appAuthorizationGuard, appExternalRecoveryIdentity } from "./schema";
+} from "../platform/control-plane-d1/RequestAuthGuard";
 
 const failure = (
   reason: RecoveryCodeAdministrationError["reason"],

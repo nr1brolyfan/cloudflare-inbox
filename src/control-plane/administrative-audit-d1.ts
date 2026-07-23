@@ -1,9 +1,12 @@
 import { eq, sql } from "drizzle-orm";
 
 import type { AdministrativeAuditEvent } from "../audit/administrative-audit";
-import type { ControlPlaneStatement } from "./batch";
-import type { ControlPlaneDatabase } from "./database";
-import { appAdministrativeAuditEvent, appAuthorizationGuard } from "./schema";
+import type { ControlPlaneStatement } from "../platform/control-plane-d1/ControlPlaneBatch";
+import type { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import {
+  appAdministrativeAuditEvent,
+  appAuthorizationGuard,
+} from "../platform/control-plane-d1/ControlPlaneSchema";
 
 const resourceVersionBefore = (event: AdministrativeAuditEvent) =>
   "beforeVersion" in event.change ? event.change.beforeVersion : null;

@@ -3,12 +3,10 @@ import {
   and,
   eq,
   exists,
-  gt,
   inArray,
   isNotNull,
   isNull,
   notExists,
-  or,
   sql,
 } from "drizzle-orm";
 import * as Context from "effect/Context";
@@ -21,22 +19,20 @@ import {
   MailboxDisplayName,
   MailboxId,
   MailboxRecordSchema,
-  UnixMillis,
   normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
 import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "#/modules/organization/application/MailboxAdministration";
+import { UnixMillis } from "#/shared/Temporal";
 
 import { AdministrativeAudit } from "../audit/administrative-audit";
 import type { AdministrativeAuditError } from "../audit/administrative-audit-error";
 import { authUserIdentity } from "../auth/schema/modules/core";
 import {
-  authPermissionGrant,
   authRoleDefinition,
   authRoleGrant,
-  authRolePermission,
 } from "../auth/schema/modules/permissions";
 import type { CurrentRequestAuthShape } from "../auth/session";
 import { CurrentRequestAuth } from "../auth/session";
@@ -50,20 +46,21 @@ import {
   mailboxScope,
 } from "../authorization/catalog";
 import { MailAuthorization } from "../authorization/mail-authorization";
-import { administrativeAuditInsertStatement } from "./administrative-audit-d1";
-import * as ControlPlane from "./batch";
-import { ControlPlaneDatabase } from "./database";
-import {
-  sensitiveSessionPredicate,
-  sessionPredicate,
-  transactionalSessionPredicate,
-} from "./request-auth-guard-d1";
+import * as ControlPlane from "../platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
 import {
   appAuthorizationGuard,
   appMailbox,
   appMailboxAddress,
   appMailboxMember,
-} from "./schema";
+} from "../platform/control-plane-d1/ControlPlaneSchema";
+import { permissionPredicate } from "../platform/control-plane-d1/PermissionGuard";
+import {
+  sensitiveSessionPredicate,
+  sessionPredicate,
+  transactionalSessionPredicate,
+} from "../platform/control-plane-d1/RequestAuthGuard";
+import { administrativeAuditInsertStatement } from "./administrative-audit-d1";
 
 export const MailboxAdministrationOwnerEmail = EmailAddress;
 export type MailboxAdministrationOwnerEmail = Schema.Schema.Type<
@@ -135,96 +132,6 @@ const ownerIdentityPredicate = (
         )
       )
   );
-
-const permissionPredicate = (
-  database: ControlPlaneDatabase,
-  principal: AuthPermission.PermissionSubject,
-  permission: AuthPermission.PermissionId,
-  scope: AuthPermission.PermissionScope,
-  now: number
-) => {
-  const scopeIdPresent = scope.id === undefined ? 0 : 1;
-  const scopeId = scope.id ?? "";
-  const permissionGrantScope = or(
-    and(
-      eq(authPermissionGrant.scopeType, "global"),
-      eq(authPermissionGrant.scopeIdPresent, 0)
-    ),
-    and(
-      eq(authPermissionGrant.scopeType, scope.type),
-      eq(authPermissionGrant.scopeIdPresent, scopeIdPresent),
-      eq(authPermissionGrant.scopeId, scopeId)
-    )
-  );
-  const roleGrantScope = or(
-    and(
-      eq(authRoleGrant.scopeType, "global"),
-      eq(authRoleGrant.scopeIdPresent, 0)
-    ),
-    and(
-      eq(authRoleGrant.scopeType, scope.type),
-      eq(authRoleGrant.scopeIdPresent, scopeIdPresent),
-      eq(authRoleGrant.scopeId, scopeId)
-    )
-  );
-  const rolePermission = exists(
-    database
-      .select({ value: sql`1` })
-      .from(authRolePermission)
-      .where(
-        and(
-          eq(authRolePermission.roleId, authRoleGrant.roleId),
-          eq(authRolePermission.permissionId, permission),
-          or(
-            eq(authRolePermission.scopeTypePresent, 0),
-            and(
-              eq(authRolePermission.scopeTypePresent, 1),
-              eq(authRolePermission.scopeType, scope.type)
-            )
-          )
-        )
-      )
-  );
-
-  return or(
-    exists(
-      database
-        .select({ value: sql`1` })
-        .from(authPermissionGrant)
-        .where(
-          and(
-            eq(authPermissionGrant.subjectType, principal.type),
-            eq(authPermissionGrant.subjectId, principal.id),
-            eq(authPermissionGrant.permissionId, permission),
-            isNull(authPermissionGrant.revokedAt),
-            or(
-              isNull(authPermissionGrant.expiresAt),
-              gt(authPermissionGrant.expiresAt, now)
-            ),
-            permissionGrantScope
-          )
-        )
-    ),
-    exists(
-      database
-        .select({ value: sql`1` })
-        .from(authRoleGrant)
-        .where(
-          and(
-            eq(authRoleGrant.subjectType, principal.type),
-            eq(authRoleGrant.subjectId, principal.id),
-            isNull(authRoleGrant.revokedAt),
-            or(
-              isNull(authRoleGrant.expiresAt),
-              gt(authRoleGrant.expiresAt, now)
-            ),
-            roleGrantScope,
-            rolePermission
-          )
-        )
-    )
-  );
-};
 
 const ensureTrustedAuthInvariant = (
   requestAuth: CurrentRequestAuthShape,

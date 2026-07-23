@@ -23,9 +23,9 @@ import { RecoveryCodeAdministration } from "#/auth/recovery-code-administration"
 import type { CurrentRequestAuthShape } from "#/auth/session";
 import { CurrentRequestAuth } from "#/auth/session";
 import { SensitiveOperationStepUpClock } from "#/auth/step-up-policy";
-import { ControlPlaneLive } from "#/control-plane/batch";
-import { ControlPlaneD1Binding } from "#/control-plane/database";
 import { RecoveryCodeAdministrationLive } from "#/control-plane/recovery-code-administration-live";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -146,7 +146,7 @@ describe("recovery-code administration", () => {
       await applyControlPlaneMigrations(database);
       insertAccount(database);
       const d1 = makeTestD1Database(database);
-      const controlPlaneLive = ControlPlaneLive.pipe(
+      const controlPlaneLive = ControlPlaneD1Layer.pipe(
         Layer.provide(
           Layer.succeed(
             ControlPlaneD1Binding,

@@ -1,13 +1,14 @@
 /* oxlint-disable max-classes-per-file -- Persisted async rule job contracts form one mailbox domain topic. */
 import * as Schema from "effect/Schema";
 
+import { UnixMillis } from "#/shared/Temporal";
+
 import {
   AsyncRuleJobId,
   InboundIngestId,
   MailboxId,
   MessageId,
   RuleId,
-  UnixMillis,
   Version,
 } from "./Mailbox";
 import { AiRuleInstruction, RuleActions } from "./MailboxRule";

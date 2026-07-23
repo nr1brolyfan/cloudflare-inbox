@@ -5,9 +5,9 @@ import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { UnixMillis } from "#/modules/mailbox/domain/Mailbox";
+import { UnixMillis } from "#/shared/Temporal";
 
-import type { ControlPlaneCommitState } from "../control-plane/batch";
+import type { ControlPlaneCommitState } from "../platform/control-plane-d1/ControlPlaneBatch";
 import type { CurrentRequestAuthShape } from "./session";
 
 export const GenerateRecoveryCodesCommand = Schema.Struct({});

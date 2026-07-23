@@ -13,8 +13,6 @@ import {
   MailAddress,
   MailboxId,
   MessageSubject,
-  OperationId,
-  UnixMillis,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import type { Draft as DraftType } from "#/modules/mailbox/domain/MailboxDraft";
@@ -23,6 +21,8 @@ import { StoredDraftAttachment } from "#/modules/mailbox/domain/MailboxDraftAtta
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import { OperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
 
 const DraftRecipients = Schema.Array(MailAddress).check(
   Schema.makeFilter((recipients) =>

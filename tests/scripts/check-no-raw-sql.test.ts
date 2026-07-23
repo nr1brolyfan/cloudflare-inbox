@@ -80,7 +80,10 @@ describe("raw SQL source policy", () => {
     ].join("\n");
 
     expect(
-      checkSourcePolicy("src/control-plane/batch.ts", source)
+      checkSourcePolicy(
+        "src/platform/control-plane-d1/ControlPlaneBatch.ts",
+        source
+      )
     ).toStrictEqual([]);
   });
 
@@ -108,8 +111,8 @@ describe("raw SQL source policy", () => {
 
   it.each([
     "src/auth/storage-live.ts",
-    "src/control-plane/batch.ts",
-    "src/control-plane/database.ts",
+    "src/platform/control-plane-d1/ControlPlaneBatch.ts",
+    "src/platform/control-plane-d1/ControlPlaneDatabase.ts",
     "src/workers/backend.ts",
   ])("allows ControlPlaneD1Binding access in %s", (file) => {
     expect(
@@ -174,7 +177,7 @@ describe("raw SQL source policy", () => {
       message: messages.rawString,
       name: "clients acquired from an aliased Effect service",
       source: [
-        'import { ControlPlaneDatabase as Database } from "./database";',
+        'import { ControlPlaneDatabase as Database } from "./ControlPlaneDatabase";',
         "const program = Effect.gen(function* () {",
         "  const controlPlane = yield* Database;",
         '  controlPlane.all("select 1");',
@@ -219,7 +222,7 @@ describe("raw SQL source policy", () => {
       message: messages.binding,
       name: "aliased raw binding imports",
       source: [
-        'import { ControlPlaneD1Binding as RawBinding } from "./database";',
+        'import { ControlPlaneD1Binding as RawBinding } from "./ControlPlaneDatabase";',
         "const binding = RawBinding;",
       ].join("\n"),
     },
@@ -234,12 +237,12 @@ describe("raw SQL source policy", () => {
 
   it.each([
     {
-      file: "src/control-plane/batch.ts",
+      file: "src/platform/control-plane-d1/ControlPlaneBatch.ts",
       message: messages.sqlRaw,
       source: 'sql.raw("select 1");',
     },
     {
-      file: "src/control-plane/batch.ts",
+      file: "src/platform/control-plane-d1/ControlPlaneBatch.ts",
       message: messages.rawObject,
       source: 'database.batch([{ sql: "select 1", params: [] }]);',
     },

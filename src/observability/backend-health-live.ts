@@ -27,7 +27,7 @@ import {
 } from "#/modules/mailbox/domain/MailboxResource";
 
 import { MailPermission, mailboxScope } from "../authorization/catalog";
-import { ControlPlaneDatabase } from "../control-plane/database";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
 import { BackendHealth } from "./health";
 import type { StorageHealth } from "./health";
 

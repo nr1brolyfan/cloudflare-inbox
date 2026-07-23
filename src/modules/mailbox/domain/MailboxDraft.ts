@@ -1,6 +1,9 @@
 /* oxlint-disable max-classes-per-file -- Draft detail and list projections share one domain contract. */
 import * as Schema from "effect/Schema";
 
+import { OperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
+
 import {
   AttachmentId,
   Cursor,
@@ -10,10 +13,8 @@ import {
   MessageId,
   MessageSnippet,
   MessageSubject,
-  OperationId,
   PageSize,
   ThreadId,
-  UnixMillis,
   Version,
 } from "./Mailbox";
 

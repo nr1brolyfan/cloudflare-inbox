@@ -1,6 +1,9 @@
 /* oxlint-disable max-classes-per-file -- Reservation and completion form one attachment lifecycle contract. */
 import * as Schema from "effect/Schema";
 
+import { OperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
+
 import {
   AttachmentId,
   ByteSize,
@@ -8,9 +11,7 @@ import {
   FileName,
   MailboxId,
   MimeType,
-  OperationId,
   Sha256Digest,
-  UnixMillis,
   Version,
 } from "./Mailbox";
 

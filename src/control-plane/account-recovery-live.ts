@@ -41,9 +41,12 @@ import { authUser } from "../auth/schema/modules/core";
 import { authRecoveryCode } from "../auth/schema/modules/recovery-codes";
 import { authSession } from "../auth/schema/modules/sessions";
 import { authVerification } from "../auth/schema/modules/verification";
-import * as ControlPlane from "./batch";
-import { ControlPlaneDatabase } from "./database";
-import { appAuthorizationGuard, appExternalRecoveryIdentity } from "./schema";
+import * as ControlPlane from "../platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import {
+  appAuthorizationGuard,
+  appExternalRecoveryIdentity,
+} from "../platform/control-plane-d1/ControlPlaneSchema";
 
 const FLOW_TTL = Duration.minutes(10);
 const PUBLIC_START_RESPONSE_FLOOR = Duration.millis(500);

@@ -8,9 +8,9 @@ import type {
   MailboxId,
   MimeType,
   Sha256Digest,
-  UnixMillis,
 } from "#/modules/mailbox/domain/Mailbox";
 import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import type { UnixMillis } from "#/shared/Temporal";
 
 export interface DraftAttachmentBlobReservation {
   readonly id: AttachmentId;

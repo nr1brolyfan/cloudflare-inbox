@@ -13,9 +13,9 @@ import {
   PageSize,
   SearchQuery,
   ThreadId,
-  UnixMillis,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
+import { UnixMillis } from "#/shared/Temporal";
 
 export const mailSearchDefaultLimit = Schema.decodeUnknownSync(PageSize)(10);
 export const mailSearchMaxResults = 10;

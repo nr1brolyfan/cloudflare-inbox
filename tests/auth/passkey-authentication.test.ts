@@ -48,8 +48,8 @@ import { CurrentRequestAuth } from "#/auth/session";
 import { SensitiveOperationStepUpClock } from "#/auth/step-up-policy";
 import {
   ControlPlaneD1Binding,
-  ControlPlaneDatabaseLive,
-} from "#/control-plane/database";
+  ControlPlaneDatabaseLayer,
+} from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 
@@ -189,7 +189,7 @@ const serviceLayer = (
   options: { readonly verificationFailure?: boolean } = {}
 ) => {
   const d1 = makeTestD1Database(database);
-  const databaseLayer = ControlPlaneDatabaseLive.pipe(
+  const databaseLayer = ControlPlaneDatabaseLayer.pipe(
     Layer.provide(
       Layer.succeed(
         ControlPlaneD1Binding,
