@@ -3,7 +3,7 @@ import { FilePenLine, LoaderCircle, Paperclip } from "lucide-react";
 
 import type { MailboxDraftListResult } from "#/modules/mailbox/application/MailboxDraftReading";
 
-import { mailboxDraftHref } from "./mailbox-view-links";
+import { mailboxDraftHref } from "./MailboxViewLinks";
 
 type DraftListData = Schema.Codec.Encoded<typeof MailboxDraftListResult>;
 

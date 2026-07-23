@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { MailboxShell } from "#/inbox/mailbox-shell";
+import { MailboxShell } from "#/modules/mailbox/adapters/react/MailboxShell";
 
 const folders = [
   {

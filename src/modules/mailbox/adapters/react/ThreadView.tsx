@@ -7,9 +7,9 @@ import type { MailboxThreadResult } from "#/modules/mailbox/application/MailboxM
 import type {
   MailboxMessageQueryState,
   MailboxViewSelection,
-} from "./mailbox-view-links";
-import { mailboxMessageHtmlHref, mailboxViewHref } from "./mailbox-view-links";
-import { SandboxedMessageHtml } from "./sandboxed-message-html";
+} from "./MailboxViewLinks";
+import { mailboxMessageHtmlHref, mailboxViewHref } from "./MailboxViewLinks";
+import { SandboxedMessageHtml } from "./SandboxedMessageHtml";
 
 type ThreadData = Schema.Codec.Encoded<typeof MailboxThreadResult>;
 

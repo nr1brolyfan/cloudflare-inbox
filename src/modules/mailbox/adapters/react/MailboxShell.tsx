@@ -21,8 +21,8 @@ import type { ReactNode } from "react";
 
 import type { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 
-import type { MailboxViewSelection } from "./mailbox-view-links";
-import { mailboxViewHref } from "./mailbox-view-links";
+import type { MailboxViewSelection } from "./MailboxViewLinks";
+import { mailboxViewHref } from "./MailboxViewLinks";
 
 type MailboxNavigationData = Schema.Codec.Encoded<
   typeof MailboxNavigationResult

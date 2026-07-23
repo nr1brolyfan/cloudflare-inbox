@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import * as Schema from "effect/Schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DraftEditor } from "#/inbox/draft-editor";
+import { DraftEditor } from "#/modules/mailbox/adapters/react/DraftEditor";
 import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { DraftAttachmentReservationSchema } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 

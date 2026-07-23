@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { mailboxDraftHref, mailboxViewHref } from "#/inbox/mailbox-view-links";
+import {
+  mailboxDraftHref,
+  mailboxViewHref,
+} from "#/modules/mailbox/adapters/react/MailboxViewLinks";
 
 describe(mailboxViewHref, () => {
   it("preserves an outbound delivery with view and message state", () => {

@@ -43,6 +43,31 @@ import {
   handleMailboxReadDenial,
   mailboxReadDenialQueryKey,
 } from "#/modules/account-security/adapters/browser/AuthClient";
+import { DraftEditor } from "#/modules/mailbox/adapters/react/DraftEditor";
+import { DraftList } from "#/modules/mailbox/adapters/react/DraftList";
+import {
+  mailboxMessageActionMutationKey,
+  projectPendingMessageActions,
+  projectPendingThreadActions,
+  reconcileMailboxMessageActionCaches,
+} from "#/modules/mailbox/adapters/react/MailboxQueryState";
+import { MailboxShell } from "#/modules/mailbox/adapters/react/MailboxShell";
+import type {
+  MailboxMessageQueryState,
+  MailboxViewSelection,
+} from "#/modules/mailbox/adapters/react/MailboxViewLinks";
+import { mailboxViewHref } from "#/modules/mailbox/adapters/react/MailboxViewLinks";
+import type { MessageRowAction } from "#/modules/mailbox/adapters/react/MessageList";
+import { MessageList } from "#/modules/mailbox/adapters/react/MessageList";
+import type { OutboundDeliverySnapshot } from "#/modules/mailbox/adapters/react/OutboundDeliveryTracker";
+import {
+  OutboundDeliveryTracker,
+  outboundDeliveryQueryKey,
+} from "#/modules/mailbox/adapters/react/OutboundDeliveryTracker";
+import {
+  NoThreadSelected,
+  ThreadView,
+} from "#/modules/mailbox/adapters/react/ThreadView";
 import {
   CreateMailboxDraftCommand,
   DraftEditorContent,
@@ -72,29 +97,6 @@ import {
   ReserveDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
-
-import { DraftEditor } from "../inbox/draft-editor";
-import { DraftList } from "../inbox/draft-list";
-import {
-  mailboxMessageActionMutationKey,
-  projectPendingMessageActions,
-  projectPendingThreadActions,
-  reconcileMailboxMessageActionCaches,
-} from "../inbox/mailbox-query-state";
-import { MailboxShell } from "../inbox/mailbox-shell";
-import type {
-  MailboxMessageQueryState,
-  MailboxViewSelection,
-} from "../inbox/mailbox-view-links";
-import { mailboxViewHref } from "../inbox/mailbox-view-links";
-import type { MessageRowAction } from "../inbox/message-list";
-import { MessageList } from "../inbox/message-list";
-import type { OutboundDeliverySnapshot } from "../inbox/outbound-delivery-tracker";
-import {
-  OutboundDeliveryTracker,
-  outboundDeliveryQueryKey,
-} from "../inbox/outbound-delivery-tracker";
-import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
 
 const InboxSearch = Schema.Struct({
   attachment: Schema.optional(Schema.Literal("true")),

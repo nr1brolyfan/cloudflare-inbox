@@ -16,11 +16,11 @@ import {
   OutboundDeliveryTracker,
   outboundDeliveryPollInterval,
   outboundDeliveryQueryKey,
-} from "#/inbox/outbound-delivery-tracker";
+} from "#/modules/mailbox/adapters/react/OutboundDeliveryTracker";
 import type {
   OutboundDeliverySnapshot,
   OutboundDeliveryView,
-} from "#/inbox/outbound-delivery-tracker";
+} from "#/modules/mailbox/adapters/react/OutboundDeliveryTracker";
 import type { OutboundFailureCode } from "#/modules/mailbox/domain/MailboxOutbound";
 
 type TrackerProps = ComponentProps<typeof OutboundDeliveryTracker>;

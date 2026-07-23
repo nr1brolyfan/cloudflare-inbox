@@ -1,0 +1,81 @@
+import * as Exit from "effect/Exit";
+import * as Schema from "effect/Schema";
+import { describe, expect, it } from "vitest";
+
+import {
+  BootstrapOwnerMailboxCommand,
+  RenameMailboxCommand,
+} from "#/modules/organization/application/MailboxAdministration";
+import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+
+const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
+  schema: S,
+  input: unknown
+) => Exit.isSuccess(Schema.decodeUnknownExit(schema)(input));
+
+describe("organization mailbox contracts", () => {
+  it("decodes transport-neutral mailbox administration commands", () => {
+    expect(
+      Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+        displayName: "  Inbox  ",
+        operationId: "00000000-0000-4000-8000-000000000010",
+      })
+    ).toStrictEqual({
+      displayName: "Inbox",
+      operationId: "00000000-0000-4000-8000-000000000010",
+    });
+    expect(
+      Schema.decodeUnknownSync(RenameMailboxCommand)({
+        displayName: "  Recruiting  ",
+        expectedVersion: 1,
+        mailboxId: "primary",
+        operationId: "00000000-0000-4000-8000-000000000011",
+      })
+    ).toStrictEqual({
+      displayName: "Recruiting",
+      expectedVersion: 1,
+      mailboxId: "primary",
+      operationId: "00000000-0000-4000-8000-000000000011",
+    });
+    expect(
+      decodeSucceeds(RenameMailboxCommand, {
+        displayName: "Recruiting",
+        expectedVersion: 1,
+        mailboxId: " primary ",
+        operationId: "00000000-0000-4000-8000-000000000011",
+      })
+    ).toBeFalsy();
+  });
+
+  it("validates normalized Unicode display names", () => {
+    expect(Schema.decodeUnknownSync(MailboxDisplayName)("  Inbox  ")).toBe(
+      "Inbox"
+    );
+    expect(decodeSucceeds(MailboxDisplayName, "😀".repeat(200))).toBeTruthy();
+    expect(decodeSucceeds(MailboxDisplayName, "😀".repeat(201))).toBeFalsy();
+  });
+
+  it("reuses the mailbox name invariant at the administration boundary", () => {
+    expect(
+      Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+        displayName: "  Team inbox  ",
+        operationId: "00000000-0000-4000-8000-000000000010",
+      })
+    ).toStrictEqual({
+      displayName: "Team inbox",
+      operationId: "00000000-0000-4000-8000-000000000010",
+    });
+    expect(
+      decodeSucceeds(BootstrapOwnerMailboxCommand, {
+        displayName: "x".repeat(201),
+        operationId: "00000000-0000-4000-8000-000000000010",
+      })
+    ).toBeFalsy();
+    expect(
+      decodeSucceeds(BootstrapOwnerMailboxCommand, {
+        displayName: "Team inbox",
+        operationId: "owner@example.test",
+      })
+    ).toBeFalsy();
+  });
+});

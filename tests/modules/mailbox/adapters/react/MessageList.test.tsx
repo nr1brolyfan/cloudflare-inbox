@@ -3,12 +3,12 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import type { MailboxMessageQueryState } from "#/inbox/mailbox-view-links";
+import type { MailboxMessageQueryState } from "#/modules/mailbox/adapters/react/MailboxViewLinks";
 import type {
   MessageListItemData,
   MessageRowAction,
-} from "#/inbox/message-list";
-import { MessageList } from "#/inbox/message-list";
+} from "#/modules/mailbox/adapters/react/MessageList";
+import { MessageList } from "#/modules/mailbox/adapters/react/MessageList";
 
 const messages = {
   items: [

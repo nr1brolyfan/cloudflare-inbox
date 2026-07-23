@@ -3,7 +3,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { NoThreadSelected, ThreadView } from "#/inbox/thread-view";
+import {
+  NoThreadSelected,
+  ThreadView,
+} from "#/modules/mailbox/adapters/react/ThreadView";
 
 const maliciousText =
   '<script>window.pwned = true</script><img onerror="pwn()">';

@@ -14,7 +14,7 @@ import type {
 import type {
   MailboxMessageQueryState,
   MailboxViewSelection,
-} from "./mailbox-view-links";
+} from "./MailboxViewLinks";
 
 type MessageActionCommand = Schema.Schema.Type<
   typeof MailboxMessageActionCommand

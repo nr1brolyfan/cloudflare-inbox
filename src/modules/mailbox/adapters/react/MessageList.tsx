@@ -21,8 +21,8 @@ import { hasSearchableMessageTerm } from "#/modules/mailbox/domain/Mailbox";
 import type {
   MailboxMessageQueryState,
   MailboxViewSelection,
-} from "./mailbox-view-links";
-import { mailboxViewHref } from "./mailbox-view-links";
+} from "./MailboxViewLinks";
+import { mailboxViewHref } from "./MailboxViewLinks";
 
 type MessageListData = Schema.Codec.Encoded<typeof MailboxMessageListResult>;
 export type MessageListItemData = MessageListData["items"][number];
