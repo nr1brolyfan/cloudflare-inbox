@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { WebsiteApplication } from "#/apps/website/WebsiteApplication";
 import { mailboxInlineAttachmentResponse } from "#/routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline";
-import { websiteBackend } from "#/server/backend";
 
 const imageRequest = (search = "?folder=inbox") =>
   new Request(
@@ -26,7 +26,7 @@ describe("message inline attachment route", () => {
 
   it("returns authorized bytes with fixed security headers", async () => {
     const getAttachment = vi
-      .spyOn(websiteBackend, "getMailboxInlineAttachment")
+      .spyOn(WebsiteApplication, "getMailboxInlineAttachment")
       .mockResolvedValue({
         bytes: new Uint8Array([1, 2, 3]),
         mimeType: "image/png",
@@ -68,7 +68,7 @@ describe("message inline attachment route", () => {
 
   it("rejects non-image and ambiguous requests before Backend access", async () => {
     const getAttachment = vi.spyOn(
-      websiteBackend,
+      WebsiteApplication,
       "getMailboxInlineAttachment"
     );
     const document = await mailboxInlineAttachmentResponse(
@@ -100,7 +100,10 @@ describe("message inline attachment route", () => {
   });
 
   it("returns an empty protected error response", async () => {
-    vi.spyOn(websiteBackend, "getMailboxInlineAttachment").mockResolvedValue({
+    vi.spyOn(
+      WebsiteApplication,
+      "getMailboxInlineAttachment"
+    ).mockResolvedValue({
       error: {
         _tag: "AuthNotFoundError",
         code: "not_found",

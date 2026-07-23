@@ -13,9 +13,11 @@ import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { BackendHttpApi } from "#/http/api";
 import { PasskeyEnrollment } from "#/modules/account-security/application/PasskeyEnrollment";
 import type { PasskeyEnrollmentError } from "#/modules/account-security/application/PasskeyEnrollment";
+
+import { PasskeyEnrollmentHttpApi } from "./PasskeyEnrollmentHttpApi";
+import { RecoveryPasskeyEnrollmentHttpApi } from "./RecoveryPasskeyEnrollmentHttpApi";
 
 type PasskeyEnrollmentPublicError =
   | AuthBadRequestError
@@ -97,7 +99,7 @@ const mapError = (
 };
 
 export const PasskeyEnrollmentHttpHandlersLayer = HttpApiBuilder.group(
-  BackendHttpApi,
+  PasskeyEnrollmentHttpApi,
   "passkey",
   Effect.fn("auth.http.passkey_enrollment_group")(function* (handlers) {
     const enrollment = yield* PasskeyEnrollment;
@@ -117,7 +119,7 @@ export const PasskeyEnrollmentHttpHandlersLayer = HttpApiBuilder.group(
 );
 
 export const RecoveryPasskeyEnrollmentHttpHandlersLayer = HttpApiBuilder.group(
-  BackendHttpApi,
+  RecoveryPasskeyEnrollmentHttpApi,
   "recoveryPasskeyEnrollment",
   Effect.fn("auth.http.recovery_passkey_enrollment")(function* (handlers) {
     const enrollment = yield* PasskeyEnrollment;

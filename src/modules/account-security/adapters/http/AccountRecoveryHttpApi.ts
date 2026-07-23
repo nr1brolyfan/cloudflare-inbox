@@ -7,6 +7,7 @@ import {
   AuthSchemaErrorMiddleware,
   AuthenticatedHttpBody,
 } from "@effect-auth/core/HttpApi";
+import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
@@ -44,3 +45,6 @@ export class AccountRecoveryGroup extends HttpApiGroup.make("accountRecovery")
   .middleware(BackendRequestContextMiddleware)
   .middleware(AuthRequestMetadataMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}
+
+export const AccountRecoveryHttpApi =
+  HttpApi.make("AuthApi").add(AccountRecoveryGroup);

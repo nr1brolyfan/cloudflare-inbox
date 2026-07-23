@@ -2,12 +2,11 @@ import { createFileRoute } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
+import { WebsiteApplication } from "#/apps/website/WebsiteApplication";
 import {
   MailboxMessageHtmlInput,
   mailboxMessageHtmlCspForOrigin,
 } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
-
-import { websiteBackend } from "../../../../../../server/backend";
 
 const responseHeaders = (contentType: string, origin: string) => ({
   "cache-control": "private, no-store",
@@ -86,9 +85,10 @@ export const mailboxMessageHtmlResponse = async (
   const headers = new Headers(request.headers);
   headers.set("origin", url.origin);
   const incoming = new Request(request, { headers });
-  const result = await websiteBackend
-    .getMailboxMessageHtml(decoded.value, incoming)
-    .catch(() => null);
+  const result = await WebsiteApplication.getMailboxMessageHtml(
+    decoded.value,
+    incoming
+  ).catch(() => null);
   if (result === null) {
     return previewFailureResponse(502, url.origin);
   }

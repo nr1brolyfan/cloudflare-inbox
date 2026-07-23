@@ -12,14 +12,13 @@ import {
 } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
+import { bootstrapMailboxOwner } from "#/apps/website/TanStackFunctions";
 import {
   authClient,
   authErrorMessage,
   authSessionQueryKey,
   clearCachedAuthSession,
 } from "#/modules/account-security/adapters/browser/AuthClient";
-
-import { bootstrapMailboxOwner } from "../server/tanstack-functions";
 
 const subscribeToPasskeySupport = () => () => null;
 const usePasskeySupport = () =>

@@ -9,6 +9,7 @@ import {
   AuthStepUpRequiredError,
   AuthUnauthenticatedError,
 } from "@effect-auth/core/HttpApi";
+import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
@@ -58,3 +59,7 @@ export class RecoveryPasskeyEnrollmentGroup extends HttpApiGroup.make(
   .middleware(BackendRequestContextMiddleware)
   .middleware(RecoveryRemediationRequestAuthMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}
+
+export const RecoveryPasskeyEnrollmentHttpApi = HttpApi.make("AuthApi").add(
+  RecoveryPasskeyEnrollmentGroup
+);

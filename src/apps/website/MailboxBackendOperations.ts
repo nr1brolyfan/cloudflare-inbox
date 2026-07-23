@@ -56,7 +56,7 @@ import type {
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 
-import { BackendClient } from "./website-platform";
+import { BackendClient } from "./WebsitePlatform";
 
 export type MailboxPublicStatus = 400 | 401 | 403 | 404 | 409 | 500 | 502;
 
@@ -401,7 +401,7 @@ export const MailboxBackendOperations =
     "cloudflare-inbox/MailboxBackendOperations"
   );
 
-export const MailboxBackendOperationsLive = Layer.effect(
+export const MailboxBackendOperationsLayer = Layer.effect(
   MailboxBackendOperations,
   Effect.gen(function* () {
     const backend = yield* BackendClient;

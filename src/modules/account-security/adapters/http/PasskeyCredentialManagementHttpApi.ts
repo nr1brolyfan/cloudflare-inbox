@@ -10,7 +10,11 @@ import {
   AuthStepUpRequiredError,
   AuthUnauthenticatedError,
 } from "@effect-auth/core/HttpApi";
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
+import {
+  HttpApi,
+  HttpApiEndpoint,
+  HttpApiGroup,
+} from "effect/unstable/httpapi";
 
 import { CurrentRequestAuthMiddleware } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import {
@@ -65,3 +69,7 @@ export class PasskeyCredentialManagementGroup extends HttpApiGroup.make(
   .middleware(BackendRequestContextMiddleware)
   .middleware(CurrentRequestAuthMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}
+
+export const PasskeyCredentialManagementHttpApi = HttpApi.make("AuthApi").add(
+  PasskeyCredentialManagementGroup
+);

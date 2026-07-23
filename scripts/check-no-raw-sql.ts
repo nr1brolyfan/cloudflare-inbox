@@ -14,7 +14,7 @@ const controlPlaneD1BindingFiles = new Set([
   "src/modules/account-security/adapters/d1/AccountSecurityStorageD1.ts",
   "src/platform/control-plane-d1/ControlPlaneBatch.ts",
   "src/platform/control-plane-d1/ControlPlaneDatabase.ts",
-  "src/workers/backend.ts",
+  "src/apps/backend-worker/BackendWorker.ts",
 ]);
 const nativeMethods = new Set(["batch", "exec", "prepare"]);
 const rawStringMethods = new Set(["all", "get", "run", "values"]);

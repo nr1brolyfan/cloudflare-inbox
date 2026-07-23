@@ -22,6 +22,20 @@ import {
 import { useRef, useState } from "react";
 
 import {
+  getMailboxNavigation,
+  getMailboxOutboundDelivery,
+  getMailboxDraft,
+  getMailboxThread,
+  listMailboxDrafts,
+  listMailboxMessages,
+  actOnMailboxMessage,
+  createMailboxDraft,
+  reserveMailboxDraftAttachment,
+  sendMailboxDraft,
+  undoMailboxSend,
+  updateMailboxDraft,
+} from "#/apps/website/TanStackFunctions";
+import {
   authClient,
   authSessionQueryKey,
   clearCachedAuthSession,
@@ -81,20 +95,6 @@ import {
   outboundDeliveryQueryKey,
 } from "../inbox/outbound-delivery-tracker";
 import { NoThreadSelected, ThreadView } from "../inbox/thread-view";
-import {
-  getMailboxNavigation,
-  getMailboxOutboundDelivery,
-  getMailboxDraft,
-  getMailboxThread,
-  listMailboxDrafts,
-  listMailboxMessages,
-  actOnMailboxMessage,
-  createMailboxDraft,
-  reserveMailboxDraftAttachment,
-  sendMailboxDraft,
-  undoMailboxSend,
-  updateMailboxDraft,
-} from "../server/tanstack-functions";
 
 const InboxSearch = Schema.Struct({
   attachment: Schema.optional(Schema.Literal("true")),

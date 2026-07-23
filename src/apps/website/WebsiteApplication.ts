@@ -32,26 +32,26 @@ import type {
 
 import {
   DevEmailOperations,
-  DevEmailOperationsLive,
-} from "./dev-email-backend";
+  DevEmailOperationsLayer,
+} from "./DevEmailOperations";
 import {
   MailboxBackendOperations,
-  MailboxBackendOperationsLive,
-} from "./mailbox-backend";
-import { BackendClient, WebsitePlatformServicesLive } from "./website-platform";
+  MailboxBackendOperationsLayer,
+} from "./MailboxBackendOperations";
+import { BackendClient, WebsitePlatformLayer } from "./WebsitePlatform";
 
 /** Complete Website-side service graph, built once without request-bound state. */
-export const WebsiteLive = Layer.merge(
-  MailboxBackendOperationsLive,
-  DevEmailOperationsLive
-).pipe(Layer.provideMerge(WebsitePlatformServicesLive));
+export const WebsiteApplicationLayer = Layer.merge(
+  MailboxBackendOperationsLayer,
+  DevEmailOperationsLayer
+).pipe(Layer.provideMerge(WebsitePlatformLayer));
 
-const websiteRuntime = ManagedRuntime.make(WebsiteLive);
+const WebsiteRuntime = ManagedRuntime.make(WebsiteApplicationLayer);
 
 /** Promise facade used by TanStack adapters; all Effect execution stays here. */
-export const websiteBackend = {
+export const WebsiteApplication = {
   actOnMailboxMessage: (command: MailboxMessageActionCommand) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -59,7 +59,7 @@ export const websiteBackend = {
       })
     ),
   bootstrapMailboxOwner: (command: BootstrapOwnerMailboxCommand) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -67,7 +67,7 @@ export const websiteBackend = {
       })
     ),
   createMailboxDraft: (command: CreateMailboxDraftCommand) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -75,7 +75,7 @@ export const websiteBackend = {
       })
     ),
   clearDevEmails: () =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* DevEmailOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -83,17 +83,17 @@ export const websiteBackend = {
       })
     ),
   forward: (operation: string, request: Request) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       BackendClient.pipe(
         Effect.flatMap((backend) => backend.fetch(operation, request))
       )
     ),
   getDevEmailInboxStatus: () =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       DevEmailOperations.pipe(Effect.flatMap((operations) => operations.status))
     ),
   getMailboxNavigation: () =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -101,7 +101,7 @@ export const websiteBackend = {
       })
     ),
   getMailboxOutboundDelivery: (query: GetMailboxOutboundDeliveryQuery) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -112,7 +112,7 @@ export const websiteBackend = {
     query: MailboxInlineAttachmentInput,
     incoming: Request
   ) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       MailboxBackendOperations.pipe(
         Effect.flatMap((operations) =>
           operations.getInlineAttachment({ incoming, query })
@@ -120,7 +120,7 @@ export const websiteBackend = {
       )
     ),
   getMailboxDraft: (query: GetMailboxDraftQuery) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -128,7 +128,7 @@ export const websiteBackend = {
       })
     ),
   getMailboxMessageHtml: (query: MailboxMessageHtmlInput, incoming: Request) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       MailboxBackendOperations.pipe(
         Effect.flatMap((operations) =>
           operations.getMessageHtml({ incoming, query })
@@ -136,7 +136,7 @@ export const websiteBackend = {
       )
     ),
   getMailboxThread: (query: OpenMailboxThreadInput) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -144,7 +144,7 @@ export const websiteBackend = {
       })
     ),
   listDevEmails: () =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* DevEmailOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -152,7 +152,7 @@ export const websiteBackend = {
       })
     ),
   listMailboxMessages: (query: MailboxMessageListInput) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -160,7 +160,7 @@ export const websiteBackend = {
       })
     ),
   listMailboxDrafts: (query: MailboxDraftListInput) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -168,7 +168,7 @@ export const websiteBackend = {
       })
     ),
   renameMailbox: (command: RenameMailboxCommand) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -176,7 +176,7 @@ export const websiteBackend = {
       })
     ),
   reserveMailboxDraftAttachment: (command: ReserveDraftAttachmentCommand) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -184,7 +184,7 @@ export const websiteBackend = {
       })
     ),
   sendMailboxDraft: (command: SendMailboxDraftCommand) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -192,7 +192,7 @@ export const websiteBackend = {
       })
     ),
   updateMailboxDraft: (command: UpdateMailboxDraftCommand) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -200,7 +200,7 @@ export const websiteBackend = {
       })
     ),
   undoMailboxSend: (command: UndoMailboxSendCommand) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
@@ -211,7 +211,7 @@ export const websiteBackend = {
     input: Omit<UploadDraftAttachmentCommand, "content">,
     incoming: Request
   ) =>
-    websiteRuntime.runPromise(
+    WebsiteRuntime.runPromise(
       MailboxBackendOperations.pipe(
         Effect.flatMap((operations) =>
           operations.uploadDraftAttachment({ ...input, incoming })

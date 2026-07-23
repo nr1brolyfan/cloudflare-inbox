@@ -12,9 +12,10 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { BackendHttpApi } from "#/http/api";
 import { PasskeyAuthentication } from "#/modules/account-security/application/PasskeyAuthentication";
 import type { PasskeyAuthenticationError } from "#/modules/account-security/application/PasskeyAuthentication";
+
+import { PasskeyAuthenticationHttpApi } from "./PasskeyAuthenticationHttpApi";
 
 type PublicError =
   | AuthBadRequestError
@@ -79,7 +80,7 @@ const mapRateLimitError = (error: unknown) =>
       : internalError();
 
 export const PasskeyAuthenticationHttpHandlersLayer = HttpApiBuilder.group(
-  BackendHttpApi,
+  PasskeyAuthenticationHttpApi,
   "passkeyAuthentication",
   Effect.fn("auth.http.passkey_authentication")(function* (handlers) {
     const authHttp = yield* AuthHttp;

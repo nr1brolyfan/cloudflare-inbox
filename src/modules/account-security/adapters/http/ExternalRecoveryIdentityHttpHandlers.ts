@@ -8,9 +8,10 @@ import {
 import * as Effect from "effect/Effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { BackendHttpApi } from "#/http/api";
 import { ExternalRecoveryIdentityManagement } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
 import type { ExternalRecoveryIdentityManagementError } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
+
+import { ExternalRecoveryIdentityHttpApi } from "./ExternalRecoveryIdentityHttpApi";
 
 type ExternalRecoveryIdentityPublicError =
   | AuthBadRequestError
@@ -74,7 +75,7 @@ const mapManagementError = (
 };
 
 export const ExternalRecoveryIdentityHttpHandlersLayer = HttpApiBuilder.group(
-  BackendHttpApi,
+  ExternalRecoveryIdentityHttpApi,
   "externalRecoveryIdentity",
   Effect.fn("auth.http.external_recovery_identity_group")(function* (handlers) {
     const management = yield* ExternalRecoveryIdentityManagement;

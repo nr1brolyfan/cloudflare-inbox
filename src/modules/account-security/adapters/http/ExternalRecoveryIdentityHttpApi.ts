@@ -64,6 +64,10 @@ export class ExternalRecoveryIdentityGroup extends HttpApiGroup.make(
   .middleware(CurrentRequestAuthMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}
 
+export const ExternalRecoveryIdentityHttpApi = HttpApi.make("AuthApi").add(
+  ExternalRecoveryIdentityGroup
+);
+
 export const ExternalRecoveryIdentityClientHttpApi = HttpApi.make(
   "externalRecoveryIdentityClient"
 ).add(ExternalRecoveryIdentityGroup);

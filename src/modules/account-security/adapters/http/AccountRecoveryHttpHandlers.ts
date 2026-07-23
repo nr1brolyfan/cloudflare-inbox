@@ -13,9 +13,10 @@ import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { BackendHttpApi } from "#/http/api";
 import { AccountRecovery } from "#/modules/account-security/application/AccountRecovery";
 import type { AccountRecoveryError } from "#/modules/account-security/domain/AccountRecovery";
+
+import { AccountRecoveryHttpApi } from "./AccountRecoveryHttpApi";
 
 type PublicError =
   | AuthBadRequestError
@@ -69,7 +70,7 @@ const mapError = (
 };
 
 export const AccountRecoveryHttpHandlersLayer = HttpApiBuilder.group(
-  BackendHttpApi,
+  AccountRecoveryHttpApi,
   "accountRecovery",
   Effect.fn("auth.http.account_recovery")(function* (handlers) {
     const authHttp = yield* AuthHttp;

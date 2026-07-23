@@ -3,6 +3,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import type { MailboxBackendOperationsShape } from "#/apps/website/MailboxBackendOperations";
+import {
+  MailboxBackendOperations,
+  MailboxBackendOperationsLayer,
+} from "#/apps/website/MailboxBackendOperations";
+import { BackendClient } from "#/apps/website/WebsitePlatform";
 import {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
@@ -25,12 +31,6 @@ import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
-import type { MailboxBackendOperationsShape } from "#/server/mailbox-backend";
-import {
-  MailboxBackendOperations,
-  MailboxBackendOperationsLive,
-} from "#/server/mailbox-backend";
-import { BackendClient } from "#/server/website-platform";
 
 const mailbox = {
   createdAt: 1000,
@@ -168,7 +168,7 @@ const runForward = <A>(
     MailboxBackendOperations.pipe(
       Effect.flatMap(operation),
       Effect.provide(
-        MailboxBackendOperationsLive.pipe(
+        MailboxBackendOperationsLayer.pipe(
           Layer.provide(
             Layer.succeed(
               BackendClient,

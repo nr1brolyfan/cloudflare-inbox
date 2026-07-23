@@ -23,9 +23,9 @@ import {
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 
-import { websiteBackend } from "./backend";
+import { WebsiteApplication } from "./WebsiteApplication";
 
-export type { DevEmailInboxResult } from "./dev-email-backend";
+export type { DevEmailInboxResult } from "./DevEmailOperations";
 
 const bootstrapInput = Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand);
 const renameInput = Schema.decodeUnknownSync(RenameMailboxCommand);
@@ -55,68 +55,70 @@ const getMailboxOutboundDeliveryInput = Schema.decodeUnknownSync(
 
 export const actOnMailboxMessage = createServerFn({ method: "POST" })
   .validator(mailboxMessageActionInput)
-  .handler(({ data }) => websiteBackend.actOnMailboxMessage(data));
+  .handler(({ data }) => WebsiteApplication.actOnMailboxMessage(data));
 
 export const bootstrapMailboxOwner = createServerFn({ method: "POST" })
   .validator(bootstrapInput)
-  .handler(({ data }) => websiteBackend.bootstrapMailboxOwner(data));
+  .handler(({ data }) => WebsiteApplication.bootstrapMailboxOwner(data));
 
 export const createMailboxDraft = createServerFn({ method: "POST" })
   .validator(createMailboxDraftInput)
-  .handler(({ data }) => websiteBackend.createMailboxDraft(data));
+  .handler(({ data }) => WebsiteApplication.createMailboxDraft(data));
 
 export const getMailboxDraft = createServerFn({ method: "GET" })
   .validator(getMailboxDraftInput)
-  .handler(({ data }) => websiteBackend.getMailboxDraft(data));
+  .handler(({ data }) => WebsiteApplication.getMailboxDraft(data));
 
 export const getMailboxOutboundDelivery = createServerFn({ method: "GET" })
   .validator(getMailboxOutboundDeliveryInput)
-  .handler(({ data }) => websiteBackend.getMailboxOutboundDelivery(data));
+  .handler(({ data }) => WebsiteApplication.getMailboxOutboundDelivery(data));
 
 export const renameMailbox = createServerFn({ method: "POST" })
   .validator(renameInput)
-  .handler(({ data }) => websiteBackend.renameMailbox(data));
+  .handler(({ data }) => WebsiteApplication.renameMailbox(data));
 
 export const reserveMailboxDraftAttachment = createServerFn({ method: "POST" })
   .validator(reserveDraftAttachmentInput)
-  .handler(({ data }) => websiteBackend.reserveMailboxDraftAttachment(data));
+  .handler(({ data }) =>
+    WebsiteApplication.reserveMailboxDraftAttachment(data)
+  );
 
 export const sendMailboxDraft = createServerFn({ method: "POST" })
   .validator(sendMailboxDraftInput)
-  .handler(({ data }) => websiteBackend.sendMailboxDraft(data));
+  .handler(({ data }) => WebsiteApplication.sendMailboxDraft(data));
 
 export const getDevEmailInboxStatus = createServerFn({
   method: "GET",
-}).handler(() => websiteBackend.getDevEmailInboxStatus());
+}).handler(() => WebsiteApplication.getDevEmailInboxStatus());
 
 export const getMailboxNavigation = createServerFn({ method: "GET" }).handler(
-  () => websiteBackend.getMailboxNavigation()
+  () => WebsiteApplication.getMailboxNavigation()
 );
 
 export const listMailboxMessages = createServerFn({ method: "GET" })
   .validator(mailboxMessageListInput)
-  .handler(({ data }) => websiteBackend.listMailboxMessages(data));
+  .handler(({ data }) => WebsiteApplication.listMailboxMessages(data));
 
 export const listMailboxDrafts = createServerFn({ method: "GET" })
   .validator(mailboxDraftListInput)
-  .handler(({ data }) => websiteBackend.listMailboxDrafts(data));
+  .handler(({ data }) => WebsiteApplication.listMailboxDrafts(data));
 
 export const getMailboxThread = createServerFn({ method: "GET" })
   .validator(openMailboxThreadInput)
-  .handler(({ data }) => websiteBackend.getMailboxThread(data));
+  .handler(({ data }) => WebsiteApplication.getMailboxThread(data));
 
 export const updateMailboxDraft = createServerFn({ method: "POST" })
   .validator(updateMailboxDraftInput)
-  .handler(({ data }) => websiteBackend.updateMailboxDraft(data));
+  .handler(({ data }) => WebsiteApplication.updateMailboxDraft(data));
 
 export const undoMailboxSend = createServerFn({ method: "POST" })
   .validator(undoMailboxSendInput)
-  .handler(({ data }) => websiteBackend.undoMailboxSend(data));
+  .handler(({ data }) => WebsiteApplication.undoMailboxSend(data));
 
 export const listDevEmails = createServerFn({ method: "GET" }).handler(() =>
-  websiteBackend.listDevEmails()
+  WebsiteApplication.listDevEmails()
 );
 
 export const clearDevEmails = createServerFn({ method: "POST" }).handler(() =>
-  websiteBackend.clearDevEmails()
+  WebsiteApplication.clearDevEmails()
 );

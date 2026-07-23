@@ -17,41 +17,45 @@ import { BackendHealthLayer } from "#/platform/observability/BackendHealthLayer"
 import { BackendRequestContextMiddlewareLayer } from "#/platform/observability/BackendRequestContextMiddlewareLayer";
 import { BackendHealthHttpHandlersLayer } from "#/platform/observability/http/BackendHealthHttpHandlers";
 
-import { BackendHttpApi } from "./api";
+import { BackendHttpApi } from "./BackendHttpApi";
 
 /** Builds the one Backend API from closed bounded-context HTTP graphs. */
-const accountSecurityLayer = AccountSecurityLayer;
-const permissionsLayer = MailPermissionsEffectAuthLayer.pipe(
-  Layer.provide(accountSecurityLayer)
+const AccountSecurityApplicationLayer = AccountSecurityLayer;
+const PermissionsApplicationLayer = MailPermissionsEffectAuthLayer.pipe(
+  Layer.provide(AccountSecurityApplicationLayer)
 );
-const mailboxDoClientLayer = MailboxDoClientLayer.pipe(
+const MailboxDoClientApplicationLayer = MailboxDoClientLayer.pipe(
   Layer.provide(MailboxRegistryD1Layer)
 );
-const mailboxAuthorizationLayer = MailboxAuthorizationLayer.pipe(
-  Layer.provide(mailboxDoClientLayer)
+const MailboxAuthorizationApplicationLayer = MailboxAuthorizationLayer.pipe(
+  Layer.provide(MailboxDoClientApplicationLayer)
 );
-const mailboxHttpLayer = MailboxHttpLayer.pipe(
-  Layer.provide(mailboxAuthorizationLayer),
-  Layer.provide(permissionsLayer),
+const MailboxHttpApplicationLayer = MailboxHttpLayer.pipe(
+  Layer.provide(MailboxAuthorizationApplicationLayer),
+  Layer.provide(PermissionsApplicationLayer),
   Layer.provide(AccountSecurityHttpMiddlewareLayer),
   Layer.provide(BackendRequestContextMiddlewareLayer)
 );
-const accountSecurityHttpLayer = AccountSecurityHttpLayer.pipe(
+const AccountSecurityHttpApplicationLayer = AccountSecurityHttpLayer.pipe(
   Layer.provide(BackendRequestContextMiddlewareLayer)
 );
-const healthHttpLayer = BackendHealthHttpHandlersLayer.pipe(
-  Layer.provide(BackendHealthLayer.pipe(Layer.provide(permissionsLayer)))
-);
-
-/** Builds the one Backend API from closed bounded-context HTTP graphs. */
-const BackendRoutesLayer = HttpApiBuilder.layer(BackendHttpApi).pipe(
+const HealthHttpApplicationLayer = BackendHealthHttpHandlersLayer.pipe(
   Layer.provide(
-    Layer.mergeAll(accountSecurityHttpLayer, healthHttpLayer, mailboxHttpLayer)
+    BackendHealthLayer.pipe(Layer.provide(PermissionsApplicationLayer))
   )
 );
 
-/** Complete private Backend HTTP router, including platform response support. */
-export const BackendHttpLayer = BackendRoutesLayer.pipe(
+/** Complete private Backend application, built by the sole final API builder. */
+export const BackendApplicationLayer = HttpApiBuilder.layer(
+  BackendHttpApi
+).pipe(
+  Layer.provide(
+    Layer.mergeAll(
+      AccountSecurityHttpApplicationLayer,
+      HealthHttpApplicationLayer,
+      MailboxHttpApplicationLayer
+    )
+  ),
   Layer.provide(ControlPlaneD1Layer),
   Layer.provide(HttpApiPlatformLayer)
 );

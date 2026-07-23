@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { WebsiteApplication } from "#/apps/website/WebsiteApplication";
 import { mailboxMessageHtmlCspForOrigin } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { mailboxMessageHtmlResponse } from "#/routes/api/mailboxes/$mailboxId/messages/$messageId/html";
-import { websiteBackend } from "#/server/backend";
 
 const iframeRequest = (search = "?folder=inbox") =>
   new Request(
@@ -21,7 +21,7 @@ describe("message HTML iframe route", () => {
 
   it("returns HTML with restrictive browser headers", async () => {
     const getHtml = vi
-      .spyOn(websiteBackend, "getMailboxMessageHtml")
+      .spyOn(WebsiteApplication, "getMailboxMessageHtml")
       .mockResolvedValue({
         html: {
           _tag: "Folder",
@@ -64,7 +64,7 @@ describe("message HTML iframe route", () => {
   });
 
   it("rejects top-level, cross-site, and ambiguous requests before Backend access", async () => {
-    const getHtml = vi.spyOn(websiteBackend, "getMailboxMessageHtml");
+    const getHtml = vi.spyOn(WebsiteApplication, "getMailboxMessageHtml");
     const topLevel = await mailboxMessageHtmlResponse(
       new Request(
         "https://inbox.test/api/mailboxes/primary/messages/message-1/html?folder=inbox",
@@ -97,7 +97,7 @@ describe("message HTML iframe route", () => {
   });
 
   it("renders a safe iframe-local fallback for authorized route failures", async () => {
-    vi.spyOn(websiteBackend, "getMailboxMessageHtml").mockResolvedValue({
+    vi.spyOn(WebsiteApplication, "getMailboxMessageHtml").mockResolvedValue({
       error: {
         _tag: "AuthUnauthenticatedError",
         code: "unauthenticated",
@@ -134,7 +134,7 @@ describe("message HTML iframe route", () => {
   });
 
   it("contains service-binding failures inside the sandbox response", async () => {
-    vi.spyOn(websiteBackend, "getMailboxMessageHtml").mockRejectedValue(
+    vi.spyOn(WebsiteApplication, "getMailboxMessageHtml").mockRejectedValue(
       new Error("Backend binding failed")
     );
 
@@ -156,7 +156,7 @@ describe("message HTML iframe route", () => {
   });
 
   it("keeps request-policy rejection local to the preview", async () => {
-    vi.spyOn(websiteBackend, "getMailboxMessageHtml").mockResolvedValue({
+    vi.spyOn(WebsiteApplication, "getMailboxMessageHtml").mockResolvedValue({
       error: {
         _tag: "AuthRequestRejectedError",
         code: "request_rejected",

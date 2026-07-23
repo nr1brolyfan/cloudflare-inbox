@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import { WebsiteApplication } from "#/apps/website/WebsiteApplication";
 import { mailboxDraftAttachmentUploadResponse } from "#/routes/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content";
-import { websiteBackend } from "#/server/backend";
 
 const params = {
   attachmentId: "attachment-1",
@@ -45,7 +45,7 @@ describe("draft attachment upload route", () => {
 
   it("forwards exact bytes with forced same-origin identity", async () => {
     const upload = vi
-      .spyOn(websiteBackend, "uploadMailboxDraftAttachment")
+      .spyOn(WebsiteApplication, "uploadMailboxDraftAttachment")
       .mockResolvedValue({ ok: true, upload: uploadResult });
     const response = await mailboxDraftAttachmentUploadResponse(
       uploadRequest(),
@@ -66,7 +66,7 @@ describe("draft attachment upload route", () => {
   });
 
   it("rejects cross-site uploads before Backend access", async () => {
-    const upload = vi.spyOn(websiteBackend, "uploadMailboxDraftAttachment");
+    const upload = vi.spyOn(WebsiteApplication, "uploadMailboxDraftAttachment");
     const response = await mailboxDraftAttachmentUploadResponse(
       uploadRequest("cross-site"),
       params
@@ -78,7 +78,10 @@ describe("draft attachment upload route", () => {
   });
 
   it("returns an empty sanitized Backend failure", async () => {
-    vi.spyOn(websiteBackend, "uploadMailboxDraftAttachment").mockResolvedValue({
+    vi.spyOn(
+      WebsiteApplication,
+      "uploadMailboxDraftAttachment"
+    ).mockResolvedValue({
       error: {
         _tag: "AuthConflictError",
         code: "conflict",

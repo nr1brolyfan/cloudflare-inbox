@@ -8,8 +8,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { BackendHttpApi } from "#/http/api";
-
+import { DevEmailHttpApi } from "./DevEmailHttpApi";
 import type { DevEmailRecord } from "./DevEmailHttpApi";
 
 export interface DevEmailConfigShape {
@@ -42,7 +41,7 @@ const toRecord = (message: DevEmailMessage): DevEmailRecord => ({
 
 /** Development-only handlers; production requests fail with a typed 404. */
 export const DevEmailHttpHandlersLayer = HttpApiBuilder.group(
-  BackendHttpApi,
+  DevEmailHttpApi,
   "devEmails",
   Effect.fn("backend.http.dev_email_group")(function* (handlers) {
     const config = yield* DevEmailConfig;

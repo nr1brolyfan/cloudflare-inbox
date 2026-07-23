@@ -13,12 +13,13 @@ import * as Schema from "effect/Schema";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
-import { BackendHttpApi } from "#/http/api";
 import {
   GeneratedRecoveryCodeSet,
   RecoveryCodeAdministration,
 } from "#/modules/account-security/application/RecoveryCodeAdministration";
 import type { RecoveryCodeAdministrationError } from "#/modules/account-security/application/RecoveryCodeAdministration";
+
+import { RecoveryCodeManagementHttpApi } from "./RecoveryCodeManagementHttpApi";
 
 type PublicError =
   | AuthBadRequestError
@@ -98,7 +99,7 @@ const mapError = (
 };
 
 export const RecoveryCodeManagementHttpHandlersLayer = HttpApiBuilder.group(
-  BackendHttpApi,
+  RecoveryCodeManagementHttpApi,
   "recoveryCodeManagement",
   Effect.fn("auth.http.recovery_code_management")(function* (handlers) {
     const administration = yield* RecoveryCodeAdministration;

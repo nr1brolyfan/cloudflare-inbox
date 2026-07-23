@@ -9,7 +9,11 @@ import {
   AuthenticatedHttpBody,
   PasskeyAuthenticationStartedBody,
 } from "@effect-auth/core/HttpApi";
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
+import {
+  HttpApi,
+  HttpApiEndpoint,
+  HttpApiGroup,
+} from "effect/unstable/httpapi";
 
 import {
   FinishPasskeySignInCommand,
@@ -51,3 +55,7 @@ export class PasskeyAuthenticationGroup extends HttpApiGroup.make(
   .middleware(BackendRequestContextMiddleware)
   .middleware(AuthRequestMetadataMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}
+
+export const PasskeyAuthenticationHttpApi = HttpApi.make("AuthApi").add(
+  PasskeyAuthenticationGroup
+);

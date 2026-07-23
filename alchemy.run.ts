@@ -3,7 +3,7 @@ import { ALCHEMY_DEV } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
-import Backend from "./src/workers/backend.ts";
+import Backend from "./src/apps/backend-worker/BackendWorker.ts";
 
 export class Website extends Cloudflare.Website.Vite<Website>()("Website", {
   compatibility: {

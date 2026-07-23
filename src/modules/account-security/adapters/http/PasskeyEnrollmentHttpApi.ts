@@ -14,7 +14,11 @@ import {
   UnixMillisSchema,
 } from "@effect-auth/core/Identifiers";
 import * as Schema from "effect/Schema";
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
+import {
+  HttpApi,
+  HttpApiEndpoint,
+  HttpApiGroup,
+} from "effect/unstable/httpapi";
 
 import { CurrentRequestAuthMiddleware } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import {
@@ -81,3 +85,7 @@ export class PasskeyEnrollmentGroup extends HttpApiGroup.make("passkey")
   .middleware(BackendRequestContextMiddleware)
   .middleware(CurrentRequestAuthMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}
+
+export const PasskeyEnrollmentHttpApi = HttpApi.make("AuthApi").add(
+  PasskeyEnrollmentGroup
+);

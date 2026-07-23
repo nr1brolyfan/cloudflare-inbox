@@ -10,6 +10,7 @@ import {
 } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
+import { getDevEmailInboxStatus } from "#/apps/website/TanStackFunctions";
 import {
   authClient,
   authErrorMessage,
@@ -21,7 +22,6 @@ import {
   enrollRecoveryPasskey,
 } from "#/modules/account-security/adapters/browser/AuthClient";
 
-import { getDevEmailInboxStatus } from "../server/tanstack-functions";
 import { SignedInOwnerBootstrap } from "./-index-owner-bootstrap";
 
 export const Route = createFileRoute("/")({

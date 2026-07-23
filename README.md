@@ -90,12 +90,11 @@ src/audit/                  administrative audit contracts and event preparation
 src/auth/                   effect-auth services, recovery identity, session handling, and storage
 src/authorization/          mail permission catalog and D1-backed layers
 src/control-plane/          D1 adapters and transactional mailbox administration
-src/http/                   declarative Effect HTTP APIs and Backend composition
 src/infra/                  Cloudflare resource declarations
 src/mailboxes/              mail domain, Durable Object protocol, and SQLite stores
 src/observability/          health services, Effect logging, and local OTLP layers
-src/server/                 Website-side services and TanStack adapters
-src/workers/backend.ts      private Effect backend Worker
+src/apps/backend-worker/    private Backend Worker and final HTTP composition
+src/apps/website/           Website-side services and TanStack adapters
 tests/<area>/               tests mirroring production domains
 tests/support/              shared test-only helpers and Layers
 ```

@@ -52,7 +52,7 @@ Inside each `MailboxDO`, `MailboxDatabaseLive` feeds `MailboxOperationStoreLive`
 
 ## Auth Graph
 
-`src/http/backend.ts` is the only auth HTTP composition root:
+`src/apps/backend-worker/BackendApplicationLayer.ts` is the only auth HTTP composition root:
 
 ```text
 AuthRuntimeConfig
@@ -96,28 +96,28 @@ Cloudflare env + tracing
      -> WebsiteConfigLive
 
 BackendClient
-  -> MailboxBackendOperationsLive
+  -> MailboxBackendOperationsLayer
      -> trusted-header forwarding, response decoding, public error sanitization
 
 BackendClient + WebsiteConfig
-  -> DevEmailOperationsLive
+  -> DevEmailOperationsLayer
      -> deployment feature gate, list/clear response decoding
 
-WebsitePlatformServicesLive + mailbox/dev-email operations
-  -> WebsiteLive
+WebsitePlatformLayer + mailbox/dev-email operations
+  -> WebsiteApplicationLayer
      -> one ManagedRuntime
-        -> minimal websiteBackend Promise facade
-           -> tanstack-functions.ts
+         -> minimal WebsiteApplication Promise facade
+            -> TanStackFunctions.ts
 ```
 
-`src/server/website-platform.ts` is the concrete Cloudflare boundary. `src/server/mailbox-backend.ts` and `src/server/dev-email-backend.ts` each keep a transport-neutral service contract beside its concrete Backend-binding adapter. `src/server/backend.ts` only composes those layers and owns runtime lifetime; request acquisition remains in its TanStack-facing Promise facade.
+`src/apps/website/WebsitePlatform.ts` is the concrete Cloudflare boundary. `MailboxBackendOperations.ts` and `DevEmailOperations.ts` each keep a transport-neutral service contract beside its concrete Backend-binding adapter. `WebsiteApplication.ts` only composes those layers and owns runtime lifetime; request acquisition remains in its TanStack-facing Promise facade.
 
 Mailbox forwarding deliberately copies only `cookie`, `origin`, `referer`, and `user-agent`, performs one binding call, schema-decodes every response, sanitizes public errors, and encodes mailbox IDs as a single path segment. Development-email operations do not contact the Backend when disabled and reject malformed successful responses.
 
 ## Intentional Exceptions
 
-- Auth implementation internals (`src/auth/live.ts`, `src/auth/session.ts`, and generated auth schemas) retain their framework-required structure, while final HTTP policy remains in `src/http/backend.ts`.
-- `src/server/tanstack-functions.ts` is the single `createServerFn` adapter. Actual route modules remain under `src/routes` because TanStack derives route identity from their filenames and unchanged `createFileRoute` literals; large route UIs intentionally remain cohesive rather than being split for file-count symmetry.
+- Auth implementation internals and generated auth schemas retain their framework-required structure, while final HTTP policy remains in `src/apps/backend-worker/BackendApplicationLayer.ts`.
+- `src/apps/website/TanStackFunctions.ts` is the single `createServerFn` adapter. Actual route modules remain under `src/routes` because TanStack derives route identity from their filenames and unchanged `createFileRoute` literals; large route UIs intentionally remain cohesive rather than being split for file-count symmetry.
 - Generated `src/routeTree.gen.ts`, generated auth schemas, and historical migrations remain outside this phase.
 - Alchemy's generated Durable Object and Worker adapters require `RuntimeContext.phantom` at their concrete call sites. This framework marker does not enter domain contracts.
 - Concrete Website environment acquisition and the full Backend health graph require Cloudflare-generated bindings and Durable Object runtime state. Local tests therefore cover the HTTP health adapter and each Website operation layer with explicit services rather than maintaining a brittle partial Cloudflare emulator.

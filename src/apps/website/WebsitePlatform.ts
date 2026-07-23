@@ -2,11 +2,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import type { WebsiteEnv } from "../../alchemy.run.ts";
+import type { WebsiteEnv } from "../../../alchemy.run.ts";
 import {
   backendRequestMethod,
   backendRequestRoute,
-} from "../platform/observability/BackendRequestCompletion";
+} from "../../platform/observability/BackendRequestCompletion";
 
 const hasWebsiteBindings = (
   env: Cloudflare.Env
@@ -22,7 +22,7 @@ const WebsitePlatform = Context.Service<WebsitePlatformShape>(
   "cloudflare-inbox/WebsitePlatform"
 );
 
-const WebsitePlatformLive = Layer.effect(
+const WebsitePlatformBindingsLayer = Layer.effect(
   WebsitePlatform,
   Effect.promise(async () => {
     const Cloudflare = await import("cloudflare:workers");
@@ -63,7 +63,7 @@ export const BackendClient = Context.Service<BackendClientShape>(
 );
 
 /** Cloudflare implementation that traces every Website-to-Backend binding call. */
-export const BackendClientLive = Layer.effect(
+export const BackendClientLayer = Layer.effect(
   BackendClient,
   Effect.gen(function* () {
     const platform = yield* WebsitePlatform;
@@ -83,7 +83,7 @@ export const WebsiteConfig = Context.Service<WebsiteConfigShape>(
   "cloudflare-inbox/WebsiteConfig"
 );
 
-export const WebsiteConfigLive = Layer.effect(
+export const WebsiteConfigLayer = Layer.effect(
   WebsiteConfig,
   Effect.gen(function* () {
     const platform = yield* WebsitePlatform;
@@ -94,7 +94,7 @@ export const WebsiteConfigLive = Layer.effect(
 );
 
 /** Concrete Website platform services sharing one Cloudflare acquisition. */
-export const WebsitePlatformServicesLive = Layer.merge(
-  BackendClientLive,
-  WebsiteConfigLive
-).pipe(Layer.provide(WebsitePlatformLive));
+export const WebsitePlatformLayer = Layer.merge(
+  BackendClientLayer,
+  WebsiteConfigLayer
+).pipe(Layer.provide(WebsitePlatformBindingsLayer));

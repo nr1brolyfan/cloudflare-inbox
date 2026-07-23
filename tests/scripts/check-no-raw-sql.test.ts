@@ -116,7 +116,7 @@ describe("raw SQL source policy", () => {
     "src/modules/account-security/adapters/d1/AccountSecurityStorageD1.ts",
     "src/platform/control-plane-d1/ControlPlaneBatch.ts",
     "src/platform/control-plane-d1/ControlPlaneDatabase.ts",
-    "src/workers/backend.ts",
+    "src/apps/backend-worker/BackendWorker.ts",
   ])("allows ControlPlaneD1Binding access in %s", (file) => {
     expect(
       checkSourcePolicy(file, "const binding = ControlPlaneD1Binding;")
@@ -255,7 +255,7 @@ describe("raw SQL source policy", () => {
       source: "database.prepare(query.sql);",
     },
     {
-      file: "src/workers/backend.ts",
+      file: "src/apps/backend-worker/BackendWorker.ts",
       message: messages.rawString,
       source: 'database.all("select 1");',
     },

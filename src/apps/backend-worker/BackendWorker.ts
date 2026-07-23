@@ -66,6 +66,10 @@ import {
   MailboxEmailSender,
   RawMessagesBucket,
 } from "#/platform/cloudflare/Resources";
+import {
+  ControlPlaneD1Binding,
+  ControlPlaneDatabaseLayer,
+} from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import { BackendHealthBindings } from "#/platform/observability/BackendHealthLayer";
 import {
   BackendObservabilityConfig,
@@ -83,11 +87,7 @@ import {
 } from "#/platform/observability/BackendRequestContext";
 import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
 
-import { BackendHttpLayer } from "../http/backend";
-import {
-  ControlPlaneD1Binding,
-  ControlPlaneDatabaseLayer,
-} from "../platform/control-plane-d1/ControlPlaneDatabase";
+import { BackendApplicationLayer } from "./BackendApplicationLayer";
 
 const r2AttachmentObject = (object: {
   readonly checksums: { readonly sha256?: ArrayBuffer };
@@ -147,7 +147,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const inboundWorkflow = yield* InboundWorkflow;
     const emailRouting = yield* EmailRoutingEventSource;
     const isDevelopment = yield* ALCHEMY_DEV;
-    const aiInferenceLayer = isDevelopment
+    const AiInferenceApplicationLayer = isDevelopment
       ? AiInferenceUnavailableLayer
       : yield* Effect.gen(function* () {
           const queryGateway =
@@ -217,18 +217,18 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         session: sessionSecret,
       },
     }).pipe(Effect.orDie);
-    const authRuntimeConfigLive = Layer.succeed(
+    const AuthRuntimeConfigLayer = Layer.succeed(
       AuthRuntimeConfig,
       AuthRuntimeConfig.of(authRuntimeConfig)
     );
-    const workflowClientLive = Layer.succeed(
+    const InboundWorkflowClientLayer = Layer.succeed(
       InboundWorkflowClient,
       InboundWorkflowClient.of({
         create: (options) => inboundWorkflow.create(options),
         get: (instanceId) => inboundWorkflow.get(instanceId),
       })
     );
-    const attachmentReadClientLive = Layer.succeed(
+    const InboundAttachmentReadClientLayer = Layer.succeed(
       InboundAttachmentR2ReadClient,
       InboundAttachmentR2ReadClient.of({
         get: (key) =>
@@ -255,7 +255,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           ),
       })
     );
-    const draftAttachmentClientLive = Layer.succeed(
+    const DraftAttachmentClientLayer = Layer.succeed(
       DraftAttachmentR2Client,
       DraftAttachmentR2Client.of({
         head: (key) =>
@@ -274,7 +274,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           ),
       })
     );
-    const outboundAttachmentReadClientLive = Layer.succeed(
+    const OutboundAttachmentReadClientLayer = Layer.succeed(
       OutboundDraftAttachmentR2ReadClient,
       OutboundDraftAttachmentR2ReadClient.of({
         get: (key) =>
@@ -301,7 +301,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           ),
       })
     );
-    const mailboxOutboundProviderLive =
+    const MailboxOutboundProviderLayer =
       mailboxEmailSendBinding === undefined
         ? OutboundEmailProviderUnavailableLayer
         : OutboundEmailProviderCloudflareLayer.pipe(
@@ -313,14 +313,14 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               )
             )
           );
-    const workerServicesLive = Layer.mergeAll(
-      authRuntimeConfigLive,
-      workflowClientLive,
-      attachmentReadClientLive,
-      draftAttachmentClientLive,
-      outboundAttachmentReadClientLive,
-      mailboxOutboundProviderLive,
-      aiInferenceLayer,
+    const BackendBindingsLayer = Layer.mergeAll(
+      AuthRuntimeConfigLayer,
+      InboundWorkflowClientLayer,
+      InboundAttachmentReadClientLayer,
+      DraftAttachmentClientLayer,
+      OutboundAttachmentReadClientLayer,
+      MailboxOutboundProviderLayer,
+      AiInferenceApplicationLayer,
       Layer.succeed(
         MailboxAdministrationConfig,
         MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })
@@ -339,8 +339,10 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       ),
       Layer.succeed(DevEmailConfig, DevEmailConfig.of({ isDevelopment }))
     );
-    const completionContext = yield* Layer.build(BackendRequestCompletionLayer);
-    const observabilityLayer = BackendObservabilityLayer.pipe(
+    const BackendRequestCompletionContext = yield* Layer.build(
+      BackendRequestCompletionLayer
+    );
+    const BackendRequestObservabilityLayer = BackendObservabilityLayer.pipe(
       Layer.provide(
         Layer.succeed(
           BackendObservabilityConfig,
@@ -351,7 +353,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     yield* emailRouting.listen((message) =>
       Effect.gen(function* () {
         const controlPlaneDatabase = yield* controlPlane.raw;
-        const controlPlaneDatabaseLayer = ControlPlaneDatabaseLayer.pipe(
+        const EmailControlPlaneDatabaseLayer = ControlPlaneDatabaseLayer.pipe(
           Layer.provide(
             Layer.succeed(
               ControlPlaneD1Binding,
@@ -359,7 +361,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
             )
           )
         );
-        const rawMessagesLive = Layer.succeed(
+        const InboundRawMessagesLayer = Layer.succeed(
           InboundRawMessageR2WriteClient,
           InboundRawMessageR2WriteClient.of({
             put: (key, value, options) =>
@@ -368,30 +370,33 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
                 .pipe(Effect.provide(RuntimeContext.phantom)),
           })
         );
-        const workflowStarterLive = InboundWorkflowStarterCloudflareLayer.pipe(
-          Layer.provide(workflowClientLive)
-        );
-        const rawMessageStoreLayer = InboundRawMessageStoreR2Layer.pipe(
+        const InboundWorkflowStarterLayer =
+          InboundWorkflowStarterCloudflareLayer.pipe(
+            Layer.provide(InboundWorkflowClientLayer)
+          );
+        const InboundRawMessageStoreLayer = InboundRawMessageStoreR2Layer.pipe(
           Layer.provide(
             Layer.merge(
-              rawMessagesLive,
+              InboundRawMessagesLayer,
               InboundRawMessageStoreRuntimeCloudflareLayer
             )
           )
         );
-        const inboundEmailIngressLive =
+        const InboundEmailIngressLayer =
           MailboxInboundEmailIngress.layerNoDeps.pipe(
             Layer.provide(
               Layer.mergeAll(
-                rawMessageStoreLayer,
+                InboundRawMessageStoreLayer,
                 MailboxInboundEmailIngressRuntimeSystemLayer,
-                workflowStarterLive
+                InboundWorkflowStarterLayer
               )
             )
           );
-        const inboundServicesLive = Layer.merge(
-          AddressRoutingLayer.pipe(Layer.provide(controlPlaneDatabaseLayer)),
-          inboundEmailIngressLive
+        const InboundEmailApplicationLayer = Layer.merge(
+          AddressRoutingLayer.pipe(
+            Layer.provide(EmailControlPlaneDatabaseLayer)
+          ),
+          InboundEmailIngressLayer
         );
 
         return yield* handleCloudflareEmailRoutingMessage(message).pipe(
@@ -402,7 +407,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
             kind: "server",
             root: true,
           }),
-          Effect.provide(inboundServicesLive)
+          Effect.provide(InboundEmailApplicationLayer)
         );
       })
     );
@@ -413,12 +418,12 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         const requestUrl = new URL(request.url, authRuntimeConfig.publicOrigin);
         const requestContext = backendRequestContext(request.headers["cf-ray"]);
         const completion = yield* BackendRequestCompletion.pipe(
-          Effect.provide(completionContext)
+          Effect.provide(BackendRequestCompletionContext)
         );
         // Building in Alchemy's request scope flushes OTLP finalizers through waitUntil.
-        const observabilityExit = yield* Layer.build(observabilityLayer).pipe(
-          Effect.exit
-        );
+        const observabilityExit = yield* Layer.build(
+          BackendRequestObservabilityLayer
+        ).pipe(Effect.exit);
         if (Exit.isFailure(observabilityExit)) {
           yield* completion
             .emit({
@@ -440,7 +445,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               backendRequestContextAnnotations(requestContext)
             );
             const controlPlaneDatabase = yield* controlPlane.raw;
-            const routesLive = BackendHttpLayer.pipe(
+            const BackendRequestApplicationLayer = BackendApplicationLayer.pipe(
               Layer.provide(
                 Layer.succeed(
                   ControlPlaneD1Binding,
@@ -449,7 +454,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
                   })
                 )
               ),
-              Layer.provide(workerServicesLive),
+              Layer.provide(BackendBindingsLayer),
               Layer.provide(
                 Layer.succeed(
                   CurrentBackendRequestContext,
@@ -457,7 +462,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
                 )
               )
             );
-            const handler = yield* HttpRouter.toHttpEffect(routesLive);
+            const handler = yield* HttpRouter.toHttpEffect(
+              BackendRequestApplicationLayer
+            );
             const response = yield* handler.pipe(
               Effect.provideService(
                 CurrentBackendRequestContext,

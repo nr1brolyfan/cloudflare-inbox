@@ -2,12 +2,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
-import type { DevEmailOperationsShape } from "#/server/dev-email-backend";
+import type { DevEmailOperationsShape } from "#/apps/website/DevEmailOperations";
 import {
   DevEmailOperations,
-  DevEmailOperationsLive,
-} from "#/server/dev-email-backend";
-import { BackendClient, WebsiteConfig } from "#/server/website-platform";
+  DevEmailOperationsLayer,
+} from "#/apps/website/DevEmailOperations";
+import { BackendClient, WebsiteConfig } from "#/apps/website/WebsitePlatform";
 
 const runDevEmail = <A>(
   enabled: boolean,
@@ -18,7 +18,7 @@ const runDevEmail = <A>(
     DevEmailOperations.pipe(
       Effect.flatMap(operation),
       Effect.provide(
-        DevEmailOperationsLive.pipe(
+        DevEmailOperationsLayer.pipe(
           Layer.provide(
             Layer.merge(
               Layer.succeed(

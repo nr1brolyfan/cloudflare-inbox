@@ -12,6 +12,7 @@ import {
 } from "@effect-auth/core/HttpApi";
 import * as Schema from "effect/Schema";
 import {
+  HttpApi,
   HttpApiEndpoint,
   HttpApiGroup,
   HttpApiSchema,
@@ -395,3 +396,5 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
   .middleware(BackendRequestContextMiddleware)
   .middleware(CurrentRequestAuthMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}
+
+export const MailboxHttpApi = HttpApi.make("AuthApi").add(MailboxGroup);

@@ -3,7 +3,11 @@ import {
   AuthNotFoundError,
 } from "@effect-auth/core/HttpApi";
 import * as Schema from "effect/Schema";
-import { HttpApiEndpoint, HttpApiGroup } from "effect/unstable/httpapi";
+import {
+  HttpApi,
+  HttpApiEndpoint,
+  HttpApiGroup,
+} from "effect/unstable/httpapi";
 
 const DevEmailKindSchema = Schema.Literals([
   "EmailAuth",
@@ -67,3 +71,5 @@ export class DevEmailGroup extends HttpApiGroup.make("devEmails").add(
   ListDevEmailsEndpoint,
   ClearDevEmailsEndpoint
 ) {}
+
+export const DevEmailHttpApi = HttpApi.make("AuthApi").add(DevEmailGroup);

@@ -13,9 +13,10 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { BackendHttpApi } from "#/http/api";
 import { PasskeyCredentialAdministration } from "#/modules/account-security/application/PasskeyCredentialAdministration";
 import type { PasskeyCredentialAdministrationError } from "#/modules/account-security/application/PasskeyCredentialAdministration";
+
+import { PasskeyCredentialManagementHttpApi } from "./PasskeyCredentialManagementHttpApi";
 
 type PublicError =
   | AuthBadRequestError
@@ -107,7 +108,7 @@ const mapError = (
 
 export const PasskeyCredentialManagementHttpHandlersLayer =
   HttpApiBuilder.group(
-    BackendHttpApi,
+    PasskeyCredentialManagementHttpApi,
     "passkeyCredentialManagement",
     Effect.fn("auth.http.passkey_credential_management_group")(
       function* (handlers) {

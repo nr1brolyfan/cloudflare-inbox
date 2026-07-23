@@ -9,7 +9,7 @@ import {
   DevEmailListSchema,
 } from "#/modules/account-security/adapters/http/DevEmailHttpApi";
 
-import { BackendClient, WebsiteConfig } from "./website-platform";
+import { BackendClient, WebsiteConfig } from "./WebsitePlatform";
 
 export type DevEmailInboxResult =
   | { readonly enabled: false }
@@ -28,7 +28,7 @@ export const DevEmailOperations = Context.Service<DevEmailOperationsShape>(
   "cloudflare-inbox/DevEmailOperations"
 );
 
-export const DevEmailOperationsLive = Layer.effect(
+export const DevEmailOperationsLayer = Layer.effect(
   DevEmailOperations,
   Effect.gen(function* () {
     const backend = yield* BackendClient;

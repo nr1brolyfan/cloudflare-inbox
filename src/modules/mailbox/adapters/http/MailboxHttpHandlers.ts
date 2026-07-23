@@ -13,7 +13,6 @@ import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { BackendHttpApi } from "#/http/api";
 import type { MailboxDraftAttachmentError } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftEditingError } from "#/modules/mailbox/application/MailboxDraftEditing";
@@ -51,6 +50,8 @@ import type { MailboxAdministrationError } from "#/modules/organization/applicat
 import { MailboxAdministration } from "#/modules/organization/application/MailboxAdministration";
 import type { MailboxNavigationError } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
+
+import { MailboxHttpApi } from "./MailboxHttpApi";
 
 const internalError = () =>
   new AuthInternalError({
@@ -467,7 +468,7 @@ const mapHttpErrors = <A, R>(
 
 /** Mailbox handlers; request auth is supplied by CurrentRequestAuthMiddleware. */
 export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
-  BackendHttpApi,
+  MailboxHttpApi,
   "mailboxes",
   Effect.fn("backend.http.mailbox_group")(function* (handlers) {
     const administration = yield* MailboxAdministration;

@@ -2,9 +2,8 @@ import { createFileRoute } from "@tanstack/react-router";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 
+import { WebsiteApplication } from "#/apps/website/WebsiteApplication";
 import { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
-
-import { websiteBackend } from "../../../../../../../../server/backend";
 
 const responseHeaders = (contentType: string) => ({
   "cache-control": "private, no-store",
@@ -70,9 +69,10 @@ export const mailboxInlineAttachmentResponse = async (
   const headers = new Headers(request.headers);
   headers.set("origin", url.origin);
   const incoming = new Request(request, { headers });
-  const result = await websiteBackend
-    .getMailboxInlineAttachment(decoded.value, incoming)
-    .catch(() => null);
+  const result = await WebsiteApplication.getMailboxInlineAttachment(
+    decoded.value,
+    incoming
+  ).catch(() => null);
   if (result === null) {
     return new Response(null, {
       headers: responseHeaders("text/plain; charset=utf-8"),
