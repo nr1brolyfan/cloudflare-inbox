@@ -15,17 +15,22 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
+import {
+  sensitiveSessionPredicate,
+  sessionPredicate,
+  transactionalSessionPredicate,
+} from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
 import {
   EmailAddress,
   normalizeEmailAddressDomain,
 } from "#/modules/address-routing/domain/EmailAddress";
-import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/adapters/d1/AdministrativeAuditD1";
+import { primaryMailboxAddressInsertStatement } from "#/modules/address-routing/integration/AddressRoutingD1Statements";
 import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
 import type { AdministrativeAuditError } from "#/modules/administrative-audit/application/AdministrativeAuditError";
+import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
 import {
   MailPermission,
   MailRole,
@@ -48,15 +53,10 @@ import {
   authRoleDefinition,
   authRoleGrant,
 } from "../../../../auth/schema/modules/permissions";
+import { appAuthorizationGuard } from "../../../../platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "../../../../platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "../../../../platform/control-plane-d1/ControlPlaneDatabase";
-import { appAuthorizationGuard } from "../../../../platform/control-plane-d1/ControlPlaneSchema";
 import { permissionPredicate } from "../../../../platform/control-plane-d1/PermissionGuard";
-import {
-  sensitiveSessionPredicate,
-  sessionPredicate,
-  transactionalSessionPredicate,
-} from "../../../../platform/control-plane-d1/RequestAuthGuard";
 import { appMailbox, appMailboxMember } from "./OrganizationSchema";
 
 export const MailboxAdministrationOwnerEmail = EmailAddress;
@@ -335,6 +335,12 @@ export const MailboxAdministrationD1Layer = Layer.effect(
             eq(appMailbox.createdByUserId, validated.actor.userId),
             eq(appMailbox.createdAt, timestamp)
           );
+          const mailboxCreated = exists(
+            database
+              .select({ value: sql`1` })
+              .from(appMailbox)
+              .where(createdMailbox)
+          );
           const statements: ControlPlane.ControlPlaneStatements = [
             database.insert(appAuthorizationGuard).select(
               sql`select ${nonce}
@@ -376,24 +382,14 @@ export const MailboxAdministrationD1Layer = Layer.effect(
                   )
               )
               .returning({ id: appMailbox.id }),
-            database.insert(appMailboxAddress).select(
-              database
-                .select({
-                  address: sql`${configuredOwnerEmail}`.as("address"),
-                  createdAt: sql`${timestamp}`.as("created_at"),
-                  enabled: sql<boolean>`1`.as("enabled"),
-                  id: sql`${"primary"}`.as("id"),
-                  isPrimary: sql<boolean>`1`.as("is_primary"),
-                  mailboxId: sql`${mailboxId}`.as("mailbox_id"),
-                  normalizedAddress: sql`${ownerEmail}`.as(
-                    "normalized_address"
-                  ),
-                  updatedAt: sql`${timestamp}`.as("updated_at"),
-                })
-                .from(appAuthorizationGuard)
-                .innerJoin(appMailbox, createdMailbox)
-                .where(eq(appAuthorizationGuard.nonce, nonce))
-            ),
+            primaryMailboxAddressInsertStatement(database, {
+              address: configuredOwnerEmail,
+              authorizationGuardNonce: nonce,
+              createdAt: timestamp,
+              mailboxId,
+              mailboxCreated,
+              normalizedAddress: ownerEmail,
+            }),
             database
               .insert(appMailboxMember)
               .select(

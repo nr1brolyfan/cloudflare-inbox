@@ -1,4 +1,4 @@
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -10,7 +10,7 @@ import {
   MailboxSenderIdentity,
   MailboxSenderIdentityError,
 } from "#/modules/mailbox/ports/MailboxSenderIdentity";
-import { appMailbox } from "#/modules/organization/adapters/d1/OrganizationSchema";
+import { activeOrganizationMailboxPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 const senderIdentityError = (
@@ -42,14 +42,15 @@ export const MailboxSenderIdentityD1Layer = Layer.effect(
             displayName: appMailboxAddress.displayName,
           })
           .from(appMailboxAddress)
-          .innerJoin(appMailbox, eq(appMailbox.id, appMailboxAddress.mailboxId))
           .where(
             and(
               eq(appMailboxAddress.mailboxId, mailboxId),
               eq(appMailboxAddress.isPrimary, true),
               eq(appMailboxAddress.enabled, true),
-              eq(appMailbox.status, "active"),
-              isNull(appMailbox.deletedAt)
+              activeOrganizationMailboxPredicate(
+                database,
+                appMailboxAddress.mailboxId
+              )
             )
           )
           .limit(2)

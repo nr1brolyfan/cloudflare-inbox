@@ -19,21 +19,20 @@ import {
   RecoveryCodeText,
 } from "#/modules/account-security/application/RecoveryCodeAdministration";
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
-import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
-import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
-import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import {
-  appAuthorizationGuard,
-  appExternalRecoveryIdentity,
-} from "#/platform/control-plane-d1/ControlPlaneSchema";
 import {
   controlPlaneDatabaseNow,
   sensitiveSessionPredicate,
   transactionalSessionPredicate,
-} from "#/platform/control-plane-d1/RequestAuthGuard";
+} from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
+import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
+import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
+import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import { UnixMillis } from "#/shared/Temporal";
+
+import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
 
 const failure = (
   reason: RecoveryCodeAdministrationError["reason"],

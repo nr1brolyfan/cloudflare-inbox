@@ -45,6 +45,7 @@ Inside each `MailboxDO`, `MailboxDatabaseLive` feeds `MailboxOperationStoreLive`
 
 - `src/platform/control-plane-d1/ControlPlaneDatabase.ts` owns the raw D1 binding and Effect Drizzle adapter. It does not import HTTP modules.
 - `src/platform/control-plane-d1/ControlPlaneBatch.ts` owns the atomic D1 batch contract and adapter. Batch rows remain unknown until a use case decodes them with a concrete schema.
+- `src/platform/control-plane-d1/AuthorizationGuardSchema.ts` owns only the technical nonce table. Account-security, administrative-audit, AI, organization, and address-routing own their D1 business schemas; narrow `integration/` predicates and statement factories compose cross-context SQL without exposing concrete adapters.
 - `src/mailboxes/resource-location.ts` is the schema-backed source for branded resource lookup hints and trusted locations. A claimed mailbox ID selects a lookup target but is never authorization evidence; scopes use only ancestry returned by the trusted repository.
 - `src/observability/health.ts` contains transport-neutral health schemas and the service contract. `src/observability/backend-health-live.ts` owns concrete probes. HTTP status annotations and the 200/503 response selection remain in `src/http`.
 - `src/modules/mailbox/adapters/http/MailboxHttpApi.ts` owns the shared public mailbox error codec used by the Backend API contract and Website response decoder.

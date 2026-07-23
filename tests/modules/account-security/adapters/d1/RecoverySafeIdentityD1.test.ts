@@ -5,17 +5,17 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { RecoverySafeIdentityD1Layer } from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
+import {
+  RecoverySafeIdentityConfig,
+  RecoverySafeIdentityD1Layer,
+  RecoverySafeIdentityOwnerEmail,
+} from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
 import { ExternalRecoveryIdentityAddress } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import {
   EmailAddress,
   normalizeEmailAddressDomain,
 } from "#/modules/address-routing/domain/EmailAddress";
-import {
-  MailboxAdministrationConfig,
-  MailboxAdministrationOwnerEmail,
-} from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
@@ -42,9 +42,9 @@ const policyLive = (database: DatabaseSync) => {
     Layer.provide(databaseLive),
     Layer.provide(
       Layer.succeed(
-        MailboxAdministrationConfig,
-        MailboxAdministrationConfig.of({
-          ownerEmail: Schema.decodeUnknownSync(MailboxAdministrationOwnerEmail)(
+        RecoverySafeIdentityConfig,
+        RecoverySafeIdentityConfig.of({
+          ownerEmail: Schema.decodeUnknownSync(RecoverySafeIdentityOwnerEmail)(
             "owner@company.test"
           ),
         })

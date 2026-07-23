@@ -19,6 +19,7 @@ import {
   AuthRuntimeConfig,
   AuthRuntimeConfigSchema,
 } from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
+import { RecoverySafeIdentityConfig } from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
 import { DevEmailConfig } from "#/modules/account-security/adapters/http/DevEmailHttpHandlers";
 import { handleCloudflareEmailRoutingMessage } from "#/modules/address-routing/adapters/email/CloudflareEmailRouting";
 import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
@@ -324,6 +325,10 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       Layer.succeed(
         MailboxAdministrationConfig,
         MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })
+      ),
+      Layer.succeed(
+        RecoverySafeIdentityConfig,
+        RecoverySafeIdentityConfig.of({ ownerEmail: mailboxOwnerEmail })
       ),
       Layer.succeed(
         MailboxDoNamespace,

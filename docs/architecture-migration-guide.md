@@ -82,7 +82,7 @@ Natural context ownership:
 | `automation` | rule administration/evaluation, async jobs and reconciliation |
 | `ai` | inference, tool protocol/execution, budgets and AI audit |
 
-Cross-context storage in one D1 database does not make `control-plane` a business context. D1 primitives belong in `platform/control-plane-d1`; D1 implementations belong to the context whose behavior they implement. Keep authorization/session predicates inside the same D1 batch as sensitive writes.
+Cross-context storage in one D1 database does not make `control-plane` a business context. D1 primitives and the technical authorization-guard table belong in `platform/control-plane-d1`; business table schemas and D1 implementations belong to the context whose behavior they implement. Keep authorization/session predicates inside the same D1 batch as sensitive writes.
 
 ## Dependency Rules
 
@@ -102,6 +102,8 @@ Rules:
 - An adapter implements a port and may import platform APIs; adapters do not reach through another adapter's internals.
 - `apps` are composition roots and may select/merge concrete adapters and feature Layers.
 - Cross-context imports use explicit public modules/contracts, not persistence schemas or adapter internals.
+- Cross-context D1 collaboration uses narrowly named `integration/` predicates and statement factories. These factories return composable Drizzle SQL or `ControlPlaneStatement` values; callers retain one ordered `ControlPlaneBatch` and must not replace transaction-local checks with preflight CRUD calls.
+- Platform request guards accept platform-neutral guarded session facts. Account-security owns adaptation from `CurrentRequestAuth` and binds step-up and remediation policy SQL.
 - `shared` contains only truly context-neutral semantics, e.g. generic time/operation primitives. No generic helpers dump.
 - Add automated import-boundary checks before considering the migration complete.
 - Avoid barrels unless they define a deliberate, narrow public API; never add compatibility re-exports without a concrete consumer.

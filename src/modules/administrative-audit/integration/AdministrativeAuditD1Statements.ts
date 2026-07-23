@@ -1,12 +1,10 @@
 import { eq, sql } from "drizzle-orm";
 
+import { appAdministrativeAuditEvent } from "#/modules/administrative-audit/adapters/d1/AdministrativeAuditSchema";
 import type { AdministrativeAuditEvent } from "#/modules/administrative-audit/application/AdministrativeAudit";
+import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import type { ControlPlaneStatement } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import {
-  appAdministrativeAuditEvent,
-  appAuthorizationGuard,
-} from "#/platform/control-plane-d1/ControlPlaneSchema";
 
 const resourceVersionBefore = (event: AdministrativeAuditEvent) =>
   "beforeVersion" in event.change ? event.change.beforeVersion : null;
@@ -41,7 +39,7 @@ const resource = (event: AdministrativeAuditEvent) =>
         type: "external-recovery-identity",
       } as const);
 
-/** Storage-private encoding inserted in the same guarded D1 batch as the mutation. */
+/** Audit insert kept in the caller's guarded, ordered D1 batch. */
 export const administrativeAuditInsertStatement = (
   database: ControlPlaneDatabase,
   event: AdministrativeAuditEvent,

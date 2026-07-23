@@ -9,14 +9,14 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
-import { appMailbox } from "#/modules/organization/adapters/d1/OrganizationSchema";
+import { organizationMailboxIdReference } from "#/modules/organization/integration/OrganizationD1Predicates";
 
 export const appMailboxAddress = sqliteTable(
   "app_mailbox_address",
   {
     mailboxId: text("mailbox_id")
       .notNull()
-      .references(() => appMailbox.id, { onDelete: "cascade" }),
+      .references(organizationMailboxIdReference, { onDelete: "cascade" }),
     id: text("id").notNull(),
     address: text("address").notNull(),
     normalizedAddress: text("normalized_address").notNull(),

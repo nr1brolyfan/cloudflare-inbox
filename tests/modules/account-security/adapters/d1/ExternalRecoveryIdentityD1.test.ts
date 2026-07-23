@@ -22,7 +22,11 @@ import {
   ExternalRecoveryIdentityD1Layer,
   ExternalRecoveryIdentityRuntime,
 } from "#/modules/account-security/adapters/d1/ExternalRecoveryIdentityD1";
-import { RecoverySafeIdentityD1Layer } from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
+import {
+  RecoverySafeIdentityConfig,
+  RecoverySafeIdentityD1Layer,
+  RecoverySafeIdentityOwnerEmail,
+} from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
 import {
   ExternalRecoveryChallengeSecret,
   EnrollExternalRecoveryIdentityCommand,
@@ -38,10 +42,6 @@ import {
   AdministrativeAuditLayer,
   AdministrativeAuditRuntimeLayer,
 } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
-import {
-  MailboxAdministrationConfig,
-  MailboxAdministrationOwnerEmail,
-} from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import {
@@ -243,9 +243,9 @@ const managementLive = (
     Layer.provide(controlPlaneLive),
     Layer.provide(
       Layer.succeed(
-        MailboxAdministrationConfig,
-        MailboxAdministrationConfig.of({
-          ownerEmail: Schema.decodeUnknownSync(MailboxAdministrationOwnerEmail)(
+        RecoverySafeIdentityConfig,
+        RecoverySafeIdentityConfig.of({
+          ownerEmail: Schema.decodeUnknownSync(RecoverySafeIdentityOwnerEmail)(
             "owner@company.test"
           ),
         })

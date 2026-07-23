@@ -116,7 +116,7 @@ Rejected because changing a shared role definition can silently expand access. C
 ## References
 
 - `PLAN-FIRMOWEJ-POCZTY.md`
-- `src/authorization/catalog.ts`
-- `src/authorization/mail-authorization.ts`
-- `src/platform/control-plane-d1/ControlPlaneSchema.ts`
-- `src/auth/session.ts`
+- `src/modules/authorization/domain/MailPermissionCatalog.ts`
+- `src/platform/control-plane-d1/AuthorizationGuardSchema.ts`
+- `src/platform/control-plane-d1/RequestAuthGuard.ts`
+- `src/modules/account-security/integration/AccountSecurityD1RequestGuard.ts`

@@ -1,15 +1,32 @@
 import { and, eq, ne, sql } from "drizzle-orm";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import type * as Schema from "effect/Schema";
 
 import { authUserIdentity } from "#/auth/schema/modules/core";
 import { externalRecoveryAddressComparisonKey } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import { RecoverySafeIdentityRejected } from "#/modules/account-security/domain/RecoverySafeIdentityError";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
-import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
-import { MailboxAdministrationConfig } from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { mailboxAddressLookupStatement } from "#/modules/address-routing/integration/AddressRoutingD1Statements";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { appExternalRecoveryIdentity } from "#/platform/control-plane-d1/ControlPlaneSchema";
+
+import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
+
+export const RecoverySafeIdentityOwnerEmail = EmailAddress;
+export type RecoverySafeIdentityOwnerEmail = Schema.Schema.Type<
+  typeof RecoverySafeIdentityOwnerEmail
+>;
+
+export interface RecoverySafeIdentityConfigShape {
+  readonly ownerEmail: RecoverySafeIdentityOwnerEmail;
+}
+
+export const RecoverySafeIdentityConfig =
+  Context.Service<RecoverySafeIdentityConfigShape>(
+    "cloudflare-inbox/RecoverySafeIdentityConfig"
+  );
 
 const storageError = (cause: unknown) =>
   new RecoverySafeIdentityRejected({ cause, reason: "storage" });
@@ -18,7 +35,7 @@ const storageError = (cause: unknown) =>
 export const RecoverySafeIdentityD1Layer = Layer.effect(
   RecoverySafeIdentityPolicy,
   Effect.gen(function* () {
-    const config = yield* MailboxAdministrationConfig;
+    const config = yield* RecoverySafeIdentityConfig;
     const database = yield* ControlPlaneDatabase;
     const ownerDomain = config.ownerEmail
       .slice(config.ownerEmail.lastIndexOf("@") + 1)
@@ -55,16 +72,7 @@ export const RecoverySafeIdentityD1Layer = Layer.effect(
           const [mailboxAddresses, loginIdentities, recoveryIdentities] =
             yield* Effect.all(
               [
-                database
-                  .select({ id: appMailboxAddress.id })
-                  .from(appMailboxAddress)
-                  .where(
-                    eq(
-                      sql`lower(${appMailboxAddress.normalizedAddress})`,
-                      comparisonKey
-                    )
-                  )
-                  .limit(1),
+                mailboxAddressLookupStatement(database, comparisonKey),
                 database
                   .select({ id: authUserIdentity.id })
                   .from(authUserIdentity)

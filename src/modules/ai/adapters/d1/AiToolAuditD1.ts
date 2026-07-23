@@ -5,13 +5,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { appAiToolAudit } from "#/platform/control-plane-d1/ControlPlaneSchema";
 
 import type {
   AiToolAuditEvent,
   AiToolKind,
 } from "../../domain/AiToolAuditEvent";
 import { AiToolAudit, AiToolAuditError } from "../../ports/AiToolAudit";
+import { appAiToolAudit } from "./AiToolAuditSchema";
 
 export const aiToolAuditRetentionDays = 90;
 /** Indexed retention horizon for future cleanup; no deletion job exists yet. */

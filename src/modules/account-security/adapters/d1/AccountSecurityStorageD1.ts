@@ -20,7 +20,8 @@ import {
   ControlPlaneD1Binding,
   ControlPlaneDatabase,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { appDevEmailMessage } from "#/platform/control-plane-d1/ControlPlaneSchema";
+
+import { appDevEmailMessage } from "./AccountSecuritySchema";
 
 const DevEmailKindSchema = Schema.Literals([
   "EmailAuth",

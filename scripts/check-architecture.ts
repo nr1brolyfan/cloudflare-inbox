@@ -21,6 +21,22 @@ const resolveImport = (file: string, specifier: string): string | undefined => {
   return normalize(path.join(path.dirname(file), specifier));
 };
 
+const isCrossContextD1AdapterImport = (
+  inD1Adapter: boolean,
+  sourceContext: string | undefined,
+  targetContext: string | undefined,
+  target: string
+): boolean =>
+  inD1Adapter &&
+  targetContext !== undefined &&
+  targetContext !== sourceContext &&
+  target.includes("/adapters/");
+
+const isPlatformRequestAuthBusinessImport = (
+  isPlatformRequestAuthGuard: boolean,
+  target: string
+): boolean => isPlatformRequestAuthGuard && target.startsWith("src/modules/");
+
 export const checkArchitecturePath = (file: string): readonly string[] => {
   const normalizedFile = normalize(file);
   const relative = normalizedFile.replace(
@@ -60,6 +76,11 @@ export const checkArchitectureImports = (
   );
   const violations = new Set<string>();
   const inModules = normalizedFile.startsWith("src/modules/");
+  const sourceContext = inModules ? normalizedFile.split("/")[2] : undefined;
+  const inD1Adapter = inModules && normalizedFile.includes("/adapters/d1/");
+  const isPlatformRequestAuthGuard = normalizedFile.endsWith(
+    "/platform/control-plane-d1/RequestAuthGuard.ts"
+  );
   const inMailbox = normalizedFile.startsWith("src/modules/mailbox/");
   const inDomain = inModules && normalizedFile.includes("/domain/");
   const inApplication = inModules && normalizedFile.includes("/application/");
@@ -72,8 +93,33 @@ export const checkArchitectureImports = (
     ) {
       const target = resolveImport(normalizedFile, node.moduleSpecifier.text);
       if (target !== undefined) {
+        const targetContext = target.startsWith("src/modules/")
+          ? target.split("/")[2]
+          : undefined;
         if (inModules && target.startsWith("src/apps/")) {
           violations.add("business modules must not import runtime apps");
+        }
+        if (
+          isPlatformRequestAuthBusinessImport(
+            isPlatformRequestAuthGuard,
+            target
+          )
+        ) {
+          violations.add(
+            "platform request auth guard must not import business contexts"
+          );
+        }
+        if (
+          isCrossContextD1AdapterImport(
+            inD1Adapter,
+            sourceContext,
+            targetContext,
+            target
+          )
+        ) {
+          violations.add(
+            "D1 adapters must use cross-context integration contracts, not concrete adapters or schemas"
+          );
         }
         if (inMailbox && target.startsWith("src/modules/authorization/")) {
           violations.add(

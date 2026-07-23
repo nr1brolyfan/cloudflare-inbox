@@ -40,12 +40,11 @@ import {
 import { AccountRecoveryDelivery } from "#/modules/account-security/ports/AccountRecoveryDelivery";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import {
-  appAuthorizationGuard,
-  appExternalRecoveryIdentity,
-} from "#/platform/control-plane-d1/ControlPlaneSchema";
+
+import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
 
 const FLOW_TTL = Duration.minutes(10);
 const PUBLIC_START_RESPONSE_FLOOR = Duration.millis(500);

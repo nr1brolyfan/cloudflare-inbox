@@ -30,33 +30,32 @@ import {
   ExternalRecoveryIdentitySchema,
 } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
+import {
+  controlPlaneDatabaseNow,
+  sensitiveSessionPredicate,
+  transactionalSessionPredicate,
+} from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { ExternalRecoveryIdentityChallenge } from "#/modules/account-security/ports/ExternalRecoveryIdentityChallenge";
 import { ExternalRecoveryIdentityDelivery } from "#/modules/account-security/ports/ExternalRecoveryIdentityDelivery";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
 import {
   EmailAddress,
   normalizeEmailAddressDomain,
 } from "#/modules/address-routing/domain/EmailAddress";
-import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/adapters/d1/AdministrativeAuditD1";
+import { mailboxAddressAvailablePredicate } from "#/modules/address-routing/integration/AddressRoutingD1Statements";
 import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
 import type { AdministrativeAuditError } from "#/modules/administrative-audit/application/AdministrativeAuditError";
+import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
 import { Version } from "#/modules/mailbox/domain/Mailbox";
+import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import {
-  appAuthorizationGuard,
-  appExternalRecoveryIdentity,
-} from "#/platform/control-plane-d1/ControlPlaneSchema";
-import {
-  controlPlaneDatabaseNow,
-  sensitiveSessionPredicate,
-  transactionalSessionPredicate,
-} from "#/platform/control-plane-d1/RequestAuthGuard";
 import { UnixMillis } from "#/shared/Temporal";
+
+import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
 
 export interface ExternalRecoveryIdentityRuntimeShape {
   readonly now: () => number;
@@ -141,14 +140,7 @@ const candidateAvailablePredicate = (
   excludedIdentityId?: string
 ) =>
   and(
-    notExists(
-      database
-        .select({ value: sql`1` })
-        .from(appMailboxAddress)
-        .where(
-          sql`lower(${appMailboxAddress.normalizedAddress}) = ${comparisonKey}`
-        )
-    ),
+    mailboxAddressAvailablePredicate(database, comparisonKey),
     notExists(
       database
         .select({ value: sql`1` })

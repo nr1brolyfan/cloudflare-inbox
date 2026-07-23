@@ -8,7 +8,8 @@ import {
   PasskeyAuthenticationIdentityStoreError,
 } from "#/modules/account-security/ports/PasskeyAuthenticationIdentityStore";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { appExternalRecoveryIdentity } from "#/platform/control-plane-d1/ControlPlaneSchema";
+
+import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
 
 const mapStoreError = (cause: unknown) =>
   new PasskeyAuthenticationIdentityStoreError({ cause });
