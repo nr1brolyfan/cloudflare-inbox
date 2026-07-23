@@ -28,6 +28,7 @@ import {
 } from "#/modules/account-security/application/RecoveryCodeAdministration";
 import {
   CompleteAccountRecoveryCommand,
+  ReadAccountRecoveryCompletionCommand,
   StartAccountRecoveryCommand,
 } from "#/modules/account-security/domain/AccountRecovery";
 
@@ -44,6 +45,21 @@ const applicationAuthExtension = defineAuthHttpApiExtension(
             payload: Schema.decodeUnknownSync(CompleteAccountRecoveryCommand)(
               payload
             ),
+          }),
+        options
+      ),
+    readAccountRecoveryCompletion: (
+      payload: Schema.Codec.Encoded<
+        typeof ReadAccountRecoveryCompletionCommand
+      >,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.accountRecovery.readCompletion({
+            payload: Schema.decodeUnknownSync(
+              ReadAccountRecoveryCompletionCommand
+            )(payload),
           }),
         options
       ),
@@ -191,6 +207,17 @@ const applicationAuthExtension = defineAuthHttpApiExtension(
 export const authClient = createAuthClient({
   protocol: { extensions: applicationAuthExtension },
 });
+
+export const generateAccountRecoveryReadbackSecret = () => {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const binary = Array.from(bytes, (byte) => String.fromCodePoint(byte)).join(
+    ""
+  );
+  return btoa(binary)
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
+};
 
 export const enrollRecoveryPasskey = async () => {
   const started = await authClient.extensions.startRecoveryPasskeyEnrollment();

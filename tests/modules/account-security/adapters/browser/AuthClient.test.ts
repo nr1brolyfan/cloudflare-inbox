@@ -1,4 +1,5 @@
 import { QueryClient, QueryObserver } from "@tanstack/react-query";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -6,10 +7,26 @@ import {
   clearCachedAuthSession,
   clearCachedMailboxData,
   clearMailboxReadDenial,
+  generateAccountRecoveryReadbackSecret,
   handleMailboxReadDenial,
   mailboxReadDenialQueryKey,
   toAuthSessionQueryData,
 } from "#/modules/account-security/adapters/browser/AuthClient";
+import { AccountRecoveryReadbackSecret } from "#/modules/account-security/domain/AccountRecovery";
+
+describe("account recovery browser proof", () => {
+  it("generates a fresh canonical 256-bit readback secret", () => {
+    const first = generateAccountRecoveryReadbackSecret();
+    const second = generateAccountRecoveryReadbackSecret();
+
+    expect(() =>
+      Schema.decodeUnknownSync(AccountRecoveryReadbackSecret)(first)
+    ).not.toThrow();
+    expect(first).toHaveLength(43);
+    expect(second).toHaveLength(43);
+    expect(first).not.toBe(second);
+  });
+});
 
 describe("auth session query cache", () => {
   it("stores unauthenticated state as successful null data", async () => {

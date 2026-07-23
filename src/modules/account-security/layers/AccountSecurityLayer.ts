@@ -138,6 +138,7 @@ export const AccountSecurityLayer = Layer.unwrap(
           effectAuthLayer,
           authStorageLayer,
           recoveryCodeCoreLayer,
+          RecoveryCodesLive.pipe(Layer.provide(effectAuthLayer)),
           RecoverySafeIdentityD1Layer,
           AccountRecoveryDeliveryEmailLayer.pipe(
             Layer.provide(runtimeConfigLayer),

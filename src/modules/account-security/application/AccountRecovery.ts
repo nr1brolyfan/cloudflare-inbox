@@ -6,6 +6,7 @@ import type * as Schema from "effect/Schema";
 
 import type {
   AccountRecoveryAccepted,
+  AccountRecoveryCompletionReceipt,
   AccountRecoveryError,
   CompleteAccountRecoveryCommand,
   StartAccountRecoveryCommand,
@@ -15,11 +16,25 @@ import { AccountRecoveryTransaction } from "#/modules/account-security/ports/Acc
 export interface AccountRecoveryService {
   readonly complete: (
     command: Schema.Schema.Type<typeof CompleteAccountRecoveryCommand>
-  ) => Effect.Effect<IssuedSession, AccountRecoveryError>;
+  ) => Effect.Effect<AccountRecoveryCompletionResult, AccountRecoveryError>;
+  readonly readCompletion: (
+    command: unknown
+  ) => Effect.Effect<AccountRecoveryCompletionReceipt, AccountRecoveryError>;
   readonly start: (
     command: Schema.Schema.Type<typeof StartAccountRecoveryCommand>
   ) => Effect.Effect<AccountRecoveryAccepted, AccountRecoveryError>;
 }
+
+export type AccountRecoveryCompletionResult =
+  | {
+      readonly _tag: "AccountRecoveryCompleted";
+      readonly receipt: AccountRecoveryCompletionReceipt;
+      readonly session: IssuedSession;
+    }
+  | {
+      readonly _tag: "AccountRecoveryAlreadyCompleted";
+      readonly receipt: AccountRecoveryCompletionReceipt;
+    };
 
 export class AccountRecovery extends Context.Service<
   AccountRecovery,

@@ -10,10 +10,13 @@ import { Email } from "@effect-auth/core/Identifiers";
 import { RateLimitExceededError } from "@effect-auth/core/RateLimiter";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
+import * as HttpBody from "effect/unstable/http/HttpBody";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 
 import { AccountRecovery } from "#/modules/account-security/application/AccountRecovery";
+import { AccountRecoveryCompletionReceipt } from "#/modules/account-security/domain/AccountRecovery";
 import type { AccountRecoveryError } from "#/modules/account-security/domain/AccountRecovery";
 
 import { AccountRecoveryHttpApi } from "./AccountRecoveryHttpApi";
@@ -69,6 +72,19 @@ const mapError = (
   }
 };
 
+const receiptResponse = (receipt: AccountRecoveryCompletionReceipt) =>
+  Effect.gen(function* () {
+    const encoded = yield* Schema.encodeEffect(
+      AccountRecoveryCompletionReceipt
+    )(receipt).pipe(Effect.orDie);
+    return yield* HttpServerResponse.json(encoded, {
+      headers: {
+        "cache-control": "private, no-store",
+        pragma: "no-cache",
+      },
+    }).pipe(Effect.orDie);
+  });
+
 export const AccountRecoveryHttpHandlersLayer = HttpApiBuilder.group(
   AccountRecoveryHttpApi,
   "accountRecovery",
@@ -115,35 +131,38 @@ export const AccountRecoveryHttpHandlersLayer = HttpApiBuilder.group(
           );
       });
 
-    const requireCompleteIpLimit = Effect.gen(function* () {
-      const metadata = yield* AuthRequestMetadata;
-      yield* authRateLimit
-        .require({
-          operation: "auth.recovery_code.verify",
-          policy: AuthRateLimit.rules([
-            {
-              id: "app.account_recovery.complete.ip",
-              key: "ip",
-              limit: 20,
-              window: Duration.minutes(10),
-            },
-          ]),
-          ...(metadata.ipAddress === undefined
-            ? {}
-            : { ipAddress: metadata.ipAddress }),
-        })
-        .pipe(
-          Effect.mapError((cause) =>
-            cause instanceof RateLimitExceededError
-              ? new AuthRateLimitedError({
-                  code: "rate_limited",
-                  message: "Too many account recovery attempts",
-                  retryAfter: cause.retryAfter,
-                })
-              : internalError()
-          )
-        );
-    });
+    const requirePublicIpLimit = (
+      id: "app.account_recovery.complete.ip" | "app.account_recovery.read.ip"
+    ) =>
+      Effect.gen(function* () {
+        const metadata = yield* AuthRequestMetadata;
+        yield* authRateLimit
+          .require({
+            operation: "auth.recovery_code.verify",
+            policy: AuthRateLimit.rules([
+              {
+                id,
+                key: "ip",
+                limit: 20,
+                window: Duration.minutes(10),
+              },
+            ]),
+            ...(metadata.ipAddress === undefined
+              ? {}
+              : { ipAddress: metadata.ipAddress }),
+          })
+          .pipe(
+            Effect.mapError((cause) =>
+              cause instanceof RateLimitExceededError
+                ? new AuthRateLimitedError({
+                    code: "rate_limited",
+                    message: "Too many account recovery attempts",
+                    retryAfter: cause.retryAfter,
+                  })
+                : internalError()
+            )
+          );
+      });
 
     return handlers
       .handle("start", ({ payload }) =>
@@ -156,12 +175,18 @@ export const AccountRecoveryHttpHandlersLayer = HttpApiBuilder.group(
       )
       .handle("complete", ({ payload }) =>
         Effect.gen(function* () {
-          yield* requireCompleteIpLimit;
-          const session = yield* recovery
+          yield* requirePublicIpLimit("app.account_recovery.complete.ip");
+          const result = yield* recovery
             .complete(payload)
             .pipe(Effect.catchTag("AccountRecoveryError", mapError));
+          if (result._tag === "AccountRecoveryAlreadyCompleted") {
+            return yield* receiptResponse(result.receipt);
+          }
+          const encoded = yield* Schema.encodeEffect(
+            AccountRecoveryCompletionReceipt
+          )(result.receipt).pipe(Effect.orDie);
           const response = yield* authHttp
-            .commitAuthenticatedSession(session)
+            .commitAuthenticatedSession(result.session)
             .pipe(
               Effect.mapError(
                 () =>
@@ -173,11 +198,21 @@ export const AccountRecoveryHttpHandlersLayer = HttpApiBuilder.group(
               )
             );
           return response.pipe(
+            HttpServerResponse.setBody(HttpBody.jsonUnsafe(encoded)),
             HttpServerResponse.setHeaders({
               "cache-control": "private, no-store",
               pragma: "no-cache",
             })
           );
+        })
+      )
+      .handle("readCompletion", ({ payload }) =>
+        Effect.gen(function* () {
+          yield* requirePublicIpLimit("app.account_recovery.read.ip");
+          const receipt = yield* recovery
+            .readCompletion(payload)
+            .pipe(Effect.catchTag("AccountRecoveryError", mapError));
+          return yield* receiptResponse(receipt);
         })
       );
   })

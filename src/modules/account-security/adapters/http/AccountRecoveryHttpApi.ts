@@ -5,14 +5,15 @@ import {
   AuthRateLimitedError,
   AuthRequestMetadataMiddleware,
   AuthSchemaErrorMiddleware,
-  AuthenticatedHttpBody,
 } from "@effect-auth/core/HttpApi";
+import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
 import {
   AccountRecoveryAccepted,
+  AccountRecoveryCompletionReceipt,
   CompleteAccountRecoveryCommand,
   StartAccountRecoveryCommand,
 } from "#/modules/account-security/domain/AccountRecovery";
@@ -35,12 +36,26 @@ const Complete = HttpApiEndpoint.post(
   {
     error: errors,
     payload: CompleteAccountRecoveryCommand,
-    success: AuthenticatedHttpBody,
+    success: AccountRecoveryCompletionReceipt,
+  }
+);
+const ReadCompletion = HttpApiEndpoint.post(
+  "readCompletion",
+  "/auth/account-recovery/completion/read",
+  {
+    error: errors,
+    // Strict branded decoding happens in the service so missing and malformed
+    // public proof has the same response as a mismatched proof.
+    payload: Schema.Struct({
+      operationId: Schema.optional(Schema.Unknown),
+      readbackSecret: Schema.optional(Schema.Unknown),
+    }),
+    success: AccountRecoveryCompletionReceipt,
   }
 );
 
 export class AccountRecoveryGroup extends HttpApiGroup.make("accountRecovery")
-  .add(Start, Complete)
+  .add(Start, Complete, ReadCompletion)
   .middleware(AuthSchemaErrorMiddleware)
   .middleware(BackendRequestContextMiddleware)
   .middleware(AuthRequestMetadataMiddleware)

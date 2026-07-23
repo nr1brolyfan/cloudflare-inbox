@@ -304,6 +304,78 @@ export const appRecoveryCodeRotationReceipt = sqliteTable(
   ]
 );
 
+export const appAccountRecoveryCompletionReceipt = sqliteTable(
+  "app_account_recovery_completion_receipt",
+  {
+    operationId: text("operation_id").primaryKey(),
+    readbackSecretHash: text("readback_secret_hash").notNull(),
+    flowId: text("flow_id").notNull(),
+    flowSecretHash: text("flow_secret_hash").notNull(),
+    recoveryCodeId: text("recovery_code_id").notNull(),
+    recoveryCodeHash: text("recovery_code_hash").notNull(),
+    userId: text("user_id").notNull(),
+    externalRecoveryIdentityId: text("external_recovery_identity_id").notNull(),
+    expectedExternalRecoveryIdentityVersion: integer(
+      "expected_external_recovery_identity_version"
+    ).notNull(),
+    sessionId: text("session_id").notNull(),
+    resultStatus: text("result_status", {
+      enum: ["recovery-remediation-required"],
+    }).notNull(),
+    completedAt: integer("completed_at").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  (t) => [
+    check(
+      "app_account_recovery_completion_receipt_operation_id_check",
+      sql`length(operation_id) = 36
+        and operation_id = lower(trim(operation_id))
+        and substr(operation_id, 9, 1) = '-'
+        and substr(operation_id, 14, 1) = '-'
+        and substr(operation_id, 15, 1) = '4'
+        and substr(operation_id, 19, 1) = '-'
+        and substr(operation_id, 20, 1) in ('8', '9', 'a', 'b')
+        and substr(operation_id, 24, 1) = '-'
+        and length(replace(operation_id, '-', '')) = 32
+        and replace(operation_id, '-', '') not glob '*[^0-9a-f]*'`
+    ),
+    check(
+      "app_account_recovery_completion_receipt_readback_hash_check",
+      sql`length(readback_secret_hash) = 43
+        and readback_secret_hash not glob '*[^A-Za-z0-9_-]*'`
+    ),
+    check(
+      "app_account_recovery_completion_receipt_flow_check",
+      sql`length(flow_id) between 1 and 128
+        and length(flow_secret_hash) = 43
+        and flow_secret_hash not glob '*[^A-Za-z0-9_-]*'`
+    ),
+    check(
+      "app_account_recovery_completion_receipt_code_check",
+      sql`length(recovery_code_id) between 1 and 128
+        and length(recovery_code_hash) = 50
+        and substr(recovery_code_hash, 1, 7) = 'sha256:'
+        and substr(recovery_code_hash, 8) not glob '*[^A-Za-z0-9_-]*'`
+    ),
+    check(
+      "app_account_recovery_completion_receipt_subject_check",
+      sql`length(user_id) between 1 and 128 and user_id = trim(user_id)
+        and length(external_recovery_identity_id) between 1 and 128
+        and expected_external_recovery_identity_version >= 1
+        and length(session_id) between 1 and 128`
+    ),
+    check(
+      "app_account_recovery_completion_receipt_result_check",
+      sql`result_status = 'recovery-remediation-required'
+        and completed_at >= 0
+        and schema_version = 1`
+    ),
+    uniqueIndex("app_account_recovery_completion_receipt_session_idx").on(
+      t.sessionId
+    ),
+  ]
+);
+
 export const appPasskeyCredentialRevocation = sqliteTable(
   "app_passkey_credential_revocation",
   {

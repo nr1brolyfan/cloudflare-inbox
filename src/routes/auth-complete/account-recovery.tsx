@@ -7,6 +7,7 @@ import {
   authErrorMessage,
   authSessionQueryKey,
   clearMailboxReadDenial,
+  generateAccountRecoveryReadbackSecret,
 } from "#/modules/account-security/adapters/browser/AuthClient";
 import {
   CompletionShell,
@@ -22,14 +23,40 @@ function AccountRecoveryCompletion() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [code, setCode] = useState("");
+  const [operationId] = useState(() => crypto.randomUUID());
+  const [readbackSecret] = useState(generateAccountRecoveryReadbackSecret);
   const complete = useMutation({
-    mutationFn: () =>
-      authClient.extensions.completeAccountRecovery({
-        code,
-        flowId: credentials.challengeId,
-        secret: credentials.secret ?? "",
-      }),
-    onSuccess: async () => {
+    mutationFn: async () => {
+      try {
+        const receipt = await authClient.extensions.completeAccountRecovery({
+          code,
+          flowId: credentials.challengeId,
+          operationId,
+          readbackSecret,
+          secret: credentials.secret ?? "",
+        });
+        return { _tag: "FirstResponse" as const, receipt };
+      } catch (error) {
+        const definitive =
+          typeof error === "object" &&
+          error !== null &&
+          "code" in error &&
+          error.code !== "internal_error";
+        if (!definitive) {
+          const receipt = await authClient.extensions
+            .readAccountRecoveryCompletion({ operationId, readbackSecret })
+            .catch(() => null);
+          if (receipt !== null) {
+            return { _tag: "ReceiptOnly" as const, receipt };
+          }
+        }
+        throw error;
+      }
+    },
+    onSuccess: async (result) => {
+      if (result._tag === "ReceiptOnly") {
+        return;
+      }
       clearMailboxReadDenial(queryClient);
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
       await navigate({ to: "/" });
@@ -47,6 +74,11 @@ function AccountRecoveryCompletion() {
       )}
       isPending={complete.isPending}
       error={complete.error ? authErrorMessage(complete.error) : undefined}
+      success={
+        complete.data?._tag === "ReceiptOnly"
+          ? "Recovery entered remediation, but the one-time restricted session cookie could not be recovered. Restart account recovery from sign-in and use another unused recovery code."
+          : undefined
+      }
       onSubmit={() => complete.mutate()}
     >
       <label className="block space-y-2 text-sm font-bold">
