@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-22
+- Last updated: 2026-07-23
 - Owners: Product owner and engineering
 
 ## Context
@@ -14,19 +15,20 @@ Mailbox archival must retain history without allowing the archived store to keep
 
 ### Address quarantine
 
-An address that is retired without a deliberate transfer enters quarantine:
+An active or suspended address retired without a deliberate transfer enters quarantine:
 
 ```text
-active -> quarantined -> retired/reusable
+active | suspended -> quarantined -> retired (eligible for manual reuse)
 ```
 
 - Quarantine lasts at least 180 days.
 - The address remains reserved and globally unique.
 - It has no active inbound route or send identity.
 - Inbound mail is rejected and cannot fall through to catch-all.
-- It cannot be assigned to another employee or mailbox.
+- While quarantined, it cannot be assigned to another employee or mailbox.
 - Expiry never causes automatic reuse.
-- After expiry, an Organization Owner/Admin may explicitly reactivate or reassign it after a warning and step-up authentication.
+- After expiry, `retired` means only eligible for manual reuse. An Organization Owner/Admin may explicitly reactivate or reassign it after a warning and step-up authentication.
+- Manual reuse preserves the same stable address record, ID, and complete history; it never releases the address for creation as a new identity.
 - A deliberate, audited full transfer to another active mailbox may bypass quarantine because it is a continuity decision rather than reuse after retirement.
 
 ### Mailbox archive
@@ -34,9 +36,12 @@ active -> quarantined -> retired/reusable
 Mailbox lifecycle includes:
 
 ```text
+active <-> suspended
 active -> archiving -> archived
 archived -> active
 ```
+
+`suspended` is a reversible operational stop. The mailbox remains visible to explicitly authorized users and permits read, search, attachment access, and export, but rejects new inbound routing, outbound sending, and message, folder, label, rule, or draft mutation. Resuming to `active` is audited and revalidates access and readiness. Authorized `active`, `suspended`, and `archived` mailboxes appear in the switcher, but only `active` may be selected as a default.
 
 `archiving` is a transitional state that:
 
@@ -63,6 +68,8 @@ An `archived` mailbox:
 - cannot be an active inbound route target,
 - may be restored only through an audited, versioned operation after validating assignments, grants, domain readiness, routes, and send identities.
 
+Suspension and archival do not blanket-revoke assignments or explicit read/export grants. State-specific guards block disallowed operations, while retained grants continue to require exact authorization and never give Organization Admin implicit content access. `archiving` is transitional and is not a normal switcher destination.
+
 Hard delete and automatic retention deletion are not part of the first release. Archived mailbox data is retained until a separately designed and tested deletion workflow exists.
 
 ### Cutover semantics
@@ -71,8 +78,8 @@ An inbound message routed before the archival cutover finishes in the old mailbo
 
 ## Consequences
 
-- The mailbox status catalog gains `archiving` and `archived`.
-- Registry and repository operations must distinguish read-only archived access from active mutation/routing access.
+- The mailbox status catalog and state machine gain `suspended`, `archiving`, and `archived` with the transitions above.
+- Registry and repository operations must apply an operation-specific matrix for active, suspended, archiving, and archived access rather than a single active-only predicate.
 - Archive is a workflow, not a single status update.
 - Route history and address identity cannot cascade-delete with a mailbox.
 - UI must force address disposition before confirming archive.

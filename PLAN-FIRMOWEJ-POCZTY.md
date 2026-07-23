@@ -4,11 +4,13 @@ Kompletny plan przejścia z jednej skrzynki do modelu organizacji, wielu izolowa
 
 ## Status
 
-- Ostatnia aktualizacja: 2026-07-22
+- Ostatnia aktualizacja: 2026-07-23
 - Stan: `IN PROGRESS`
 - Aktualny etap: `1. Fundament bezpieczeństwa i operacji`
-- Aktualne zadanie: `SAFE-002` recovery codes
+- Aktualne zadanie: `SAFE-006` wspólny kontrakt mutacji control plane wymagany do domknięcia `SAFE-002`
+- Następne zadanie: `SAFE-002` domknięcie bezpośrednich testów i zależnego Definition of Done
 - Zakres pierwszego wydania: jedna organizacja i jedna domena na wdrożenie, ale model danych od początku tenant-aware
+- Migracja układu źródeł i zależności: `DONE` zgodnie z [Architecture Migration Guide](docs/architecture-migration-guide.md); nie oznacza to ukończenia produktu organization/multi-mailbox
 - Źródło prawdy dla istniejącego v1: `TODO.md`
 - Źródło prawdy dla rozbudowy firmowej: ten dokument
 
@@ -20,8 +22,8 @@ Kompletny plan przejścia z jednej skrzynki do modelu organizacji, wielu izolowa
 | 3 | Uprawnienia, assignments i bramy izolacji | NOT STARTED | Etap 2 |
 | 4 | Wiele skrzynek i jawna nawigacja | NOT STARTED | Etap 3 |
 | 5 | Stabilne adresy i routing | NOT STARTED | Etap 2-4 |
-| 6 | Inbound dla wielu skrzynek i aliasów | NOT STARTED | Etap 5 i ORG-018 |
-| 7 | Tożsamości nadawcy, wysyłka i reply | NOT STARTED | Etap 5-6 i ORG-018 |
+| 6 | Inbound dla wielu skrzynek i aliasów | NOT STARTED | Etap 5 |
+| 7 | Tożsamości nadawcy, wysyłka i reply | NOT STARTED | Etap 5-6 |
 | 8 | Zaproszenia, skrzynki osobiste i offboarding | NOT STARTED | Etap 4-7 |
 | 9 | UI organizacji, skrzynek i adresów | NOT STARTED | Etap 3-8 |
 | 10 | Produkcyjna gotowość Cloudflare Email Service | NOT STARTED | Etap 5-7 |
@@ -41,6 +43,8 @@ Kompletny plan przejścia z jednej skrzynki do modelu organizacji, wielu izolowa
 - Zmiana kontraktu produktu wymaga dopisania decyzji w sekcji 0, a nie cichej zmiany implementacji.
 - Zadanie implementacyjne kończymy dopiero po testach pozytywnych, testach odmowy dostępu, wymaganej migracji i telemetrii; decyzje, infrastruktura i operacje mają własne Definition of Done.
 - Przed rozpoczęciem implementacji porządkujemy nakładające się zadania z `TODO.md`. Jedno deliverable może mieć tylko jeden kanoniczny checkbox; drugi dokument zawiera wtedy wyłącznie odnośnik.
+- `TEST-*` i `ACCEPT-*` są bramami weryfikacji przekrojowej, a nie drugim właścicielem implementacji już przypisanej do zadań etapowych.
+- `ROLL-016` zbiera wyłącznie datowane evidence wykonania scenariuszy `ACCEPT-*`; nie duplikuje ich implementacji ani testów.
 
 ### Zaakceptowane ADR-y
 
@@ -73,31 +77,36 @@ Organization
 
 Takie rozdzielenie pozwala zmieniać routing adresu bez przenoszenia historii wiadomości, nadawać dostęp niezależnie od adresów oraz zachować fizyczną izolację danych między skrzynkami.
 
+Model produktu powyżej opisuje własność i zachowanie, nie mapowanie jeden-do-jednego na katalogi kodu. Ownership implementacji pozostaje bounded-context-first zgodnie z [Architecture Migration Guide](docs/architecture-migration-guide.md); wspólna baza D1 ani relacja produktu nie przenosi automatycznie kodu do kontekstu `organization`.
+
 ## 2. Stan obecny i elementy do ponownego użycia
 
-Obecny system jest bezpiecznym v1 dla jednego właściciela i jednej skrzynki. Nie zaczynamy od zera.
+Obecny system jest funkcjonalnym v1 dla jednego właściciela i jednej skrzynki. Migracja źródeł do bounded contexts jest ukończona, ale produkt organization/multi-mailbox nie jest. Aktualne bounded contexts to `account-security`, `address-routing`, `administrative-audit`, `ai`, `authorization`, `automation`, `mailbox` i `organization`; runtime roots to `backend-worker`, `website`, `mailbox-do`, `inbound-workflow` i `async-rule-workflow`. Ich dokładne ownership, dozwolone zależności i lifetimes definiuje [Architecture Migration Guide](docs/architecture-migration-guide.md).
 
-Do ponownego użycia:
+Aktualny control plane w D1 zawiera:
 
-- `MailboxDO` już zapewnia osobny SQLite-backed magazyn dla każdego `mailboxId`.
-- Inbound wybiera skrzynkę na podstawie zaufanego SMTP envelope recipient, a nie nagłówka MIME `To`.
-- `app_mailbox_address` już potrafi reprezentować wiele unikalnych adresów jednej skrzynki.
-- Role i permission grants są zakresowane do mailboxa lub folderu.
-- `app_mailbox_member` oddziela discovery od właściwej autoryzacji.
-- Mutacje control plane potrafią powtórzyć kontrolę sesji i uprawnień w tej samej atomowej paczce D1.
-- Outbound tworzy immutable send snapshot i ma idempotentny mechanizm wysyłki.
-- R2, Workflows, FTS, bezpieczne renderowanie i AI pozostają per mailbox i nie wymagają przebudowy koncepcyjnej.
+- `app_mailbox` ze statusami `active | suspended | deleting | deleted`, ale `app_mailbox_singleton_idx` nadal wymusza najwyżej jeden rekord globalnie.
+- `app_mailbox_member` jako projekcję discovery, bez kanonicznego organization membership lub wersjonowanego `MailboxAssignment`.
+- `app_user_preference.defaultMailboxId` per użytkownik, jeszcze bez organization scope i bez użycia w nawigacji.
+- `app_mailbox_address` jako mailbox-owned adres z globalnie unikalnym `normalized_address`, flagami `enabled` i `is_primary`; nie jest to jeszcze stabilny `MailAddress` z historią route.
+- Role i permission grants zakresowane do mailboxa lub kwalifikowanego folderu; membership nie zastępuje exact authorization.
+- Guarded D1 batches dla obecnych mutacji owner bootstrap i rename oraz append-only administracyjny audit, ale nie wspólny, kompletny kontrakt wszystkich przyszłych mutacji.
 
-Aktualne blokady:
+Dokładne blokady produktu na `HEAD 9d6f786`:
 
-- `app_mailbox_singleton_idx` wymusza jedną skrzynkę globalnie.
-- Bootstrap używa stałego ID `primary` i odrzuca utworzenie kolejnej skrzynki.
-- `MAILBOX_OWNER_EMAIL` jednocześnie autoryzuje właściciela i ustala pierwszy adres skrzynki.
-- Nawigacja wybiera nieokreślone pierwsze członkostwo przez `limit(1)`.
-- Nie istnieje organizacja ani wyłączne posiadanie domeny.
-- Nie istnieją produkcyjne API i UI do adresów, członków, ról, zaproszeń i zmiany skrzynki.
-- Outbound zawsze używa bieżącego adresu primary i nie wspiera jawnego `From` ani reply z aliasu ingress.
-- Repozytorium nie zarządza kompletnym onboardingiem domeny i catch-all Email Routing.
+- Bootstrap tworzy wyłącznie mailbox `primary`; singleton index i logika komendy odrzucają drugi mailbox.
+- `MAILBOX_OWNER_EMAIL` pełni trzy przejściowe role: allowlisty claimującego ownera, źródła początkowego adresu mailboxa oraz źródła zarządzanej domeny dla recovery-safe policy.
+- Nawigacja filtruje aktywne membership i mailbox, po czym wybiera nieuporządkowany wynik przez `limit(1)`; nie ma stabilnej trasy z organization/mailbox ID ani switchera.
+- Nie istnieją `Organization`, `MailDomain`, `OrganizationMember`, kanoniczny `MailboxAssignment`, stabilna historia `InboundRouteAssignment` ani `MailboxSendIdentity`.
+- Nie ma organization/domain ownership, assignment lifecycle, stabilnych route revisions, jawnej send identity ani tenant-aware URL/cache modelu.
+- Produkcyjne catch-all, sender-domain onboarding i readiness nie są zarządzane end-to-end przez repozytorium.
+
+Aktualne możliwości i brakujące gwarancje data plane:
+
+- Inbound ufa wyłącznie SMTP envelope recipient, normalizuje domenę i rozwiązuje enabled `app_mailbox_address` wskazujący aktywny mailbox. Raw MIME jest trwale i append-only zapisywany do prywatnego R2 przed uruchomieniem Workflow; Workflow parsuje, zapisuje attachmenty i atomowo commituje wynik do SQLite właściwego `MailboxDO` z retry/replay semantics.
+- Przed zapisem raw do R2 istnieje walidacja nieujemnego integer `rawSize`, ale nie ma maksymalnego limitu pre-R2. Nie ma też stabilnego address/assignment/revision snapshotu ani fencing dla zmiany route.
+- Outbound ma drafty, undo window, immutable send snapshot, idempotentny dispatch i rozróżnienie `accepted` od `delivered`/`indeterminate`, ale zawsze rozwiązuje bieżący enabled primary mailbox address. Nie ma jawnego `fromIdentityId`, niezależnej send identity/revision, `Send As`, reply/reply-all ani transfer fencing/dispatch permits.
+- D1 pozostaje control plane, jeden `MailboxDO` i jego SQLite są data plane dla jednego mailbox ID, a R2 jest wspólnym prywatnym blob store z mailbox-scoped kluczami i metadanymi, nie osobnym bucketem per mailbox. Inbound i async-rule Workflows mają lifetime pojedynczej instancji workflow. Każdy AI run dostaje świeży run-scoped budget/capability layer; nie jest process-global ani trwałym zasobem per mailbox.
 
 `TODO.md` nadal opisuje i śledzi bazowe v1. Zadania z tego dokumentu nie mogą obniżyć istniejących gwarancji opisanych w `README.md`.
 
@@ -106,7 +115,7 @@ Aktualne blokady:
 Pierwsze wydanie firmowej poczty obejmuje:
 
 - Jedną organizację i jedną zweryfikowaną domenę na wdrożenie.
-- Model danych zawierający `organizationId` we wszystkich granicach tenantowych.
+- Tenant-aware model, w którym `organizationId` jest przechowywane, wyprowadzane i walidowane zgodnie z inwentarzem granic, zamiast mechanicznie duplikowane w każdym rekordzie i payloadzie.
 - Wiele skrzynek osobistych i współdzielonych.
 - Wiele adresów kierujących do jednej skrzynki.
 - Dokładnie jedną aktywną skrzynkę docelową dla aktywnego adresu odbiorczego; adres zawieszony lub wycofany może nie mieć aktywnego targetu.
@@ -168,9 +177,11 @@ Technicznie istnieje jeden model mailboxa z dwoma szablonami UX:
 
 Szablon ustawia bezpieczne wartości domyślne. Nie tworzymy dwóch niezależnych implementacji przechowywania poczty.
 
-Lifecycle mailboxa rozróżnia `active`, przejściowe `archiving` i read-only `archived`. Archiwizacja jest workflowem, nie pojedynczą zmianą statusu. Przed jej zakończeniem każdy aktywny adres musi zostać przeniesiony do aktywnego mailboxa albo poddany kwarantannie, wszystkie nowe wysyłki są blokowane, a in-flight inboundy sprzed cutoveru są drenowane.
+Lifecycle mailboxa ma przejścia `active <-> suspended`, `active -> archiving -> archived` oraz `archived -> active`. `suspended` jest odwracalną blokadą operacyjną: mailbox pozostaje widoczny dla jawnie autoryzowanych użytkowników i pozwala na read, search, attachment access oraz export, ale nie przyjmuje nowych route assignments ani inboundu, nie wysyła i nie pozwala na mutacje wiadomości, folderów, reguł lub draftów. Powrót do `active` wymaga audytowanej operacji z ponowną walidacją dostępu i readiness.
 
-Archived mailbox zachowuje dane w tym samym `MailboxDO` i pozwala wyłącznie na jawnie autoryzowane read, search, attachment access oraz export. Nie przyjmuje nowych wiadomości, nie wysyła, nie pozwala na mutacje wiadomości, folderów, reguł ani draftów i nie daje Organization Admin automatycznego dostępu. Hard delete nie jest częścią pierwszego wydania.
+Archiwizacja jest workflowem, nie pojedynczą zmianą statusu. Przed jej zakończeniem każdy aktywny adres musi zostać przeniesiony do aktywnego mailboxa albo poddany kwarantannie, wszystkie nowe wysyłki są blokowane, a in-flight inboundy sprzed cutoveru są drenowane. `archiving` nie jest normalnym kontekstem nawigacji i dopuszcza wyłącznie kontrolowane operacje workflow oraz rozstrzyganie in-flight pracy.
+
+Archived mailbox zachowuje dane w tym samym `MailboxDO` i pozwala wyłącznie na jawnie autoryzowane read, search, attachment access oraz export. Nie przyjmuje nowych wiadomości, nie wysyła, nie pozwala na mutacje wiadomości, folderów, reguł ani draftów i nie daje Organization Admin automatycznego dostępu. Restore do `active` jest audytowanym workflowem walidującym assignments, grants, domenę, routes i send identities. Hard delete nie jest częścią pierwszego wydania.
 
 ### MailAddress
 
@@ -185,7 +196,7 @@ Adres zachowuje:
 - wersję kanonikalizacji,
 - historię administracyjną.
 
-Adres wycofany bez świadomego transferu przechodzi co najmniej 180 dni kwarantanny. Pozostaje zarezerwowany, nie ma aktywnego route ani send identity, odrzuca inbound i nie wpada do catch-all. Koniec kwarantanny nie powoduje automatycznego ponownego użycia; wymaga ręcznej decyzji Organization Owner/Admin, ostrzeżenia i step-up. Świadomy, audytowany transfer do aktywnego mailboxa może ominąć kwarantannę.
+Wycofanie adresu z `active` lub `suspended` prowadzi przez co najmniej 180 dni `quarantined`, a następnie do `retired`, który oznacza wyłącznie eligible for manual reuse. Adres pozostaje zarezerwowany, nie ma aktywnego route ani send identity, odrzuca inbound i nie wpada do catch-all. Koniec kwarantanny nie powoduje automatycznego ponownego użycia; ręczna decyzja Organization Owner/Admin z ostrzeżeniem i step-up reaktywuje ten sam stabilny rekord, ID oraz historię, zamiast tworzyć nową tożsamość adresu. Świadomy, audytowany pełny transfer do aktywnego mailboxa może ominąć kwarantannę.
 
 ### InboundRouteAssignment
 
@@ -209,7 +220,7 @@ Skrzynka wysyłająca ma dokładnie jedną domyślną aktywną tożsamość nada
 
 Użytkownik globalny może należeć do organizacji. Aktywne członkostwo organizacyjne nie daje dostępu do żadnej wiadomości.
 
-Normalny dostęp do skrzynki wymaga jednocześnie:
+Każda operacja na skrzynce wymaga jednocześnie:
 
 ```text
 ważna i nieograniczona sesja
@@ -217,10 +228,11 @@ AND aktywny użytkownik
 AND aktywne członkostwo w organizacji
 AND aktywne przypisanie do mailboxa
 AND dokładne efektywne uprawnienie
-AND aktywna organizacja i skrzynka
+AND aktywna organizacja
+AND stan mailboxa dozwolony przez wersjonowaną macierz tej konkretnej operacji
 ```
 
-`MailboxAssignment` odpowiada za discovery i lifecycle. Role oraz permission grants pozostają źródłem autoryzacji działań.
+`MailboxAssignment` odpowiada za discovery i lifecycle. Role oraz permission grants pozostają źródłem autoryzacji działań. Stan `active` dopuszcza operacje wynikające z uprawnień; `suspended` i `archived` dopuszczają tylko jawnie wymienione read/search/attachment/export oraz właściwe operacje administracyjne resume/restore. Stan nie zastępuje permission checku i permission nie omija state matrix.
 
 ### AuthenticationIdentity
 
@@ -255,7 +267,7 @@ Wymagane niezmienniki:
 - Address route i send identity muszą wskazywać zasoby tej samej organizacji.
 - Personal mailbox ma dokładnie jednego aktywnego personal assignee, dopóki nie przejdzie w stan offboardingu.
 - Członek mailboxa musi być aktywnym członkiem tej samej organizacji.
-- Mailbox i adresy nigdy nie używają ponownie starych identyfikatorów.
+- ID mailboxa nigdy nie jest używane ponownie. Manual reuse adresu reaktywuje ten sam rekord i ID; żadnego historycznego ID adresu nie wolno przypisać nowemu rekordowi lub innej tożsamości.
 - Usunięcie skrzynki nie może kaskadowo zniszczyć historii adresu, routingu ani audytu.
 - Globalne granty mailowe i globalne role mailowe są zabronione.
 - Grant folderu zawsze zawiera mailbox ancestry.
@@ -263,7 +275,7 @@ Wymagane niezmienniki:
 
 ### Inwentarz granic tenantowych
 
-Przed migracją tworzymy tabelę inwentarzową określającą, czy `organizationId` jest przechowywane, wyprowadzane i walidowane w każdym miejscu:
+Przed migracją tworzymy tabelę inwentarzową określającą, czy `organizationId` jest przechowywane, wyprowadzane i walidowane w każdym miejscu. Nie duplikujemy go wszędzie: przechowujemy przy źródle prawdy i w immutable snapshots wymaganych przez retry/audit, wyprowadzamy z kanonicznego ancestry, a na każdej granicy zaufania walidujemy spójność:
 
 | Obszar | Docelowa strategia |
 | --- | --- |
@@ -388,8 +400,8 @@ Nie wystawiamy generycznego `PermissionAdministration` bezpośrednio do klienta.
 ### Nawigacja
 
 - URL zawiera jawne `organizationId` i `mailboxId`; wybór skrzynki nie zależy od `limit(1)`.
-- Mailbox switcher pokazuje wyłącznie aktywne i autoryzowane przypisania.
-- Domyślna skrzynka jest preferencją użytkownika per organizacja.
+- Mailbox switcher pokazuje wyłącznie autoryzowane przypisania do mailboxów `active`, `suspended` i `archived`, z czytelnym stanem niedostępnych operacji; `archiving` nie jest normalnym celem nawigacji.
+- Domyślna skrzynka jest preferencją użytkownika per organizacja i może wskazywać wyłącznie autoryzowany mailbox `active`; deterministyczny fallback również wybiera tylko `active`.
 - Query cache, optimistic state i błędy 403 są zakresowane co najmniej przez organization i mailbox ID.
 
 Rekomendowany kształt URL:
@@ -457,7 +469,7 @@ Cel: zamrozić semantykę przed zmianami schematu, aby UI, API i migracje implem
 - [x] DEC-015 Spisać i podlinkować ADR 0001-0004 dla decyzji wpływających na schemat, auth, routing i lifecycle.
 - [x] DEC-016 Rozdzielić route-only reassignment od pełnego address transfer obejmującego send identities, bez zmiany właściciela domeny.
 - [x] DEC-017 Zatwierdzić permission IDs i niemutowalne mapowania ról platformowych opisane w ADR 0003.
-- [x] DEC-018 Zatwierdzić `active -> archiving -> archived`, read-only archive bez inbound/outbound oraz historyczne, wizualnie wygaszone route assignments zgodnie z ADR 0004.
+- [x] DEC-018 Zatwierdzić `active <-> suspended`, `active -> archiving -> archived`, `archived -> active`, operation-specific read-only dla suspended/archive bez inbound/outbound oraz historyczne, wizualnie wygaszone route assignments zgodnie z ADR 0004.
 
 Kryterium wyjścia spełnione: wszystkie decyzje blokujące schemat i autoryzację są zatwierdzone, a ADR 0001-0004 są podlinkowane z tego dokumentu.
 
@@ -466,18 +478,18 @@ Kryterium wyjścia spełnione: wszystkie decyzje blokujące schemat i autoryzacj
 Cel: przed rozszerzeniem liczby użytkowników i skrzynek domknąć mechanizmy wymagane do bezpiecznych mutacji administracyjnych.
 
 - [x] SAFE-001 Dodać wersjonowaną, pięciominutową politykę step-up, password completion z rotacją sesji, typed HTTP/UI flow i transakcyjny recheck; zastosować ją do obecnego owner bootstrapu i wymagać jej od przyszłych domen, adresów, grantów, transferów oraz operacji właścicielskich.
-- [x] SAFE-002 Dodać passkey oraz recovery codes albo zatwierdzony równoważny mechanizm odzyskiwania. Guarded passkey enrollment, privacy-safe credential list/revoke, discoverable UV passkey sign-in, token-bound passkey step-up i atomiczne wydawanie 10 hash-only recovery codes są gotowe. Public recovery wymaga dwóch niezależnych dowodów: linku wysłanego na verified external recovery identity oraz jednorazowego recovery code. Consume atomowo sprawdza exact verification row, identity ID/version, aktywnego użytkownika i kod, po czym tworzy piętnastominutową restricted session z jedyną capability `second-passkey`; zwykłe application routes oraz core session management odrzucają tę sesję. Recovery passkey ceremony wiąże challenge z session ID, hashem generacji tokenu i exact recovery identity, wymaga exact RP/origin oraz UV, a końcowy D1 batch dodaje passkey i unrestricted session, zastępuje primary login authority passkey-only identity, unieważnia poprzednie sesje, passkeys, password/TOTP credentials i recovery codes, zapisuje 10 nowych hashy oraz metadata-only audyty. Plaintext nowych kodów jest zwracany i pokazywany tylko raz przez odpowiedzi `no-store`; produkcyjna dostawa linku działa przez `waitUntil`, a publiczny start ma osobny rate-limit bucket i enumeration-safe odpowiedź.
-- [ ] SAFE-003 Jawnie zdefiniować, które mailbox operations odrzucają ograniczone lub niezweryfikowane sesje.
-- [x] SAFE-004 Dodać wersjonowany append-only administracyjny audit event store, privacy contract i atomowe API zapisu używane przez kolejne etapy. D1 wymusza zamkniętą taksonomię i spójność metadanych, opaque UUID v4 dla operation ID, blokuje update/delete/conflict replacement oraz indeksuje operation, tenant, actor, resource i action; owner bootstrap i mailbox rename zapisują sukces w tym samym batchu co mutacja, a odmowa nie tworzy zdarzenia. Typed prepare contract obejmuje też przyszłe recovery enroll/verify/revoke bez publicznego niezależnego write API i bez generic JSON, treści wiadomości, adresów email, sekretów lub tokenów. Replay/readback i pełna idempotency pozostają w SAFE-006.
+- [ ] SAFE-002 Dodać passkey oraz recovery codes albo zatwierdzony równoważny mechanizm odzyskiwania. Guarded passkey enrollment, privacy-safe credential list/revoke, discoverable UV passkey sign-in, token-bound passkey step-up i atomiczne wydawanie 10 hash-only recovery codes są gotowe. Public recovery wymaga dwóch niezależnych dowodów: linku wysłanego na verified external recovery identity oraz jednorazowego recovery code. Consume atomowo sprawdza exact verification row, identity ID/version, aktywnego użytkownika i kod, po czym tworzy piętnastominutową restricted session z jedyną capability `second-passkey`; zwykłe application routes oraz core session management odrzucają tę sesję. Recovery passkey ceremony wiąże challenge z session ID, hashem generacji tokenu i exact recovery identity, wymaga exact RP/origin oraz UV, a końcowy D1 batch dodaje passkey i unrestricted session, zastępuje primary login authority passkey-only identity, unieważnia poprzednie sesje, passkeys, password/TOTP credentials i recovery codes, zapisuje 10 nowych hashy oraz metadata-only audyty. Plaintext nowych kodów jest zwracany i pokazywany tylko raz przez odpowiedzi `no-store`; produkcyjna dostawa linku działa przez `waitUntil`, a publiczny start ma osobny rate-limit bucket i enumeration-safe odpowiedź. Zadanie pozostaje konserwatywnie otwarte do zakończenia należącego do SAFE-006 operation ID, exact replay i readback dla mutujących kroków recovery oraz dodania bezpośrednich testów denial/conflict i warstwy HTTP potwierdzających `waitUntil`, rate limit, enumeration-safe response i `no-store`.
+- [ ] SAFE-003 Wprowadzić wersjonowaną macierz session requirements dla całej grupy mailbox operations. Domyślnie każda operacja mailboxowa odrzuca restricted session i sesję z nieukończonymi requirements; wyjątki muszą być jawne, capability-scoped i fail-closed. Część auth/application routes ma lokalne guardy, ale brakuje jednego group-wide defaultu, kompletnej macierzy per operation oraz testów pozytywnych i odmowy dla całej grupy.
+- [x] SAFE-004 Dodać wersjonowany append-only administracyjny audit event store, privacy contract i atomowe API zapisu używane przez kolejne etapy. D1 wymusza zamkniętą taksonomię i spójność metadanych, opaque UUID v4 dla operation ID, blokuje update/delete/conflict replacement oraz indeksuje operation, tenant, actor, resource i action; owner bootstrap, mailbox rename oraz external recovery enrollment/verification zapisują sukces w tym samym batchu co mutacja, a odmowa nie tworzy zdarzenia. Typed prepare contract obejmuje także przyszłe recovery revoke bez publicznego niezależnego write API i bez generic JSON, treści wiadomości, adresów email, sekretów lub tokenów. Replay/readback i pełna idempotency pozostają w SAFE-006.
 - [ ] SAFE-005 Dodać backup D1, R2 i każdego MailboxDO SQLite wraz z procedurą identity-preserving restore przed pierwszą migracją destrukcyjną.
-- [ ] SAFE-006 Dodać operation ID, expected version i readback dla wszystkich nowych mutacji control plane.
-- [ ] SAFE-007 Zachować transactional session oraz authorization recheck dla każdej mutacji D1.
+- [ ] SAFE-006 Dodać operation ID, expected version i readback dla wszystkich nowych mutacji control plane. Część obecnych ścieżek ma już durable operation receipts, expected version lub readback, ale kontrakt nie jest jednolity ani kompletny dla bootstrapu, rename, recovery i przyszłych mutacji; exact replay musi odróżniać identyczne powtórzenie od reuse operation ID z innym intentem.
+- [ ] SAFE-007 Zachować transactional session oraz authorization recheck dla każdej mutacji D1. Owner bootstrap, rename i część account-security mutations stanowią aktualny guarded-D1 baseline; DoD przyszłych mutacji wymaga tego samego token-bound session, requirement, authorization i expected-state rechecku w jednym batchu z zapisem, receipt i audytem.
 - [ ] SAFE-008 Dodać bazowy limit rozmiaru inbound przed zapisem raw MIME do R2; INB-009 ma zachować i przetestować guard na nowej ścieżce.
-- [ ] SAFE-009 Dodać bazową regresję security invariants obecnego singletona przed usunięciem ograniczeń.
+- [ ] SAFE-009 Dodać bazową regresję security invariants obecnego singletona przed usunięciem ograniczeń: owner allowlist, unrestricted i świeży step-up dla bootstrapu, transactional token/permission recheck, membership bez prawa autoryzacji, kwalifikowane folder ancestry, caller mailbox hints bez roli dowodu, routing wyłącznie po SMTP envelope recipient, izolacja `MailboxDO` identity oraz odrzucenie próby utworzenia drugiego mailboxa.
 - [ ] SAFE-010 Uzupełnić recovery runbook o utratę właściciela, błędny grant i błędny routing.
-- [ ] SAFE-011 Dodać CI gate dla migracji, typecheck, test, lint, format i build.
+- [ ] SAFE-011 Dodać CI gate dla migracji, typecheck, test, lint, format i build. Lokalny gate i skrypty `bun run check`, `typecheck`, `test`, `format` oraz `build` istnieją, ale repozytorium nie ma jeszcze egzekwującego ich CI.
 - [x] SAFE-012 Uzgodnić nakładające się pozycje z `TODO.md`, poprawić jego nieaktualne statusy infrastruktury i pozostawić jeden kanoniczny checkbox per deliverable.
-- [ ] SAFE-013 Wprowadzić recovery-safe identity policy egzekwowaną przy enrollment, invitation acceptance, login/recovery initiation i zmianie route na shared mailbox; shared-routed address nigdy nie może być samodzielnym dowodem email-auth. Recovery-only identity ma osobny model i D1 constraints, a wspólna policy odrzuca zarządzaną domenę, mailbox routes, login identities i duplikaty. Authenticated enrollment z pięciominutowym step-up oraz same-user verification są gotowe: sekret trafia wyłącznie do fragmentu linku, challenge consumption, lifecycle/version update i metadata-only audit są atomowe, a identity nie staje się login authority. Invitation, login/recovery initiation i przyszłe route mutations nadal wymagają integracji tej samej policy przed zamknięciem zadania.
+- [ ] SAFE-013 Utrzymać recovery-safe identity policy dla enrollment i wszystkich login/recovery initiation paths; shared-routed address nigdy nie może być samodzielnym dowodem email-auth. Recovery-only identity ma osobny model i D1 constraints, a wspólna policy odrzuca zarządzaną domenę, mailbox routes, login identities i duplikaty. Authenticated enrollment z pięciominutowym step-up, same-user verification oraz public recovery z external link plus recovery code są zintegrowane: sekrety trafiają wyłącznie do fragmentu linku, a właściwe consumption/lifecycle/version/audit mutations są atomowe. Zadanie pozostaje otwarte do objęcia policy pozostałych generic login/recovery initiation paths i testami całej powierzchni; invitation acceptance należy do INV-010, a przyszłe shared-route mutations do ADDR-022.
 - [x] SAFE-014 Dodać minimalny request/correlation context i wide event contract przed pierwszym nowym endpointem administracyjnym. Backend generuje UUID per request, udostępnia context w request-scoped grafie Layer i emituje jeden privacy-bounded completion event z zamkniętą rodziną route, statusem, outcome, duration i zwalidowanym CF-Ray; propagacja między service hops pozostaje w OBS-006.
 - [ ] SAFE-015 Przetestować restore wiadomości, folderów, reguł, draftów, outbound state, raw MIME i attachmentów do tego samego mailbox ID.
 
@@ -489,9 +501,9 @@ Cel: wprowadzić granicę tenantową, zanim zostanie usunięty singleton mailbox
 
 - [ ] ORG-001 Dodać `app_organization` ze statusem, wersją i niemutowalnym ID.
 - [ ] ORG-002 Dodać `app_organization_member` z aktywnym, zawieszonym i odwołanym lifecycle.
-- [ ] ORG-003 Zaimplementować i zasiać katalog permission IDs oraz role matrix organizacji i mailboxa zatwierdzone w DEC-017.
+- [ ] ORG-003 Zasiać zatwierdzone w DEC-017 organization i mailbox role mappings przez publiczny kontrakt kontekstu `authorization`; kontekst `authorization` jest właścicielem katalogu permission IDs, scope contracts i rozwiązywania uprawnień, a `organization` orkiestruje bootstrap/migrację bez przejmowania tego ownership.
 - [ ] ORG-004 Dodać wersjonowaną IDNA domain canonicalization, wykonać preflight obecnej domeny i utworzyć `app_mail_domain` z globalnie wyłącznym canonical domain ownership.
-- [ ] ORG-005 Rozdzielić `MAILBOX_OWNER_EMAIL` na bootstrap allowlist oraz konfigurację domeny pierwszego wdrożenia.
+- [ ] ORG-005 Rozdzielić trzy role `MAILBOX_OWNER_EMAIL`: zachować osobną bootstrap allowlist, przenieść initial mailbox address do jawnego command/migration input oraz zastąpić przejściową managed-domain heurystykę kanonicznym `MailDomain`.
 - [ ] ORG-006 Utworzyć legacy/default organization podczas migracji istniejącego wdrożenia.
 - [ ] ORG-007 Przypisać istniejący mailbox `primary` do legacy organization bez zmiany mailbox ID.
 - [ ] ORG-008 Przypisać istniejącego właściciela jako aktywnego Organization Owner.
@@ -499,12 +511,11 @@ Cel: wprowadzić granicę tenantową, zanim zostanie usunięty singleton mailbox
 - [ ] ORG-010 Dodać `organizationId` do mailbox registry oraz wymaganych indeksów.
 - [ ] ORG-011 Rozszerzyć user preferences o organization scope i zweryfikowany default mailbox.
 - [ ] ORG-012 Dodać serwis bootstrapu organizacji bez zaufania do organization ID przesłanego jako dowód dostępu.
-- [ ] ORG-013 Dodać lifecycle organization: active, suspended, deleting, deleted.
+- [ ] ORG-013 Dodać lifecycle organization pierwszego wydania: `active <-> suspended`, z wersjonowaną macierzą dozwolonych operacji. `deleting` i `deleted` oraz organization delete workflow są odłożone do SAAS-006.
 - [ ] ORG-014 Dodać testy unikalności domeny, izolacji organizacji i atomowego bootstrapu.
 - [ ] ORG-015 Udokumentować migrację i aktualny model w `README.md`.
 - [ ] ORG-016 Dodać ownership challenge, proof expiry, re-verification i aktywację domeny.
 - [ ] ORG-017 Oddzielić status ownership od observed inbound, outbound i DNS readiness.
-- [ ] ORG-018 Przed etapem inbound/outbound uruchomić bazowy staging catch-all do Workera oraz zweryfikowaną sender domain; etap 10 rozszerza monitoring i produkcyjne utrzymanie.
 - [ ] ORG-019 Sporządzić inwentarz wszystkich tabel D1, schematów MailboxDO, obiektów R2, Workflow payloads, cache keys, auditów i scopes z regułą stored/derived/validated `organizationId`.
 
 Kryterium wyjścia: każdy istniejący mailbox i każda zarządzana domena mają kanoniczną organizację oraz poprawnie zmigrowaną własność; request-level enforcement zostaje uruchomiony i zweryfikowany w etapie 3 przed drugim mailboxem.
@@ -524,7 +535,7 @@ Cel: uruchomić wszystkie bramy bezpieczeństwa przy nadal aktywnym singletonie,
 - [ ] ACL-009 Atomowo synchronizować mailbox assignment, grants oraz audit.
 - [ ] ACL-010 Dodać bezpieczne direct grants jako wyjątki addytywne bez deny grants w pierwszym wydaniu.
 - [ ] ACL-011 Dodać endpoint efektywnego dostępu pokazujący źródło roli lub grantu.
-- [ ] ACL-012 Zdefiniować i przetestować zachowanie folder-only access albo jawnie odłożyć je zgodnie z DEC-014.
+- [x] ACL-012 Jawnie odłożyć folder-only access zgodnie z DEC-014; pierwsze wydanie wymaga mailbox assignment i mailbox-level read authority, a product workflows nie wystawiają folder-only grantów.
 - [ ] ACL-013 Dodać coarse organization/mailbox gate przed lookupem child resource w Durable Object.
 - [ ] ACL-014 Ujednolicić odpowiedzi dla zasobu nieistniejącego i istniejącego poza tenantem, aby ograniczyć existence oracle.
 - [ ] ACL-015 Dodać macierz testów cross-organization i cross-mailbox dla każdej klasy permission.
@@ -537,30 +548,29 @@ Kryterium wyjścia: wszystkie requesty wymagają właściwego tenanta, assignmen
 
 ### Etap 4: Wiele skrzynek i jawna nawigacja
 
-Cel: dopiero po aktywacji bram z etapu 3 usunąć globalny singleton bez utraty danych istniejącego `MailboxDO`.
+Cel: dopiero po aktywacji bram z etapu 3 przygotować usunięcie globalnego singletona i uruchomić wiele mailboxów w development/staging bez utraty danych istniejącego `MailboxDO`; produkcyjne usunięcie ograniczenia pozostaje w etapie 13.
 
 - [ ] MBX-001 Dodać `kind: personal | shared` oraz wymagane lifecycle metadata do mailboxa.
 - [ ] MBX-002 Dodać generator opaque mailbox IDs dla nowych mailboxów i zachować legacy wyjątek `primary`.
 - [ ] MBX-003 Zastąpić owner bootstrap ogólną, atomową komendą create mailbox.
 - [ ] MBX-004 Atomowo tworzyć mailbox, podstawowy assignment, grant właścicielski i audit; initial address zostaje dołączony po wdrożeniu etapu 5.
-- [ ] MBX-005 Dodać listę aktywnych mailbox assignments dla bieżącego użytkownika.
+- [ ] MBX-005 Dodać listę autoryzowanych mailbox assignments dla bieżącego użytkownika, obejmującą mailboxy `active`, `suspended` i `archived` zgodnie z operation matrix.
 - [ ] MBX-006 Zastąpić `limit(1)` jawnym wybraniem mailboxa i deterministycznym fallbackiem.
 - [ ] MBX-007 Zacząć używać `defaultMailboxId` per organizacja.
-- [ ] MBX-008 Dodać create, rename, suspend, archive i restore mailbox APIs.
+- [ ] UI-001 Dodać jawny organization/mailbox routing do URL i loaderów.
+- [ ] UI-002 Dodać responsywny mailbox switcher dla autoryzowanych mailboxów `active`, `suspended` i `archived`, z defaultem ograniczonym do `active` i czytelnymi stanami niedostępności.
+- [ ] MBX-008 Dodać create, rename i suspend mailbox APIs.
 - [ ] MBX-009 Zablokować hard delete i cascade do czasu wdrożenia address history, retencji, audytu i cleanup workflow.
-- [ ] MBX-010 Upewnić się, że stare grants są odwoływane przed zakończeniem mailbox lifecycle.
 - [ ] MBX-011 Przygotować i przetestować usunięcie `app_mailbox_singleton_idx`; produkcyjne wykonanie pozostaje w ROLL-008.
 - [ ] MBX-012 Zachować istniejące ID `primary` i jego MailboxDO podczas migracji.
 - [ ] MBX-013 Zakresować cache, query keys i 403 state przez organization oraz mailbox ID.
 - [ ] MBX-014 Dodać testy równoległego tworzenia mailboxów, lifecycle i wyboru defaultu.
 - [ ] MBX-015 Dodać test dowodzący, że dwa mailboxy mają oddzielne Durable Objects i dane.
-- [ ] MBX-016 Udostępnić drugi mailbox wyłącznie za feature flagiem po przejściu wszystkich ACL gates.
-- [ ] MBX-017 Dodać `archiving` i `archived` do statusów oraz operation matrix: archived read/search/attachment/export dozwolone, wszystkie mutacje zabronione.
-- [ ] MBX-018 Dodać archive workflow wymagający disposition każdego route, wyłączenia send identities, rozstrzygnięcia outboundów i drenażu pre-cutover inboundów.
-- [ ] MBX-019 Dodać audytowany restore workflow walidujący organization, assignments, grants, domain, routes i send identities przed przejściem do `active`.
+- [ ] MBX-016 Udostępnić drugi mailbox wyłącznie w development i staging za feature flagiem po przejściu wszystkich ACL gates; produkcyjne włączenie należy do ROLL-008/ROLL-010.
+- [ ] MBX-017 Wdrożyć state machine `active <-> suspended`, `active -> archiving -> archived`, `archived -> active` oraz wersjonowaną operation matrix. `suspended` i `archived` dopuszczają jawnie autoryzowane read/search/attachment/export, blokują inbound, outbound i content mutations; `archiving` dopuszcza tylko operacje workflow i kontrolowane rozstrzygnięcie in-flight pracy.
 - [ ] MBX-020 Dodać audytowany mailbox export dla active i archived mailboxów: manifest, wiadomości, reguły, drafty i attachmenty z checksumami oraz wygasającym downloadem.
 
-Kryterium wyjścia: użytkownik może posiadać kilka mailboxów, jawnie przełączać kontekst, a wiadomości i uprawnienia pozostają odizolowane przez bramy wdrożone przed usunięciem singletona.
+Kryterium wyjścia: w development i staging użytkownik może pod feature flagiem posiadać kilka mailboxów i jawnie przełączać kontekst, a wiadomości i uprawnienia pozostają odizolowane przez bramy wdrożone przed usunięciem singletona. Produkcyjne usunięcie singleton indexu i uruchomienie dodatkowych mailboxów pozostaje wyłącznie w ROLL-008.
 
 ### Etap 5: Stabilne adresy i routing
 
@@ -570,39 +580,41 @@ Cel: oddzielić adres od mailboxa i umożliwić bezpieczne aliasy oraz zmianę t
 - [ ] ADDR-002 Przed zmianą polityki zinwentaryzować case oraz IDNA collisions w istniejących danych i przygotować quarantine/operator-resolution flow.
 - [ ] ADDR-003 Dodać wersjonowaną kanonikalizację local-part, złożyć ją z canonical domain z ORG-004, a po rozwiązaniu kolizji wymusić globalną unikalność i spójność raw/canonical fields.
 - [ ] ADDR-004 Dodać listę zarezerwowanych local-parts i testy kolizji.
-- [ ] ADDR-005 Dodać lifecycle adresu: pending, active, suspended, retired, quarantined wraz z `quarantinedAt`, `quarantinedUntil`, reason i version.
+- [ ] ADDR-005 Dodać lifecycle adresu: provisioning `pending -> active`, operacyjne `active <-> suspended` oraz retirement `active | suspended -> quarantined -> retired`, wraz z `quarantinedAt`, `quarantinedUntil`, reason i version; `retired` oznacza tylko eligible for manual reuse.
 - [ ] ADDR-006 Dodać `app_inbound_route_assignment` z niemutowalną historią i revision.
-- [ ] ADDR-007 Wymusić najwyżej jedno active route assignment zawsze oraz dokładnie jedno przy każdej zmianie statusu adresu na active/receiving.
+- [ ] ADDR-007 Wymusić najwyżej jedno active route assignment zawsze oraz dokładnie jedno przy każdej zmianie statusu adresu na `active`.
 - [ ] ADDR-008 Wymusić tę samą organizację dla domeny, adresu, route i mailboxa.
 - [ ] ADDR-009 Dodać atomowe create address plus assign route, wymagające aktywnej, zweryfikowanej domeny należącej do tej samej organizacji.
 - [ ] ADDR-010 Dodać atomowy route-only reassignment z expected revision, powodem i audit eventem, bez automatycznej zmiany send identities.
-- [ ] ADDR-011 Dodać enable, suspend, quarantine, retire i manual restore/reuse; wymusić minimum 180 dni i zakazać automatycznego reuse.
+- [ ] ADDR-011 Dodać activate, suspend, quarantine, retire i manual reuse; wymusić minimum 180 dni, zakazać automatycznego reuse i reaktywować ten sam stabilny address record, ID oraz historię.
 - [ ] ADDR-012 Nie pozwalać zawieszonemu lub wycofanemu exact address spaść do catch-all.
-- [ ] ADDR-013 Dodać idempotentne list, create, update, transfer i lifecycle APIs.
+- [ ] ADDR-013 Dodać idempotentne list, create, update, route-only reassignment i lifecycle APIs; pełny transfer jest własnością OUT-023.
 - [ ] ADDR-014 Mapować uniqueness conflicts na bezpieczny 409 bez ujawniania obcego tenanta.
 - [ ] ADDR-015 Zmigrować istniejące `app_mailbox_address` do stable address plus route history.
 - [ ] ADDR-016 Zachować historyczne ID lub mapowanie migracyjne wymagane przez istniejące dane.
 - [ ] ADDR-017 Dodać testy równoległej rezerwacji tego samego adresu i transferu revision conflict.
 - [ ] ADDR-018 Dodać testy canonical collisions, reserved names i tombstone precedence.
-- [ ] ADDR-019 Dodać D1 address transfer state oraz fencing epoch blokujące nowe operacje po rozpoczęciu pełnego transferu; integracja z send identity i MailboxDO następuje w OUT-023.
+- [ ] ADDR-019 Dodać D1 fencing epoch i transfer-state primitives wymagane przez OUT-023; zadanie nie implementuje pełnego transferu ani integracji send identity/MailboxDO.
 - [ ] ADDR-020 Dodać atomową komendę create receive-only mailbox plus initial address, route, assignment, grants i audit; wariant send-enabled zostaje domknięty w OUT-024.
-- [ ] ADDR-021 Dodać osobne kontrakty, permissions i UI intent dla route-only reassignment oraz pełnego address transfer.
+- [ ] ADDR-021 Dodać osobne kontrakty i permissions dla route-only reassignment oraz pełnego address transfer; implementację pełnego transferu ma OUT-023, a jego UI ma UI-007.
+- [ ] ADDR-022 Egzekwować recovery-safe identity policy w route-only reassignment i każdej współdzielonej mutacji address/route, aby adres dostarczany do shared mailboxa nie pozostał samodzielnym email-auth proof; operacja ma używać wspólnego guardu z SAFE-013 i być atomowa względem zmiany route.
+- [ ] ORG-018 Przed etapem inbound/outbound uruchomić bazowy staging catch-all do Workera oraz zweryfikowaną sender domain; etap 10 rozszerza monitoring i produkcyjne utrzymanie.
 
 Kryterium wyjścia: wiele adresów może prowadzić do jednego mailboxa, adres może bezpiecznie zmienić target, a historia decyzji pozostaje dostępna.
 
 ### Etap 6: Inbound dla wielu skrzynek i aliasów
 
-Cel: każdą wiadomość trwale powiązać z dokładną decyzją routingu, która obowiązywała w chwili odbioru.
+Cel: po pełnym zakończeniu etapu 5 każdą wiadomość trwale powiązać z dokładną decyzją routingu, która obowiązywała w chwili odbioru.
 
 - [ ] INB-001 Rozszerzyć resolver o aktywną organization, zweryfikowaną aktywną domain, address, route assignment i revision.
-- [ ] INB-002 Zachować SMTP envelope recipient jako jedyne źródło decyzji routingu.
+- [x] INB-002 Zachować SMTP envelope recipient jako jedyne źródło decyzji routingu; obecny ingress i resolver już ignorują MIME `To` jako routing evidence.
 - [ ] INB-003 Zapisać address ID, assignment ID, revision, match kind i mailbox ID w R2 metadata.
 - [ ] INB-004 Przekazać ten sam immutable routing snapshot do Workflow.
 - [ ] INB-005 Dodać queryable envelope recipient i routing snapshot do schematu wiadomości MailboxDO.
 - [ ] INB-006 Zachować historyczny snapshot na wiadomości zamiast dynamicznego joinu do bieżącego route.
 - [ ] INB-007 Zdefiniować i wdrożyć zachowanie, gdy mailbox zostanie zawieszony po linearyzacji ingressu.
 - [ ] INB-008 Odrzucać unknown, suspended i retired addresses generycznym komunikatem SMTP.
-- [ ] INB-009 Dodać limit raw size przed R2 oraz jawny kod odrzucenia.
+- [ ] INB-009 Zachować i rozszerzyć guard z SAFE-008 na nowej ścieżce routingu: limit raw size musi zadziałać przed R2, zwrócić jawny generyczny kod odrzucenia i mieć test regresyjny.
 - [ ] INB-010 Zachować działanie reguł `envelopeTo` dla aliasów.
 - [ ] INB-011 Dodać reconciliation dla raw objects bez uruchomionego Workflow.
 - [ ] INB-012 Dodać test: dwa aliasy do jednego mailboxa trafiają do tej samej izolowanej bazy z różnym envelopeTo.
@@ -619,7 +631,7 @@ Kryterium wyjścia: inbound jest deterministyczny przy aliasach i transferach, a
 
 ### Etap 7: Tożsamości nadawcy, wysyłka i reply
 
-Cel: oddzielić przyjmowanie poczty od prawa wysyłania i zachować poprawną tożsamość w odpowiedziach.
+Cel: po pełnym zakończeniu etapów 5-6 oddzielić przyjmowanie poczty od prawa wysyłania i zachować poprawną tożsamość w odpowiedziach.
 
 - [ ] OUT-001 Dodać `app_mailbox_send_identity` z address, mailbox, send-enabled, default, fencing epoch i revision; nie duplikować stanu inbound receive.
 - [ ] OUT-002 Wymusić dokładnie jedną aktywną default send identity dla mailboxa z włączoną wysyłką i zero dla receive-only.
@@ -646,7 +658,7 @@ Cel: oddzielić przyjmowanie poczty od prawa wysyłania i zachować poprawną to
 - [ ] OUT-023 Dodać pełny address transfer jako state machine łączący route, send identities, dispatch permits, idempotentny outbox/Workflow i reconciliation operacji MailboxDO.
 - [ ] OUT-024 Rozszerzyć ADDR-020 o atomowe utworzenie default send identity dla mailboxa send-enabled.
 - [ ] OUT-025 Dla `sending` i `indeterminate` permitów wymagać bezpiecznego rozstrzygnięcia albo jawnej interwencji operatora; nie finalizować transferu na podstawie timeoutu bez wiedzy o wyniku providera.
-- [ ] OUT-026 Blokować draft mutations, schedule, dispatch i send identity use dla `archiving` oraz `archived`, z wyjątkiem kontrolowanego anulowania lub rozstrzygnięcia istniejącej wysyłki.
+- [ ] OUT-026 Blokować draft mutations, schedule, dispatch i send identity use dla `suspended`, `archiving` oraz `archived`, z wyjątkiem kontrolowanego anulowania lub rozstrzygnięcia istniejącej wysyłki podczas `archiving`.
 
 Kryterium wyjścia: każda wysyłka ma jawny i autoryzowany `From`, reply zachowuje właściwy alias, a transfer nie pozostawia staremu mailboxowi prawa wysyłania.
 
@@ -654,6 +666,9 @@ Kryterium wyjścia: każda wysyłka ma jawny i autoryzowany `From`, reply zachow
 
 Cel: obsłużyć pełny lifecycle pracownika bez ręcznego modyfikowania bazy lub grantów.
 
+- [ ] MBX-010 Zastosować lifecycle bez blanket revoke: przy suspend/archive zachować assignments oraz jawne granty read/search/attachment/export potrzebne do dozwolonego dostępu, a operacje blokować przez state matrix; odwoływać tylko granty niezgodne z jawną polityką i nigdy nie nadawać Organization Admin implicit read.
+- [ ] MBX-018 Dodać archive workflow wymagający disposition każdego route, wyłączenia send identities, rozstrzygnięcia outboundów i drenażu pre-cutover inboundów.
+- [ ] MBX-019 Dodać audytowany restore workflow walidujący organization, assignments, grants, domain, routes i send identities przed przejściem z `archived` do `active`.
 - [ ] INV-001 Wybrać i włączyć wymagane moduły invitation z effect-auth albo zbudować równoważny aplikacyjny model.
 - [ ] INV-002 Zdefiniować wersjonowany invitation intent: organizacja, recipient, role, mailbox assignments i expiry.
 - [ ] INV-003 Przechowywać wyłącznie hash jednorazowego tokenu zaproszenia.
@@ -663,14 +678,13 @@ Cel: obsłużyć pełny lifecycle pracownika bez ręcznego modyfikowania bazy lu
 - [ ] INV-007 Dodać kreator pracownika z opcjonalnym personal mailboxem i adresem.
 - [ ] INV-008 Personal mailbox domyślnie przypisać wyłącznie pracownikowi jako właścicielowi.
 - [ ] INV-009 Shared mailboxes przypisywać jawnie z wybraną rolą.
-- [ ] INV-010 Egzekwować SAFE-013: shared lub jeszcze niedostępny personal mailbox nie może być kanałem magic link, OTP, verification ani recovery.
+- [ ] INV-010 Egzekwować recovery-safe policy przy invitation acceptance: recipient dostarczany do shared lub jeszcze niedostępnego personal mailboxa nie może być samodzielnym kanałem magic link, OTP, verification ani recovery. To zadanie jest właścicielem integracji invitation; SAFE-013 pozostaje właścicielem enrollment i login/recovery initiation, a ADDR-022 route mutations.
 - [ ] INV-011 Dodać suspend member blokujący nowe sesje i dostęp bez utraty historii.
 - [ ] INV-012 Dodać atomową część D1 offboardingu odwołującą sesje, assignments, grants, team access, invitations i delegated grants.
 - [ ] INV-013 Dodać idempotentny offboarding workflow dla personal address, pending drafts, scheduled/sending/indeterminate sends i pełnego address transfer oraz reconciliation częściowych awarii.
 - [ ] INV-014 Chronić ostatniego właściciela organizacji przy równoległych operacjach.
 - [ ] INV-015 Dodać readback raportujący wszystkie odebrane i pozostałe uprawnienia użytkownika.
 - [ ] INV-016 Dodać testy invitation hijack, recipient mismatch, replay, expiry i concurrent last-owner removal.
-- [ ] INV-017 Przy enrollment, login/recovery initiation i route transfer bezwarunkowo blokować magic link, OTP, verification i recovery jako samodzielny dowód dla identity dostarczanej do shared mailboxa; alternatywny faktor zastępuje email-auth, a nie ponownie je włącza.
 
 Kryterium wyjścia: pracownika można bezpiecznie zaprosić, przypisać, zawiesić i usunąć bez osieroconych grantów lub dostępu do cudzej poczty.
 
@@ -678,13 +692,11 @@ Kryterium wyjścia: pracownika można bezpiecznie zaprosić, przypisać, zawiesi
 
 Cel: udostępnić wszystkie zatwierdzone operacje w prostym UI, bez omijania backendowych invariantów.
 
-- [ ] UI-001 Dodać jawny organization/mailbox routing do URL i loaderów.
-- [ ] UI-002 Dodać responsywny mailbox switcher z defaultem i stanami niedostępności.
 - [ ] UI-003 Dodać kreator `Personal mailbox` i `Shared mailbox`.
 - [ ] UI-004 Dodać organization mailbox directory z lifecycle i liczbą członków.
 - [ ] UI-005 Dodać organization address directory z filtrem domeny, mailboxa i statusu.
 - [ ] UI-006 Dodać mailbox address settings dla aliases, receive, send i default `From`.
-- [ ] UI-007 Dodać address transfer flow z preview skutków, expected revision, reason i step-up.
+- [ ] UI-007 Dodać kanoniczny UI pełnego address transfer z preview skutków, expected revision, reason i step-up; route-only reassignment pozostaje osobnym intentem z ADDR-021.
 - [ ] UI-008 Dodać mailbox members UI z rolami i effective access preview.
 - [ ] UI-009 Dodać organization members oraz invitations UI.
 - [ ] UI-010 Dodać personal address to shared mailbox warning.
@@ -790,12 +802,15 @@ Cel: przejść z istniejącego mailboxa bez utraty danych, zmiany jego Durable O
 - [ ] ROLL-012 Monitorować authorization denies, routing rejects, provider failures, drift i latency po każdym etapie.
 - [ ] ROLL-013 Przećwiczyć rollback kodu oraz forward-fix danych bez cofania zaakceptowanych wiadomości.
 - [ ] ROLL-014 Zaktualizować `README.md`, `TODO.md`, runbooki i dokumentację operatora.
-- [ ] ROLL-015 Usunąć `MAILBOX_OWNER_EMAIL` z roli adresu mailboxa, zachowując tylko zatwierdzoną bootstrap policy.
-- [ ] ROLL-016 Przejść wszystkie scenariusze odbioru wymienione poniżej.
-- [ ] ROLL-017 Wdrożyć mailbox delete/retention workflow dopiero po address history, audit, MailboxDO/R2 backup, cleanup i reconciliation; do tego czasu pozostawić hard delete zablokowany.
+- [ ] ROLL-015 Usunąć `MAILBOX_OWNER_EMAIL` z ról initial mailbox address i managed-domain recovery heuristic, zachowując wyłącznie zatwierdzoną bootstrap allowlist.
+- [ ] ROLL-016 Zebrać datowane staging/production evidence wykonania wszystkich scenariuszy `ACCEPT-*`; implementacja i automatyczne testy pozostają własnością ich kanonicznych zadań, a ten checkbox nie dubluje pracy.
 - [ ] ROLL-018 Przeprowadzić compatibility rollout dla in-flight Workflow, legacy draftów i zaplanowanych outboundów przed usunięciem starych czytników.
 
 Kryterium wyjścia: obecna skrzynka działa bez regresji, nowe skrzynki i aliasy są aktywne, a rollback oraz recovery zostały przećwiczone.
+
+### Jawnie odłożone poza pierwsze wydanie
+
+- [ ] ROLL-017 `DEFERRED`: wdrożyć mailbox delete/retention workflow dopiero po address history, audit, MailboxDO/R2 backup, cleanup i reconciliation. W pierwszym wydaniu hard delete pozostaje zablokowany, archived data jest zachowane, a zadanie nie blokuje kryterium wyjścia etapu 13.
 
 ### Etap 14: Wiele organizacji w jednym SaaS
 
@@ -806,7 +821,7 @@ Cel: świadomie odłożony etap po udowodnieniu bezpieczeństwa i operacyjności
 - [ ] SAAS-003 Zdefiniować model dostępu do Cloudflare account/zone bez przejmowania niepotrzebnych uprawnień klienta.
 - [ ] SAAS-004 Dodać billing, plany, limity mailboxów, storage, wysyłki i użytkowników.
 - [ ] SAAS-005 Dodać per-tenant quotas, abuse prevention, suppression i rate limits.
-- [ ] SAAS-006 Dodać tenant suspend, export i delete workflows.
+- [ ] SAAS-006 Dodać tenant suspend, export i delete workflows, w tym odłożone stany organization `deleting` i `deleted`.
 - [ ] SAAS-007 Dodać polityki retencji, prywatności, data residency i wymagane umowy.
 - [ ] SAAS-008 Dodać support tooling bez domyślnego dostępu do treści klienta.
 - [ ] SAAS-009 Dodać break-glass access z jawną zgodą, step-up i pełnym audytem, jeżeli będzie wymagany.
@@ -842,7 +857,7 @@ Wydanie nie jest ukończone, dopóki wszystkie poniższe scenariusze nie przejd�
 - [ ] ACCEPT-022 Reply-all po transferze nie dodaje historycznego ingress address jako odbiorcy w jego nowym mailboxie.
 - [ ] ACCEPT-023 Rolling deploy kończy już uruchomione inbound Workflows oraz zachowuje legacy drafts i scheduled sends.
 - [ ] ACCEPT-024 Archive zamyka historyczny route bez usuwania go, a adres zostaje atomowo przeniesiony albo poddany minimum 180 dni kwarantanny.
-- [ ] ACCEPT-025 Archived mailbox jest read-only, nie odbiera i nie wysyła, lecz jawnie uprawniony użytkownik może czytać, wyszukiwać, pobierać attachmenty i eksportować.
+- [ ] ACCEPT-025 Suspended i archived mailbox są read-only, nie odbierają i nie wysyłają, lecz jawnie uprawniony użytkownik widzi ich stan i może czytać, wyszukiwać, pobierać attachmenty i eksportować; żaden z nich nie może być defaultem.
 - [ ] ACCEPT-026 Mailbox export wymaga `mailbox.export`, działa dla active i archived, ma audyt, integralny manifest oraz nie ujawnia storage keys.
 
 ## 12. Definition of Done
@@ -900,7 +915,7 @@ Etap można oznaczyć `DONE`, gdy wszystkie jego checkboxy spełniają właściw
 
 Etapy powyżej opisują pełne zależności. Implementację warto dostarczać w małych milestone'ach i pionowych slice'ach:
 
-1. Foundation milestone: audit, correlation, backup/restore, recovery-safe identity policy i uporządkowanie `TODO.md`.
+1. Foundation milestone: domknąć pozostałe bramy bieżącego etapu 1, kolejno SAFE-006 jako zależność operation-contract, SAFE-002 DoD, SAFE-003, a następnie SAFE-005, SAFE-007-011, SAFE-013 i SAFE-015; ukończone SAFE-001, SAFE-004, SAFE-012 i SAFE-014 pozostają baseline, nie nowym zakresem.
 2. Migration milestone: organization bootstrap, domain ownership, role catalog, MailboxAssignment i migracja obecnego `primary`, nadal z aktywnym singletonem.
 3. Security milestone: organization/mailbox gates, global-grant cleanup i adversarial tests, nadal bez drugiego mailboxa.
 4. Pierwszy funkcjonalny slice: drugi mailbox tylko dla obecnego ownera, jawny URL, feature flag i switcher.
@@ -913,3 +928,5 @@ Etapy powyżej opisują pełne zależności. Implementację warto dostarczać w 
 11. Offboarding, audit UI, reconciliation i produkcyjny domain readiness.
 
 Foundation i migration milestones mogą nie mieć UI, ale muszą mieć testy, migracje, evidence i obserwowalność. Każdy późniejszy funkcjonalny slice kończy się działającym UI, API, migracją, testami i telemetrią, zamiast pozostawiać długotrwały częściowo aktywny model bezpieczeństwa.
+
+Każdy slice musi utrzymać ukończony układ bounded contexts, runtime roots, dependency rules i lifetimes z [Architecture Migration Guide](docs/architecture-migration-guide.md). Cofnięcie do globalnych bucketów, cross-context adapter imports albo process-global request/Workflow/AI state jest regresją architektury, nawet jeśli test funkcjonalny przechodzi.

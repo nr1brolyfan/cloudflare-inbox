@@ -2,7 +2,7 @@
 
 ## Status And Purpose
 
-This is the normative, compact architecture guide. The migration is complete; these rules now prevent regression. Read it together with `effect-code-style-guide.md`: this document governs architecture and naming, while the style guide governs Effect coding style.
+This is the normative, compact architecture guide. The source-layout, naming, dependency, and runtime-root migration is complete; these rules now prevent architecture regression. This completion does not mean that the organization, domain, stable-address, or multi-mailbox product plan is implemented. Read it together with `effect-code-style-guide.md`: this document governs architecture and naming, while the style guide governs Effect coding style; `PLAN-FIRMOWEJ-POCZTY.md` governs the remaining product work.
 
 ## Target Model
 
