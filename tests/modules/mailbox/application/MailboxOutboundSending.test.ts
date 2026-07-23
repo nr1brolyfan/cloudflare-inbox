@@ -15,13 +15,6 @@ import {
   Version,
 } from "#/mailboxes/core";
 import { MailboxDomainError } from "#/mailboxes/errors";
-import {
-  AiToolExecution,
-  CurrentMailboxOperationProvenance,
-  ExplicitUserAction,
-  SystemExecution,
-} from "#/mailboxes/operation-provenance";
-import type { MailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import {
   MailboxOutboundSending,
@@ -30,6 +23,13 @@ import {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
+import {
+  AiToolExecution,
+  CurrentMailboxOperationProvenance,
+  ExplicitUserAction,
+  SystemExecution,
+} from "#/modules/mailbox/ports/MailboxOperationProvenance";
+import type { MailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
 import type { MailboxOutboundSendingRepositoryService } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";

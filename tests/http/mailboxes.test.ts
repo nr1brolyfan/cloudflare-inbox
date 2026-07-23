@@ -52,7 +52,6 @@ import {
   MailboxNavigationError,
   MailboxNavigationResult,
 } from "#/mailboxes/navigation";
-import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
@@ -100,6 +99,7 @@ import {
   DraftAttachmentReservationSchema,
   DraftAttachmentUploadResult,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import {
   BackendRequestContextMiddlewareLive,
   backendRequestContext,

@@ -28,7 +28,6 @@ import {
 import type { AiToolResult } from "#/ai/tool-protocol";
 import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
 import type { AiToolRunBudget } from "#/ai/tool-run-budget";
-import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
@@ -39,6 +38,7 @@ import type {
   MailboxDraftEditingService,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
+import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 
 const trustedScope = Schema.decodeUnknownSync(CurrentAiToolScopeSchema)({
   mailboxId: "mailbox-trusted",

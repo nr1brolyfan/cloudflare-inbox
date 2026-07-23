@@ -18,15 +18,15 @@ import type {
   MailboxThreadMessage,
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import {
+  AiToolExecution,
+  CurrentMailboxOperationProvenance,
+} from "#/modules/mailbox/ports/MailboxOperationProvenance";
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
 import { MailboxId, OperationId } from "../mailboxes/core";
 import type { MailAddress } from "../mailboxes/core";
-import {
-  AiToolExecution,
-  CurrentMailboxOperationProvenance,
-} from "../mailboxes/operation-provenance";
 import {
   MailCreateDraftArguments,
   MailCreateDraftSuccess,

@@ -31,6 +31,10 @@ import type { MailboxOutboundDeliveryReadingError } from "#/modules/mailbox/appl
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type { MailboxOutboundSendingError } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
+import {
+  CurrentMailboxOperationProvenance,
+  ExplicitUserAction,
+} from "#/modules/mailbox/ports/MailboxOperationProvenance";
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
@@ -45,10 +49,6 @@ import { InboundReplay } from "../mailboxes/inbound";
 import { InboundReplayAuthorization } from "../mailboxes/inbound-replay-authorization-live";
 import type { MailboxNavigationError } from "../mailboxes/navigation";
 import { MailboxNavigation } from "../mailboxes/navigation";
-import {
-  CurrentMailboxOperationProvenance,
-  ExplicitUserAction,
-} from "../mailboxes/operation-provenance";
 import { BackendHttpApi } from "./api";
 
 const internalError = () =>

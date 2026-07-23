@@ -9,7 +9,7 @@ import {
   OperationId,
   OutboundDeliveryId,
   Version,
-} from "./core";
+} from "#/mailboxes/core";
 
 const ExplicitUserActionResource = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Draft"), draftId: DraftId }),
@@ -60,7 +60,7 @@ export type MailboxOperationProvenance = Schema.Schema.Type<
 >;
 
 /** Trusted execution origin supplied only by application boundaries. */
-export const CurrentMailboxOperationProvenance =
-  Context.Service<MailboxOperationProvenance>(
-    "cloudflare-inbox/CurrentMailboxOperationProvenance"
-  );
+export class CurrentMailboxOperationProvenance extends Context.Service<
+  CurrentMailboxOperationProvenance,
+  MailboxOperationProvenance
+>()("cloudflare-inbox/CurrentMailboxOperationProvenance") {}

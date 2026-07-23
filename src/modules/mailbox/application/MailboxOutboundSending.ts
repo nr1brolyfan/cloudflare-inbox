@@ -18,11 +18,11 @@ import {
 } from "#/mailboxes/core";
 import { MailboxDomainError } from "#/mailboxes/errors";
 import type { MailboxRepositoryError } from "#/mailboxes/errors";
-import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 import {
   OutboundDeliverySchema,
   ScheduleOutboundResult,
 } from "#/mailboxes/outbound";
+import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import type { MailboxSenderIdentityError } from "#/modules/mailbox/ports/MailboxSenderIdentity";
