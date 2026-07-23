@@ -11,10 +11,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { PasskeyEnrollmentTransaction } from "#/modules/account-security/ports/PasskeyEnrollmentTransaction";
-import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
+import type { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { RequestCorrelation } from "#/shared/RequestCorrelation";
 
 import type { AccountSecurityCommitState } from "./AccountSecurityCommitState";
 import { RecoveryCodeText } from "./RecoveryCodeAdministration";
@@ -120,14 +120,14 @@ export interface PasskeyEnrollmentShape {
   ) => Effect.Effect<
     Schema.Schema.Type<typeof StartedPasskeyEnrollment>,
     PasskeyEnrollmentError,
-    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
+    AuthPermission.CurrentPrincipal | CurrentRequestAuth | RequestCorrelation
   >;
   readonly finish: (
     command: Schema.Schema.Type<typeof FinishPasskeyEnrollmentCommand>
   ) => Effect.Effect<
     PasskeyEnrollmentResult,
     PasskeyEnrollmentError,
-    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
+    AuthPermission.CurrentPrincipal | CurrentRequestAuth | RequestCorrelation
   >;
 }
 

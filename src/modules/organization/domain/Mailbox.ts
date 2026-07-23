@@ -2,8 +2,8 @@
 import { UserIdSchema } from "@effect-auth/core/Identifiers";
 import * as Schema from "effect/Schema";
 
-import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
-import { UnixMillis } from "#/shared/Temporal";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 export const MailboxDisplayName = Schema.Trim.pipe(
   Schema.check(

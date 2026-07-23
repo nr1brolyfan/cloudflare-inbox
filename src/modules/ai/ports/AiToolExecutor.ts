@@ -4,7 +4,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type {
   MailboxDraftEditingError,
@@ -28,6 +27,7 @@ import {
   AiToolExecution,
   CurrentMailboxOperationProvenance,
 } from "#/modules/mailbox/ports/MailboxOperationProvenance";
+import type { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 
 import { AiToolRunBudget } from "../application/AiToolRunBudget";

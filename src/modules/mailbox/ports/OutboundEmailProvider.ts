@@ -4,7 +4,6 @@ import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   ContentId,
   FileName,
@@ -15,6 +14,7 @@ import {
   OutboundProviderMessageId,
   outboundMaxRecipientCount,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailAddress } from "#/shared/MailAddress";
 import type { UnixMillis } from "#/shared/Temporal";
 
 export class DeliveryIndeterminateError extends Data.TaggedError(

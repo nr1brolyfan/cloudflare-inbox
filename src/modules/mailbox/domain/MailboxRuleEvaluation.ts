@@ -4,14 +4,9 @@ import * as Order from "effect/Order";
 import * as Schema from "effect/Schema";
 
 import {
-  EmailAddress,
-  normalizeEmailAddressDomain,
-} from "#/modules/address-routing/domain/EmailAddress";
-import {
   MailboxId,
   MessageSubject,
   RuleId,
-  Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import type {
   Rule,
@@ -24,6 +19,11 @@ import {
   RuleActionIndex,
   RuleSchema,
 } from "#/modules/mailbox/domain/MailboxRule";
+import {
+  EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/shared/EmailAddress";
+import { Version } from "#/shared/Temporal";
 
 export class RuleEvaluationError extends Data.TaggedError(
   "RuleEvaluationError"

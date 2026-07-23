@@ -21,10 +21,10 @@ import { describe, expect, it } from "vitest";
 
 import { RecoveryCodeAdministrationD1Layer } from "#/modules/account-security/adapters/d1/RecoveryCodeAdministrationD1";
 import { RecoveryCodeAdministration } from "#/modules/account-security/application/RecoveryCodeAdministration";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
 
 import {
   applyControlPlaneMigrations,

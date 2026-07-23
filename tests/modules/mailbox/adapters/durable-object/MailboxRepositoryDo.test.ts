@@ -20,8 +20,8 @@ import { CreateDraftInput } from "#/modules/mailbox/domain/MailboxDraft";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
+import { MailboxRegistry } from "#/modules/mailbox/ports/MailboxRegistry";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
-import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 
 const unusedRpc = () => Effect.die(new Error("RPC is unused"));
 

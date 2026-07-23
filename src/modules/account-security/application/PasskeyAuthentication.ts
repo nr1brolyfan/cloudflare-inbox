@@ -29,11 +29,11 @@ import {
   CONTROL_PLANE_STEP_UP_POLICY,
   StepUpVerifiedAt,
 } from "#/modules/account-security/domain/StepUpPolicy";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
-import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { PasskeyAuthenticationIdentityStore } from "#/modules/account-security/ports/PasskeyAuthenticationIdentityStore";
 import { PasskeyRuntimeConfig } from "#/modules/account-security/ports/PasskeyRuntimeConfig";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 
 export const StartPasskeySignInCommand = Schema.Struct({});
 export const FinishPasskeySignInCommand = Schema.Struct({

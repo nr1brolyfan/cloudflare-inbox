@@ -7,7 +7,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   DeliveryIndeterminateError,
   DeliveryRejectedError,
@@ -20,6 +19,7 @@ import type {
   OutboundEmailAttachment,
   OutboundEmailMessage,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";
+import type { MailAddress } from "#/shared/MailAddress";
 
 export interface MailboxEmailSendClientService {
   readonly send: (

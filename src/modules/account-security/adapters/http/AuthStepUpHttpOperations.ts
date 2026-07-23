@@ -28,8 +28,8 @@ import { RequestSessionAuthenticator } from "#/modules/account-security/adapters
 import { PasskeyAuthentication } from "#/modules/account-security/application/PasskeyAuthentication";
 import type { PasskeyAuthenticationError } from "#/modules/account-security/application/PasskeyAuthentication";
 import { StepUpVerifiedAt } from "#/modules/account-security/domain/StepUpPolicy";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
 
 import { ApplicationAuthHttpApi } from "./AccountSecurityAuthHttpApi";
 

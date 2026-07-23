@@ -8,7 +8,7 @@ import type { CurrentPrincipal } from "@effect-auth/core/Permission";
 import type { CurrentActor, CurrentSession } from "@effect-auth/core/Sessions";
 import { HttpApiMiddleware } from "effect/unstable/httpapi";
 
-import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import type { CurrentRequestAuth } from "#/shared/RequestAuth";
 
 /** Stable authenticated-request middleware contract shared with other APIs. */
 export class CurrentRequestAuthMiddleware extends HttpApiMiddleware.Service<

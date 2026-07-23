@@ -8,7 +8,6 @@ import {
   CONTROL_PLANE_STEP_UP_POLICY,
 } from "#/modules/account-security/domain/StepUpPolicy";
 import type { SensitiveOperationEvidenceMethod } from "#/modules/account-security/domain/StepUpPolicy";
-import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import {
   controlPlaneDatabaseNow as databaseNow,
@@ -18,6 +17,7 @@ import {
   transactionalSessionPredicate as platformTransactionalSessionPredicate,
 } from "#/platform/control-plane-d1/RequestAuthGuard";
 import type { GuardedRequestAuth } from "#/platform/control-plane-d1/RequestAuthGuard";
+import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 
 const evidenceSqlByMethod: Readonly<
   Record<SensitiveOperationEvidenceMethod, SQL<boolean>>

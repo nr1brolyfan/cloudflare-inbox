@@ -6,7 +6,7 @@ import {
   EmailAddress,
   NormalizedEmailAddress,
   normalizeEmailAddressDomain,
-} from "#/modules/address-routing/domain/EmailAddress";
+} from "#/shared/EmailAddress";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,

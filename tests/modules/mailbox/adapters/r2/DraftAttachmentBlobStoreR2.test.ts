@@ -9,7 +9,7 @@ import type {
 } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import {
   DraftAttachmentBlobRuntime,
-  DraftAttachmentBlobStoreR2AdapterLayer,
+  DraftAttachmentBlobStoreR2Layer,
   DraftAttachmentR2Client,
 } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { DraftAttachmentReservationSchema } from "#/modules/mailbox/domain/MailboxDraftAttachment";
@@ -45,7 +45,7 @@ const runStore = (client: DraftAttachmentR2ClientService) =>
         store.store({ content: new Uint8Array([1, 2, 3]), reservation })
       ),
       Effect.provide(
-        DraftAttachmentBlobStoreR2AdapterLayer.pipe(
+        DraftAttachmentBlobStoreR2Layer.pipe(
           Layer.provide(
             Layer.merge(
               Layer.succeed(

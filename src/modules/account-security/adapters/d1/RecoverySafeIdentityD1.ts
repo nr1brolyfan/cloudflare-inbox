@@ -8,9 +8,9 @@ import { authUserIdentity } from "#/auth/schema/modules/core";
 import { externalRecoveryAddressComparisonKey } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import { RecoverySafeIdentityRejected } from "#/modules/account-security/domain/RecoverySafeIdentityError";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { mailboxAddressLookupStatement } from "#/modules/address-routing/integration/AddressRoutingD1Statements";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
 

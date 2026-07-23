@@ -11,7 +11,7 @@ import {
   MailboxDoNamespace,
 } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { DirectoryRpcRequest } from "#/modules/mailbox/ports/MailboxDoProtocol";
-import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
+import { MailboxRegistry } from "#/modules/mailbox/ports/MailboxRegistry";
 
 const request = Schema.decodeUnknownSync(DirectoryRpcRequest)({
   _tag: "ListFolders",

@@ -40,7 +40,6 @@ import {
   PasskeyAuthentication,
   PasskeyAuthenticationError,
 } from "#/modules/account-security/application/PasskeyAuthentication";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import {
   PasskeyRuntimeConfig,
   PasskeyRuntimeConfigSchema,
@@ -50,6 +49,7 @@ import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
 
 import {
   applyControlPlaneMigrations,

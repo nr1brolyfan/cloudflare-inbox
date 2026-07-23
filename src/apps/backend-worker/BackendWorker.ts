@@ -21,8 +21,6 @@ import {
 } from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
 import { RecoverySafeIdentityConfig } from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
 import { DevEmailConfig } from "#/modules/account-security/adapters/http/DevEmailHttpHandlers";
-import { handleCloudflareEmailRoutingMessage } from "#/modules/address-routing/adapters/email/CloudflareEmailRouting";
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
 import {
   WorkersAiClientLayer,
@@ -55,7 +53,6 @@ import {
   MailboxInboundEmailIngress,
   MailboxInboundEmailIngressRuntimeSystemLayer,
 } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
-import { MailboxAdministrationConfig } from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
 import {
   EmailRoutingEventSource,
   EmailRoutingEventSourceCloudflareLayer,
@@ -84,11 +81,14 @@ import {
 import {
   backendRequestContext,
   backendRequestContextAnnotations,
+  CurrentBackendRequestContext,
 } from "#/platform/observability/BackendRequestContext";
-import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 import { BackendApplicationLayer } from "./BackendApplicationLayer";
 import { BackendHealthBindings } from "./BackendHealthLayer";
+import { handleCloudflareEmailRoutingMessage } from "./CloudflareEmailRoutingIntegration";
+import { MailboxAdministrationConfig } from "./MailboxAdministrationD1Integration";
 
 const r2AttachmentObject = (object: {
   readonly checksums: { readonly sha256?: ArrayBuffer };

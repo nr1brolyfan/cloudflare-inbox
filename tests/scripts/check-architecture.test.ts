@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  checkArchitectureCycles,
   checkArchitectureImports,
   checkArchitecturePath,
 } from "../../scripts/check-architecture";
@@ -50,7 +51,8 @@ describe("architecture policy", () => {
         'import { Policy } from "../../authorization/application/Policy";'
       )
     ).toStrictEqual([
-      "mailbox must depend on its authorization port, not the authorization context",
+      "context dependency is not an approved one-way edge: mailbox -> authorization",
+      "cross-context dependencies must target public contracts, domain models, ports or integration modules",
     ]);
   });
 
@@ -61,6 +63,7 @@ describe("architecture policy", () => {
         'import { address } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";'
       )
     ).toStrictEqual([
+      "cross-context dependencies must target public contracts, domain models, ports or integration modules",
       "D1 adapters must use cross-context integration contracts, not concrete adapters or schemas",
     ]);
   });
@@ -90,6 +93,7 @@ describe("architecture policy", () => {
         'import { Client } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";'
       )
     ).toStrictEqual([
+      "cross-context dependencies must target public contracts, domain models, ports or integration modules",
       "adapters must not import another context's adapters or schemas",
     ]);
   });
@@ -101,7 +105,38 @@ describe("architecture policy", () => {
         'import { OrganizationLayer } from "#/modules/organization/layers/OrganizationLayer";'
       )
     ).toStrictEqual([
+      "context dependency is not an approved one-way edge: mailbox -> organization",
+      "cross-context dependencies must target public contracts, domain models, ports or integration modules",
       "context layers must not select another context's concrete layers",
     ]);
+  });
+
+  it("rejects unapproved cross-context application imports", () => {
+    expect(
+      checkArchitectureImports(
+        "src/modules/mailbox/adapters/http/MailboxHttpHandlers.ts",
+        'import { Navigation } from "#/modules/organization/application/MailboxNavigation";'
+      )
+    ).toStrictEqual([
+      "context dependency is not an approved one-way edge: mailbox -> organization",
+      "cross-context dependencies must target public contracts, domain models, ports or integration modules",
+    ]);
+  });
+
+  it("detects context-level strongly connected components", () => {
+    expect(
+      checkArchitectureCycles([
+        {
+          file: "src/modules/mailbox/ports/Example.ts",
+          source:
+            'import type { Organization } from "#/modules/organization/domain/Mailbox";',
+        },
+        {
+          file: "src/modules/organization/ports/Example.ts",
+          source:
+            'import type { Mailbox } from "#/modules/mailbox/domain/Mailbox";',
+        },
+      ])
+    ).toStrictEqual(["context dependency cycle: mailbox <-> organization"]);
   });
 });

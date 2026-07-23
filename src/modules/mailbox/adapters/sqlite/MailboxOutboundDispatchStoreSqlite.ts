@@ -3,7 +3,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
 import {
   attachment,
@@ -17,6 +16,7 @@ import {
   OutboundDispatchSnapshotError,
   OutboundDispatchSnapshotSchema,
 } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
+import { MailAddress } from "#/shared/MailAddress";
 
 const AddressList = Schema.Array(MailAddress);
 

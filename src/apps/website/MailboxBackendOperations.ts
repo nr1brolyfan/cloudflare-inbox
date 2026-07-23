@@ -5,8 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { MailboxPublicError } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
-import { MailboxPublicErrorSchema } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
+import type { MailboxPublicError } from "#/apps/backend-worker/BackendMailboxHttpApi";
+import { MailboxPublicErrorSchema } from "#/apps/backend-worker/BackendMailboxHttpApi";
 import type {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,

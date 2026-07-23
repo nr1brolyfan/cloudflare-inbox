@@ -13,13 +13,13 @@ import {
 import { ExternalRecoveryIdentityAddress } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import {
-  EmailAddress,
-  normalizeEmailAddressDomain,
-} from "#/modules/address-routing/domain/EmailAddress";
-import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import {
+  EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/shared/EmailAddress";
 
 import {
   applyControlPlaneMigrations,

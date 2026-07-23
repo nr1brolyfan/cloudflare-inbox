@@ -4,7 +4,6 @@ import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   AttachmentId,
   ByteSize,
@@ -18,6 +17,7 @@ import {
   Sha256Digest,
 } from "#/modules/mailbox/domain/Mailbox";
 import { outboundMaxRecipientCount } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailAddress } from "#/shared/MailAddress";
 
 export class OutboundDraftAttachmentLocation extends Schema.Class<OutboundDraftAttachmentLocation>(
   "cloudflare-inbox/OutboundDraftAttachmentLocation"

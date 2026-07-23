@@ -1,10 +1,10 @@
 import * as Schema from "effect/Schema";
 
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
-import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { EmailAddress } from "#/shared/EmailAddress";
+import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 const MailboxAddressResourceId = Schema.Trimmed.pipe(
   Schema.check(Schema.isLengthBetween(1, 128))

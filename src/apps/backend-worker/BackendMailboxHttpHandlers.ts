@@ -51,7 +51,7 @@ import { MailboxAdministration } from "#/modules/organization/application/Mailbo
 import type { MailboxNavigationError } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
 
-import { MailboxHttpApi } from "./MailboxHttpApi";
+import { MailboxHttpApi } from "./BackendMailboxHttpApi";
 
 const internalError = () =>
   new AuthInternalError({

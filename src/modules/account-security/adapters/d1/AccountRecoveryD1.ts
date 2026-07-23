@@ -40,10 +40,10 @@ import {
 import { AccountRecoveryDelivery } from "#/modules/account-security/ports/AccountRecoveryDelivery";
 import { AccountRecoveryTransaction } from "#/modules/account-security/ports/AccountRecoveryTransaction";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
 

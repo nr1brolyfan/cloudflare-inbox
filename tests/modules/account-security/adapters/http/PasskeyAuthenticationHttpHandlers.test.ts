@@ -29,9 +29,11 @@ import {
 } from "#/modules/account-security/application/PasskeyAuthentication";
 import type { PasskeyAuthenticationService } from "#/modules/account-security/application/PasskeyAuthentication";
 import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
-import { backendRequestContext } from "#/platform/observability/BackendRequestContext";
+import {
+  backendRequestContext,
+  CurrentBackendRequestContext,
+} from "#/platform/observability/BackendRequestContext";
 import { BackendRequestContextMiddlewareLayer } from "#/platform/observability/BackendRequestContextMiddlewareLayer";
-import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
 
 const publicOrigin = "https://inbox.test";
 const TestApi = HttpApi.make("AuthApi").add(PasskeyAuthenticationGroup);

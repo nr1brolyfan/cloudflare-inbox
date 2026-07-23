@@ -31,12 +31,12 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
+import { MailboxGroup } from "#/apps/backend-worker/BackendMailboxHttpApi";
+import { MailboxHttpHandlersLayer } from "#/apps/backend-worker/BackendMailboxHttpHandlers";
 import {
   CurrentRequestAuthMiddlewareLayer,
   RequestSessionAuthenticatorEffectAuthLayer,
 } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
-import { MailboxGroup } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
-import { MailboxHttpHandlersLayer } from "#/modules/mailbox/adapters/http/MailboxHttpHandlers";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import {
@@ -105,9 +105,11 @@ import {
 import type { MailboxNavigationService } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
-import { backendRequestContext } from "#/platform/observability/BackendRequestContext";
+import {
+  backendRequestContext,
+  CurrentBackendRequestContext,
+} from "#/platform/observability/BackendRequestContext";
 import { BackendRequestContextMiddlewareLayer } from "#/platform/observability/BackendRequestContextMiddlewareLayer";
-import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
 
 const publicOrigin = "https://inbox.test";
 const MailboxTestApi = HttpApi.make("AuthApi").add(MailboxGroup);

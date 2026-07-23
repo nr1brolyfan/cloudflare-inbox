@@ -16,10 +16,15 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import {
+  MailboxAdministrationConfig,
+  MailboxAdministrationD1Layer,
+  MailboxAdministrationOwnerEmail,
+  MailboxAdministrationRuntime,
+} from "#/apps/backend-worker/MailboxAdministrationD1Integration";
 import { CONTROL_PLANE_STEP_UP_POLICY } from "#/modules/account-security/domain/StepUpPolicy";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
+import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
 import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
 import { MailboxAuthorizationApplicationLayer } from "#/modules/authorization/application/MailboxAuthorization";
@@ -40,23 +45,18 @@ import {
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
-  MailboxAdministrationConfig,
-  MailboxAdministrationD1Layer,
-  MailboxAdministrationOwnerEmail,
-  MailboxAdministrationRuntime,
-} from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
-import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import {
-  BackendRequestContext,
-  CurrentBackendRequestContext,
-} from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
+import {
+  CurrentRequestCorrelation,
+  RequestCorrelation,
+} from "#/shared/RequestCorrelation";
 
 import {
   applyControlPlaneMigrations,
@@ -71,7 +71,7 @@ const recentPasswordEvent = {
   verifiedAt: UnixMillis(stepUpNow - 100),
   version: 1 as const,
 };
-const requestContext = Schema.decodeUnknownSync(BackendRequestContext)({
+const requestContext = Schema.decodeUnknownSync(RequestCorrelation)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
 });
@@ -260,7 +260,7 @@ const provideRequestAuth = <A, E, R>(
     A,
     E,
     | AuthPermission.CurrentPrincipal
-    | BackendRequestContext
+    | RequestCorrelation
     | CurrentRequestAuth
     | R
   >,
@@ -277,7 +277,7 @@ const provideRequestAuth = <A, E, R>(
         AuthPermission.PermissionSubject.user(validated.actor.userId)
       )
     ),
-    Effect.provideService(CurrentBackendRequestContext, requestContext)
+    Effect.provideService(CurrentRequestCorrelation, requestContext)
   );
 
 const bootstrap = (

@@ -5,15 +5,11 @@ import {
   EmailAddress,
   NormalizedEmailAddress,
   normalizeEmailAddressDomain,
-} from "#/modules/address-routing/domain/EmailAddress";
-import { Version } from "#/modules/mailbox/domain/Mailbox";
-import { UnixMillis } from "#/shared/Temporal";
+} from "#/shared/EmailAddress";
+import { ResourceId } from "#/shared/Resource";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
-const RecoveryResourceId = Schema.Trimmed.pipe(
-  Schema.check(Schema.isLengthBetween(1, 128))
-);
-
-export const ExternalRecoveryIdentityId = RecoveryResourceId.pipe(
+export const ExternalRecoveryIdentityId = ResourceId.pipe(
   Schema.brand("cloudflare-inbox/ExternalRecoveryIdentityId")
 );
 export type ExternalRecoveryIdentityId = Schema.Schema.Type<

@@ -6,7 +6,7 @@ import {
   EvaluateRulesInput,
   evaluateAsyncRuleCandidates,
   evaluateRules,
-} from "#/modules/automation/application/RuleEvaluation";
+} from "#/modules/mailbox/domain/MailboxRuleEvaluation";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,

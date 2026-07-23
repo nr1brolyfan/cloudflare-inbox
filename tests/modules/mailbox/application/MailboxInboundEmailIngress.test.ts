@@ -3,7 +3,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { InboundEmailRejected } from "#/modules/address-routing/ports/InboundMailboxResolver";
 import type {
   InboundRawMessageR2WriteClientService,
   InboundRawMessageStoreRuntimeService,
@@ -20,6 +19,7 @@ import {
 } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
+import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
 import { InboundWorkflowStarter } from "#/modules/mailbox/ports/InboundWorkflowStarter";
 import type { InboundWorkflowStarterService } from "#/modules/mailbox/ports/InboundWorkflowStarter";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";

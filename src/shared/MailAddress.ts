@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 export class MailAddress extends Schema.Class<MailAddress>(
   "cloudflare-inbox/MailAddress"

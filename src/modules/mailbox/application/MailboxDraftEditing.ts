@@ -6,7 +6,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   DraftId,
   MailboxId,
@@ -21,6 +20,7 @@ import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorizati
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 

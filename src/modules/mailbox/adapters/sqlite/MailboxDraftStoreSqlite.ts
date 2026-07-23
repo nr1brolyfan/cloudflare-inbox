@@ -5,7 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   Cursor,
   DraftId,
@@ -25,6 +24,7 @@ import type {
 } from "#/modules/mailbox/domain/MailboxDraft";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { MailAddress } from "#/shared/MailAddress";
 import { UnixMillis } from "#/shared/Temporal";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";

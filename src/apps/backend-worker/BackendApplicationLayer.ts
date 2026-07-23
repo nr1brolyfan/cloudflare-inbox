@@ -9,7 +9,7 @@ import {
 } from "#/modules/account-security/layers/AccountSecurityHttpLayer";
 import { AccountSecurityLayer } from "#/modules/account-security/layers/AccountSecurityLayer";
 import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
-import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
+import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
 import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
 import { MailboxAuthorizationLayer } from "#/modules/authorization/layers/MailboxAuthorizationLayer";
@@ -19,9 +19,7 @@ import {
   MailboxDoClientLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { MailboxDirectoryRepositoryDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
-import { MailboxHttpLayer } from "#/modules/mailbox/layers/MailboxHttpLayer";
 import { MailboxRegistryD1Layer } from "#/modules/organization/adapters/d1/MailboxRegistryD1";
-import { OrganizationLayer } from "#/modules/organization/layers/OrganizationLayer";
 import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { BackendRequestContextMiddlewareLayer } from "#/platform/observability/BackendRequestContextMiddlewareLayer";
@@ -29,6 +27,8 @@ import { BackendHealthHttpHandlersLayer } from "#/platform/observability/http/Ba
 
 import { BackendHealthLayer } from "./BackendHealthLayer";
 import { BackendHttpApi } from "./BackendHttpApi";
+import { MailboxHttpLayer } from "./BackendMailboxHttpLayer";
+import { OrganizationLayer } from "./OrganizationApplicationLayer";
 
 /** Builds the one Backend API from closed bounded-context HTTP graphs. */
 const AdministrativeAuditApplicationRuntimeLayer =

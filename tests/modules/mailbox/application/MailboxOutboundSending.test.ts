@@ -5,7 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   MailboxOutboundSending,
   SendMailboxDraftCommand,
@@ -29,6 +28,7 @@ import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/Mailbo
 import type { MailboxOutboundSendingRepositoryService } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import type { MailboxSenderIdentityService } from "#/modules/mailbox/ports/MailboxSenderIdentity";
+import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 
 const scheduledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({

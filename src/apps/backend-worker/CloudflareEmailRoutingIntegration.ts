@@ -3,15 +3,13 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
-import {
-  InboundMailboxResolver,
-  InboundEmailRejected,
-} from "#/modules/address-routing/ports/InboundMailboxResolver";
+import { InboundMailboxResolver } from "#/modules/address-routing/ports/InboundMailboxResolver";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { ByteSize } from "#/modules/mailbox/domain/Mailbox";
 import type { ReceiveInboundEmailInput as ReceiveInboundEmailInputType } from "#/modules/mailbox/domain/MailboxInbound";
 import { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
+import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 type ForwardableEmailMessage = CloudflareWorkers.ForwardableEmailMessage;
 const emptyEnvelope: Partial<ReceiveInboundEmailInputType> = {};

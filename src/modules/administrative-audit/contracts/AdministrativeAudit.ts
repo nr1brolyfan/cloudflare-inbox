@@ -6,18 +6,18 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { ExternalRecoveryIdentityId } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { AdministrativeAuditRuntime } from "#/modules/administrative-audit/ports/AdministrativeAuditRuntime";
-import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
-import {
-  BackendCorrelationId,
-  BackendRequestId,
-  CurrentBackendRequestContext,
-} from "#/shared/BackendRequestContext";
-import type { BackendRequestContext } from "#/shared/BackendRequestContext";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { AdministrativeOperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
+import {
+  CorrelationId,
+  CurrentRequestCorrelation,
+  RequestId,
+} from "#/shared/RequestCorrelation";
+import type { RequestCorrelation } from "#/shared/RequestCorrelation";
+import { ResourceId } from "#/shared/Resource";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import { AdministrativeAuditError } from "./AdministrativeAuditError";
 
@@ -69,7 +69,7 @@ const AdministrativeAuditTenantScope = Schema.Union([
 const AdministrativeAuditResource = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("ExternalRecoveryIdentity"),
-    id: ExternalRecoveryIdentityId,
+    id: ResourceId,
   }),
   Schema.Struct({
     _tag: Schema.Literal("Mailbox"),
@@ -105,8 +105,8 @@ const AdministrativeAuditChange = Schema.Union([
 ]);
 
 const AdministrativeAuditRequestContext = Schema.Struct({
-  correlationId: BackendCorrelationId,
-  requestId: BackendRequestId,
+  correlationId: CorrelationId,
+  requestId: RequestId,
 });
 
 export class AdministrativeAuditEvent extends Schema.Class<AdministrativeAuditEvent>(
@@ -178,21 +178,21 @@ export const AdministrativeAuditEventSchema = AdministrativeAuditEvent.check(
 export const PrepareAdministrativeAuditEvent = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("ExternalRecoveryIdentityEnrolled"),
-    identityId: ExternalRecoveryIdentityId,
+    identityId: ResourceId,
     occurredAt: UnixMillis,
     operationId: AdministrativeOperationId,
   }),
   Schema.Struct({
     _tag: Schema.Literal("ExternalRecoveryIdentityRevoked"),
     beforeVersion: Version,
-    identityId: ExternalRecoveryIdentityId,
+    identityId: ResourceId,
     occurredAt: UnixMillis,
     operationId: AdministrativeOperationId,
   }),
   Schema.Struct({
     _tag: Schema.Literal("ExternalRecoveryIdentityVerified"),
     beforeVersion: Version,
-    identityId: ExternalRecoveryIdentityId,
+    identityId: ResourceId,
     occurredAt: UnixMillis,
     operationId: AdministrativeOperationId,
   }),
@@ -220,7 +220,7 @@ export interface AdministrativeAuditShape {
   ) => Effect.Effect<
     AdministrativeAuditEvent,
     AdministrativeAuditError,
-    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
+    AuthPermission.CurrentPrincipal | CurrentRequestAuth | RequestCorrelation
   >;
 }
 
@@ -321,7 +321,7 @@ export class AdministrativeAudit extends Context.Service<
         Effect.gen(function* () {
           const principal = yield* AuthPermission.CurrentPrincipal;
           const requestAuth = yield* CurrentRequestAuth;
-          const requestContext = yield* CurrentBackendRequestContext;
+          const requestContext = yield* CurrentRequestCorrelation;
           if (
             principal.type !== "user" ||
             principal.id !== requestAuth.validated.actor.userId

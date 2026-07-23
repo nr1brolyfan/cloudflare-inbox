@@ -6,8 +6,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { RecoveryCodeAdministrationTransaction } from "#/modules/account-security/ports/RecoveryCodeAdministrationTransaction";
+import type { CurrentRequestAuth } from "#/shared/RequestAuth";
 import { UnixMillis } from "#/shared/Temporal";
 
 import type { AccountSecurityCommitState } from "./AccountSecurityCommitState";

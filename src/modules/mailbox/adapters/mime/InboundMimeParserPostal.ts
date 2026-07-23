@@ -10,7 +10,6 @@ import type {
   Mailbox as PostalMailbox,
 } from "postal-mime";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   ContentId,
   FileName,
@@ -30,6 +29,7 @@ import {
   InboundMimeParser,
   MimeParseError,
 } from "#/modules/mailbox/ports/InboundMimeParser";
+import { MailAddress } from "#/shared/MailAddress";
 import { UnixMillis } from "#/shared/Temporal";
 
 export interface InboundMimeParserConfig {

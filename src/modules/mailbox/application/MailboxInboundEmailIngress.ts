@@ -4,10 +4,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { InboundEmailRejected } from "#/modules/address-routing/ports/InboundMailboxResolver";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { InboundIngestId } from "#/modules/mailbox/domain/Mailbox";
 import type { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
+import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
 import { InboundRawMessageStore } from "#/modules/mailbox/ports/InboundRawMessageStore";
 import { InboundWorkflowStarter } from "#/modules/mailbox/ports/InboundWorkflowStarter";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";

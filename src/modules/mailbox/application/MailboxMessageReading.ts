@@ -6,7 +6,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   AttachmentId,
   ByteSize,
@@ -30,6 +29,7 @@ import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorizati
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import { MailAddress } from "#/shared/MailAddress";
 import { UnixMillis } from "#/shared/Temporal";
 
 export const MailboxMessageView = Schema.Union([

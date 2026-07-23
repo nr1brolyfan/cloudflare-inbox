@@ -6,10 +6,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { PasskeyCredentialAdministrationTransaction } from "#/modules/account-security/ports/PasskeyCredentialAdministrationTransaction";
-import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
+import type { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { RequestCorrelation } from "#/shared/RequestCorrelation";
 import { UnixMillis } from "#/shared/Temporal";
 
 import type { AccountSecurityCommitState } from "./AccountSecurityCommitState";
@@ -77,8 +77,8 @@ export class PasskeyCredentialAdministrationError extends Data.TaggedError(
 
 type RequestEnvironment =
   | AuthPermission.CurrentPrincipal
-  | BackendRequestContext
-  | CurrentRequestAuth;
+  | CurrentRequestAuth
+  | RequestCorrelation;
 
 export interface PasskeyCredentialAdministrationShape {
   readonly list: (

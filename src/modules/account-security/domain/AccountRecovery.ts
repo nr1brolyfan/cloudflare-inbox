@@ -4,7 +4,7 @@ import { AuthFlowIdSchema } from "@effect-auth/core/Identifiers";
 import * as Data from "effect/Data";
 import * as Schema from "effect/Schema";
 
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 export const ACCOUNT_RECOVERY_EVIDENCE_POLICY_ID =
   "cloudflare-inbox/external-recovery-link";

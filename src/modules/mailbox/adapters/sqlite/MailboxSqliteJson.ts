@@ -1,6 +1,6 @@
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
+import { MailAddress } from "#/shared/MailAddress";
 
 export const AddressList = Schema.Array(MailAddress);
 export const StringList = Schema.Array(Schema.String);

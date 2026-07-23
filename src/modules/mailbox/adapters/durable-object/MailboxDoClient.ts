@@ -31,8 +31,8 @@ import type {
   MailDataRpcRequest as MailDataRpcRequestType,
   MailDataRpcResponse as MailDataRpcResponseType,
 } from "#/modules/mailbox/ports/MailboxDoProtocol";
+import { MailboxRegistry } from "#/modules/mailbox/ports/MailboxRegistry";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
-import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 
 export interface MailboxDoStub {
   readonly executeDirectory: (

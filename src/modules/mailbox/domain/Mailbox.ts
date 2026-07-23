@@ -1,9 +1,9 @@
 /* oxlint-disable max-classes-per-file -- Mailbox domain schemas are intentionally consolidated. */
 import * as Schema from "effect/Schema";
 
-const ResourceId = Schema.Trimmed.pipe(
-  Schema.check(Schema.isLengthBetween(1, 128))
-);
+import { ResourceId } from "#/shared/Resource";
+
+export { Version } from "#/shared/Temporal";
 
 export const MailboxId = ResourceId.pipe(
   Schema.brand("cloudflare-inbox/MailboxId")
@@ -79,12 +79,6 @@ const DisplayNameText = Schema.Trim.pipe(
     )
   )
 );
-
-export const Version = Schema.Int.pipe(
-  Schema.check(Schema.isGreaterThanOrEqualTo(1)),
-  Schema.brand("cloudflare-inbox/Version")
-);
-export type Version = Schema.Schema.Type<typeof Version>;
 
 export const ByteSize = Schema.Int.pipe(
   Schema.check(Schema.isGreaterThanOrEqualTo(0)),

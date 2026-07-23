@@ -7,15 +7,13 @@ import { describe, expect, it } from "vitest";
 import {
   handleCloudflareEmailRoutingMessage,
   MailboxInboundEmailIngressUnavailableLayer,
-} from "#/modules/address-routing/adapters/email/CloudflareEmailRouting";
-import {
-  InboundEmailRejected,
-  InboundMailboxResolver,
-} from "#/modules/address-routing/ports/InboundMailboxResolver";
+} from "#/apps/backend-worker/CloudflareEmailRoutingIntegration";
+import { InboundMailboxResolver } from "#/modules/address-routing/ports/InboundMailboxResolver";
 import type { InboundMailboxResolverService } from "#/modules/address-routing/ports/InboundMailboxResolver";
 import type { InboundEmailRoutingMessage } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
 
 type ForwardableEmailMessage = CloudflareWorkers.ForwardableEmailMessage;
 const primaryMailboxId = Schema.decodeUnknownSync(MailboxId)("primary");

@@ -8,12 +8,12 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { ExternalRecoveryIdentitySchema } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
-import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { ExternalRecoveryIdentityTransaction } from "#/modules/account-security/ports/ExternalRecoveryIdentityTransaction";
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
-import { Version } from "#/modules/mailbox/domain/Mailbox";
-import type { BackendRequestContext } from "#/shared/BackendRequestContext";
+import { EmailAddress } from "#/shared/EmailAddress";
 import { AdministrativeOperationId } from "#/shared/Operation";
+import type { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { RequestCorrelation } from "#/shared/RequestCorrelation";
+import { Version } from "#/shared/Temporal";
 
 import type { AccountSecurityCommitState } from "./AccountSecurityCommitState";
 
@@ -69,14 +69,14 @@ export interface ExternalRecoveryIdentityManagementShape {
   ) => Effect.Effect<
     Schema.Schema.Type<typeof ExternalRecoveryIdentitySchema>,
     ExternalRecoveryIdentityManagementError,
-    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
+    AuthPermission.CurrentPrincipal | CurrentRequestAuth | RequestCorrelation
   >;
   readonly verify: (
     command: VerifyExternalRecoveryIdentityCommand
   ) => Effect.Effect<
     Schema.Schema.Type<typeof ExternalRecoveryIdentitySchema>,
     ExternalRecoveryIdentityManagementError,
-    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
+    AuthPermission.CurrentPrincipal | CurrentRequestAuth | RequestCorrelation
   >;
 }
 

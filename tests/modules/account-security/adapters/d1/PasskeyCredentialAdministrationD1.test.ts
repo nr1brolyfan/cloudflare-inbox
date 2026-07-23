@@ -27,14 +27,14 @@ import {
   PasskeyCredentialAdministrationError,
   RevokePasskeyCredentialCommand,
 } from "#/modules/account-security/application/PasskeyCredentialAdministration";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import {
-  BackendRequestContext,
-  CurrentBackendRequestContext,
-} from "#/shared/BackendRequestContext";
+  CurrentRequestCorrelation,
+  RequestCorrelation,
+} from "#/shared/RequestCorrelation";
 
 import {
   applyControlPlaneMigrations,
@@ -44,7 +44,7 @@ import {
 const now = Date.now();
 const operationId = "00000000-0000-4000-8000-000000000040";
 const otherOperationId = "00000000-0000-4000-8000-000000000041";
-const requestContext = Schema.decodeUnknownSync(BackendRequestContext)({
+const requestContext = Schema.decodeUnknownSync(RequestCorrelation)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
 });
@@ -214,7 +214,7 @@ const provideRequestAuth = <A, E, R>(
     A,
     E,
     | AuthPermission.CurrentPrincipal
-    | BackendRequestContext
+    | RequestCorrelation
     | CurrentRequestAuth
     | R
   >,
@@ -234,7 +234,7 @@ const provideRequestAuth = <A, E, R>(
         AuthPermission.PermissionSubject.user(session.actor.userId)
       )
     ),
-    Effect.provideService(CurrentBackendRequestContext, requestContext)
+    Effect.provideService(CurrentRequestCorrelation, requestContext)
   );
 
 const runList = (

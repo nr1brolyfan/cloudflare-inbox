@@ -8,8 +8,7 @@ import {
   MailboxOutboundDeliveryRepositoryDoLayer,
   MailboxOutboundSendingRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
-import { MailboxHttpHandlersLayer } from "#/modules/mailbox/adapters/http/MailboxHttpHandlers";
-import { DraftAttachmentBlobStoreR2Layer } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
+import { DraftAttachmentBlobStoreR2RuntimeLayer } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { InboundAttachmentBlobReaderR2RuntimeLayer } from "#/modules/mailbox/adapters/r2/InboundAttachmentBlobReaderR2";
 import { MailboxOutboundDeliveryReadingClockSystemLayer } from "#/modules/mailbox/adapters/system/MailboxOutboundDeliveryReadingClockSystem";
 import { InboundWorkflowStarterCloudflareLayer } from "#/modules/mailbox/adapters/workflow/InboundWorkflowStarterCloudflare";
@@ -26,6 +25,8 @@ import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/Mailbox
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
+
+import { MailboxHttpHandlersLayer } from "./BackendMailboxHttpHandlers";
 
 const MailboxMessageRepositoryLayer = MailboxMessageRepositoryDoLayer;
 const MailboxDirectoryRepositoryLayer = MailboxDirectoryRepositoryDoLayer;
@@ -66,7 +67,10 @@ const MailboxOutboundDeliveryReadingLayer =
   );
 const MailboxDraftAttachmentsLayer = MailboxDraftAttachments.layerNoDeps.pipe(
   Layer.provide(
-    Layer.mergeAll(MailboxDraftRepositoryLayer, DraftAttachmentBlobStoreR2Layer)
+    Layer.mergeAll(
+      MailboxDraftRepositoryLayer,
+      DraftAttachmentBlobStoreR2RuntimeLayer
+    )
   )
 );
 const MailboxMessageHtmlLayer = MailboxMessageHtmlReading.layerNoDeps.pipe(

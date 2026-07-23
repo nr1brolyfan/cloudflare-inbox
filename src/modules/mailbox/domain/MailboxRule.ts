@@ -1,7 +1,7 @@
 /* oxlint-disable max-classes-per-file -- Persisted rule contracts form one mailbox domain topic. */
 import * as Schema from "effect/Schema";
 
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { EmailAddress } from "#/shared/EmailAddress";
 import { UnixMillis } from "#/shared/Temporal";
 
 import {

@@ -7,8 +7,9 @@ import { PasskeyCredentialManagementGroup } from "#/modules/account-security/ada
 import { PasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http/PasskeyEnrollmentHttpApi";
 import { RecoveryCodeManagementGroup } from "#/modules/account-security/adapters/http/RecoveryCodeManagementHttpApi";
 import { RecoveryPasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http/RecoveryPasskeyEnrollmentHttpApi";
-import { MailboxGroup } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
 import { BackendHealthGroup } from "#/platform/observability/http/BackendHealthHttpApi";
+
+import { MailboxGroup } from "./BackendMailboxHttpApi";
 
 /** The complete private Worker contract. Every route is registered by one builder. */
 export const BackendHttpApi = ApplicationAuthHttpApi.add(

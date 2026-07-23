@@ -1,7 +1,7 @@
 import { eq, sql } from "drizzle-orm";
 
 import { appAdministrativeAuditEvent } from "#/modules/administrative-audit/adapters/d1/AdministrativeAuditSchema";
-import type { AdministrativeAuditEvent } from "#/modules/administrative-audit/application/AdministrativeAudit";
+import type { AdministrativeAuditEvent } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import type { ControlPlaneStatement } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";

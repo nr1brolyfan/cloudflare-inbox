@@ -37,13 +37,13 @@ import {
   sensitiveSessionPredicate,
   transactionalSessionPredicate,
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
-import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { PasskeyCredentialAdministrationTransaction } from "#/modules/account-security/ports/PasskeyCredentialAdministrationTransaction";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 import { UnixMillis } from "#/shared/Temporal";
 
 import {

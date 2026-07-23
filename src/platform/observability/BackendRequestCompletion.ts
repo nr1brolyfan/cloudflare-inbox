@@ -4,13 +4,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import {
-  BackendCorrelationId,
-  BackendRequestId,
-  CloudflareColo,
-  CloudflareRayId,
-} from "#/shared/BackendRequestContext";
-import type { BackendRequestContext } from "#/shared/BackendRequestContext";
+import { CorrelationId, RequestId } from "#/shared/RequestCorrelation";
+
+import { CloudflareColo, CloudflareRayId } from "./BackendRequestContext";
+import type { BackendRequestContext } from "./BackendRequestContext";
 
 export const BackendRequestOutcome = Schema.Literals([
   "succeeded",
@@ -83,12 +80,12 @@ export class BackendRequestCompletedEvent extends Schema.Class<BackendRequestCom
 )({
   cloudflareColo: Schema.optional(CloudflareColo),
   cloudflareRayId: Schema.optional(CloudflareRayId),
-  correlationId: BackendCorrelationId,
+  correlationId: CorrelationId,
   durationMillis: BackendRequestDurationMillis,
   eventName: Schema.Literal("backend.request.completed"),
   method: BackendRequestMethod,
   outcome: BackendRequestOutcome,
-  requestId: BackendRequestId,
+  requestId: RequestId,
   route: BackendRequestRoute,
   schemaVersion: Schema.Literal(1),
   serviceName: Schema.Literal("cloudflare-inbox-backend"),

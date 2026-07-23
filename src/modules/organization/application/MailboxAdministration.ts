@@ -6,14 +6,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
-import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import type { MailboxRecord } from "#/modules/organization/domain/Mailbox";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
-import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
+import type { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { RequestCorrelation } from "#/shared/RequestCorrelation";
+import { Version } from "#/shared/Temporal";
 
 export const BootstrapOwnerMailboxCommand = Schema.Struct({
   displayName: MailboxDisplayName,
@@ -67,14 +68,14 @@ export interface MailboxAdministrationService {
   ) => Effect.Effect<
     MailboxRecord,
     MailboxAdministrationError,
-    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
+    AuthPermission.CurrentPrincipal | CurrentRequestAuth | RequestCorrelation
   >;
   readonly rename: (
     input: RenameMailboxCommand
   ) => Effect.Effect<
     MailboxRecord,
     MailboxAuthorizationError | MailboxAdministrationError,
-    AuthPermission.CurrentPrincipal | BackendRequestContext | CurrentRequestAuth
+    AuthPermission.CurrentPrincipal | CurrentRequestAuth | RequestCorrelation
   >;
 }
 

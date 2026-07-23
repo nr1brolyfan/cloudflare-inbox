@@ -109,7 +109,7 @@ const objectMatches = (
     ([key, value]) => object.customMetadata[key] === value
   );
 
-export const DraftAttachmentBlobStoreR2AdapterLayer = Layer.effect(
+export const DraftAttachmentBlobStoreR2Layer = Layer.effect(
   DraftAttachmentBlobStore,
   Effect.gen(function* () {
     const client = yield* DraftAttachmentR2Client;
@@ -181,7 +181,7 @@ export const DraftAttachmentBlobStoreR2AdapterLayer = Layer.effect(
   })
 );
 
-export const DraftAttachmentBlobStoreR2Layer =
-  DraftAttachmentBlobStoreR2AdapterLayer.pipe(
+export const DraftAttachmentBlobStoreR2RuntimeLayer =
+  DraftAttachmentBlobStoreR2Layer.pipe(
     Layer.provide(DraftAttachmentBlobRuntimeWebCryptoLayer)
   );

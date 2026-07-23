@@ -2,7 +2,7 @@ import { and, eq } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
+import { MailboxRegistry } from "#/modules/mailbox/ports/MailboxRegistry";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { appMailbox } from "./OrganizationSchema";

@@ -35,26 +35,25 @@ import {
   sensitiveSessionPredicate,
   transactionalSessionPredicate,
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
-import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { ExternalRecoveryIdentityChallenge } from "#/modules/account-security/ports/ExternalRecoveryIdentityChallenge";
 import { ExternalRecoveryIdentityDelivery } from "#/modules/account-security/ports/ExternalRecoveryIdentityDelivery";
 import { ExternalRecoveryIdentityTransaction } from "#/modules/account-security/ports/ExternalRecoveryIdentityTransaction";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import {
-  EmailAddress,
-  normalizeEmailAddressDomain,
-} from "#/modules/address-routing/domain/EmailAddress";
 import { mailboxAddressAvailablePredicate } from "#/modules/address-routing/integration/AddressRoutingD1Statements";
-import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
-import type { AdministrativeAuditError } from "#/modules/administrative-audit/application/AdministrativeAuditError";
+import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
+import type { AdministrativeAuditError } from "#/modules/administrative-audit/contracts/AdministrativeAuditError";
 import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
-import { Version } from "#/modules/mailbox/domain/Mailbox";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { UnixMillis } from "#/shared/Temporal";
+import {
+  EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/shared/EmailAddress";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
 

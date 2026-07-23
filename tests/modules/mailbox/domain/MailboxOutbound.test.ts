@@ -2,7 +2,6 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   canTransitionOutbound,
   OutboundDeliverySchema,
@@ -12,6 +11,7 @@ import {
   ScheduleOutboundInput,
   outboundUndoWindowMillis,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailAddress } from "#/shared/MailAddress";
 
 const decodes = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,

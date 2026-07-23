@@ -12,11 +12,11 @@ import {
   backendRequestOutcome,
   backendRequestRoute,
 } from "#/platform/observability/BackendRequestCompletion";
-import { backendRequestContext } from "#/platform/observability/BackendRequestContext";
 import {
-  BackendRequestId,
+  backendRequestContext,
   CurrentBackendRequestContext,
-} from "#/shared/BackendRequestContext";
+} from "#/platform/observability/BackendRequestContext";
+import { RequestId } from "#/shared/RequestCorrelation";
 
 describe("backend request context", () => {
   it("generates independent server-owned request and correlation IDs", () => {
@@ -27,7 +27,7 @@ describe("backend request context", () => {
     expect(first.correlationId).toBe(first.requestId);
     expect(second.correlationId).toBe(second.requestId);
     expect(() =>
-      Schema.decodeUnknownSync(BackendRequestId)("caller-controlled")
+      Schema.decodeUnknownSync(RequestId)("caller-controlled")
     ).toThrow(/caller-controlled/u);
   });
 

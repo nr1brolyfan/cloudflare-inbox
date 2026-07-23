@@ -1,7 +1,6 @@
 /* oxlint-disable max-classes-per-file -- The four static mail tool contracts are intentionally colocated. */
 import * as Schema from "effect/Schema";
 
-import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import {
   Cursor,
   DraftId,
@@ -15,6 +14,7 @@ import {
   ThreadId,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
+import { EmailAddress } from "#/shared/EmailAddress";
 import { UnixMillis } from "#/shared/Temporal";
 
 export const mailSearchDefaultLimit = Schema.decodeUnknownSync(PageSize)(10);

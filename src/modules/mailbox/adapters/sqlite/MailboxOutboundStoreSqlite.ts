@@ -5,7 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import { DraftId, MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
@@ -25,6 +24,7 @@ import type {
   ScheduleOutboundInput,
 } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";

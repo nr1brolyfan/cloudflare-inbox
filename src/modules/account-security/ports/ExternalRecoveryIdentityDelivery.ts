@@ -3,7 +3,7 @@ import type * as Effect from "effect/Effect";
 
 import type { ExternalRecoveryIdentityManagementError } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
 import type { IssuedExternalRecoveryChallenge } from "#/modules/account-security/ports/ExternalRecoveryIdentityChallenge";
-import type { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import type { EmailAddress } from "#/shared/EmailAddress";
 
 export interface ExternalRecoveryIdentityDeliveryShape {
   readonly sendVerification: (input: {

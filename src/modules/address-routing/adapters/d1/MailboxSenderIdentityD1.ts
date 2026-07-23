@@ -4,7 +4,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   MailboxSenderIdentity,
@@ -12,6 +11,7 @@ import {
 } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import { activeOrganizationMailboxPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { MailAddress } from "#/shared/MailAddress";
 
 const senderIdentityError = (
   mailboxId: MailboxId,

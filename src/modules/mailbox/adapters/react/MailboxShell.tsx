@@ -1,4 +1,3 @@
-import type * as Schema from "effect/Schema";
 import {
   Archive,
   Clock3,
@@ -19,16 +18,29 @@ import {
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
-
 import type { MailboxViewSelection } from "./MailboxViewLinks";
 import { mailboxViewHref } from "./MailboxViewLinks";
 
-type MailboxNavigationData = Schema.Codec.Encoded<
-  typeof MailboxNavigationResult
->;
-type NavigationFolder = MailboxNavigationData["folders"][number];
-type NavigationLabel = MailboxNavigationData["labels"][number];
+interface NavigationFolder {
+  readonly id: string;
+  readonly kind:
+    | "archive"
+    | "custom"
+    | "drafts"
+    | "inbox"
+    | "scheduled"
+    | "sent"
+    | "spam"
+    | "trash";
+  readonly messageCount: number;
+  readonly name: string;
+  readonly unreadCount: number;
+}
+
+interface NavigationLabel {
+  readonly id: string;
+  readonly name: string;
+}
 
 const folderIconByKind = {
   archive: Archive,

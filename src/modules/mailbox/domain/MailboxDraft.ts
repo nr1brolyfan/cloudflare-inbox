@@ -1,7 +1,7 @@
 /* oxlint-disable max-classes-per-file -- Draft detail and list projections share one domain contract. */
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
+import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 

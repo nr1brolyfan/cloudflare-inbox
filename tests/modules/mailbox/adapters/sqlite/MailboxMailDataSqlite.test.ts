@@ -6,7 +6,6 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   MailboxDoClientLayer,
   MailboxDoNamespace,
@@ -68,7 +67,8 @@ import {
 import { MailDataRpcResponse } from "#/modules/mailbox/ports/MailboxDoProtocol";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
-import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
+import { MailboxRegistry } from "#/modules/mailbox/ports/MailboxRegistry";
+import { MailAddress } from "#/shared/MailAddress";
 
 import {
   MailboxDatabaseTestLive,

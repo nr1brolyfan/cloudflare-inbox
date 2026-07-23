@@ -14,22 +14,21 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { authUserIdentity } from "#/auth/schema/modules/core";
+import {
+  authRoleDefinition,
+  authRoleGrant,
+} from "#/auth/schema/modules/permissions";
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
 import {
   sensitiveSessionPredicate,
   sessionPredicate,
   transactionalSessionPredicate,
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
-import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import {
-  EmailAddress,
-  normalizeEmailAddressDomain,
-} from "#/modules/address-routing/domain/EmailAddress";
 import { primaryMailboxAddressInsertStatement } from "#/modules/address-routing/integration/AddressRoutingD1Statements";
-import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
-import type { AdministrativeAuditError } from "#/modules/administrative-audit/application/AdministrativeAuditError";
+import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
+import type { AdministrativeAuditError } from "#/modules/administrative-audit/contracts/AdministrativeAuditError";
 import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
 import {
   MailPermission,
@@ -39,6 +38,10 @@ import {
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
+  appMailbox,
+  appMailboxMember,
+} from "#/modules/organization/adapters/d1/OrganizationSchema";
+import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "#/modules/organization/application/MailboxAdministration";
@@ -47,18 +50,17 @@ import {
   MailboxRecordSchema,
 } from "#/modules/organization/domain/Mailbox";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
-import { UnixMillis } from "#/shared/Temporal";
-
-import { authUserIdentity } from "../../../../auth/schema/modules/core";
+import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
+import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { permissionPredicate } from "#/platform/control-plane-d1/PermissionGuard";
 import {
-  authRoleDefinition,
-  authRoleGrant,
-} from "../../../../auth/schema/modules/permissions";
-import { appAuthorizationGuard } from "../../../../platform/control-plane-d1/AuthorizationGuardSchema";
-import * as ControlPlane from "../../../../platform/control-plane-d1/ControlPlaneBatch";
-import { ControlPlaneDatabase } from "../../../../platform/control-plane-d1/ControlPlaneDatabase";
-import { permissionPredicate } from "../../../../platform/control-plane-d1/PermissionGuard";
-import { appMailbox, appMailboxMember } from "./OrganizationSchema";
+  EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/shared/EmailAddress";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
+import { UnixMillis } from "#/shared/Temporal";
 
 export const MailboxAdministrationOwnerEmail = EmailAddress;
 export type MailboxAdministrationOwnerEmail = Schema.Schema.Type<

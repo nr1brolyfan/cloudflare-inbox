@@ -5,13 +5,6 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
-import {
-  EvaluateRulesInput,
-  evaluateAsyncRuleCandidates,
-  evaluateRules,
-} from "#/modules/automation/application/RuleEvaluation";
-import type { RuleEvaluationResult } from "#/modules/automation/application/RuleEvaluation";
 import { AsyncRuleJobId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxId, RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
 import {
@@ -39,7 +32,14 @@ import {
   RuleSchema,
 } from "#/modules/mailbox/domain/MailboxRule";
 import type { RuleApplicationOutcome } from "#/modules/mailbox/domain/MailboxRule";
+import {
+  EvaluateRulesInput,
+  evaluateAsyncRuleCandidates,
+  evaluateRules,
+} from "#/modules/mailbox/domain/MailboxRuleEvaluation";
+import type { RuleEvaluationResult } from "#/modules/mailbox/domain/MailboxRuleEvaluation";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";

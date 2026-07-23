@@ -34,18 +34,18 @@ import {
   ExternalRecoveryIdentityManagementError,
   VerifyExternalRecoveryIdentityCommand,
 } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { ExternalRecoveryIdentityChallenge } from "#/modules/account-security/ports/ExternalRecoveryIdentityChallenge";
 import { ExternalRecoveryIdentityDelivery } from "#/modules/account-security/ports/ExternalRecoveryIdentityDelivery";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
+import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
 import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import {
-  BackendRequestContext,
-  CurrentBackendRequestContext,
-} from "#/shared/BackendRequestContext";
+  CurrentRequestCorrelation,
+  RequestCorrelation,
+} from "#/shared/RequestCorrelation";
 
 import {
   applyControlPlaneMigrations,
@@ -56,7 +56,7 @@ const now = Date.now();
 const challengeSecret = Schema.decodeUnknownSync(
   ExternalRecoveryChallengeSecret
 )("a".repeat(43));
-const requestContext = Schema.decodeUnknownSync(BackendRequestContext)({
+const requestContext = Schema.decodeUnknownSync(RequestCorrelation)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
 });
@@ -278,7 +278,7 @@ const runAuthenticated = <A, E, R>(
     A,
     E,
     | AuthPermission.CurrentPrincipal
-    | BackendRequestContext
+    | RequestCorrelation
     | CurrentRequestAuth
     | R
   >,
@@ -295,7 +295,7 @@ const runAuthenticated = <A, E, R>(
         AuthPermission.PermissionSubject.user(session.actor.userId)
       )
     ),
-    Effect.provideService(CurrentBackendRequestContext, requestContext)
+    Effect.provideService(CurrentRequestCorrelation, requestContext)
   );
 
 describe("external recovery identity management", () => {

@@ -13,18 +13,18 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import {
   AdministrativeAudit,
   AdministrativeAuditEventSchema,
-} from "#/modules/administrative-audit/application/AdministrativeAudit";
+} from "#/modules/administrative-audit/contracts/AdministrativeAudit";
 import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
-import {
-  BackendRequestContext,
-  CurrentBackendRequestContext,
-} from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
+import {
+  CurrentRequestCorrelation,
+  RequestCorrelation,
+} from "#/shared/RequestCorrelation";
 import { UnixMillis } from "#/shared/Temporal";
 
 import { applyControlPlaneMigrations } from "../../../support/d1";
@@ -53,7 +53,7 @@ const validated: ValidatedSession = {
     userId,
   },
 };
-const requestContext = Schema.decodeUnknownSync(BackendRequestContext)({
+const requestContext = Schema.decodeUnknownSync(RequestCorrelation)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
 });
@@ -85,7 +85,7 @@ const prepareBootstrap = (principalId = "user-a") =>
         AuthPermission.PermissionSubject.user(UserId(principalId))
       )
     ),
-    Effect.provideService(CurrentBackendRequestContext, requestContext)
+    Effect.provideService(CurrentRequestCorrelation, requestContext)
   );
 
 describe("administrative audit contract", () => {

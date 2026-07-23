@@ -32,8 +32,8 @@ import {
   CurrentRequestAuthMiddleware,
   RecoveryRemediationRequestAuthMiddleware,
 } from "#/modules/account-security/contracts/RequestAuthMiddleware";
-import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
-import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { CurrentRequestAuth } from "#/shared/RequestAuth";
+import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 
 const unauthenticated = () =>
   new AuthUnauthenticatedError({
