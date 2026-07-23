@@ -35,19 +35,22 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { AccountRecoveryD1Layer } from "#/modules/account-security/adapters/d1/AccountRecoveryD1";
 import { AccountRecovery } from "#/modules/account-security/application/AccountRecovery";
 import {
+  AccountRecoveryError,
   CompleteAccountRecoveryCommand,
   externalRecoveryLinkEvidence,
   ReadAccountRecoveryCompletionCommand,
 } from "#/modules/account-security/domain/AccountRecovery";
+import { RecoverySafeIdentityRejected } from "#/modules/account-security/domain/RecoverySafeIdentityError";
 import { AccountRecoveryDelivery } from "#/modules/account-security/ports/AccountRecoveryDelivery";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 import {
   applyControlPlaneMigrations,
@@ -166,6 +169,7 @@ interface FixtureOptions {
     | "before-commit"
     | "second-before-commit";
   readonly invalidSessionBinding?: boolean;
+  readonly raceMutation?: (database: DatabaseSync) => void;
 }
 
 const makeFixture = async (options: FixtureOptions = {}) => {
@@ -180,6 +184,9 @@ const makeFixture = async (options: FixtureOptions = {}) => {
     batch: (statements: Parameters<typeof baseD1.batch>[0]) => {
       const execute = async () => {
         batchCalls += 1;
+        if (batchCalls === 1) {
+          options.raceMutation?.(database);
+        }
         if (options.batchFailure === "before-commit") {
           throw new Error("simulated unknown outcome before commit");
         }
@@ -341,6 +348,244 @@ const makeFixture = async (options: FixtureOptions = {}) => {
     readCompletion,
   };
 };
+
+interface StartFixtureOptions {
+  readonly deliveryFailure?: boolean;
+  readonly policyFailure?: "managed-domain" | "storage";
+  readonly prepareDatabase?: (database: DatabaseSync) => void;
+}
+
+const startFlowId = AuthFlowId("account-recovery-start-flow-a");
+const startSecret = "t".repeat(32);
+
+const makeStartFixture = async (options: StartFixtureOptions = {}) => {
+  const database = new DatabaseSync(":memory:");
+  await applyControlPlaneMigrations(database);
+  insertEligibleAccount(database);
+  options.prepareDatabase?.(database);
+  const d1 = makeTestD1Database(database);
+  const flowStarts: unknown[] = [];
+  const deliveries: unknown[] = [];
+  const controlPlaneLive = ControlPlaneD1Layer.pipe(
+    Layer.provide(
+      Layer.succeed(
+        ControlPlaneD1Binding,
+        ControlPlaneD1Binding.of({
+          database: d1 as unknown as D1Database,
+        })
+      )
+    )
+  );
+  const layer = AccountRecoveryD1Layer.pipe(
+    Layer.provide([
+      controlPlaneLive,
+      Layer.succeed(
+        AuthSecrets,
+        AuthSecrets.make({
+          challenge: Redacted.make("challenge-key"),
+          privacy: Redacted.make("privacy-key"),
+          session: Redacted.make("session-key"),
+        })
+      ),
+      Layer.mock(AuthFlowState, {
+        inspect: () => Effect.die("inspect is not used"),
+        start: (input) => {
+          flowStarts.push(input);
+          return Effect.succeed({
+            expiresAt: UnixMillis(now + 10 * 60 * 1000),
+            flowId: startFlowId,
+            userId,
+          });
+        },
+      }),
+      Layer.mock(AuthRateLimit, { require: () => Effect.void }),
+      Layer.mock(Crypto, {
+        hmacSha256: () => Effect.die("hmac is not used"),
+        randomToken: () => Effect.succeed(startSecret),
+      }),
+      Layer.mock(AccountRecoveryDelivery, {
+        send: (input) => {
+          deliveries.push(input);
+          return options.deliveryFailure
+            ? Effect.fail(
+                new AccountRecoveryError({
+                  operation: "start",
+                  reason: "delivery",
+                })
+              )
+            : Effect.void;
+        },
+      }),
+      Layer.mock(RecoverySafeIdentityPolicy, {
+        requireExternalRecoveryAddress: () =>
+          options.policyFailure === undefined
+            ? Effect.void
+            : Effect.fail(
+                new RecoverySafeIdentityRejected({
+                  reason: options.policyFailure,
+                })
+              ),
+      }),
+      Layer.mock(RecoveryCodeManagement, {
+        identifyForUser: () => Effect.die("recovery code lookup is not used"),
+      }),
+      Layer.mock(RecoveryCodes, {
+        hash: () => Effect.die("recovery code hashing is not used"),
+      }),
+      Layer.succeed(Sessions, Sessions.of({} as never)),
+      Layer.mock(VerificationStore, {
+        findById: () => Effect.die("verification lookup is not used"),
+      }),
+    ])
+  );
+  const start = () =>
+    Effect.gen(function* () {
+      const recovery = yield* AccountRecovery;
+      return yield* recovery.start({
+        address: Schema.decodeUnknownSync(EmailAddress)(
+          "recovery@external.test"
+        ),
+      });
+    }).pipe(Effect.provide(layer));
+
+  return { database, deliveries, flowStarts, start };
+};
+
+describe("account recovery start", () => {
+  it("starts exactly one purpose-bound flow and delivery for an eligible identity", async () => {
+    const fixture = await makeStartFixture();
+    try {
+      const result = await Effect.runPromise(fixture.start());
+      const [started] = fixture.flowStarts as {
+        readonly evidence: readonly unknown[];
+        readonly factors: readonly { readonly type: string }[];
+        readonly metadata: typeof metadata;
+        readonly method: string;
+        readonly secret: Redacted.Redacted<string>;
+        readonly ttl: Duration.Duration;
+        readonly userId: typeof userId;
+      }[];
+
+      expect({ ...result }).toStrictEqual({ accepted: true });
+      expect(fixture.flowStarts).toHaveLength(1);
+      if (started === undefined) {
+        throw new Error("expected one started account-recovery flow");
+      }
+      expect(started).toMatchObject({
+        factors: [{ type: "backup-code" }],
+        metadata,
+        method: "external-recovery-link",
+        userId,
+      });
+      const [startedEvidence] = started.evidence as (typeof evidence)[];
+      const { verifiedAt: _startedAt, ...startedEvidenceWithoutTime } =
+        startedEvidence ?? evidence;
+      const { verifiedAt: _fixtureTime, ...expectedEvidenceWithoutTime } =
+        evidence;
+      expect(started.evidence).toHaveLength(1);
+      expect(startedEvidenceWithoutTime).toStrictEqual(
+        expectedEvidenceWithoutTime
+      );
+      expect(Number(startedEvidence?.verifiedAt)).toBeGreaterThanOrEqual(now);
+      expect(Duration.toMillis(started.ttl)).toBe(10 * 60 * 1000);
+      expect(Redacted.value(started.secret)).toBe(startSecret);
+      expect(fixture.deliveries).toStrictEqual([
+        {
+          address: "recovery@external.test",
+          expiresAt: now + 10 * 60 * 1000,
+          flowId: startFlowId,
+          secret: started.secret,
+        },
+      ]);
+    } finally {
+      fixture.database.close();
+    }
+  });
+
+  it.each([
+    {
+      name: "unknown address",
+      prepareDatabase: (database: DatabaseSync) =>
+        database.prepare("delete from app_external_recovery_identity").run(),
+    },
+    {
+      name: "disabled user",
+      prepareDatabase: (database: DatabaseSync) =>
+        database
+          .prepare("update auth_user set disabled_at = ? where id = ?")
+          .run(now, userId),
+    },
+    {
+      name: "no unused code",
+      prepareDatabase: (database: DatabaseSync) =>
+        database.prepare("delete from auth_recovery_code").run(),
+    },
+    { name: "recovery-safe policy denial", policyFailure: "managed-domain" },
+  ] satisfies readonly (StartFixtureOptions & { readonly name: string })[])(
+    "returns the same accepted result without a flow or delivery for $name",
+    async ({ name: _name, ...options }) => {
+      const fixture = await makeStartFixture(options);
+      try {
+        await expect(
+          Effect.runPromise(fixture.start()).then((result) => ({ ...result }))
+        ).resolves.toStrictEqual({ accepted: true });
+        expect(fixture.flowStarts).toStrictEqual([]);
+        expect(fixture.deliveries).toStrictEqual([]);
+      } finally {
+        fixture.database.close();
+      }
+    }
+  );
+
+  it("returns the same accepted result when delivery fails", async () => {
+    const fixture = await makeStartFixture({ deliveryFailure: true });
+    try {
+      await expect(
+        Effect.runPromise(fixture.start()).then((result) => ({ ...result }))
+      ).resolves.toStrictEqual({ accepted: true });
+      expect(fixture.flowStarts).toHaveLength(1);
+      expect(fixture.deliveries).toHaveLength(1);
+    } finally {
+      fixture.database.close();
+    }
+  });
+
+  it("enforces the 500ms public response floor with a fake clock", async () => {
+    const fixture = await makeStartFixture();
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    try {
+      let settled = false;
+      const pending = Effect.runPromise(fixture.start()).then((result) => {
+        settled = true;
+        return result;
+      });
+      await vi.advanceTimersByTimeAsync(499);
+      expect(settled).toBeFalsy();
+      await vi.advanceTimersByTimeAsync(1);
+      const result = await pending;
+
+      expect({ ...result }).toStrictEqual({ accepted: true });
+    } finally {
+      vi.useRealTimers();
+      fixture.database.close();
+    }
+  });
+
+  it("propagates recovery-policy storage failures instead of hiding them", async () => {
+    const fixture = await makeStartFixture({ policyFailure: "storage" });
+    try {
+      await expect(Effect.runPromise(fixture.start())).rejects.toMatchObject({
+        operation: "start",
+        reason: "storage",
+      });
+      expect(fixture.flowStarts).toStrictEqual([]);
+      expect(fixture.deliveries).toStrictEqual([]);
+    } finally {
+      fixture.database.close();
+    }
+  });
+});
 
 describe("account recovery completion receipts", () => {
   it("atomically consumes proof and code into one restricted session and receipt", async () => {
@@ -528,6 +773,112 @@ describe("account recovery completion receipts", () => {
       fixture.database.close();
     }
   });
+
+  it.each([
+    {
+      expected: { flowConsumedAt: now - 10 },
+      mutate: (database: DatabaseSync) =>
+        database
+          .prepare("update auth_verification set consumed_at = ? where id = ?")
+          .run(now - 10, flowId),
+      name: "consumed flow",
+    },
+    {
+      expected: { flowMetadata: '{"encoded":"changed"}' },
+      mutate: (database: DatabaseSync) =>
+        database
+          .prepare("update auth_verification set metadata = ? where id = ?")
+          .run('{"encoded":"changed"}', flowId),
+      name: "changed flow",
+    },
+    {
+      expected: { identityStatus: "revoked", identityVersion: 3 },
+      mutate: (database: DatabaseSync) =>
+        database
+          .prepare(
+            `update app_external_recovery_identity
+                set status = 'revoked', revoked_at = ?, updated_at = ?, version = 3
+              where id = 'recovery-a'`
+          )
+          .run(now - 10, now - 10),
+      name: "changed identity version and status",
+    },
+    {
+      expected: { userDisabledAt: now - 10 },
+      mutate: (database: DatabaseSync) =>
+        database
+          .prepare("update auth_user set disabled_at = ? where id = ?")
+          .run(now - 10, userId),
+      name: "disabled user",
+    },
+    {
+      expected: { codeUsedAt: now - 10 },
+      mutate: (database: DatabaseSync) =>
+        database
+          .prepare("update auth_recovery_code set used_at = ? where id = ?")
+          .run(now - 10, codeId),
+      name: "used code",
+    },
+    {
+      expected: { codeRevokedAt: now - 10 },
+      mutate: (database: DatabaseSync) =>
+        database
+          .prepare("update auth_recovery_code set revoked_at = ? where id = ?")
+          .run(now - 10, codeId),
+      name: "revoked code",
+    },
+    {
+      expected: { codeHash: differentRecoveryCodeHash },
+      mutate: (database: DatabaseSync) =>
+        database
+          .prepare("update auth_recovery_code set code_hash = ? where id = ?")
+          .run(differentRecoveryCodeHash, codeId),
+      name: "changed code hash",
+    },
+  ])(
+    "atomically denies a fresh completion after a $name race",
+    async ({ expected, mutate }) => {
+      const fixture = await makeFixture({ raceMutation: mutate });
+      try {
+        await expect(
+          Effect.runPromise(fixture.complete())
+        ).rejects.toMatchObject({ reason: "invalid-proof" });
+        const state = fixture.database
+          .prepare(
+            `select
+               (select count(*) from auth_session) as sessions,
+               (select count(*) from auth_audit_log where type = 'app.account_recovery.entered') as audits,
+               (select count(*) from app_account_recovery_completion_receipt) as receipts,
+               (select consumed_at from auth_verification where id = ?) as flowConsumedAt,
+               (select metadata from auth_verification where id = ?) as flowMetadata,
+               (select status from app_external_recovery_identity where id = 'recovery-a') as identityStatus,
+               (select version from app_external_recovery_identity where id = 'recovery-a') as identityVersion,
+               (select disabled_at from auth_user where id = ?) as userDisabledAt,
+               (select code_hash from auth_recovery_code where id = ?) as codeHash,
+               (select used_at from auth_recovery_code where id = ?) as codeUsedAt,
+               (select revoked_at from auth_recovery_code where id = ?) as codeRevokedAt`
+          )
+          .get(flowId, flowId, userId, codeId, codeId, codeId);
+
+        expect({ ...(state as Record<string, unknown>) }).toStrictEqual({
+          audits: 0,
+          codeHash: recoveryCodeHash,
+          codeRevokedAt: null,
+          codeUsedAt: null,
+          flowConsumedAt: null,
+          flowMetadata: JSON.stringify(verification.metadata),
+          identityStatus: "verified",
+          identityVersion: 2,
+          receipts: 0,
+          sessions: 0,
+          userDisabledAt: null,
+          ...expected,
+        });
+      } finally {
+        fixture.database.close();
+      }
+    }
+  );
 
   it("rolls every state change back when receipt binding fails", async () => {
     const fixture = await makeFixture({ invalidSessionBinding: true });

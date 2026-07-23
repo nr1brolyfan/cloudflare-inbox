@@ -1,5 +1,6 @@
 /* oxlint-disable vitest/max-expects -- HTTP contract tests assert cookie, cache, privacy, and rate behavior together. */
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
+import type { AuthRateLimitService } from "@effect-auth/core/AuthRateLimit";
 import {
   AuthHttp,
   AuthOriginCheckMiddlewareLive,
@@ -12,8 +13,11 @@ import {
   UnixMillis,
   UserId,
 } from "@effect-auth/core/Identifiers";
+import { RateLimitExceededError } from "@effect-auth/core/RateLimiter";
+import type { RateLimitPolicyId } from "@effect-auth/core/RateLimiter";
 import type { IssuedSession } from "@effect-auth/core/Sessions";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -79,6 +83,7 @@ const makeRecovery = (overrides: Partial<AccountRecoveryService> = {}) =>
 const makeHandler = (options: {
   readonly onCommit?: () => void;
   readonly onRateLimit?: (input: unknown) => void;
+  readonly rateLimit?: AuthRateLimitService;
   readonly recovery?: AccountRecoveryService;
 }) => {
   const middlewareLayer = Layer.mergeAll(
@@ -104,12 +109,13 @@ const makeHandler = (options: {
     Layer.provide(
       Layer.succeed(
         AuthRateLimit,
-        AuthRateLimit.of({
-          require: (input) =>
-            Effect.sync(() => {
-              options.onRateLimit?.(input);
-            }),
-        })
+        options.rateLimit ??
+          AuthRateLimit.of({
+            require: (input) =>
+              Effect.sync(() => {
+                options.onRateLimit?.(input);
+              }),
+          })
       )
     ),
     Layer.provide(
@@ -162,6 +168,183 @@ const completeBody = {
   secret: "s".repeat(32),
 };
 
+describe("account recovery start API", () => {
+  it("returns the identical public body and exact start limits for eligible and ineligible addresses", async () => {
+    const payloads: unknown[] = [];
+    const limits: unknown[] = [];
+    const { dispose, handler } = makeHandler({
+      onRateLimit: (input) => limits.push(input),
+      recovery: makeRecovery({
+        start: (payload) => {
+          payloads.push(payload);
+          return Effect.succeed(accountRecoveryAccepted);
+        },
+      }),
+    });
+
+    try {
+      const eligible = await handler(
+        request("/auth/account-recovery/start", {
+          address: "eligible@external.test",
+        })
+      );
+      const ineligible = await handler(
+        request("/auth/account-recovery/start", {
+          address: "unknown@external.test",
+        })
+      );
+      const eligibleBody = await eligible.json();
+      const ineligibleBody = await ineligible.json();
+
+      expect(eligible.status).toBe(200);
+      expect(ineligible.status).toBe(200);
+      expect(eligibleBody).toStrictEqual({ accepted: true });
+      expect(ineligibleBody).toStrictEqual(eligibleBody);
+      expect(eligible.headers.get("set-cookie")).toBeNull();
+      expect(ineligible.headers.get("set-cookie")).toBeNull();
+      expect(eligible.headers.get("cache-control")).toBe("private, no-store");
+      expect(eligible.headers.get("pragma")).toBe("no-cache");
+      expect(ineligible.headers.get("cache-control")).toBe("private, no-store");
+      expect(ineligible.headers.get("pragma")).toBe("no-cache");
+      expect(payloads).toStrictEqual([
+        { address: "eligible@external.test" },
+        { address: "unknown@external.test" },
+      ]);
+      expect(limits).toStrictEqual([
+        {
+          email: "eligible@external.test",
+          ipAddress: "203.0.113.30",
+          operation: "auth.password.reset_start",
+          policy: {
+            rules: [
+              {
+                id: "app.account_recovery.start.ip",
+                key: "ip",
+                limit: 10,
+                window: Duration.minutes(10),
+              },
+              {
+                id: "app.account_recovery.start.email",
+                key: "email",
+                limit: 5,
+                window: Duration.minutes(10),
+              },
+            ],
+            type: "Rules",
+          },
+        },
+        {
+          email: "unknown@external.test",
+          ipAddress: "203.0.113.30",
+          operation: "auth.password.reset_start",
+          policy: {
+            rules: [
+              {
+                id: "app.account_recovery.start.ip",
+                key: "ip",
+                limit: 10,
+                window: Duration.minutes(10),
+              },
+              {
+                id: "app.account_recovery.start.email",
+                key: "email",
+                limit: 5,
+                window: Duration.minutes(10),
+              },
+            ],
+            type: "Rules",
+          },
+        },
+      ]);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("returns a sanitized no-store 429 with Retry-After before service invocation", async () => {
+    let starts = 0;
+    const { dispose, handler } = makeHandler({
+      rateLimit: AuthRateLimit.of({
+        require: () =>
+          Effect.fail(
+            new RateLimitExceededError({
+              limit: 10,
+              policyId: "app.account_recovery.start.ip" as RateLimitPolicyId,
+              remaining: 0,
+              retryAfter: Duration.seconds(45),
+            })
+          ),
+      }),
+      recovery: makeRecovery({
+        start: () => {
+          starts += 1;
+          return Effect.succeed(accountRecoveryAccepted);
+        },
+      }),
+    });
+
+    try {
+      const response = await handler(
+        request("/auth/account-recovery/start", {
+          address: "eligible@external.test",
+        })
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(429);
+      expect(response.headers.get("retry-after")).toBe("45");
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("pragma")).toBe("no-cache");
+      expect(response.headers.get("set-cookie")).toBeNull();
+      expect(body).toMatchObject({
+        _tag: "AuthRateLimitedError",
+        code: "rate_limited",
+        message: "Too many account recovery attempts",
+      });
+      expect(JSON.stringify(body)).not.toContain(
+        "app.account_recovery.start.ip"
+      );
+      expect(starts).toBe(0);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("maps internal dependency failures to one generic 500", async () => {
+    const { dispose, handler } = makeHandler({
+      recovery: makeRecovery({
+        start: () =>
+          Effect.fail(
+            new AccountRecoveryError({
+              cause: new Error("corrupt recovery identity row"),
+              operation: "start",
+              reason: "storage",
+            })
+          ),
+      }),
+    });
+
+    try {
+      const response = await handler(
+        request("/auth/account-recovery/start", {
+          address: "eligible@external.test",
+        })
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(body).toStrictEqual({
+        _tag: "AuthInternalError",
+        code: "internal_error",
+        message: "Account recovery failed",
+      });
+      expect(JSON.stringify(body)).not.toContain("corrupt recovery identity");
+    } finally {
+      await dispose();
+    }
+  });
+});
+
 describe("account recovery completion API", () => {
   it("sets the restricted cookie only for the first completion response", async () => {
     let calls = 0;
@@ -207,6 +390,8 @@ describe("account recovery completion API", () => {
       expect(replay.headers.get("set-cookie")).toBeNull();
       expect(first.headers.get("cache-control")).toBe("private, no-store");
       expect(replay.headers.get("cache-control")).toBe("private, no-store");
+      expect(first.headers.get("pragma")).toBe("no-cache");
+      expect(replay.headers.get("pragma")).toBe("no-cache");
       expect(commits).toBe(1);
       expect(rateLimits).toMatchObject([
         { operation: "auth.recovery_code.verify" },

@@ -193,8 +193,8 @@ export const RecoveryRemediationRequestAuthMiddlewareLayer = Layer.effect(
         if (
           claims?.requirements?.length !== 1 ||
           claims.requirements[0] !== "recovery_remediation" ||
-          claims.recoveryRemediation?.allowed.includes("second-passkey") !==
-            true
+          claims.recoveryRemediation?.allowed.length !== 1 ||
+          claims.recoveryRemediation.allowed[0] !== "second-passkey"
         ) {
           return yield* new AuthPolicyDeniedError({
             code: "policy_denied",

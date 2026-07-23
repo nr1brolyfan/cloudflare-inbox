@@ -85,6 +85,30 @@ const receiptResponse = (receipt: AccountRecoveryCompletionReceipt) =>
     }).pipe(Effect.orDie);
   });
 
+const privateNoStoreHeaders = {
+  "cache-control": "private, no-store",
+  pragma: "no-cache",
+} as const;
+
+const startResponse = (accepted: { readonly accepted: true }) =>
+  HttpServerResponse.json(accepted, {
+    headers: privateNoStoreHeaders,
+  }).pipe(Effect.orDie);
+
+const startRateLimitResponse = (error: AuthRateLimitedError) =>
+  Effect.gen(function* () {
+    const encoded = yield* Schema.encodeEffect(AuthRateLimitedError)(
+      error
+    ).pipe(Effect.orDie);
+    return yield* HttpServerResponse.json(encoded, {
+      headers: {
+        ...privateNoStoreHeaders,
+        "retry-after": String(error.retryAfterSeconds),
+      },
+      status: 429,
+    }).pipe(Effect.orDie);
+  });
+
 export const AccountRecoveryHttpHandlersLayer = HttpApiBuilder.group(
   AccountRecoveryHttpApi,
   "accountRecovery",
@@ -167,10 +191,19 @@ export const AccountRecoveryHttpHandlersLayer = HttpApiBuilder.group(
     return handlers
       .handle("start", ({ payload }) =>
         Effect.gen(function* () {
-          yield* requireStartLimit(payload.address);
-          return yield* recovery
+          const limit = yield* requireStartLimit(payload.address).pipe(
+            Effect.as({ _tag: "Allowed" as const }),
+            Effect.catchTag("AuthRateLimitedError", (error) =>
+              Effect.succeed({ _tag: "RateLimited" as const, error })
+            )
+          );
+          if (limit._tag === "RateLimited") {
+            return yield* startRateLimitResponse(limit.error);
+          }
+          const accepted = yield* recovery
             .start(payload)
             .pipe(Effect.catchTag("AccountRecoveryError", mapError));
+          return yield* startResponse(accepted);
         })
       )
       .handle("complete", ({ payload }) =>

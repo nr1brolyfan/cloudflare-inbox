@@ -107,13 +107,16 @@ const issuedSession = {
   userId,
 } as const;
 
-const validatedSession = (restricted: boolean): ValidatedSession => {
-  const claims = restricted
-    ? {
-        recoveryRemediation: { allowed: ["second-passkey"] },
-        requirements: ["recovery_remediation"],
-      }
-    : undefined;
+const validatedSession = (
+  recoveryAllowed: readonly string[] | null
+): ValidatedSession => {
+  const claims =
+    recoveryAllowed === null
+      ? undefined
+      : {
+          recoveryRemediation: { allowed: [...recoveryAllowed] },
+          requirements: ["recovery_remediation"],
+        };
   const currentSession = {
     aal: "aal1" as const,
     amr: [],
@@ -155,13 +158,13 @@ const makeEnrollment = (
     ...overrides,
   });
 
-const requestAuthLayers = (restricted: boolean) => {
+const requestAuthLayers = (recoveryAllowed: readonly string[] | null) => {
   const authLive = Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
     Layer.succeed(
       Sessions,
       Sessions.of({
-        validate: () => Effect.succeed(validatedSession(restricted)),
+        validate: () => Effect.succeed(validatedSession(recoveryAllowed)),
       } as unknown as SessionsService)
     ),
     WebCryptoLive(),
@@ -208,9 +211,10 @@ const makeHandler = (
   enrollment: PasskeyEnrollmentShape,
   rateLimit: AuthRateLimitService = AuthRateLimit.of({
     require: () => Effect.void,
-  })
+  }),
+  recoveryAllowed: readonly string[] | null = ["second-passkey"]
 ) => {
-  const auth = requestAuthLayers(kind === "recovery");
+  const auth = requestAuthLayers(kind === "recovery" ? recoveryAllowed : null);
   if (kind === "normal") {
     const api = HttpApi.make("AuthApi").add(PasskeyEnrollmentGroup);
     const groupLive = PasskeyEnrollmentHttpHandlersLayer.pipe(
@@ -350,6 +354,10 @@ describe("passkey enrollment receipt HTTP contracts", () => {
       expect(firstBody.codes).toHaveLength(10);
       expect(first.headers.get("set-cookie")).toContain("HttpOnly");
       expect(replay.headers.get("set-cookie")).toBeNull();
+      expect(first.headers.get("cache-control")).toBe("private, no-store");
+      expect(first.headers.get("pragma")).toBe("no-cache");
+      expect(replay.headers.get("cache-control")).toBe("private, no-store");
+      expect(replay.headers.get("pragma")).toBe("no-cache");
       expect(replayBody).toStrictEqual({
         receipt: { ...recoveryReceipt },
         type: "passkey-enrollment-already-completed",
@@ -359,6 +367,47 @@ describe("passkey enrollment receipt HTTP contracts", () => {
       await dispose();
     }
   });
+
+  it.each([
+    ["overbroad", ["second-passkey", "account-settings"]],
+    ["unrelated", ["account-settings"]],
+    ["empty", []],
+    ["unrestricted", null],
+  ] as const)(
+    "denies a %s capability session before recovery handler invocation",
+    async (_name, allowed) => {
+      let finishes = 0;
+      const { dispose, handler } = makeHandler(
+        "recovery",
+        makeEnrollment({
+          finish: () => {
+            finishes += 1;
+            return Effect.succeed({ receipt: recoveryReceipt, replayed: true });
+          },
+        }),
+        undefined,
+        allowed
+      );
+      try {
+        const response = await handler(
+          request("/auth/account-recovery/passkey/enroll/finish", "POST", {
+            challengeId,
+            credential,
+            operationId,
+            readbackSecret,
+          })
+        );
+
+        expect(response.status).toBe(403);
+        await expect(response.json()).resolves.toMatchObject({
+          code: "policy_denied",
+        });
+        expect(finishes).toBe(0);
+      } finally {
+        await dispose();
+      }
+    }
+  );
 
   it("serves proof-bound recovery readback without cookies or codes", async () => {
     const payloads: unknown[] = [];

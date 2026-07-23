@@ -17,6 +17,7 @@ import { withRecoveryRemediationRequirement } from "@effect-auth/core/RecoveryPo
 import { Sessions } from "@effect-auth/core/Sessions";
 import { VerificationStore } from "@effect-auth/core/Storage";
 import { and, eq, exists, isNull, notExists, sql } from "drizzle-orm";
+import * as Clock from "effect/Clock";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -117,16 +118,18 @@ const withPublicStartResponseFloor = <A, E, R>(
   effect: Effect.Effect<A, E, R>
 ) =>
   Effect.gen(function* () {
-    const startedAt = Date.now();
+    const startedAt = yield* Clock.currentTimeMillis;
     return yield* effect.pipe(
       Effect.ensuring(
-        Effect.suspend(() =>
-          Effect.sleep(
-            Duration.millis(
-              Math.max(
-                0,
-                Duration.toMillis(PUBLIC_START_RESPONSE_FLOOR) -
-                  (Date.now() - startedAt)
+        Clock.currentTimeMillis.pipe(
+          Effect.flatMap((finishedAt) =>
+            Effect.sleep(
+              Duration.millis(
+                Math.max(
+                  0,
+                  Duration.toMillis(PUBLIC_START_RESPONSE_FLOOR) -
+                    (finishedAt - startedAt)
+                )
               )
             )
           )
@@ -285,8 +288,10 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
               })
               .pipe(
                 Effect.as(true),
-                Effect.catchTag("RecoverySafeIdentityRejected", () =>
-                  Effect.succeed(false)
+                Effect.catchTag("RecoverySafeIdentityRejected", (cause) =>
+                  cause.reason === "storage"
+                    ? Effect.fail(failure("start", "storage", cause))
+                    : Effect.succeed(false)
                 )
               );
             if (!safe) {
