@@ -1,76 +1,30 @@
 import { and, asc, eq, isNull, lte, sql } from "drizzle-orm";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { AttemptCount, OutboundDeliveryId, UnixMillis, Version } from "./core";
-import { OutboundFailureCode, OutboundProviderMessageId } from "./outbound";
-import { outboundDelivery } from "./sqlite-schema";
-import { MailboxDatabase, MailboxRuntime } from "./sqlite-services";
+import { outboundDelivery } from "#/mailboxes/sqlite-schema";
+import { MailboxDatabase } from "#/mailboxes/sqlite-services";
+import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
+import {
+  MailboxOutboundLifecycleStore,
+  OutboundDeliveryClaim,
+  outboundRetryDelayMillis,
+  outboundRetryMaxAttempts,
+  outboundSendingStaleTimeoutMillis,
+} from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
-export const outboundRetryBaseDelayMillis = 30_000;
-export const outboundRetryMaxDelayMillis = 30 * 60_000;
-export const outboundRetryMaxAttempts = 5;
-export const outboundSendingStaleTimeoutMillis = 15 * 60_000;
-
-export const outboundRetryDelayMillis = (attemptCount: number): number =>
-  Math.min(
-    outboundRetryBaseDelayMillis * 2 ** Math.max(0, attemptCount - 1),
-    outboundRetryMaxDelayMillis
-  );
-
-export class OutboundDeliveryClaim extends Schema.Class<OutboundDeliveryClaim>(
-  "cloudflare-inbox/OutboundDeliveryClaim"
-)({
-  attemptCount: AttemptCount,
-  claimedAt: UnixMillis,
-  outboundDeliveryId: OutboundDeliveryId,
-  version: Version,
-}) {}
-
-export const OutboundDeliverySettlement = Schema.Union([
-  Schema.Struct({
-    _tag: Schema.Literal("Accepted"),
-    providerMessageId: OutboundProviderMessageId,
-  }),
-  Schema.Struct({
-    _tag: Schema.Literal("Failed"),
-    code: OutboundFailureCode,
-  }),
-  Schema.Struct({ _tag: Schema.Literal("Indeterminate") }),
-]);
-export type OutboundDeliverySettlement = Schema.Schema.Type<
-  typeof OutboundDeliverySettlement
->;
-
-export interface MailboxOutboundLifecycleStore {
-  readonly claimDue: Effect.Effect<OutboundDeliveryClaim | null>;
-  readonly recoverStaleSending: Effect.Effect<number>;
-  readonly retry: (claim: OutboundDeliveryClaim) => Effect.Effect<boolean>;
-  readonly settle: (
-    claim: OutboundDeliveryClaim,
-    settlement: OutboundDeliverySettlement
-  ) => Effect.Effect<boolean>;
-}
-
-/** Internal DO store; claims and settlements are guarded by lifecycle version and attempt. */
-export const MailboxOutboundLifecycleStore =
-  Context.Service<MailboxOutboundLifecycleStore>(
-    "cloudflare-inbox/MailboxOutboundLifecycleStore"
-  );
-
-export const MailboxOutboundLifecycleStoreSqliteLive = Layer.effect(
+export const MailboxOutboundLifecycleStoreSqliteLayer = Layer.effect(
   MailboxOutboundLifecycleStore,
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
-    const runtime = yield* MailboxRuntime;
+    const clock = yield* MailboxOutboundAlarmClock;
 
     return MailboxOutboundLifecycleStore.of({
       claimDue: db
         .transaction((tx) =>
           Effect.gen(function* () {
-            const now = runtime.now();
+            const now = clock.now();
             const [due] = yield* tx
               .select()
               .from(outboundDelivery)
@@ -121,10 +75,45 @@ export const MailboxOutboundLifecycleStoreSqliteLive = Layer.effect(
           })
         )
         .pipe(Effect.orDie),
+      nextScheduledAt: Effect.all([
+        db
+          .select({ scheduledAt: outboundDelivery.sendAt })
+          .from(outboundDelivery)
+          .where(
+            and(
+              eq(outboundDelivery.status, "scheduled"),
+              isNull(outboundDelivery.deletedAt)
+            )
+          )
+          .orderBy(asc(outboundDelivery.sendAt), asc(outboundDelivery.id))
+          .limit(1),
+        db
+          .select({
+            scheduledAt: sql<number>`${outboundDelivery.updatedAt} + ${outboundSendingStaleTimeoutMillis}`,
+          })
+          .from(outboundDelivery)
+          .where(
+            and(
+              eq(outboundDelivery.status, "sending"),
+              isNull(outboundDelivery.deletedAt)
+            )
+          )
+          .orderBy(asc(outboundDelivery.updatedAt), asc(outboundDelivery.id))
+          .limit(1),
+      ]).pipe(
+        Effect.map(([scheduled, sending]) => {
+          const candidates = [
+            scheduled[0]?.scheduledAt,
+            sending[0]?.scheduledAt,
+          ].filter((value): value is number => value !== undefined);
+          return candidates.length === 0 ? null : Math.min(...candidates);
+        }),
+        Effect.orDie
+      ),
       recoverStaleSending: db
         .transaction((tx) =>
           Effect.gen(function* () {
-            const now = runtime.now();
+            const now = clock.now();
             const staleBefore = Math.max(
               0,
               now - outboundSendingStaleTimeoutMillis
@@ -184,7 +173,7 @@ export const MailboxOutboundLifecycleStoreSqliteLive = Layer.effect(
         )
         .pipe(Effect.orDie),
       retry: (claim) => {
-        const retriedAt = Math.max(runtime.now(), claim.claimedAt);
+        const retriedAt = Math.max(clock.now(), claim.claimedAt);
         const exhausted = claim.attemptCount >= outboundRetryMaxAttempts;
         return db
           .update(outboundDelivery)
@@ -222,7 +211,7 @@ export const MailboxOutboundLifecycleStoreSqliteLive = Layer.effect(
           );
       },
       settle: (claim, settlement) => {
-        const settledAt = Math.max(runtime.now(), claim.claimedAt);
+        const settledAt = Math.max(clock.now(), claim.claimedAt);
         const values =
           settlement._tag === "Accepted"
             ? {

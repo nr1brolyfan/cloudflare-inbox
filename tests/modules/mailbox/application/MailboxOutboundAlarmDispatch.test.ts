@@ -11,29 +11,24 @@ import {
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
 } from "#/mailboxes/errors";
+import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
+import { MailboxDatabase } from "#/mailboxes/sqlite-services";
+import { MailboxOutboundLifecycleStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundLifecycleStoreSqlite";
+import { MailboxOutboundAlarmDispatch } from "#/modules/mailbox/application/MailboxOutboundAlarmDispatch";
+import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
+import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import type { MailboxOutboundDispatcherService as Dispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import { MailboxAlarmStorage } from "#/modules/mailbox/ports/MailboxAlarmStorage";
+import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
+import { OutboundDispatchSnapshotError } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 import {
-  MailboxOutboundAlarmDispatch,
-  MailboxOutboundAlarmDispatchLive,
-} from "#/mailboxes/outbound-alarm-dispatch-live";
-import {
-  MailboxAlarmStorage,
-  MailboxOutboundAlarmScheduler,
-  MailboxOutboundAlarmSchedulerLive,
-} from "#/mailboxes/outbound-alarm-live";
-import {
-  MailboxOutboundLifecycleStoreSqliteLive,
   outboundRetryDelayMillis,
   outboundRetryMaxAttempts,
   outboundSendingStaleTimeoutMillis,
-} from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
-import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
-import { MailboxDatabase, MailboxRuntime } from "#/mailboxes/sqlite-services";
-import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
-import type { MailboxOutboundDispatcherService as Dispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
-import { OutboundDispatchSnapshotError } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
+} from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 import { OutboundProviderAcceptance } from "#/modules/mailbox/ports/OutboundEmailProvider";
 
-import { MailboxDatabaseTestLive } from "../support/mailbox-sqlite";
+import { MailboxDatabaseTestLive } from "../../../support/mailbox-sqlite";
 
 const acceptance = Schema.decodeUnknownSync(OutboundProviderAcceptance)({
   providerMessageId: "provider-message-1",
@@ -74,11 +69,11 @@ const testLive = (
   const base = Layer.merge(
     MailboxDatabaseTestLive,
     Layer.succeed(
-      MailboxRuntime,
-      MailboxRuntime.of({ now, randomId: () => "unused" })
+      MailboxOutboundAlarmClock,
+      MailboxOutboundAlarmClock.of({ now })
     )
   );
-  const lifecycle = MailboxOutboundLifecycleStoreSqliteLive.pipe(
+  const lifecycle = MailboxOutboundLifecycleStoreSqliteLayer.pipe(
     Layer.provideMerge(base)
   );
   const dependencies = Layer.mergeAll(
@@ -92,7 +87,7 @@ const testLive = (
       })
     )
   );
-  return MailboxOutboundAlarmDispatchLive.pipe(
+  return MailboxOutboundAlarmDispatch.layerNoDeps.pipe(
     Layer.provideMerge(dependencies)
   );
 };
@@ -465,18 +460,27 @@ describe("outbound alarm dispatch", () => {
     const base = Layer.merge(
       MailboxDatabaseTestLive,
       Layer.succeed(
-        MailboxRuntime,
-        MailboxRuntime.of({ now: alarmNow, randomId: () => "unused" })
+        MailboxOutboundAlarmClock,
+        MailboxOutboundAlarmClock.of({ now: alarmNow })
       )
     );
-    const lifecycle = MailboxOutboundLifecycleStoreSqliteLive.pipe(
+    const lifecycle = MailboxOutboundLifecycleStoreSqliteLayer.pipe(
       Layer.provideMerge(base)
     );
-    const scheduler = MailboxOutboundAlarmSchedulerLive.pipe(
-      Layer.provide(Layer.succeed(MailboxAlarmStorage, alarmStorage)),
+    const scheduler = MailboxOutboundAlarmScheduler.layerNoDeps.pipe(
+      Layer.provide(
+        Layer.merge(
+          Layer.succeed(MailboxAlarmStorage, alarmStorage),
+          Layer.succeed(
+            MailboxOutboundAlarmClock,
+            MailboxOutboundAlarmClock.of({ now: alarmNow })
+          )
+        )
+      ),
+      Layer.provide(lifecycle),
       Layer.provideMerge(base)
     );
-    const live = MailboxOutboundAlarmDispatchLive.pipe(
+    const live = MailboxOutboundAlarmDispatch.layerNoDeps.pipe(
       Layer.provide(
         Layer.succeed(
           MailboxOutboundDispatcher,

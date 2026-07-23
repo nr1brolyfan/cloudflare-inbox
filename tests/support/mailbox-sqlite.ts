@@ -10,7 +10,6 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { MailboxDoHandlerLive } from "#/mailboxes/do-handler";
-import { MailboxOutboundAlarmScheduler } from "#/mailboxes/outbound-alarm-live";
 import { applyMailboxMigrations } from "#/mailboxes/sqlite-migrations";
 import { mailboxRelations } from "#/mailboxes/sqlite-schema";
 import {
@@ -24,6 +23,7 @@ import {
   MailboxOutboundStoreLive,
   MailboxResourceIndexLive,
 } from "#/mailboxes/sqlite-services";
+import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 
 const acquireDatabase = () => {
   const directory = mkdtempSync(

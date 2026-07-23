@@ -4,6 +4,8 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
+
 import type { MailboxId } from "./core";
 import {
   DirectoryRpcRequest,
@@ -21,7 +23,6 @@ import type {
   MailDataRpcResponse as MailDataRpcResponseType,
 } from "./do-protocol";
 import type { MailboxDomainError } from "./errors";
-import { MailboxOutboundAlarmScheduler } from "./outbound-alarm-live";
 import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,

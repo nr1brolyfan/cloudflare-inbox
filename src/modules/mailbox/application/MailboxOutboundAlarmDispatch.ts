@@ -3,13 +3,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 
+import type { OutboundFailureCode } from "#/mailboxes/outbound";
+import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import type { MailboxOutboundDispatcherError } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
-
-import type { OutboundFailureCode } from "./outbound";
-import { MailboxOutboundAlarmScheduler } from "./outbound-alarm-live";
-import { MailboxOutboundLifecycleStore } from "./outbound-lifecycle-store-sqlite-live";
-import type { OutboundDeliverySettlement } from "./outbound-lifecycle-store-sqlite-live";
+import { MailboxOutboundLifecycleStore } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
+import type { OutboundDeliverySettlement } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
 const rejectionCodes = {
   "invalid-message": "invalid_message",
@@ -53,19 +52,16 @@ const failureResolution = (
   }
 };
 
-export interface MailboxOutboundAlarmDispatch {
+export interface MailboxOutboundAlarmDispatchService {
   readonly handle: Effect.Effect<void>;
 }
 
-export const MailboxOutboundAlarmDispatch =
-  Context.Service<MailboxOutboundAlarmDispatch>(
-    "cloudflare-inbox/MailboxOutboundAlarmDispatch"
-  );
-
 /** Processes one delivery per invocation and reconciles the next alarm on every exit. */
-export const MailboxOutboundAlarmDispatchLive = Layer.effect(
+export class MailboxOutboundAlarmDispatch extends Context.Service<
   MailboxOutboundAlarmDispatch,
-  Effect.gen(function* () {
+  MailboxOutboundAlarmDispatchService
+>()("cloudflare-inbox/MailboxOutboundAlarmDispatch", {
+  make: Effect.gen(function* () {
     const lifecycle = yield* MailboxOutboundLifecycleStore;
     const dispatcher = yield* MailboxOutboundDispatcher;
     const scheduler = yield* MailboxOutboundAlarmScheduler;
@@ -98,8 +94,10 @@ export const MailboxOutboundAlarmDispatchLive = Layer.effect(
       );
     });
 
-    return MailboxOutboundAlarmDispatch.of({
+    return {
       handle: processOne.pipe(Effect.ensuring(scheduler.reconcile)),
-    });
-  })
-);
+    } satisfies MailboxOutboundAlarmDispatchService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

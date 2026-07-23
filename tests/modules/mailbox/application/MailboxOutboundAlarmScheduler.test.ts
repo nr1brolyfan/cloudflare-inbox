@@ -3,17 +3,19 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
-import {
-  MailboxAlarmStorage,
-  MailboxOutboundAlarmScheduler,
-  MailboxOutboundAlarmSchedulerLive,
-  outboundAlarmRetryMillis,
-} from "#/mailboxes/outbound-alarm-live";
-import { outboundSendingStaleTimeoutMillis } from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
 import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
-import { MailboxDatabase, MailboxRuntime } from "#/mailboxes/sqlite-services";
+import { MailboxDatabase } from "#/mailboxes/sqlite-services";
+import { MailboxOutboundLifecycleStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundLifecycleStoreSqlite";
+import {
+  MailboxOutboundAlarmScheduler,
+  outboundAlarmRetryMillis,
+} from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
+import { MailboxAlarmStorage } from "#/modules/mailbox/ports/MailboxAlarmStorage";
+import type { MailboxAlarmStorageService } from "#/modules/mailbox/ports/MailboxAlarmStorage";
+import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
+import { outboundSendingStaleTimeoutMillis } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
-import { MailboxDatabaseTestLive } from "../support/mailbox-sqlite";
+import { MailboxDatabaseTestLive } from "../../../support/mailbox-sqlite";
 
 const makeAlarmStorage = (initial: number | null = null) => {
   const operations: (`delete` | `set:${number}`)[] = [];
@@ -39,16 +41,24 @@ const makeAlarmStorage = (initial: number | null = null) => {
 };
 
 const makeSchedulerLive = (
-  alarmStorage: MailboxAlarmStorage,
+  alarmStorage: MailboxAlarmStorageService,
   now: () => number
 ) =>
-  MailboxOutboundAlarmSchedulerLive.pipe(
+  MailboxOutboundAlarmScheduler.layerNoDeps.pipe(
     Layer.provide(
-      Layer.merge(
+      Layer.mergeAll(
         Layer.succeed(MailboxAlarmStorage, alarmStorage),
         Layer.succeed(
-          MailboxRuntime,
-          MailboxRuntime.of({ now, randomId: () => "unused" })
+          MailboxOutboundAlarmClock,
+          MailboxOutboundAlarmClock.of({ now })
+        ),
+        MailboxOutboundLifecycleStoreSqliteLayer.pipe(
+          Layer.provide(
+            Layer.succeed(
+              MailboxOutboundAlarmClock,
+              MailboxOutboundAlarmClock.of({ now })
+            )
+          )
         )
       )
     ),

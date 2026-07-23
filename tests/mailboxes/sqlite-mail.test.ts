@@ -37,7 +37,6 @@ import {
   ScheduleOutboundInput,
   outboundUndoWindowMillis,
 } from "#/mailboxes/outbound";
-import { MailboxOutboundAlarmScheduler } from "#/mailboxes/outbound-alarm-live";
 import { MailboxRepository } from "#/mailboxes/repository";
 import {
   attachment,
@@ -59,6 +58,7 @@ import {
   MailboxOutboundStore,
   MailboxRuntime,
 } from "#/mailboxes/sqlite-services";
+import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import {
   CompleteDraftAttachmentInput,
   GetDraftAttachmentInput,

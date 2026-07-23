@@ -5,30 +5,31 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { OutboundProviderMessageId } from "#/mailboxes/outbound";
+import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
+import { MailboxDatabase } from "#/mailboxes/sqlite-services";
+import { MailboxOutboundLifecycleStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundLifecycleStoreSqlite";
+import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
 import {
   MailboxOutboundLifecycleStore,
-  MailboxOutboundLifecycleStoreSqliteLive,
   OutboundDeliveryClaim,
   outboundRetryDelayMillis,
   outboundRetryMaxDelayMillis,
   outboundSendingStaleTimeoutMillis,
-} from "#/mailboxes/outbound-lifecycle-store-sqlite-live";
-import { folder, message, outboundDelivery } from "#/mailboxes/sqlite-schema";
-import { MailboxDatabase, MailboxRuntime } from "#/mailboxes/sqlite-services";
+} from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
-import { MailboxDatabaseTestLive } from "../support/mailbox-sqlite";
+import { MailboxDatabaseTestLive } from "../../../../support/mailbox-sqlite";
 
 const runtime = (now: () => number) =>
   Layer.succeed(
-    MailboxRuntime,
-    MailboxRuntime.of({ now, randomId: () => "unused" })
+    MailboxOutboundAlarmClock,
+    MailboxOutboundAlarmClock.of({ now })
   );
 
 const providerMessageId = (value: string) =>
   Schema.decodeUnknownSync(OutboundProviderMessageId)(value);
 
 const lifecycleLive = (now: () => number) =>
-  MailboxOutboundLifecycleStoreSqliteLive.pipe(
+  MailboxOutboundLifecycleStoreSqliteLayer.pipe(
     Layer.provide(runtime(now)),
     Layer.provideMerge(MailboxDatabaseTestLive)
   );
