@@ -21,6 +21,8 @@ import {
   authErrorMessage,
   authSessionQueryKey,
   clearCachedAuthSession,
+  enrollPasskey,
+  freshPasskeyEnrollmentOperationId,
 } from "#/modules/account-security/adapters/browser/AuthClient";
 
 const subscribeToPasskeySupport = () => () => null;
@@ -375,9 +377,13 @@ function PasskeyEnrollment({ userId }: { readonly userId: string }) {
   const queryClient = useQueryClient();
   const supported = usePasskeySupport();
   const [password, setPassword] = useState("");
+  const [operationId, setOperationId] = useState(
+    freshPasskeyEnrollmentOperationId
+  );
   const enrollment = useMutation({
-    mutationFn: () => authClient.passkey.register(),
+    mutationFn: () => enrollPasskey(operationId),
     onSuccess: async () => {
+      setOperationId((previous) => freshPasskeyEnrollmentOperationId(previous));
       await queryClient.invalidateQueries({
         queryKey: ["auth", "passkey-credentials", userId],
       });
@@ -416,8 +422,15 @@ function PasskeyEnrollment({ userId }: { readonly userId: string }) {
       </p>
       {supported ? (
         enrollment.isSuccess ? (
-          <div className="mt-4">
+          <div className="mt-4 space-y-4">
             <Notice>Passkey enrolled for this account.</Notice>
+            <button
+              type="button"
+              onClick={() => enrollment.reset()}
+              className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/80 px-5 py-3 font-bold shadow-sm"
+            >
+              <KeyRound size={17} /> Create another passkey
+            </button>
           </div>
         ) : (
           <div className="mt-5">

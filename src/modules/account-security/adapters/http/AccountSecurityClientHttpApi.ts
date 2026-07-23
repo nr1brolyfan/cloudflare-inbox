@@ -3,8 +3,12 @@ import { HttpApi } from "effect/unstable/httpapi";
 import { AccountRecoveryGroup } from "./AccountRecoveryHttpApi";
 import { ExternalRecoveryIdentityGroup } from "./ExternalRecoveryIdentityHttpApi";
 import { PasskeyCredentialManagementGroup } from "./PasskeyCredentialManagementHttpApi";
+import { PasskeyEnrollmentGroup } from "./PasskeyEnrollmentHttpApi";
 import { RecoveryCodeManagementGroup } from "./RecoveryCodeManagementHttpApi";
-import { RecoveryPasskeyEnrollmentGroup } from "./RecoveryPasskeyEnrollmentHttpApi";
+import {
+  RecoveryPasskeyEnrollmentGroup,
+  RecoveryPasskeyEnrollmentReadbackGroup,
+} from "./RecoveryPasskeyEnrollmentHttpApi";
 
 export const ApplicationAuthClientExtensionApi = HttpApi.make(
   "applicationAuthClientExtension"
@@ -13,5 +17,7 @@ export const ApplicationAuthClientExtensionApi = HttpApi.make(
   AccountRecoveryGroup,
   PasskeyCredentialManagementGroup,
   RecoveryCodeManagementGroup,
-  RecoveryPasskeyEnrollmentGroup
+  RecoveryPasskeyEnrollmentGroup,
+  RecoveryPasskeyEnrollmentReadbackGroup,
+  PasskeyEnrollmentGroup
 );

@@ -1208,6 +1208,8 @@ describe("protected mailbox API", () => {
       );
 
       expect(response.status).toBe(200);
+      expect(response.headers.get("cache-control")).toBe("private, no-store");
+      expect(response.headers.get("pragma")).toBe("no-cache");
       await expect(response.json()).resolves.toMatchObject({
         actorUserId: "user-a",
         operationId: "00000000-0000-4000-8000-000000000010",

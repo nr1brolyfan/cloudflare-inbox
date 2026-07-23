@@ -38,6 +38,7 @@ import { PasskeyCredentialManagementHttpHandlersLayer } from "#/modules/account-
 import {
   PasskeyEnrollmentHttpHandlersLayer,
   RecoveryPasskeyEnrollmentHttpHandlersLayer,
+  RecoveryPasskeyEnrollmentReadbackHttpHandlersLayer,
 } from "#/modules/account-security/adapters/http/PasskeyEnrollmentHttpHandlers";
 import { RecoveryCodeManagementHttpHandlersLayer } from "#/modules/account-security/adapters/http/RecoveryCodeManagementHttpHandlers";
 import {
@@ -132,6 +133,10 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
       RecoveryPasskeyEnrollmentHttpHandlersLayer.pipe(
         Layer.provide(accountSecurityLayer),
         Layer.provide(recoveryRequestAuthLayer),
+        Layer.provide(requestValidationLayer)
+      ),
+      RecoveryPasskeyEnrollmentReadbackHttpHandlersLayer.pipe(
+        Layer.provide(accountSecurityLayer),
         Layer.provide(requestValidationLayer)
       ),
       PasskeyAuthenticationHttpHandlersLayer.pipe(

@@ -1,5 +1,6 @@
 import { passkeyEvidence } from "@effect-auth/core/Assurance";
 import { CustomAuditEventSchema } from "@effect-auth/core/AuditLog";
+import { AuthSecrets } from "@effect-auth/core/AuthConfig";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import { Challenge } from "@effect-auth/core/Challenge";
 import { Crypto } from "@effect-auth/core/Crypto";
@@ -41,11 +42,13 @@ import { authSession } from "#/auth/schema/modules/sessions";
 import { authTotpFactor } from "#/auth/schema/modules/totp";
 import { authVerification } from "#/auth/schema/modules/verification";
 import {
-  EnrolledPasskeyCredential,
   FinishPasskeyEnrollmentCommand,
   PasskeyEnrollment,
   PasskeyEnrollmentChallengeMetadata,
   PasskeyEnrollmentError,
+  PasskeyEnrollmentReceiptSchema,
+  ReadPasskeyEnrollmentCommand,
+  ReadRecoveryPasskeyEnrollmentCommand,
   RecoveryPasskeyRemediationCompleted,
   StartPasskeyEnrollmentCommand,
   StartedPasskeyEnrollment,
@@ -74,7 +77,10 @@ import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 import { UnixMillis } from "#/shared/Temporal";
 
-import { appExternalRecoveryIdentity } from "./AccountSecuritySchema";
+import {
+  appExternalRecoveryIdentity,
+  appPasskeyEnrollmentReceipt,
+} from "./AccountSecuritySchema";
 
 export interface PasskeyEnrollmentRuntimeShape {
   readonly now: () => number;
@@ -85,6 +91,14 @@ export class PasskeyEnrollmentRuntime extends Context.Service<
   PasskeyEnrollmentRuntime,
   PasskeyEnrollmentRuntimeShape
 >()("cloudflare-inbox/PasskeyEnrollmentRuntime") {}
+
+interface PasskeyEnrollmentRequestContext {
+  readonly boundRecoveryIdentityId: unknown;
+  readonly boundRecoveryIdentityVersion: unknown;
+  readonly mode: "normal" | "recovery-remediation";
+  readonly recoveryMode: boolean;
+  readonly requestAuth: CurrentRequestAuthShape;
+}
 
 export const PasskeyEnrollmentRuntimeLayer = Layer.succeed(
   PasskeyEnrollmentRuntime,
@@ -133,11 +147,105 @@ const backedUpValue = (value: boolean | undefined) => {
   return value ? 1 : 0;
 };
 
+const persistedJsonValue = (value: unknown | undefined): unknown => {
+  if (value === undefined) {
+    return null;
+  }
+  const encoded = JSON.stringify(value);
+  return encoded === undefined ? null : (JSON.parse(encoded) as unknown);
+};
+
+const canonicalJson = (value: unknown): string => {
+  if (value === null) {
+    return "null";
+  }
+  if (typeof value === "string" || typeof value === "boolean") {
+    return JSON.stringify(value);
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? JSON.stringify(value) : "null";
+  }
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (typeof value === "object") {
+    const entries: [string, unknown][] = Object.entries(value);
+    // The project lib predates toSorted; this local array is not shared.
+    // oxlint-disable-next-line unicorn/no-array-sort
+    entries.sort(([left], [right]) =>
+      left < right ? -1 : left > right ? 1 : 0
+    );
+    return `{${entries
+      .map(([key, nested]) => `${JSON.stringify(key)}:${canonicalJson(nested)}`)
+      .join(",")}}`;
+  }
+  throw new TypeError("Credential intent contains an unsupported value");
+};
+
+const ReceiptRow = Schema.Struct({
+  actorUserId: Schema.String,
+  challengeId: Schema.String,
+  clientIntentDigest: Schema.String,
+  committedAt: Schema.Number,
+  credentialRecordId: Schema.String,
+  mode: Schema.String,
+  operationId: Schema.String,
+  readbackSecretHash: Schema.NullOr(Schema.String),
+  recoveryCodeCount: Schema.NullOr(Schema.Number),
+  recoveryCodeSetId: Schema.NullOr(Schema.String),
+  recoveryIdentityId: Schema.String,
+  recoveryIdentityVersion: Schema.Number,
+  schemaVersion: Schema.Number,
+  verifiedIntentDigest: Schema.String,
+});
+type ReceiptRow = Schema.Schema.Type<typeof ReceiptRow>;
+
+const receiptFromRow = (row: ReceiptRow) =>
+  Schema.decodeUnknownEffect(PasskeyEnrollmentReceiptSchema)({
+    committedAt: row.committedAt,
+    credentialRecordId: row.credentialRecordId,
+    mode: row.mode,
+    operationId: row.operationId,
+    ...(row.recoveryCodeCount === null
+      ? {}
+      : { recoveryCodeCount: row.recoveryCodeCount }),
+    ...(row.recoveryCodeSetId === null
+      ? {}
+      : { recoveryCodeSetId: row.recoveryCodeSetId }),
+    schemaVersion: row.schemaVersion,
+  });
+
+const preliminaryReceiptIntent = (
+  row: ReceiptRow,
+  intent: {
+    readonly actorUserId: string;
+    readonly challengeId: string;
+    readonly clientIntentDigest: string;
+    readonly mode: "normal" | "recovery-remediation";
+    readonly readbackSecretHash: string | null;
+  }
+) =>
+  row.actorUserId === intent.actorUserId &&
+  row.challengeId === intent.challengeId &&
+  row.clientIntentDigest === intent.clientIntentDigest &&
+  row.mode === intent.mode &&
+  row.readbackSecretHash === intent.readbackSecretHash;
+
+const exactReceiptIntent = (
+  row: ReceiptRow,
+  intent: Parameters<typeof preliminaryReceiptIntent>[1] & {
+    readonly verifiedIntentDigest: string;
+  }
+) =>
+  preliminaryReceiptIntent(row, intent) &&
+  row.verifiedIntentDigest === intent.verifiedIntentDigest;
+
 /** Guarded first-passkey enrollment over the maintained effect-auth primitives. */
 const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
   PasskeyEnrollmentTransaction,
   Effect.gen(function* () {
     const batch = yield* ControlPlane.ControlPlaneBatch;
+    const authSecrets = yield* AuthSecrets;
     const authRateLimit = yield* AuthRateLimit;
     const challenge = yield* Challenge;
     const crypto = yield* Crypto;
@@ -150,7 +258,106 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
     const stepUpClock = yield* SensitiveOperationStepUpClock;
     const verifier = yield* PasskeyVerifier;
 
-    const prerequisites = (operation: "finish" | "start") =>
+    const readStoredReceipt = (
+      operationId: string,
+      operation: PasskeyEnrollmentError["operation"]
+    ) =>
+      database
+        .select({
+          actorUserId: appPasskeyEnrollmentReceipt.actorUserId,
+          challengeId: appPasskeyEnrollmentReceipt.challengeId,
+          clientIntentDigest: appPasskeyEnrollmentReceipt.clientIntentDigest,
+          committedAt: appPasskeyEnrollmentReceipt.committedAt,
+          credentialRecordId: appPasskeyEnrollmentReceipt.credentialRecordId,
+          mode: appPasskeyEnrollmentReceipt.mode,
+          operationId: appPasskeyEnrollmentReceipt.operationId,
+          readbackSecretHash: appPasskeyEnrollmentReceipt.readbackSecretHash,
+          recoveryCodeCount: appPasskeyEnrollmentReceipt.resultingCodeCount,
+          recoveryCodeSetId: appPasskeyEnrollmentReceipt.resultingCodeSetId,
+          recoveryIdentityId: appPasskeyEnrollmentReceipt.recoveryIdentityId,
+          recoveryIdentityVersion:
+            appPasskeyEnrollmentReceipt.recoveryIdentityVersion,
+          schemaVersion: appPasskeyEnrollmentReceipt.schemaVersion,
+          verifiedIntentDigest:
+            appPasskeyEnrollmentReceipt.verifiedIntentDigest,
+        })
+        .from(appPasskeyEnrollmentReceipt)
+        .where(eq(appPasskeyEnrollmentReceipt.operationId, operationId))
+        .limit(1)
+        .pipe(
+          Effect.mapError((cause) => error(operation, "storage", cause)),
+          Effect.flatMap(([row]) =>
+            row === undefined
+              ? Effect.succeed(null)
+              : Schema.decodeUnknownEffect(ReceiptRow)(row).pipe(
+                  Effect.mapError((cause) => error(operation, "storage", cause))
+                )
+          )
+        );
+
+    const hashReadbackSecret = (
+      secret: string,
+      operation: PasskeyEnrollmentError["operation"]
+    ) =>
+      crypto
+        .hmacSha256({
+          data: `passkey-enrollment-readback:${secret}`,
+          key: authSecrets.privacy,
+        })
+        .pipe(Effect.mapError((cause) => error(operation, "storage", cause)));
+
+    const hashClientIntent = (credential: unknown) =>
+      Effect.try({
+        try: () => canonicalJson(credential),
+        catch: (cause) => error("finish", "invalid-input", cause),
+      }).pipe(
+        Effect.flatMap((intent) =>
+          crypto.hmacSha256({
+            data: `passkey-enrollment-client-intent:v1:${intent}`,
+            key: authSecrets.privacy,
+          })
+        ),
+        Effect.mapError((cause) =>
+          cause instanceof PasskeyEnrollmentError
+            ? cause
+            : error("finish", "storage", cause)
+        )
+      );
+
+    const hashVerifiedIntent = (verified: {
+      readonly backedUp?: boolean;
+      readonly credentialId: string;
+      readonly metadata?: unknown;
+      readonly publicKey: unknown;
+      readonly signCount: number;
+      readonly transports?: unknown;
+    }) =>
+      Effect.try({
+        try: () =>
+          canonicalJson({
+            backedUp: verified.backedUp ?? null,
+            credentialId: verified.credentialId,
+            metadata: persistedJsonValue(verified.metadata),
+            publicKey: verified.publicKey,
+            signCount: verified.signCount,
+            transports: persistedJsonValue(verified.transports),
+          }),
+        catch: (cause) => error("finish", "storage", cause),
+      }).pipe(
+        Effect.flatMap((intent) =>
+          crypto.hmacSha256({
+            data: `passkey-enrollment-verified-intent:v1:${intent}`,
+            key: authSecrets.privacy,
+          })
+        ),
+        Effect.mapError((cause) =>
+          cause instanceof PasskeyEnrollmentError
+            ? cause
+            : error("finish", "storage", cause)
+        )
+      );
+
+    const requestContext = (operation: "finish" | "start") =>
       Effect.gen(function* () {
         const requestAuth = yield* CurrentRequestAuth;
         const principal = yield* AuthPermission.CurrentPrincipal;
@@ -159,8 +366,11 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
         const recoveryMode =
           claims?.requirements?.length === 1 &&
           claims.requirements[0] === "recovery_remediation" &&
-          claims.recoveryRemediation?.allowed.includes("second-passkey") ===
-            true;
+          claims.recoveryRemediation?.allowed.length === 1 &&
+          claims.recoveryRemediation.allowed[0] === "second-passkey";
+        if (!recoveryMode) {
+          yield* requireSession(requestAuth, operation);
+        }
         const recoveryEvidence = recoveryMode
           ? requestAuth.validated.currentSession.authenticationEvents.find(
               (event) =>
@@ -187,8 +397,29 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
         ) {
           return yield* error(operation, "restricted-session");
         }
+        return {
+          boundRecoveryIdentityId,
+          boundRecoveryIdentityVersion,
+          mode: recoveryMode
+            ? ("recovery-remediation" as const)
+            : ("normal" as const),
+          recoveryMode,
+          requestAuth,
+        };
+      });
+
+    const freshPrerequisites = (
+      operation: "finish" | "start",
+      context: PasskeyEnrollmentRequestContext
+    ) =>
+      Effect.gen(function* () {
+        const {
+          boundRecoveryIdentityId,
+          boundRecoveryIdentityVersion,
+          recoveryMode,
+          requestAuth,
+        } = context;
         if (!recoveryMode) {
-          yield* requireSession(requestAuth, operation);
           yield* requireSensitiveOperationStepUp(
             requestAuth.validated.currentSession,
             stepUpClock.now()
@@ -251,13 +482,24 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
     return PasskeyEnrollmentTransaction.of({
       start: (untrusted) =>
         Effect.gen(function* () {
-          yield* Schema.decodeUnknownEffect(StartPasskeyEnrollmentCommand)(
-            untrusted
-          ).pipe(
+          const command = yield* Schema.decodeUnknownEffect(
+            StartPasskeyEnrollmentCommand
+          )(untrusted).pipe(
             Effect.mapError((cause) => error("start", "invalid-input", cause))
           );
+          const context = yield* requestContext("start");
+          if (
+            (context.recoveryMode && command.readbackSecret === undefined) ||
+            (!context.recoveryMode && command.readbackSecret !== undefined)
+          ) {
+            return yield* error("start", "invalid-input");
+          }
           const { recovery, recoveryMode, requestAuth } =
-            yield* prerequisites("start");
+            yield* freshPrerequisites("start", context);
+          const readbackSecretHash =
+            command.readbackSecret === undefined
+              ? undefined
+              : yield* hashReadbackSecret(command.readbackSecret, "start");
           const [identity] = yield* database
             .select({ value: authUserIdentity.value })
             .from(authUserIdentity)
@@ -271,9 +513,6 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
             .pipe(Effect.mapError((cause) => error("start", "storage", cause)));
           const userName =
             identity?.value ?? requestAuth.validated.actor.userId;
-          const operationId = Schema.decodeUnknownSync(
-            PasskeyEnrollmentChallengeMetadata.fields.operationId
-          )(runtime.randomId());
           const started = yield* options
             .startRegistration({
               attestation: passkeyConfig.attestation,
@@ -282,8 +521,11 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                 authorization: recoveryMode
                   ? "recovery-remediation"
                   : "step-up",
-                operationId,
+                operationId: command.operationId,
                 purpose: "passkey-enrollment",
+                ...(readbackSecretHash === undefined
+                  ? {}
+                  : { readbackSecretHash }),
                 recoveryIdentityId: recovery.id,
                 recoveryIdentityVersion: recovery.version,
                 sessionId: requestAuth.validated.actor.sessionId,
@@ -297,9 +539,10 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
               userName,
             })
             .pipe(Effect.mapError((cause) => error("start", "storage", cause)));
-          return yield* Schema.decodeUnknownEffect(StartedPasskeyEnrollment)(
-            started
-          ).pipe(Effect.mapError((cause) => error("start", "storage", cause)));
+          return yield* Schema.decodeUnknownEffect(StartedPasskeyEnrollment)({
+            ...started,
+            operationId: command.operationId,
+          }).pipe(Effect.mapError((cause) => error("start", "storage", cause)));
         }),
       finish: (untrusted) =>
         // oxlint-disable-next-line eslint/complexity -- Authorization, credential insertion, and recovery rotation must share one atomic batch.
@@ -309,8 +552,42 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
           )(untrusted).pipe(
             Effect.mapError((cause) => error("finish", "invalid-input", cause))
           );
-          const { recovery, recoveryMode, requestAuth } =
-            yield* prerequisites("finish");
+          const context = yield* requestContext("finish");
+          const { recoveryMode, requestAuth } = context;
+          if (
+            (recoveryMode && command.readbackSecret === undefined) ||
+            (!recoveryMode && command.readbackSecret !== undefined)
+          ) {
+            return yield* error("finish", "invalid-input");
+          }
+          const clientIntentDigest = yield* hashClientIntent(
+            command.credential
+          );
+          const readbackSecretHash =
+            command.readbackSecret === undefined
+              ? null
+              : yield* hashReadbackSecret(command.readbackSecret, "finish");
+          const preliminaryIntent = {
+            actorUserId: requestAuth.validated.actor.userId,
+            challengeId: command.challengeId,
+            clientIntentDigest,
+            mode: context.mode,
+            readbackSecretHash,
+          } as const;
+          const replay = yield* readStoredReceipt(
+            command.operationId,
+            "finish"
+          );
+          if (
+            replay !== null &&
+            !preliminaryReceiptIntent(replay, preliminaryIntent)
+          ) {
+            return yield* error("finish", "operation-conflict");
+          }
+          const fresh =
+            replay === null
+              ? yield* freshPrerequisites("finish", context)
+              : undefined;
           const verified = yield* verifier
             .verifyRegistration({
               expectedOrigin: passkeyConfig.expectedOrigin,
@@ -330,6 +607,24 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
           ) {
             return yield* error("finish", "verification-failed");
           }
+          const verifiedIntentDigest = yield* hashVerifiedIntent(verified);
+          const intent = {
+            ...preliminaryIntent,
+            verifiedIntentDigest,
+          } as const;
+          if (replay !== null) {
+            if (!exactReceiptIntent(replay, intent)) {
+              return yield* error("finish", "operation-conflict");
+            }
+            const receipt = yield* receiptFromRow(replay).pipe(
+              Effect.mapError((cause) => error("finish", "storage", cause))
+            );
+            return { receipt, replayed: true };
+          }
+          if (fresh === undefined) {
+            return yield* error("finish", "storage");
+          }
+          const { recovery } = fresh;
           const inspected = yield* challenge
             .inspect({
               challengeId: command.challengeId,
@@ -350,10 +645,16 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
           );
           if (
             inspected.subject !== requestAuth.validated.actor.userId ||
-            metadata.sessionId !== requestAuth.validated.actor.sessionId ||
-            metadata.sessionSecretHash !== requestAuth.sessionSecretHash ||
+            metadata.operationId !== command.operationId ||
             metadata.authorization !==
               (recoveryMode ? "recovery-remediation" : "step-up") ||
+            (metadata.readbackSecretHash ?? null) !== readbackSecretHash
+          ) {
+            return yield* error("finish", "operation-conflict");
+          }
+          if (
+            metadata.sessionId !== requestAuth.validated.actor.sessionId ||
+            metadata.sessionSecretHash !== requestAuth.sessionSecretHash ||
             metadata.recoveryIdentityId !== recovery.id ||
             metadata.recoveryIdentityVersion !== recovery.version
           ) {
@@ -362,11 +663,6 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
 
           const timestamp = Schema.decodeUnknownSync(UnixMillis)(runtime.now());
           const authTimestamp = AuthUnixMillis(timestamp);
-          const enrolled = yield* Schema.decodeUnknownEffect(
-            EnrolledPasskeyCredential
-          )({ credentialId: verified.credentialId }).pipe(
-            Effect.mapError((cause) => error("finish", "storage", cause))
-          );
           const nonce = runtime.randomId();
           const recordId = yield* crypto
             .randomToken(16)
@@ -402,6 +698,13 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                   return yield* error("finish", "storage");
                 }
                 const replacementIdentityId = yield* crypto
+                  .randomToken(16)
+                  .pipe(
+                    Effect.mapError((cause) =>
+                      error("finish", "storage", cause)
+                    )
+                  );
+                const codeSetId = yield* crypto
                   .randomToken(16)
                   .pipe(
                     Effect.mapError((cause) =>
@@ -462,14 +765,22 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                   RecoveryPasskeyRemediationCompleted
                 )({
                   codes: plaintext.map((code) => Redacted.value(code)),
-                  credentialId: verified.credentialId,
-                  generatedAt: timestamp,
+                  receipt: {
+                    committedAt: timestamp,
+                    credentialRecordId: recordId,
+                    mode: "recovery-remediation",
+                    operationId: command.operationId,
+                    recoveryCodeCount: 10,
+                    recoveryCodeSetId: codeSetId,
+                    schemaVersion: 1,
+                  },
                   type: "recovery-remediation-completed",
                 }).pipe(
                   Effect.mapError((cause) => error("finish", "storage", cause))
                 );
                 return {
                   body,
+                  codeSetId,
                   codeRecords,
                   previousIdentityId: identity.id,
                   prepared,
@@ -574,6 +885,14 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
               .from(authPasskeyCredential)
               .where(
                 eq(authPasskeyCredential.credentialId, verified.credentialId)
+              )
+          );
+          const operationAvailable = notExists(
+            database
+              .select({ value: sql`1` })
+              .from(appPasskeyEnrollmentReceipt)
+              .where(
+                eq(appPasskeyEnrollmentReceipt.operationId, command.operationId)
               )
           );
           const authorized = exists(
@@ -746,7 +1065,10 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                       sql`select ${code.id},
                                  ${requestAuth.validated.actor.userId},
                                  ${code.codeHash}, ${timestamp}, null, null,
-                                 ${JSON.stringify({ purpose: "account-recovery-completed" })}
+                                  ${JSON.stringify({
+                                    purpose: "account-recovery-completed",
+                                    setId: remediation.codeSetId,
+                                  })}
                           where ${authorized}`
                     )
                   ),
@@ -829,7 +1151,8 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
               sql`select ${nonce} where ${trustedStepUpSession}
                       and ${recoveryValid}
                       and ${challengeValid}
-                      and ${credentialAvailable}`
+                      and ${credentialAvailable}
+                      and ${operationAvailable}`
             ),
             database.all(sql`select cast(${trustedStepUpSession} as integer)
                                       as step_up_valid,
@@ -841,6 +1164,8 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                                       as challenge_valid,
                                    cast(${credentialAvailable} as integer)
                                       as credential_available,
+                                   cast(${operationAvailable} as integer)
+                                      as operation_available,
                                    cast(${authorized} as integer) as authorized`),
             database
               .update(authVerification)
@@ -882,7 +1207,7 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                   .where(eq(appAuthorizationGuard.nonce, nonce))
               )
               .returning({
-                credential_id: authPasskeyCredential.credentialId,
+                credential_record_id: authPasskeyCredential.id,
               }),
             ...remediationStatements,
             database.insert(authAuditLog).select(
@@ -906,29 +1231,119 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                 .where(eq(appAuthorizationGuard.nonce, nonce))
             ),
             database
+              .insert(appPasskeyEnrollmentReceipt)
+              .select(
+                database
+                  .select({
+                    actorUserId: sql`${requestAuth.validated.actor.userId}`.as(
+                      "actor_user_id"
+                    ),
+                    challengeId: sql`${command.challengeId}`.as("challenge_id"),
+                    clientIntentDigest: sql`${clientIntentDigest}`.as(
+                      "client_intent_digest"
+                    ),
+                    committedAt: sql`${timestamp}`.as("committed_at"),
+                    credentialRecordId: sql`${recordId}`.as(
+                      "credential_record_id"
+                    ),
+                    mode: sql`${context.mode}`.as("mode"),
+                    operationId: sql`${command.operationId}`.as("operation_id"),
+                    readbackSecretHash:
+                      readbackSecretHash === null
+                        ? sql<null>`null`.as("readback_secret_hash")
+                        : sql`${readbackSecretHash}`.as("readback_secret_hash"),
+                    recoveryIdentityId: sql`${recovery.id}`.as(
+                      "recovery_identity_id"
+                    ),
+                    recoveryIdentityVersion: sql`${recovery.version}`.as(
+                      "recovery_identity_version"
+                    ),
+                    replacementIdentityId:
+                      remediation === undefined
+                        ? sql<null>`null`.as("replacement_identity_id")
+                        : sql`${remediation.replacementIdentityId}`.as(
+                            "replacement_identity_id"
+                          ),
+                    resultingCodeCount:
+                      remediation === undefined
+                        ? sql<null>`null`.as("resulting_code_count")
+                        : sql`10`.as("resulting_code_count"),
+                    resultingCodeSetId:
+                      remediation === undefined
+                        ? sql<null>`null`.as("resulting_code_set_id")
+                        : sql`${remediation.codeSetId}`.as(
+                            "resulting_code_set_id"
+                          ),
+                    resultingSessionId:
+                      remediation === undefined
+                        ? sql<null>`null`.as("resulting_session_id")
+                        : sql`${remediation.prepared.row.id}`.as(
+                            "resulting_session_id"
+                          ),
+                    schemaVersion: sql<1>`1`.as("schema_version"),
+                    verifiedIntentDigest: sql`${verifiedIntentDigest}`.as(
+                      "verified_intent_digest"
+                    ),
+                  })
+                  .from(appAuthorizationGuard)
+                  .where(eq(appAuthorizationGuard.nonce, nonce))
+              )
+              .returning({
+                operation_id: appPasskeyEnrollmentReceipt.operationId,
+              }),
+            database
               .delete(appAuthorizationGuard)
               .where(eq(appAuthorizationGuard.nonce, nonce)),
           ];
           const results = yield* batch.execute(statements).pipe(
-            Effect.mapError(
-              (cause) =>
-                new PasskeyEnrollmentError({
-                  cause: cause.cause,
-                  commitState: cause.commitState,
-                  operation: "finish",
-                  reason:
-                    cause.commitState === "unknown"
-                      ? "indeterminate"
-                      : "storage",
-                })
+            Effect.catchTag("ControlPlaneBatchError", (cause) =>
+              cause.commitState === "unknown"
+                ? readStoredReceipt(command.operationId, "finish").pipe(
+                    Effect.flatMap((stored) =>
+                      stored === null
+                        ? Effect.fail(
+                            new PasskeyEnrollmentError({
+                              cause: cause.cause,
+                              commitState: "unknown",
+                              operation: "finish",
+                              reason: "indeterminate",
+                            })
+                          )
+                        : exactReceiptIntent(stored, intent)
+                          ? receiptFromRow(stored).pipe(
+                              Effect.map((receipt) => ({
+                                receipt,
+                                replayed: true,
+                              })),
+                              Effect.mapError((decodeCause) =>
+                                error("finish", "storage", decodeCause)
+                              )
+                            )
+                          : Effect.fail(
+                              error("finish", "operation-conflict", cause.cause)
+                            )
+                    )
+                  )
+                : Effect.fail(
+                    new PasskeyEnrollmentError({
+                      cause: cause.cause,
+                      commitState: cause.commitState,
+                      operation: "finish",
+                      reason: "storage",
+                    })
+                  )
             )
           );
+          if ("receipt" in results) {
+            return results;
+          }
           const [status] = yield* Schema.decodeUnknownEffect(
             Schema.Array(
               Schema.Struct({
                 authorized: Schema.Number,
                 challenge_valid: Schema.Number,
                 credential_available: Schema.Number,
+                operation_available: Schema.Number,
                 recovery_valid: Schema.Number,
                 session_valid: Schema.Number,
                 step_up_valid: Schema.Number,
@@ -947,28 +1362,134 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
             if (status.recovery_valid !== 1) {
               return yield* error("finish", "recovery-identity-required");
             }
+            if (status.operation_available !== 1) {
+              const concurrentReplay = yield* readStoredReceipt(
+                command.operationId,
+                "finish"
+              );
+              if (
+                concurrentReplay !== null &&
+                exactReceiptIntent(concurrentReplay, intent)
+              ) {
+                const receipt = yield* receiptFromRow(concurrentReplay).pipe(
+                  Effect.mapError((cause) => error("finish", "storage", cause))
+                );
+                return { receipt, replayed: true };
+              }
+              return yield* error("finish", "operation-conflict");
+            }
             if (status.credential_available !== 1) {
               return yield* error("finish", "credential-conflict");
             }
             return yield* error("finish", "challenge-invalid");
           }
           const returned = yield* Schema.decodeUnknownEffect(
-            Schema.Array(Schema.Struct({ credential_id: Schema.String }))
+            Schema.Array(Schema.Struct({ id: Schema.String }))
           )(results[3]?.results).pipe(
             Effect.mapError((cause) => error("finish", "indeterminate", cause))
           );
-          if (returned[0]?.credential_id !== verified.credentialId) {
+          if (returned[0]?.id !== recordId) {
             return yield* error("finish", "indeterminate");
           }
-          return remediation === undefined
-            ? enrolled
-            : {
-                ...enrolled,
-                remediation: {
-                  body: remediation.body,
-                  session: remediation.prepared.session,
-                },
-              };
+          const receiptRows = yield* Schema.decodeUnknownEffect(
+            Schema.Array(Schema.Struct({ operation_id: Schema.String }))
+          )(results.at(-2)?.results).pipe(
+            Effect.mapError((cause) => error("finish", "indeterminate", cause))
+          );
+          if (receiptRows[0]?.operation_id !== command.operationId) {
+            return yield* error("finish", "indeterminate");
+          }
+          const receipt =
+            remediation?.body.receipt ??
+            (yield* Schema.decodeUnknownEffect(PasskeyEnrollmentReceiptSchema)({
+              committedAt: timestamp,
+              credentialRecordId: recordId,
+              mode: "normal",
+              operationId: command.operationId,
+              schemaVersion: 1,
+            }).pipe(
+              Effect.mapError((cause) => error("finish", "storage", cause))
+            ));
+          return {
+            receipt,
+            replayed: false,
+            ...(remediation === undefined
+              ? {}
+              : {
+                  remediation: {
+                    body: remediation.body,
+                    session: remediation.prepared.session,
+                  },
+                }),
+          };
+        }),
+      readOperation: (untrusted) =>
+        Effect.gen(function* () {
+          const command = yield* Schema.decodeUnknownEffect(
+            ReadPasskeyEnrollmentCommand
+          )(untrusted).pipe(
+            Effect.mapError((cause) => error("finish", "invalid-input", cause))
+          );
+          const context = yield* requestContext("finish");
+          if (context.recoveryMode) {
+            return yield* error("finish", "restricted-session");
+          }
+          const clientIntentDigest = yield* hashClientIntent(
+            command.credential
+          );
+          const stored = yield* readStoredReceipt(
+            command.operationId,
+            "finish"
+          );
+          if (
+            stored === null ||
+            !preliminaryReceiptIntent(stored, {
+              actorUserId: context.requestAuth.validated.actor.userId,
+              challengeId: command.challengeId,
+              clientIntentDigest,
+              mode: "normal",
+              readbackSecretHash: null,
+            })
+          ) {
+            return yield* error("finish", "operation-conflict");
+          }
+          return yield* receiptFromRow(stored).pipe(
+            Effect.mapError((cause) => error("finish", "storage", cause))
+          );
+        }),
+      readRecoveryOperation: (untrusted) =>
+        Effect.gen(function* () {
+          const command = yield* Schema.decodeUnknownEffect(
+            ReadRecoveryPasskeyEnrollmentCommand
+          )(untrusted).pipe(
+            Effect.mapError((cause) => error("finish", "invalid-proof", cause))
+          );
+          const readbackSecretHash = yield* hashReadbackSecret(
+            command.readbackSecret,
+            "finish"
+          );
+          const clientIntentDigest = yield* hashClientIntent(
+            command.credential
+          );
+          const stored = yield* readStoredReceipt(
+            command.operationId,
+            "finish"
+          );
+          if (
+            stored === null ||
+            !preliminaryReceiptIntent(stored, {
+              actorUserId: stored.actorUserId,
+              challengeId: command.challengeId,
+              clientIntentDigest,
+              mode: "recovery-remediation",
+              readbackSecretHash,
+            })
+          ) {
+            return yield* error("finish", "invalid-proof");
+          }
+          return yield* receiptFromRow(stored).pipe(
+            Effect.mapError((cause) => error("finish", "storage", cause))
+          );
         }),
     });
   })

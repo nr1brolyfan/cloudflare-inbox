@@ -130,7 +130,11 @@ function RecoveryRemediationPanel({
   const enrollment = useMutation({
     gcTime: 0,
     mutationFn: enrollRecoveryPasskey,
-    onSuccess: (result) => onComplete(result.codes),
+    onSuccess: (result) => {
+      if (result.type === "recovery-remediation-completed") {
+        return onComplete(result.codes);
+      }
+    },
     retry: false,
   });
 
@@ -156,6 +160,14 @@ function RecoveryRemediationPanel({
       )}
       {enrollment.error ? (
         <ErrorNotice>{authErrorMessage(enrollment.error)}</ErrorNotice>
+      ) : null}
+      {enrollment.data !== undefined &&
+      enrollment.data.type !== "recovery-remediation-completed" ? (
+        <ErrorNotice>
+          Recovery remediation committed, but the one-time session cookie and
+          recovery codes cannot be recovered. Sign in with the new passkey, then
+          rotate recovery codes before relying on them.
+        </ErrorNotice>
       ) : null}
       <button
         type="button"

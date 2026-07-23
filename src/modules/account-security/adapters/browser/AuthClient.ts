@@ -20,6 +20,8 @@ import {
 } from "#/modules/account-security/application/PasskeyCredentialAdministration";
 import {
   FinishPasskeyEnrollmentCommand,
+  ReadPasskeyEnrollmentCommand,
+  ReadRecoveryPasskeyEnrollmentCommand,
   StartPasskeyEnrollmentCommand,
 } from "#/modules/account-security/application/PasskeyEnrollment";
 import {
@@ -178,12 +180,54 @@ const applicationAuthExtension = defineAuthHttpApiExtension(
           }),
         options
       ),
-    startRecoveryPasskeyEnrollment: (options?: AuthClientRequestOptions) =>
+    startRecoveryPasskeyEnrollment: (
+      payload: Schema.Codec.Encoded<typeof StartPasskeyEnrollmentCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
       run(
         (client) =>
           client.recoveryPasskeyEnrollment.start({
             payload: Schema.decodeUnknownSync(StartPasskeyEnrollmentCommand)(
-              {}
+              payload
+            ),
+          }),
+        options
+      ),
+    startPasskeyEnrollment: (
+      payload: Schema.Codec.Encoded<typeof StartPasskeyEnrollmentCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.passkey.registerStart({
+            payload: Schema.decodeUnknownSync(StartPasskeyEnrollmentCommand)(
+              payload
+            ),
+          }),
+        options
+      ),
+    finishPasskeyEnrollment: (
+      payload: Schema.Codec.Encoded<typeof FinishPasskeyEnrollmentCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.passkey.registerFinish({
+            payload: Schema.decodeUnknownSync(FinishPasskeyEnrollmentCommand)(
+              payload
+            ),
+          }),
+        options
+      ),
+    readPasskeyEnrollment: (
+      payload: Schema.Codec.Encoded<typeof ReadPasskeyEnrollmentCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.passkey.readRegisterOperation({
+            payload: Schema.decodeUnknownSync(ReadPasskeyEnrollmentCommand)(
+              payload
             ),
           }),
         options
@@ -198,6 +242,21 @@ const applicationAuthExtension = defineAuthHttpApiExtension(
             payload: Schema.decodeUnknownSync(FinishPasskeyEnrollmentCommand)(
               payload
             ),
+          }),
+        options
+      ),
+    readRecoveryPasskeyEnrollment: (
+      payload: Schema.Codec.Encoded<
+        typeof ReadRecoveryPasskeyEnrollmentCommand
+      >,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.recoveryPasskeyEnrollmentReadback.readOperation({
+            payload: Schema.decodeUnknownSync(
+              ReadRecoveryPasskeyEnrollmentCommand
+            )(payload),
           }),
         options
       ),
@@ -219,14 +278,157 @@ export const generateAccountRecoveryReadbackSecret = () => {
     .replace(/=+$/u, "");
 };
 
-export const enrollRecoveryPasskey = async () => {
-  const started = await authClient.extensions.startRecoveryPasskeyEnrollment();
-  const credential = await createPasskeyCredential(
-    started.publicKey as Parameters<typeof createPasskeyCredential>[0]
-  );
-  return authClient.extensions.finishRecoveryPasskeyEnrollment({
-    challengeId: started.challengeId,
-    credential,
+export const freshPasskeyEnrollmentOperationId = (
+  previous?: string,
+  randomId: () => string = () => crypto.randomUUID()
+) => {
+  let operationId = randomId();
+  while (operationId === previous) {
+    operationId = randomId();
+  }
+  return operationId;
+};
+
+interface PasskeyBrowserCeremony<Credential, Result, Receipt> {
+  readonly createCredential: (publicKey: unknown) => Promise<Credential>;
+  readonly finish: (input: {
+    readonly challengeId: string;
+    readonly credential: Credential;
+    readonly operationId: string;
+  }) => Promise<Result>;
+  readonly read: (input: {
+    readonly challengeId: string;
+    readonly credential: Credential;
+    readonly operationId: string;
+  }) => Promise<Receipt>;
+  readonly start: (input: {
+    readonly operationId: string;
+  }) => Promise<{ readonly challengeId: string; readonly publicKey: unknown }>;
+}
+
+const isAmbiguousPasskeyFinishError = (failure: unknown) =>
+  typeof failure !== "object" ||
+  failure === null ||
+  !("code" in failure) ||
+  failure.code === "internal_error";
+
+export const runPasskeyBrowserCeremony = async <Credential, Result, Receipt>(
+  operationId: string,
+  ceremony: PasskeyBrowserCeremony<Credential, Result, Receipt>
+) => {
+  const started = await ceremony.start({ operationId });
+  const credential = await ceremony.createCredential(started.publicKey);
+  try {
+    return await ceremony.finish({
+      challengeId: started.challengeId,
+      credential,
+      operationId,
+    });
+  } catch (error) {
+    if (!isAmbiguousPasskeyFinishError(error)) {
+      throw error;
+    }
+    const receipt = await ceremony
+      .read({
+        challengeId: started.challengeId,
+        credential,
+        operationId,
+      })
+      .catch(() => null);
+    if (receipt !== null) {
+      return receipt;
+    }
+    throw error;
+  }
+};
+
+interface RecoveryPasskeyBrowserCeremony<Credential, Result, Receipt> {
+  readonly createCredential: (publicKey: unknown) => Promise<Credential>;
+  readonly finish: (input: {
+    readonly challengeId: string;
+    readonly credential: Credential;
+    readonly operationId: string;
+    readonly readbackSecret: string;
+  }) => Promise<Result>;
+  readonly read: (input: {
+    readonly challengeId: string;
+    readonly credential: Credential;
+    readonly operationId: string;
+    readonly readbackSecret: string;
+  }) => Promise<Receipt>;
+  readonly start: (input: {
+    readonly operationId: string;
+    readonly readbackSecret: string;
+  }) => Promise<{ readonly challengeId: string; readonly publicKey: unknown }>;
+}
+
+export const runRecoveryPasskeyBrowserCeremony = async <
+  Credential,
+  Result,
+  Receipt,
+>(
+  operationId: string,
+  readbackSecret: string,
+  ceremony: RecoveryPasskeyBrowserCeremony<Credential, Result, Receipt>
+) => {
+  const started = await ceremony.start({ operationId, readbackSecret });
+  const credential = await ceremony.createCredential(started.publicKey);
+  try {
+    return await ceremony.finish({
+      challengeId: started.challengeId,
+      credential,
+      operationId,
+      readbackSecret,
+    });
+  } catch (error) {
+    if (!isAmbiguousPasskeyFinishError(error)) {
+      throw error;
+    }
+    const receipt = await ceremony
+      .read({
+        challengeId: started.challengeId,
+        credential,
+        operationId,
+        readbackSecret,
+      })
+      .catch(() => null);
+    if (receipt !== null) {
+      return {
+        receipt,
+        type: "recovery-remediation-committed-without-one-time-material" as const,
+      };
+    }
+    throw error;
+  }
+};
+
+export const enrollPasskey = (
+  operationId = freshPasskeyEnrollmentOperationId()
+) =>
+  runPasskeyBrowserCeremony(operationId, {
+    createCredential: (publicKey) =>
+      createPasskeyCredential(
+        publicKey as Parameters<typeof createPasskeyCredential>[0]
+      ),
+    finish: (payload) => authClient.extensions.finishPasskeyEnrollment(payload),
+    read: (query) => authClient.extensions.readPasskeyEnrollment(query),
+    start: (payload) => authClient.extensions.startPasskeyEnrollment(payload),
+  });
+
+export const enrollRecoveryPasskey = () => {
+  const operationId = crypto.randomUUID();
+  const readbackSecret = generateAccountRecoveryReadbackSecret();
+  return runRecoveryPasskeyBrowserCeremony(operationId, readbackSecret, {
+    createCredential: (publicKey) =>
+      createPasskeyCredential(
+        publicKey as Parameters<typeof createPasskeyCredential>[0]
+      ),
+    finish: (payload) =>
+      authClient.extensions.finishRecoveryPasskeyEnrollment(payload),
+    read: (payload) =>
+      authClient.extensions.readRecoveryPasskeyEnrollment(payload),
+    start: (payload) =>
+      authClient.extensions.startRecoveryPasskeyEnrollment(payload),
   });
 };
 

@@ -10,19 +10,17 @@ import {
   AuthUnauthenticatedError,
 } from "@effect-auth/core/HttpApi";
 import {
-  ChallengeIdSchema,
-  UnixMillisSchema,
-} from "@effect-auth/core/Identifiers";
-import * as Schema from "effect/Schema";
-import {
   HttpApi,
   HttpApiEndpoint,
   HttpApiGroup,
 } from "effect/unstable/httpapi";
 
 import {
-  EnrolledPasskeyCredential,
   FinishPasskeyEnrollmentCommand,
+  PasskeyEnrollmentReceiptSchema,
+  ReadPasskeyEnrollmentCommand,
+  StartedPasskeyEnrollment,
+  StartPasskeyEnrollmentCommand,
 } from "#/modules/account-security/application/PasskeyEnrollment";
 import { CurrentRequestAuthMiddleware } from "#/modules/account-security/contracts/RequestAuthMiddleware";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
@@ -37,36 +35,13 @@ const errors = [
   AuthRateLimitedError,
 ] as const;
 
-const RegistrationOptions = Schema.Struct({
-  attestation: Schema.optional(Schema.String),
-  authenticatorSelection: Schema.optional(
-    Schema.Record(Schema.String, Schema.Unknown)
-  ),
-  challenge: Schema.String,
-  excludeCredentials: Schema.optional(Schema.Array(Schema.Unknown)),
-  pubKeyCredParams: Schema.Array(Schema.Unknown),
-  rp: Schema.Struct({ id: Schema.String, name: Schema.String }),
-  timeout: Schema.optional(Schema.Number),
-  user: Schema.Struct({
-    displayName: Schema.String,
-    id: Schema.String,
-    name: Schema.String,
-  }),
-});
-
-const Started = Schema.Struct({
-  challengeId: ChallengeIdSchema,
-  expiresAt: UnixMillisSchema,
-  publicKey: RegistrationOptions,
-});
-
 const Start = HttpApiEndpoint.post(
   "registerStart",
   "/auth/passkey/register/start",
   {
     error: errors,
-    payload: Schema.Struct({}),
-    success: Started,
+    payload: StartPasskeyEnrollmentCommand,
+    success: StartedPasskeyEnrollment,
   }
 );
 const Finish = HttpApiEndpoint.post(
@@ -75,12 +50,21 @@ const Finish = HttpApiEndpoint.post(
   {
     error: errors,
     payload: FinishPasskeyEnrollmentCommand,
-    success: EnrolledPasskeyCredential,
+    success: PasskeyEnrollmentReceiptSchema,
+  }
+);
+const ReadOperation = HttpApiEndpoint.post(
+  "readRegisterOperation",
+  "/auth/passkey/register/read",
+  {
+    error: errors,
+    payload: ReadPasskeyEnrollmentCommand,
+    success: PasskeyEnrollmentReceiptSchema,
   }
 );
 
 export class PasskeyEnrollmentGroup extends HttpApiGroup.make("passkey")
-  .add(Start, Finish)
+  .add(Start, Finish, ReadOperation)
   .middleware(AuthSchemaErrorMiddleware)
   .middleware(BackendRequestContextMiddleware)
   .middleware(CurrentRequestAuthMiddleware)

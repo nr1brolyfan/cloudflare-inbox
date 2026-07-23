@@ -751,19 +751,23 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
               cause.commitState === "unknown"
                 ? readStoredReceipt(command.operationId, "complete").pipe(
                     Effect.flatMap((stored) =>
-                      stored !== null && exactCompletionIntent(stored, intent)
-                        ? publicReceipt(stored).pipe(
-                            Effect.map((receipt) => ({
-                              _tag: "AccountRecoveryAlreadyCompleted" as const,
-                              receipt,
-                            })),
-                            Effect.mapError((decodeCause) =>
-                              failure("complete", "storage", decodeCause)
-                            )
-                          )
-                        : Effect.fail(
+                      stored === null
+                        ? Effect.fail(
                             failure("complete", "indeterminate", cause.cause)
                           )
+                        : exactCompletionIntent(stored, intent)
+                          ? publicReceipt(stored).pipe(
+                              Effect.map((receipt) => ({
+                                _tag: "AccountRecoveryAlreadyCompleted" as const,
+                                receipt,
+                              })),
+                              Effect.mapError((decodeCause) =>
+                                failure("complete", "storage", decodeCause)
+                              )
+                            )
+                          : Effect.fail(
+                              failure("complete", "invalid-proof", cause.cause)
+                            )
                     )
                   )
                 : Effect.fail(failure("complete", "storage", cause.cause))

@@ -161,7 +161,10 @@ const command = (overrides: Record<string, unknown> = {}) =>
   });
 
 interface FixtureOptions {
-  readonly batchFailure?: "after-commit" | "before-commit";
+  readonly batchFailure?:
+    | "after-commit"
+    | "before-commit"
+    | "second-before-commit";
   readonly invalidSessionBinding?: boolean;
 }
 
@@ -171,12 +174,20 @@ const makeFixture = async (options: FixtureOptions = {}) => {
   insertEligibleAccount(database);
   const baseD1 = makeTestD1Database(database);
   let batchQueue = Promise.resolve();
+  let batchCalls = 0;
   const d1 = {
     ...baseD1,
     batch: (statements: Parameters<typeof baseD1.batch>[0]) => {
       const execute = async () => {
+        batchCalls += 1;
         if (options.batchFailure === "before-commit") {
           throw new Error("simulated unknown outcome before commit");
+        }
+        if (
+          options.batchFailure === "second-before-commit" &&
+          batchCalls === 2
+        ) {
+          throw new Error("simulated conflicting unknown outcome");
         }
         const results = await baseD1.batch(statements);
         if (options.batchFailure === "after-commit") {
@@ -323,6 +334,7 @@ const makeFixture = async (options: FixtureOptions = {}) => {
     }).pipe(Effect.provide(layer));
 
   return {
+    batchCalls: () => batchCalls,
     complete,
     database,
     preparedTtl: () => preparedTtl,
@@ -469,6 +481,27 @@ describe("account recovery completion receipts", () => {
           .prepare("select count(*) as count from auth_session")
           .get()
       ).toMatchObject({ count: 0 });
+    } finally {
+      fixture.database.close();
+    }
+  });
+
+  it("maps a mismatched receipt found after an unknown outcome to generic invalid proof", async () => {
+    const fixture = await makeFixture({ batchFailure: "second-before-commit" });
+    try {
+      const [first, conflicting] = await Promise.allSettled([
+        Effect.runPromise(fixture.complete()),
+        Effect.runPromise(
+          fixture.complete(command({ readbackSecret: "z".repeat(43) }))
+        ),
+      ]);
+
+      expect(first).toMatchObject({ status: "fulfilled" });
+      expect(conflicting).toMatchObject({
+        reason: { reason: "invalid-proof" },
+        status: "rejected",
+      });
+      expect(fixture.batchCalls()).toBe(2);
     } finally {
       fixture.database.close();
     }

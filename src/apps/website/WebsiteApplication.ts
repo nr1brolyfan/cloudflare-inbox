@@ -1,4 +1,4 @@
-import { getRequest } from "@tanstack/react-start/server";
+import { getRequest, getResponseHeaders } from "@tanstack/react-start/server";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -48,6 +48,12 @@ export const WebsiteApplicationLayer = Layer.merge(
 ).pipe(Layer.provideMerge(WebsitePlatformLayer));
 
 const WebsiteRuntime = ManagedRuntime.make(WebsiteApplicationLayer);
+
+export const setMailboxOperationReceiptNoStoreHeaders = () => {
+  const headers = getResponseHeaders();
+  headers.set("cache-control", "private, no-store");
+  headers.set("pragma", "no-cache");
+};
 
 /** Promise facade used by TanStack adapters; all Effect execution stays here. */
 export const WebsiteApplication = {
@@ -103,14 +109,16 @@ export const WebsiteApplication = {
     ),
   readMailboxAdministrationOperation: (
     query: ReadMailboxAdministrationOperationQuery
-  ) =>
-    WebsiteRuntime.runPromise(
+  ) => {
+    setMailboxOperationReceiptNoStoreHeaders();
+    return WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.readOperation({ incoming, query });
       })
-    ),
+    );
+  },
   getMailboxOutboundDelivery: (query: GetMailboxOutboundDeliveryQuery) =>
     WebsiteRuntime.runPromise(
       Effect.gen(function* () {

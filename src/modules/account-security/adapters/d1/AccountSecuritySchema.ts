@@ -376,6 +376,86 @@ export const appAccountRecoveryCompletionReceipt = sqliteTable(
   ]
 );
 
+export const appPasskeyEnrollmentReceipt = sqliteTable(
+  "app_passkey_enrollment_receipt",
+  {
+    operationId: text("operation_id").primaryKey(),
+    mode: text("mode", {
+      enum: ["normal", "recovery-remediation"],
+    }).notNull(),
+    actorUserId: text("actor_user_id").notNull(),
+    challengeId: text("challenge_id").notNull(),
+    recoveryIdentityId: text("recovery_identity_id").notNull(),
+    recoveryIdentityVersion: integer("recovery_identity_version").notNull(),
+    clientIntentDigest: text("client_intent_digest").notNull(),
+    verifiedIntentDigest: text("verified_intent_digest").notNull(),
+    credentialRecordId: text("credential_record_id").notNull().unique(),
+    readbackSecretHash: text("readback_secret_hash"),
+    replacementIdentityId: text("replacement_identity_id"),
+    resultingSessionId: text("resulting_session_id"),
+    resultingCodeSetId: text("resulting_code_set_id"),
+    resultingCodeCount: integer("resulting_code_count"),
+    committedAt: integer("committed_at").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  (t) => [
+    check(
+      "app_passkey_enrollment_receipt_operation_id_check",
+      sql`length(operation_id) = 36
+        and operation_id = lower(trim(operation_id))
+        and substr(operation_id, 9, 1) = '-'
+        and substr(operation_id, 14, 1) = '-'
+        and substr(operation_id, 15, 1) = '4'
+        and substr(operation_id, 19, 1) = '-'
+        and substr(operation_id, 20, 1) in ('8', '9', 'a', 'b')
+        and substr(operation_id, 24, 1) = '-'
+        and length(replace(operation_id, '-', '')) = 32
+        and replace(operation_id, '-', '') not glob '*[^0-9a-f]*'`
+    ),
+    check(
+      "app_passkey_enrollment_receipt_mode_check",
+      sql`mode in ('normal', 'recovery-remediation')`
+    ),
+    check(
+      "app_passkey_enrollment_receipt_identity_check",
+      sql`length(actor_user_id) between 1 and 128
+        and actor_user_id = trim(actor_user_id)
+        and length(challenge_id) between 1 and 128
+        and length(recovery_identity_id) between 1 and 128
+        and recovery_identity_version >= 1`
+    ),
+    check(
+      "app_passkey_enrollment_receipt_digest_check",
+      sql`length(client_intent_digest) = 43
+        and client_intent_digest not glob '*[^A-Za-z0-9_-]*'
+        and length(verified_intent_digest) = 43
+        and verified_intent_digest not glob '*[^A-Za-z0-9_-]*'
+        and length(credential_record_id) between 1 and 256`
+    ),
+    check(
+      "app_passkey_enrollment_receipt_result_check",
+      sql`committed_at >= 0 and schema_version = 1
+        and ((mode = 'normal'
+          and readback_secret_hash is null
+          and replacement_identity_id is null
+          and resulting_session_id is null
+          and resulting_code_set_id is null
+          and resulting_code_count is null)
+        or (mode = 'recovery-remediation'
+          and length(readback_secret_hash) = 43
+          and readback_secret_hash not glob '*[^A-Za-z0-9_-]*'
+          and length(replacement_identity_id) between 1 and 128
+          and length(resulting_session_id) between 1 and 128
+          and length(resulting_code_set_id) between 1 and 128
+          and resulting_code_count = 10))`
+    ),
+    index("app_passkey_enrollment_receipt_actor_operation_idx").on(
+      t.actorUserId,
+      t.operationId
+    ),
+  ]
+);
+
 export const appPasskeyCredentialRevocation = sqliteTable(
   "app_passkey_credential_revocation",
   {

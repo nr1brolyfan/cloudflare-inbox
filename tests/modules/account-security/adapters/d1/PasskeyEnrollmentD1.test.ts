@@ -1,7 +1,10 @@
+import { createHash } from "node:crypto";
+/* oxlint-disable vitest/max-expects -- Transaction tests assert receipt, mutation, audit, and one-time output invariants together. */
 import { DatabaseSync } from "node:sqlite";
 
 import { emptyCustomEvidencePolicyRegistry } from "@effect-auth/core/Assurance";
 import { decodeAuditEvent } from "@effect-auth/core/AuditLog";
+import { AuthSecretsLive } from "@effect-auth/core/AuthConfig";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import type { ChallengeService } from "@effect-auth/core/Challenge";
 import { Challenge, ChallengeVerifyError } from "@effect-auth/core/Challenge";
@@ -47,7 +50,10 @@ import {
 import {
   PasskeyEnrollment,
   PasskeyEnrollmentError,
+  PasskeyEnrollmentReadbackSecret,
+  PasskeyEnrollmentReceiptSchema,
 } from "#/modules/account-security/application/PasskeyEnrollment";
+import type { PasskeyClientCredential } from "#/modules/account-security/application/PasskeyEnrollment";
 import { externalRecoveryLinkEvidence } from "#/modules/account-security/domain/AccountRecovery";
 import {
   PasskeyRuntimeConfig,
@@ -56,6 +62,7 @@ import {
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { AdministrativeOperationId } from "#/shared/Operation";
 import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import {
   CurrentRequestCorrelation,
@@ -70,7 +77,15 @@ import {
 const now = Date.now();
 const challengeSecret = "passkey-challenge-secret";
 const credentialPublicKey = "sensitive-passkey-public-key";
-const operationId = "00000000-0000-4000-8000-000000000030";
+const operationId = Schema.decodeUnknownSync(AdministrativeOperationId)(
+  "00000000-0000-4000-8000-000000000030"
+);
+const otherOperationId = Schema.decodeUnknownSync(AdministrativeOperationId)(
+  "00000000-0000-4000-8000-000000000031"
+);
+const readbackSecret = Schema.decodeUnknownSync(
+  PasskeyEnrollmentReadbackSecret
+)("r".repeat(43));
 const requestContext = Schema.decodeUnknownSync(RequestCorrelation)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
@@ -90,16 +105,30 @@ const passkeyConfig = Schema.decodeUnknownSync(PasskeyRuntimeConfigSchema)({
   requireUserVerification: true,
   userVerification: "required",
 });
-const clientCredential = {
+const clientCredential: Schema.Schema.Type<typeof PasskeyClientCredential> = {
+  clientExtensionResults: {
+    nested: { first: true, second: [1, { value: "extension" }] },
+  },
   id: "browser-credential",
-  response: { attestationObject: "client-attestation" },
+  rawId: "browser-credential-raw-id",
+  response: {
+    attestationObject: "client-attestation",
+    clientDataJSON: "client-data-json",
+  },
   type: "public-key" as const,
 };
 
 interface TestState {
+  backedUp: boolean;
+  credentialId: string;
+  metadata: Readonly<Record<string, unknown>>;
   optionCalls: number;
+  publicKey: string;
   randomTokenCalls: number;
   rateLimitOperations: string[];
+  signCount: number;
+  transports: readonly string[];
+  verifierCalls: number;
 }
 
 const validatedSession = (): ValidatedSession => {
@@ -335,27 +364,34 @@ const passkeyOptionsLive = (database: DatabaseSync, state: TestState) =>
     })
   );
 
-const passkeyVerifierLive = Layer.succeed(
-  PasskeyVerifier,
-  PasskeyVerifier.of({
-    readAuthenticationCredentialId: () => Effect.die("read is not used"),
-    verifyAuthentication: () => Effect.die("authentication is not used"),
-    verifyRegistration: () =>
-      Effect.succeed({
-        backedUp: true,
-        challenge: challengeSecret,
-        credentialId: PasskeyCredentialId("passkey-credential-a"),
-        metadata: { aaguid: "test-aaguid" },
-        publicKey: credentialPublicKey,
-        signCount: 0,
-        transports: ["internal"],
-      }),
-  })
-);
+const passkeyVerifierLive = (state: TestState) =>
+  Layer.succeed(
+    PasskeyVerifier,
+    PasskeyVerifier.of({
+      readAuthenticationCredentialId: () => Effect.die("read is not used"),
+      verifyAuthentication: () => Effect.die("authentication is not used"),
+      verifyRegistration: () =>
+        Effect.sync(() => {
+          state.verifierCalls += 1;
+          return {
+            backedUp: state.backedUp,
+            challenge: challengeSecret,
+            credentialId: PasskeyCredentialId(state.credentialId),
+            metadata: state.metadata,
+            publicKey: state.publicKey,
+            signCount: state.signCount,
+            transports: state.transports,
+          };
+        }),
+    })
+  );
 
 const cryptoService = (state: TestState): CryptoService => ({
   digestSha256: () => Effect.die("digest is not used"),
-  hmacSha256: () => Effect.die("hmac is not used"),
+  hmacSha256: ({ data }) =>
+    Effect.succeed(
+      createHash("sha256").update(String(data)).digest("base64url")
+    ),
   randomBytes: () => Effect.die("randomBytes is not used"),
   randomToken: () =>
     Effect.sync(() => {
@@ -459,10 +495,15 @@ const enrollmentLive = (
         ),
         challengeLive(database),
         Layer.succeed(Crypto, cryptoService(state)),
+        AuthSecretsLive({
+          challenge: Redacted.make("challenge-key"),
+          privacy: Redacted.make("privacy-key"),
+          session: Redacted.make("session-key"),
+        }),
         Layer.succeed(RecoveryCodes, recoveryCodesService),
         Layer.succeed(Sessions, sessionsService),
         passkeyOptionsLive(database, state),
-        passkeyVerifierLive,
+        passkeyVerifierLive(state),
         Layer.succeed(PasskeyRuntimeConfig, passkeyConfig),
         Layer.succeed(
           PasskeyEnrollmentRuntime,
@@ -517,7 +558,13 @@ const start = (
   provideRequestAuth(
     Effect.gen(function* () {
       const enrollment = yield* PasskeyEnrollment;
-      return yield* enrollment.start({});
+      return yield* enrollment.start({
+        operationId,
+        ...(session.currentSession.claims?.requirements?.[0] ===
+        "recovery_remediation"
+          ? { readbackSecret }
+          : {}),
+      });
     }).pipe(Effect.provide(enrollmentLive(database, d1, state))),
     session
   );
@@ -527,18 +574,63 @@ const finish = (
   d1: D1EffectQbDatabaseLike,
   state: TestState,
   session: ValidatedSession,
-  challengeId: string
+  challengeId: string,
+  finishOperationId = operationId,
+  credential = clientCredential
 ) =>
   provideRequestAuth(
     Effect.gen(function* () {
       const enrollment = yield* PasskeyEnrollment;
       return yield* enrollment.finish({
         challengeId: ChallengeId(challengeId),
-        credential: clientCredential,
+        credential,
+        operationId: finishOperationId,
+        ...(session.currentSession.claims?.requirements?.[0] ===
+        "recovery_remediation"
+          ? { readbackSecret }
+          : {}),
       });
     }).pipe(Effect.provide(enrollmentLive(database, d1, state))),
     session
   );
+
+const readOperation = (
+  database: DatabaseSync,
+  d1: D1EffectQbDatabaseLike,
+  state: TestState,
+  session: ValidatedSession,
+  challengeId: string,
+  credential = clientCredential
+) =>
+  provideRequestAuth(
+    Effect.gen(function* () {
+      const enrollment = yield* PasskeyEnrollment;
+      return yield* enrollment.readOperation({
+        challengeId: ChallengeId(challengeId),
+        credential,
+        operationId,
+      });
+    }).pipe(Effect.provide(enrollmentLive(database, d1, state))),
+    session
+  );
+
+const readRecoveryOperation = (
+  database: DatabaseSync,
+  d1: D1EffectQbDatabaseLike,
+  state: TestState,
+  challengeId: string,
+  secret = readbackSecret,
+  credential = clientCredential
+) =>
+  Effect.gen(function* () {
+    const enrollment = yield* PasskeyEnrollment;
+    return yield* enrollment.readRecoveryOperation({
+      challengeId: ChallengeId(challengeId),
+      credential,
+      operationId,
+      readbackSecret: secret,
+    });
+  }).pipe(Effect.provide(enrollmentLive(database, d1, state)));
 
 const countRows = (database: DatabaseSync, table: string) =>
   (
@@ -548,12 +640,53 @@ const countRows = (database: DatabaseSync, table: string) =>
   ).count;
 
 const makeState = (): TestState => ({
+  backedUp: true,
+  credentialId: "passkey-credential-a",
+  metadata: {
+    aaguid: "test-aaguid",
+    nested: { first: 1, second: [{ left: true, right: false }] },
+  },
   optionCalls: 0,
+  publicKey: credentialPublicKey,
   randomTokenCalls: 0,
   rateLimitOperations: [],
+  signCount: 0,
+  transports: ["internal"],
+  verifierCalls: 0,
 });
 
 describe("guarded passkey enrollment", () => {
+  it("checks receipt mode and recovery-result agreement", () => {
+    const base = {
+      committedAt: now,
+      credentialRecordId: "passkey-record-a",
+      operationId,
+      schemaVersion: 1,
+    };
+
+    expect(() =>
+      Schema.decodeUnknownSync(PasskeyEnrollmentReceiptSchema)({
+        ...base,
+        mode: "normal",
+        recoveryCodeCount: 10,
+        recoveryCodeSetId: "code-set-a",
+      })
+    ).toThrow("normal receipt cannot contain recovery-code result");
+    expect(() =>
+      Schema.decodeUnknownSync(PasskeyEnrollmentReceiptSchema)({
+        ...base,
+        mode: "recovery-remediation",
+      })
+    ).toThrow("recovery-remediation receipt requires the ten-code result");
+    expect(() =>
+      Schema.decodeUnknownSync(PasskeyEnrollmentReceiptSchema)({
+        ...base,
+        mode: "recovery-remediation",
+        recoveryCodeCount: 10,
+        recoveryCodeSetId: "code-set-a",
+      })
+    ).not.toThrow();
+  });
   it("starts and atomically finishes enrollment using the D1 RETURNING row", async () => {
     const database = new DatabaseSync(":memory:");
     try {
@@ -580,12 +713,17 @@ describe("guarded passkey enrollment", () => {
         finish(database, observedD1, state, session, started.challengeId)
       );
 
-      expect(enrolled).toStrictEqual({ credentialId: "passkey-credential-a" });
+      expect(enrolled).toMatchObject({
+        receipt: {
+          credentialRecordId: "passkey-record-a",
+          mode: "normal",
+          operationId,
+        },
+        replayed: false,
+      });
       expect(
-        returningRows?.map(
-          (row) => (row as { credential_id: string }).credential_id
-        )
-      ).toStrictEqual(["passkey-credential-a"]);
+        returningRows?.map((row) => (row as { id: string }).id)
+      ).toStrictEqual(["passkey-record-a"]);
       const challengeRow = database
         .prepare("select consumed_at from auth_verification where id = ?")
         .get(started.challengeId) as { consumed_at: number | null };
@@ -594,11 +732,13 @@ describe("guarded passkey enrollment", () => {
         consumedAt: challengeRow.consumed_at,
         credentials: countRows(database, "auth_passkey_credential"),
         guards: countRows(database, "app_authorization_guard"),
+        receipts: countRows(database, "app_passkey_enrollment_receipt"),
       }).toStrictEqual({
         auditEvents: 1,
         consumedAt: now,
         credentials: 1,
         guards: 0,
+        receipts: 1,
       });
       const auditRow = database
         .prepare(
@@ -763,7 +903,7 @@ describe("guarded passkey enrollment", () => {
         activeCodeCount: activeCodes.length,
         auditTypes: audits.map((audit) => audit.type),
         codesReturned: result.remediation?.body.codes,
-        credentialId: result.credentialId,
+        credentialId: result.receipt.credentialRecordId,
         newSession: recoveredSession,
         loginIdentities: identities.map((identity) => ({
           isPrimaryLogin: identity.is_primary_login,
@@ -788,7 +928,7 @@ describe("guarded passkey enrollment", () => {
         activeCodeCount: 10,
         auditTypes: ["app.account_recovery.completed", "app.passkey.enrolled"],
         codesReturned: [...recoveryCodeValues],
-        credentialId: "passkey-credential-a",
+        credentialId: "passkey-record-a",
         newSession: {
           id: "recovered-session-a",
           metadata: JSON.stringify({
@@ -915,11 +1055,13 @@ describe("guarded passkey enrollment", () => {
         consumedAt: challengeRow.consumed_at,
         credentials: countRows(database, "auth_passkey_credential"),
         guards: countRows(database, "app_authorization_guard"),
+        receipts: countRows(database, "app_passkey_enrollment_receipt"),
       }).toStrictEqual({
         auditEvents: 0,
         consumedAt: null,
         credentials: 0,
         guards: 0,
+        receipts: 0,
       });
     } finally {
       database.close();
@@ -979,6 +1121,50 @@ describe("guarded passkey enrollment", () => {
     }
   });
 
+  it("fails closed when the restricted recovery session is revoked before commit", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = recoveryRemediationSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const baseD1 = makeTestD1Database(database);
+      let changed = false;
+      const changedD1: D1EffectQbDatabaseLike = {
+        batch: (statements) => {
+          if (!changed) {
+            changed = true;
+            database
+              .prepare("update auth_session set revoked_at = ? where id = ?")
+              .run(now, session.actor.sessionId);
+          }
+          return baseD1.batch(statements);
+        },
+        prepare: baseD1.prepare,
+      };
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, changedD1, state, session)
+      );
+
+      const failure = await Effect.runPromise(
+        finish(database, changedD1, state, session, started.challengeId).pipe(
+          Effect.flip
+        )
+      );
+
+      expect(failure).toMatchObject({
+        operation: "finish",
+        reason: "restricted-session",
+      });
+      expect(countRows(database, "auth_passkey_credential")).toBe(0);
+      expect(countRows(database, "auth_recovery_code")).toBe(0);
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
   it("does not add a second credential when the credential is replayed", async () => {
     const database = new DatabaseSync(":memory:");
     try {
@@ -1006,7 +1192,7 @@ describe("guarded passkey enrollment", () => {
 
       expect(error).toMatchObject({
         operation: "finish",
-        reason: "credential-conflict",
+        reason: "operation-conflict",
       });
       expect(countRows(database, "auth_passkey_credential")).toBe(1);
       expect(countRows(database, "auth_audit_log")).toBe(1);
@@ -1015,6 +1201,588 @@ describe("guarded passkey enrollment", () => {
           .prepare("select consumed_at from auth_verification where id = ?")
           .get(replay.challengeId)
       ).toMatchObject({ consumed_at: null });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects a fresh finish whose operation differs from challenge metadata", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+
+      const conflict = await Effect.runPromise(
+        finish(
+          database,
+          d1,
+          state,
+          session,
+          started.challengeId,
+          otherOperationId
+        ).pipe(Effect.flip)
+      );
+
+      expect(conflict).toMatchObject({
+        operation: "finish",
+        reason: "operation-conflict",
+      });
+      expect(countRows(database, "auth_passkey_credential")).toBe(0);
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("returns the normal receipt for an exact replay before rate limiting", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+      const first = await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId)
+      );
+      state.metadata = {
+        nested: { second: [{ right: false, left: true }], first: 1 },
+        aaguid: "test-aaguid",
+      };
+      const replay = await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId, operationId, {
+          clientExtensionResults: {
+            nested: { second: [1, { value: "extension" }], first: true },
+          },
+          id: clientCredential.id,
+          rawId: clientCredential.rawId,
+          response: {
+            clientDataJSON: "client-data-json",
+            attestationObject: "client-attestation",
+          },
+          type: "public-key",
+        })
+      );
+      const readback = await Effect.runPromise(
+        readOperation(database, d1, state, session, started.challengeId)
+      );
+      const restrictedRead = await Effect.runPromise(
+        readOperation(
+          database,
+          d1,
+          state,
+          recoveryRemediationSession(),
+          started.challengeId
+        ).pipe(Effect.flip)
+      );
+      const changedRead = await Effect.runPromise(
+        readOperation(database, d1, state, session, started.challengeId, {
+          ...clientCredential,
+          response: {
+            ...clientCredential.response,
+            clientDataJSON: "changed-client-data-json",
+          },
+        }).pipe(Effect.flip)
+      );
+      const changedChallengeRead = await Effect.runPromise(
+        readOperation(database, d1, state, session, "different-challenge").pipe(
+          Effect.flip
+        )
+      );
+
+      expect(replay).toStrictEqual({ receipt: first.receipt, replayed: true });
+      expect(readback).toStrictEqual(first.receipt);
+      expect(restrictedRead).toMatchObject({ reason: "restricted-session" });
+      expect(changedRead).toMatchObject({ reason: "operation-conflict" });
+      expect(changedChallengeRead).toMatchObject({
+        reason: "operation-conflict",
+      });
+      expect(state.rateLimitOperations).toStrictEqual([
+        "auth.passkey.registration_start",
+        "auth.passkey.registration_finish",
+      ]);
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(1);
+      expect(countRows(database, "auth_passkey_credential")).toBe(1);
+      expect(state.verifierCalls).toBe(2);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects changed raw client intent with the same credential ID before verification", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+      await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId)
+      );
+      const changedCredential = {
+        ...clientCredential,
+        clientExtensionResults: {
+          nested: { second: [1, { value: "changed" }], first: true },
+        },
+      };
+
+      const conflict = await Effect.runPromise(
+        finish(
+          database,
+          d1,
+          state,
+          session,
+          started.challengeId,
+          operationId,
+          changedCredential
+        ).pipe(Effect.flip)
+      );
+
+      expect(conflict).toMatchObject({ reason: "operation-conflict" });
+      expect(state.verifierCalls).toBe(1);
+      expect(state.rateLimitOperations).toStrictEqual([
+        "auth.passkey.registration_start",
+        "auth.passkey.registration_finish",
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("checks the fresh finish rate limit before rejecting invalid verification", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+      state.signCount = -1;
+
+      const failure = await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId).pipe(
+          Effect.flip
+        )
+      );
+
+      expect(failure).toMatchObject({ reason: "verification-failed" });
+      expect(state.rateLimitOperations).toStrictEqual([
+        "auth.passkey.registration_start",
+        "auth.passkey.registration_finish",
+      ]);
+      expect(countRows(database, "auth_passkey_credential")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects receipt reuse by a changed actor or ceremony mode", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+      await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId)
+      );
+      const otherUserId = UserId("user-b");
+      const otherSessionId = SessionId("session-b");
+      const otherActor: ValidatedSession = {
+        actor: { sessionId: otherSessionId, userId: otherUserId },
+        currentSession: {
+          ...session.currentSession,
+          sessionId: otherSessionId,
+          userId: otherUserId,
+        },
+        issued: {
+          ...session.issued,
+          sessionId: otherSessionId,
+          token: SessionToken("session-b.secret"),
+          userId: otherUserId,
+        },
+      };
+      const actorConflict = await Effect.runPromise(
+        finish(database, d1, state, otherActor, started.challengeId).pipe(
+          Effect.flip
+        )
+      );
+      const modeConflict = await Effect.runPromise(
+        finish(
+          database,
+          d1,
+          state,
+          recoveryRemediationSession(),
+          started.challengeId
+        ).pipe(Effect.flip)
+      );
+
+      expect(actorConflict).toMatchObject({ reason: "operation-conflict" });
+      expect(modeConflict).toMatchObject({ reason: "operation-conflict" });
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("returns receipt only when recovery remediation is replayed", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = recoveryRemediationSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+      const first = await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId)
+      );
+      const replay = await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId)
+      );
+      const readback = await Effect.runPromise(
+        readRecoveryOperation(database, d1, state, started.challengeId)
+      );
+      const invalidProof = await Effect.runPromise(
+        readRecoveryOperation(
+          database,
+          d1,
+          state,
+          started.challengeId,
+          Schema.decodeUnknownSync(PasskeyEnrollmentReadbackSecret)(
+            "i".repeat(43)
+          )
+        ).pipe(Effect.flip)
+      );
+      const changedIntent = await Effect.runPromise(
+        readRecoveryOperation(
+          database,
+          d1,
+          state,
+          started.challengeId,
+          readbackSecret,
+          {
+            ...clientCredential,
+            response: { attestationObject: "different-attestation" },
+          }
+        ).pipe(Effect.flip)
+      );
+      const changedChallenge = await Effect.runPromise(
+        readRecoveryOperation(
+          database,
+          d1,
+          state,
+          "different-challenge",
+          readbackSecret
+        ).pipe(Effect.flip)
+      );
+
+      expect(first.remediation?.body.codes).toHaveLength(10);
+      expect(replay).toStrictEqual({ receipt: first.receipt, replayed: true });
+      expect(readback).toStrictEqual(first.receipt);
+      expect(invalidProof).toMatchObject({ reason: "invalid-proof" });
+      expect(changedIntent).toMatchObject({ reason: "invalid-proof" });
+      expect(changedChallenge).toMatchObject({ reason: "invalid-proof" });
+      expect(replay).not.toHaveProperty("remediation");
+      expect(countRows(database, "auth_recovery_code")).toBe(10);
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(1);
+      expect(state.rateLimitOperations).toStrictEqual([
+        "auth.passkey.registration_start",
+        "auth.passkey.registration_finish",
+      ]);
+      expect(state.verifierCalls).toBe(2);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects changed persisted verified registration intent for the same operation", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+      await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId)
+      );
+      state.publicKey = "different-sensitive-passkey-public-key";
+
+      const conflict = await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId).pipe(
+          Effect.flip
+        )
+      );
+
+      expect(conflict).toMatchObject({
+        operation: "finish",
+        reason: "operation-conflict",
+      });
+      expect(countRows(database, "auth_passkey_credential")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("recovers a committed unknown outcome from the immutable receipt", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const baseD1 = makeTestD1Database(database);
+      let failAfterCommit = true;
+      const unknownAfterCommit: D1EffectQbDatabaseLike = {
+        batch: async (statements) => {
+          const results = await baseD1.batch(statements);
+          if (failAfterCommit) {
+            failAfterCommit = false;
+            throw new Error("response lost after commit");
+          }
+          return results;
+        },
+        prepare: baseD1.prepare,
+      };
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, unknownAfterCommit, state, session)
+      );
+      const result = await Effect.runPromise(
+        finish(
+          database,
+          unknownAfterCommit,
+          state,
+          session,
+          started.challengeId
+        )
+      );
+
+      expect(result).toMatchObject({
+        receipt: { operationId },
+        replayed: true,
+      });
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("classifies a mismatched receipt found after an unknown outcome as operation conflict", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const baseD1 = makeTestD1Database(database);
+      const state = makeState();
+      let challengeId = "";
+      let raced = false;
+      const originalPublicKey = state.publicKey;
+      const changedPublicKey = "outer-different-public-key";
+      const racingD1: D1EffectQbDatabaseLike = {
+        batch: async (statements) => {
+          if (!raced) {
+            raced = true;
+            state.publicKey = originalPublicKey;
+            await Effect.runPromise(
+              finish(database, baseD1, state, session, challengeId)
+            );
+            state.publicKey = changedPublicKey;
+            throw new Error("unknown outer outcome after conflicting commit");
+          }
+          return baseD1.batch(statements);
+        },
+        prepare: baseD1.prepare,
+      };
+      const started = await Effect.runPromise(
+        start(database, racingD1, state, session)
+      );
+      ({ challengeId } = started);
+      state.publicKey = changedPublicKey;
+
+      const failure = await Effect.runPromise(
+        finish(database, racingD1, state, session, challengeId).pipe(
+          Effect.flip
+        )
+      );
+
+      expect(failure).toMatchObject({ reason: "operation-conflict" });
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(1);
+      expect(countRows(database, "auth_passkey_credential")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("recovers an unknown committed remediation as receipt only", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = recoveryRemediationSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const baseD1 = makeTestD1Database(database);
+      let failAfterCommit = true;
+      const unknownAfterCommit: D1EffectQbDatabaseLike = {
+        batch: async (statements) => {
+          const results = await baseD1.batch(statements);
+          if (failAfterCommit) {
+            failAfterCommit = false;
+            throw new Error("recovery response lost after commit");
+          }
+          return results;
+        },
+        prepare: baseD1.prepare,
+      };
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, unknownAfterCommit, state, session)
+      );
+      const result = await Effect.runPromise(
+        finish(
+          database,
+          unknownAfterCommit,
+          state,
+          session,
+          started.challengeId
+        )
+      );
+
+      expect(result).toMatchObject({
+        receipt: { mode: "recovery-remediation", operationId },
+        replayed: true,
+      });
+      expect(result).not.toHaveProperty("remediation");
+      expect(countRows(database, "auth_recovery_code")).toBe(10);
+      expect(countRows(database, "app_passkey_enrollment_receipt")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("retains privacy-safe immutable receipts bound to the committed rows", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+      await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId)
+      );
+      const stored = database
+        .prepare("select * from app_passkey_enrollment_receipt")
+        .get() as Record<string, unknown>;
+      const serialized = JSON.stringify(stored);
+
+      expect(serialized).not.toContain("passkey-credential-a");
+      expect(serialized).not.toContain(clientCredential.id);
+      expect(serialized).not.toContain("client-attestation");
+      expect(serialized).not.toContain("client-data-json");
+      expect(serialized).not.toContain(credentialPublicKey);
+      expect(serialized).not.toContain(challengeSecret);
+      expect(stored.client_intent_digest).toMatch(/^[\w-]{43}$/u);
+      expect(stored.verified_intent_digest).toMatch(/^[\w-]{43}$/u);
+      expect(() =>
+        database
+          .prepare(
+            "update app_passkey_enrollment_receipt set committed_at = committed_at + 1"
+          )
+          .run()
+      ).toThrow("passkey enrollment receipts are immutable");
+      expect(() =>
+        database.prepare("delete from app_passkey_enrollment_receipt").run()
+      ).toThrow("passkey enrollment receipts are retained");
+      expect(() =>
+        database
+          .prepare(
+            `insert or replace into app_passkey_enrollment_receipt
+             select * from app_passkey_enrollment_receipt`
+          )
+          .run()
+      ).toThrow("passkey enrollment receipts are immutable");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects a recovery receipt whose readback HMAC differs from challenge metadata", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const session = recoveryRemediationSession();
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+      const started = await Effect.runPromise(
+        start(database, d1, state, session)
+      );
+      await Effect.runPromise(
+        finish(database, d1, state, session, started.challengeId)
+      );
+      database.exec(
+        `create temp table saved_passkey_enrollment_receipt as
+           select * from app_passkey_enrollment_receipt;
+         drop trigger app_passkey_enrollment_receipt_no_delete;
+         delete from app_passkey_enrollment_receipt;`
+      );
+
+      expect(() =>
+        database
+          .prepare(
+            `insert into app_passkey_enrollment_receipt
+             select operation_id, mode, actor_user_id, challenge_id,
+                     recovery_identity_id, recovery_identity_version,
+                     client_intent_digest, verified_intent_digest,
+                     credential_record_id, ?,
+                    replacement_identity_id, resulting_session_id,
+                    resulting_code_set_id, resulting_code_count,
+                    committed_at, schema_version
+               from saved_passkey_enrollment_receipt`
+          )
+          .run("t".repeat(43))
+      ).toThrow("invalid passkey enrollment receipt binding");
     } finally {
       database.close();
     }

@@ -10,6 +10,7 @@ import {
 } from "@effect-auth/core/HttpApi";
 import { CurrentActor, CurrentSession } from "@effect-auth/core/Sessions";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
@@ -47,7 +48,10 @@ import {
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import type { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
 import type { MailboxAdministrationError } from "#/modules/organization/application/MailboxAdministration";
-import { MailboxAdministration } from "#/modules/organization/application/MailboxAdministration";
+import {
+  MailboxAdministration,
+  MailboxAdministrationReceiptSchema,
+} from "#/modules/organization/application/MailboxAdministration";
 import type { MailboxNavigationError } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
 
@@ -518,7 +522,24 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
           .pipe(mapHttpErrors)
       )
       .handle("readOperation", ({ params }) =>
-        administration.readOperation(params).pipe(mapHttpErrors)
+        administration.readOperation(params).pipe(
+          mapHttpErrors,
+          Effect.flatMap((receipt) =>
+            Schema.encodeEffect(MailboxAdministrationReceiptSchema)(
+              receipt
+            ).pipe(
+              Effect.flatMap((encoded) =>
+                HttpServerResponse.json(encoded, {
+                  headers: {
+                    "cache-control": "private, no-store",
+                    pragma: "no-cache",
+                  },
+                })
+              ),
+              Effect.orDie
+            )
+          )
+        )
       )
       .handle("getOutboundDelivery", ({ params }) =>
         outboundDeliveryReading.get(params).pipe(mapHttpErrors)

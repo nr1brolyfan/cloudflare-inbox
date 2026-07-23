@@ -6,7 +6,10 @@ import { PasskeyAuthenticationGroup } from "#/modules/account-security/adapters/
 import { PasskeyCredentialManagementGroup } from "#/modules/account-security/adapters/http/PasskeyCredentialManagementHttpApi";
 import { PasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http/PasskeyEnrollmentHttpApi";
 import { RecoveryCodeManagementGroup } from "#/modules/account-security/adapters/http/RecoveryCodeManagementHttpApi";
-import { RecoveryPasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http/RecoveryPasskeyEnrollmentHttpApi";
+import {
+  RecoveryPasskeyEnrollmentGroup,
+  RecoveryPasskeyEnrollmentReadbackGroup,
+} from "#/modules/account-security/adapters/http/RecoveryPasskeyEnrollmentHttpApi";
 import { BackendHealthGroup } from "#/platform/observability/http/BackendHealthHttpApi";
 
 import { MailboxGroup } from "./BackendMailboxHttpApi";
@@ -22,5 +25,6 @@ export const BackendHttpApi = ApplicationAuthHttpApi.add(
   PasskeyAuthenticationGroup,
   PasskeyCredentialManagementGroup,
   RecoveryCodeManagementGroup,
-  RecoveryPasskeyEnrollmentGroup
+  RecoveryPasskeyEnrollmentGroup,
+  RecoveryPasskeyEnrollmentReadbackGroup
 );
