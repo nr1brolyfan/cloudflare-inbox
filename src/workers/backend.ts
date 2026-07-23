@@ -15,8 +15,9 @@ import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondab
 
 import InboundWorkflow from "#/apps/inbound-workflow/InboundWorkflow";
 import { MailboxDO } from "#/apps/mailbox-do/MailboxDO";
-import { InboundMailboxResolverD1Layer } from "#/modules/address-routing/adapters/d1/InboundMailboxResolverD1";
 import { handleCloudflareEmailRoutingMessage } from "#/modules/address-routing/adapters/email/CloudflareEmailRouting";
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
 import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import {
   MailboxEmailSendBindingClient,
@@ -41,7 +42,6 @@ import {
   MailboxInboundEmailIngress,
   MailboxInboundEmailIngressRuntimeSystemLayer,
 } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
-import { EmailAddress } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAdministrationConfig } from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
 import {
   EmailRoutingEventSource,
@@ -389,9 +389,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
             )
           );
         const inboundServicesLive = Layer.merge(
-          InboundMailboxResolverD1Layer.pipe(
-            Layer.provide(controlPlaneDatabaseLayer)
-          ),
+          AddressRoutingLayer.pipe(Layer.provide(controlPlaneDatabaseLayer)),
           inboundEmailIngressLive
         );
 

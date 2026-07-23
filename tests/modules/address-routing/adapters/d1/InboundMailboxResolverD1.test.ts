@@ -6,8 +6,8 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { InboundMailboxResolverD1Layer } from "#/modules/address-routing/adapters/d1/InboundMailboxResolverD1";
-import { InboundMailboxResolver } from "#/modules/address-routing/ports/InboundMailboxResolver";
-import { EmailAddress } from "#/modules/mailbox/domain/Mailbox";
+import { InboundMailboxResolver } from "#/modules/address-routing/application/InboundMailboxResolver";
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,

@@ -6,9 +6,10 @@ import * as Schema from "effect/Schema";
 import {
   InboundMailboxResolver,
   InboundEmailRejected,
-} from "#/modules/address-routing/ports/InboundMailboxResolver";
+} from "#/modules/address-routing/application/InboundMailboxResolver";
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
-import { ByteSize, EmailAddress } from "#/modules/mailbox/domain/Mailbox";
+import { ByteSize } from "#/modules/mailbox/domain/Mailbox";
 import type { ReceiveInboundEmailInput as ReceiveInboundEmailInputType } from "#/modules/mailbox/domain/MailboxInbound";
 import { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
 

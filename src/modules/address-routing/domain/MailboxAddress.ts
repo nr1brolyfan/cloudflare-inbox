@@ -1,14 +1,19 @@
 import * as Schema from "effect/Schema";
 
-import {
-  EmailAddress,
-  MailAddress,
-  MailboxAddressId,
-  MailboxId,
-  Version,
-} from "#/modules/mailbox/domain/Mailbox";
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
+import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import { OperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
+
+const MailboxAddressResourceId = Schema.Trimmed.pipe(
+  Schema.check(Schema.isLengthBetween(1, 128))
+);
+
+export const MailboxAddressId = MailboxAddressResourceId.pipe(
+  Schema.brand("cloudflare-inbox/MailboxAddressId")
+);
+export type MailboxAddressId = Schema.Schema.Type<typeof MailboxAddressId>;
 
 export class MailboxAddress extends Schema.Class<MailboxAddress>(
   "cloudflare-inbox/MailboxAddress"

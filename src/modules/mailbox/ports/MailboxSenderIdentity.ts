@@ -3,8 +3,8 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import type { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
-import type { MailAddress } from "#/modules/mailbox/domain/Mailbox";
 
 export class MailboxSenderIdentityError extends Schema.TaggedErrorClass<MailboxSenderIdentityError>(
   "cloudflare-inbox/MailboxSenderIdentityError"

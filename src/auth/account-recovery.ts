@@ -8,7 +8,7 @@ import type * as Effect from "effect/Effect";
 import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { EmailAddress } from "#/modules/mailbox/domain/Mailbox";
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 
 export const ACCOUNT_RECOVERY_EVIDENCE_POLICY_ID =
   "cloudflare-inbox/external-recovery-link";

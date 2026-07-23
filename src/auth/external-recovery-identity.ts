@@ -6,9 +6,9 @@ import * as Schema from "effect/Schema";
 import {
   EmailAddress,
   NormalizedEmailAddress,
-  Version,
   normalizeEmailAddressDomain,
-} from "#/modules/mailbox/domain/Mailbox";
+} from "#/modules/address-routing/domain/EmailAddress";
+import { Version } from "#/modules/mailbox/domain/Mailbox";
 import { UnixMillis } from "#/shared/Temporal";
 
 import type { RecoverySafeIdentityRejected } from "./recovery-safe-identity-error";

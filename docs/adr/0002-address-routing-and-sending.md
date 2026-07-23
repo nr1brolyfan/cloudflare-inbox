@@ -90,8 +90,8 @@ Rejected because receiving and sending have different security requirements.
 ## References
 
 - `PLAN-FIRMOWEJ-POCZTY.md`
-- `src/modules/organization/adapters/d1/OrganizationSchema.ts`
-- `src/control-plane/inbound-mailbox-resolver-live.ts`
-- `src/control-plane/mailbox-sender-identity-live.ts`
-- `src/mailboxes/inbound-email-routing.ts`
+- `src/modules/address-routing/adapters/d1/AddressRoutingSchema.ts`
+- `src/modules/address-routing/adapters/d1/InboundMailboxResolverD1.ts`
+- `src/modules/address-routing/adapters/d1/MailboxSenderIdentityD1.ts`
+- `src/modules/address-routing/adapters/email/CloudflareEmailRouting.ts`
 - `src/mailboxes/outbound-sending.ts`

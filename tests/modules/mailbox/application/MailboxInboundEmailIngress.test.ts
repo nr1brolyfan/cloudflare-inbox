@@ -3,7 +3,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { InboundEmailRejected } from "#/modules/address-routing/ports/InboundMailboxResolver";
+import { InboundEmailRejected } from "#/modules/address-routing/application/InboundMailboxResolver";
 import type {
   InboundRawMessageR2WriteClientService,
   InboundRawMessageStoreRuntimeService,

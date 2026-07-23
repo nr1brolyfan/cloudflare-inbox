@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   MailboxOutboundSending,
   SendMailboxDraftCommand,
@@ -12,12 +13,7 @@ import {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
-import {
-  DraftId,
-  MailAddress,
-  MailboxId,
-  Version,
-} from "#/modules/mailbox/domain/Mailbox";
+import { DraftId, MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";

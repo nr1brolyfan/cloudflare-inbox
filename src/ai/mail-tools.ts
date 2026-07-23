@@ -1,10 +1,10 @@
 /* oxlint-disable max-classes-per-file -- The four static mail tool contracts are intentionally colocated. */
 import * as Schema from "effect/Schema";
 
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import {
   Cursor,
   DraftId,
-  EmailAddress,
   FolderId,
   LabelId,
   MessageDirection,

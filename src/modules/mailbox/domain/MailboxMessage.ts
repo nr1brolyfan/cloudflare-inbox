@@ -1,6 +1,8 @@
 /* oxlint-disable max-classes-per-file -- Message domain schemas are intentionally consolidated. */
 import * as Schema from "effect/Schema";
 
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import { OperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 
@@ -9,12 +11,10 @@ import {
   ByteSize,
   ContentId,
   Cursor,
-  EmailAddress,
   FileName,
   FolderId,
   InboundIngestId,
   LabelId,
-  MailAddress,
   MailboxId,
   MessageDirection,
   MessageId,

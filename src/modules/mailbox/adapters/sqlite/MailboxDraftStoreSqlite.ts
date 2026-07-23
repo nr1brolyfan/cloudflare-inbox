@@ -5,10 +5,10 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   Cursor,
   DraftId,
-  MailAddress,
   MailboxId,
   Version,
 } from "#/modules/mailbox/domain/Mailbox";

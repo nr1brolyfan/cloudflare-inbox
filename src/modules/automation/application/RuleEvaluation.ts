@@ -5,11 +5,13 @@ import * as Schema from "effect/Schema";
 
 import {
   EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/modules/address-routing/domain/EmailAddress";
+import {
   MailboxId,
   MessageSubject,
   RuleId,
   Version,
-  normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
 import type {
   Rule,

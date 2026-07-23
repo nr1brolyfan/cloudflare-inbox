@@ -4,12 +4,12 @@ import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   AttachmentId,
   ByteSize,
   ContentId,
   FileName,
-  MailAddress,
   MailboxId,
   MessageId,
   MessageSubject,

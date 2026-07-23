@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { InboundEmailRejected } from "#/modules/address-routing/ports/InboundMailboxResolver";
+import { InboundEmailRejected } from "#/modules/address-routing/application/InboundMailboxResolver";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { InboundIngestId } from "#/modules/mailbox/domain/Mailbox";
 import type { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";

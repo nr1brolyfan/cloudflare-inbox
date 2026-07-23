@@ -99,7 +99,7 @@ Rejected until Durable Object, R2, grant, route, backup, and restore lifecycles 
 ## References
 
 - `PLAN-FIRMOWEJ-POCZTY.md`
-- `src/modules/organization/adapters/d1/OrganizationSchema.ts`
-- `src/control-plane/inbound-mailbox-resolver-live.ts`
+- `src/modules/address-routing/adapters/d1/AddressRoutingSchema.ts`
+- `src/modules/address-routing/adapters/d1/InboundMailboxResolverD1.ts`
 - `src/modules/mailbox/adapters/durable-object/MailboxDoClient.ts`
 - `src/modules/mailbox/domain/MailboxOutbound.ts`

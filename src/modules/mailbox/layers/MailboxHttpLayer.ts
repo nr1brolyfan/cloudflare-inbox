@@ -1,6 +1,6 @@
 import * as Layer from "effect/Layer";
 
-import { MailboxSenderIdentityLive } from "#/control-plane/mailbox-sender-identity-live";
+import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
 import { MailboxDoClientLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { InboundReplayPreparerDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxInboundRepositoryDo";
 import {
@@ -75,10 +75,7 @@ const MailboxDraftReadingLayer = MailboxDraftReading.layerNoDeps.pipe(
 );
 const MailboxOutboundSendingLayer = MailboxOutboundSending.layerNoDeps.pipe(
   Layer.provide(
-    Layer.mergeAll(
-      MailboxOutboundSendingRepositoryLayer,
-      MailboxSenderIdentityLive
-    )
+    Layer.mergeAll(MailboxOutboundSendingRepositoryLayer, AddressRoutingLayer)
   )
 );
 const MailboxOutboundDeliveryReadingLayer =

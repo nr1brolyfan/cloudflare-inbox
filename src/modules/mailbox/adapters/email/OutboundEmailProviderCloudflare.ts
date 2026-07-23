@@ -7,7 +7,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAddress } from "#/modules/mailbox/domain/Mailbox";
+import type { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   DeliveryIndeterminateError,
   DeliveryRejectedError,

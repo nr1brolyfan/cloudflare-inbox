@@ -5,13 +5,14 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   EvaluateRulesInput,
   evaluateAsyncRuleCandidates,
   evaluateRules,
 } from "#/modules/automation/application/RuleEvaluation";
 import type { RuleEvaluationResult } from "#/modules/automation/application/RuleEvaluation";
-import { AsyncRuleJobId, MailAddress } from "#/modules/mailbox/domain/Mailbox";
+import { AsyncRuleJobId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxId, RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
 import {
   AsyncRuleJob,

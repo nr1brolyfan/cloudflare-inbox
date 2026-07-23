@@ -13,7 +13,7 @@ import { RecoverySafeIdentityPolicyLive } from "#/control-plane/recovery-safe-id
 import {
   EmailAddress,
   normalizeEmailAddressDomain,
-} from "#/modules/mailbox/domain/Mailbox";
+} from "#/modules/address-routing/domain/EmailAddress";
 import {
   MailboxAdministrationConfig,
   MailboxAdministrationOwnerEmail,

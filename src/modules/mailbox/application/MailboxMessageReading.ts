@@ -6,6 +6,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   AttachmentId,
   ByteSize,
@@ -13,7 +14,6 @@ import {
   FileName,
   FolderId,
   LabelId,
-  MailAddress,
   MailboxId,
   MessageDirection,
   MessageId,

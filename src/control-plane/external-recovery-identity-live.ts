@@ -15,15 +15,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
+import {
+  EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/modules/address-routing/domain/EmailAddress";
 import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/adapters/d1/AdministrativeAuditD1";
 import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
 import type { AdministrativeAuditError } from "#/modules/administrative-audit/application/AdministrativeAuditError";
-import {
-  EmailAddress,
-  Version,
-  normalizeEmailAddressDomain,
-} from "#/modules/mailbox/domain/Mailbox";
-import { appMailboxAddress } from "#/modules/organization/adapters/d1/OrganizationSchema";
+import { Version } from "#/modules/mailbox/domain/Mailbox";
 import { UnixMillis } from "#/shared/Temporal";
 
 import {

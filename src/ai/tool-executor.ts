@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import type { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type {
   MailboxDraftEditingError,
@@ -19,7 +20,6 @@ import type {
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
-import type { MailAddress } from "#/modules/mailbox/domain/Mailbox";
 import type {
   MailboxAuthorizationError,
   MailResourceResolveError,

@@ -6,6 +6,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   MailboxDoClientLayer,
   MailboxDoNamespace,
@@ -34,7 +35,7 @@ import {
   outboundDelivery,
 } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
-import { MailAddress, MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateDraftInput,
   GetDraftInput,

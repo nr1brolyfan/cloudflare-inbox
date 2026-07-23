@@ -3,18 +3,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { MailAddress } from "#/modules/mailbox/domain/Mailbox";
+import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   MailboxSenderIdentity,
   MailboxSenderIdentityError,
 } from "#/modules/mailbox/ports/MailboxSenderIdentity";
-import {
-  appMailbox,
-  appMailboxAddress,
-} from "#/modules/organization/adapters/d1/OrganizationSchema";
-
-import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
+import { appMailbox } from "#/modules/organization/adapters/d1/OrganizationSchema";
+import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 const senderIdentityError = (
   mailboxId: MailboxId,
@@ -32,7 +29,7 @@ const senderIdentityError = (
   });
 
 /** D1 lookup for the sole enabled primary address of an active mailbox. */
-export const MailboxSenderIdentityLive = Layer.effect(
+export const MailboxSenderIdentityD1Layer = Layer.effect(
   MailboxSenderIdentity,
   Effect.gen(function* () {
     const database = yield* ControlPlaneDatabase;

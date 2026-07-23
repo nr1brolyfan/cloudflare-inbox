@@ -1,15 +1,15 @@
 /* oxlint-disable max-classes-per-file -- Inbound domain schemas are intentionally consolidated. */
 import * as Schema from "effect/Schema";
 
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   AsyncRuleJobId,
   AttemptCount,
   ByteSize,
   ContentId,
-  EmailAddress,
   FileName,
   InboundIngestId,
-  MailAddress,
   MailboxId,
   MessageSubject,
   MessageId,

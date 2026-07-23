@@ -2,8 +2,8 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
 import { MailboxAdministrationConfig } from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
-import { appMailboxAddress } from "#/modules/organization/adapters/d1/OrganizationSchema";
 
 import {
   externalRecoveryAddressComparisonKey,

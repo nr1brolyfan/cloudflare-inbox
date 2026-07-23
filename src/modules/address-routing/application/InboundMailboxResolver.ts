@@ -1,9 +1,10 @@
-/* oxlint-disable max-classes-per-file -- Rejection and resolver form one routing port. */
+/* oxlint-disable max-classes-per-file -- Rejection and resolver form one routing use case. */
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import type * as Effect from "effect/Effect";
 
-import type { EmailAddress, MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import type { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 
 export class InboundEmailRejected extends Data.TaggedError(
   "InboundEmailRejected"

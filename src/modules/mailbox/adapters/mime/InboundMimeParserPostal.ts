@@ -10,10 +10,10 @@ import type {
   Mailbox as PostalMailbox,
 } from "postal-mime";
 
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import {
   ContentId,
   FileName,
-  MailAddress,
   MimeType,
   RfcMessageId,
 } from "#/modules/mailbox/domain/Mailbox";

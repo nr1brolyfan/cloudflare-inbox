@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxSenderIdentityLive } from "#/control-plane/mailbox-sender-identity-live";
+import { MailboxSenderIdentityD1Layer } from "#/modules/address-routing/adapters/d1/MailboxSenderIdentityD1";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import {
@@ -13,7 +13,10 @@ import {
   ControlPlaneDatabaseLayer,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
-import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
+import {
+  applyControlPlaneMigrations,
+  makeTestD1Database,
+} from "../../../../support/d1";
 
 const senderIdentityLive = (database: DatabaseSync) => {
   const bindingLive = Layer.succeed(
@@ -26,7 +29,7 @@ const senderIdentityLive = (database: DatabaseSync) => {
     Layer.provide(bindingLive)
   );
 
-  return MailboxSenderIdentityLive.pipe(Layer.provide(databaseLive));
+  return MailboxSenderIdentityD1Layer.pipe(Layer.provide(databaseLive));
 };
 
 const resolve = (database: DatabaseSync, mailboxId = "primary") =>

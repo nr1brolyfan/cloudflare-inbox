@@ -14,6 +14,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
+import {
+  EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/modules/address-routing/domain/EmailAddress";
 import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/adapters/d1/AdministrativeAuditD1";
 import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
 import type { AdministrativeAuditError } from "#/modules/administrative-audit/application/AdministrativeAuditError";
@@ -22,11 +27,7 @@ import {
   MailRole,
   mailboxScope,
 } from "#/modules/authorization/domain/MailPermissionCatalog";
-import {
-  EmailAddress,
-  MailboxId,
-  normalizeEmailAddressDomain,
-} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
   MailboxAdministration,
@@ -58,11 +59,7 @@ import {
   sessionPredicate,
   transactionalSessionPredicate,
 } from "../../../../platform/control-plane-d1/RequestAuthGuard";
-import {
-  appMailbox,
-  appMailboxAddress,
-  appMailboxMember,
-} from "./OrganizationSchema";
+import { appMailbox, appMailboxMember } from "./OrganizationSchema";
 
 export const MailboxAdministrationOwnerEmail = EmailAddress;
 export type MailboxAdministrationOwnerEmail = Schema.Schema.Type<

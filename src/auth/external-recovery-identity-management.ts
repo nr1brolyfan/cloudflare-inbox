@@ -7,7 +7,8 @@ import type * as Effect from "effect/Effect";
 import type * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 
-import { EmailAddress, Version } from "#/modules/mailbox/domain/Mailbox";
+import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
+import { Version } from "#/modules/mailbox/domain/Mailbox";
 import { AdministrativeOperationId } from "#/shared/Operation";
 
 import type { BackendRequestContext } from "../observability/request-context";

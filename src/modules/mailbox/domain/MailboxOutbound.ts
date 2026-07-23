@@ -1,13 +1,13 @@
 /* oxlint-disable max-classes-per-file -- Outbound domain schemas are intentionally consolidated. */
 import * as Schema from "effect/Schema";
 
+import { MailAddress } from "#/modules/address-routing/domain/MailAddress";
 import { OperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 
 import {
   AttemptCount,
   DraftId,
-  MailAddress,
   MailboxId,
   MessageId,
   OutboundDeliveryId,
