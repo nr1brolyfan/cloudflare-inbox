@@ -99,15 +99,23 @@ const repositoryWith = (
   const { listFolders, ...messageOverrides } = overrides;
   return {
     directory: MailboxDirectoryRepository.of({
+      createFolder: unused,
+      createLabel: unused,
+      deleteFolder: unused,
+      deleteLabel: unused,
       listFolders: listFolders ?? unused,
       listLabels: unused,
+      renameFolder: unused,
+      renameLabel: unused,
     }),
     messages: MailboxMessageRepository.of({
+      addMessageLabel: unused,
       getAttachmentBlob: unused,
       getMessage: unused,
       getThread: unused,
       listMessages: unused,
       moveMessage: unused,
+      removeMessageLabel: unused,
       searchMessages: unused,
       setMessageRead: unused,
       setMessageStarred: unused,

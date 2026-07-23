@@ -9,32 +9,36 @@ The refactor favors fewer, longer, cohesive modules over one-file-per-schema or 
 ## Target Layout
 
 ```text
-src/mailboxes/
-  core.ts                 # identifiers, primitives, MailboxRecord, MailAddress
-  addresses.ts            # address entity and transport-neutral contracts
-  directory.ts            # folders, labels, commands, queries, results
-  messages.ts             # messages, threads, attachments, commands and queries
-  drafts.ts               # draft entity and contracts
-  inbound.ts              # inbound state, transitions and contracts
-  outbound.ts             # outbound state, transitions and contracts
-  errors.ts               # mailbox domain and integration errors
-  repository.ts           # transport-neutral MailboxRepository service
-  administration.ts       # transport-neutral MailboxAdministration service
+src/modules/mailbox/
+  domain/                 # mailbox entities, value objects and domain errors
+  application/            # mailbox use cases
+  ports/                  # narrow, consumer-facing repository capabilities
+  adapters/durable-object/
+    MailboxDoProtocol.ts  # stable Durable Object request/response schemas
+    MailboxDoClient.ts    # registry-gated Worker-side transport
+    MailboxRepositoryDo.ts # direct narrow-port adapters
+    MailboxDoHandler.ts   # Durable Object-side protocol adapter
 
+src/modules/authorization/ports/
+  MailboxResourceRepository.ts # trusted resource ancestry capability
+
+src/modules/organization/
+  ports/MailboxRegistry.ts
+  adapters/d1/MailboxRegistryD1.ts
+
+src/mailboxes/
   sqlite-schema.ts        # Drizzle schema
   sqlite-migrations.ts    # synchronous Durable Object migrations
-  sqlite-services.ts      # SQLite services and their Live layers
-  do-protocol.ts           # Durable Object request/response schemas
-  do-client.ts             # Worker-side repository adapter
-  do-handler.ts            # Durable Object-side protocol adapter
-  mailbox-do.ts            # thin Durable Object composition root
+  sqlite-services.ts      # cohesive DO-side SQLite stores
+  mailbox-do.ts           # thin Durable Object composition root
 
 src/control-plane/
   batch.ts                # contract and concrete D1 batch layer
-  database.ts             # D1/Drizzle contract, layers, mailbox registry
+  database.ts             # D1/Drizzle contract and layers
   mailbox-administration-live.ts
 
-tests/mailboxes/          # mailbox tests mirroring the production domain
+tests/modules/mailbox/    # tests mirroring migrated mailbox modules
+tests/mailboxes/          # tests for not-yet-migrated mailbox modules
 tests/control-plane/      # control-plane tests mirroring the production domain
 tests/support/            # shared test-only database and Layer setup
 ```

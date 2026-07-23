@@ -5,6 +5,8 @@ import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
   CancelOutboundDeliveryInput,
   OutboundDeliveryResult,
+  ResendOutboundInput,
+  ResendOutboundResult,
   ScheduleOutboundInput,
   ScheduleOutboundResult,
 } from "#/modules/mailbox/domain/MailboxOutbound";
@@ -19,6 +21,9 @@ export interface MailboxOutboundSendingRepositoryService {
   readonly scheduleOutbound: (
     input: ScheduleOutboundInput
   ) => Effect.Effect<ScheduleOutboundResult, RepositoryError>;
+  readonly resendOutbound: (
+    input: ResendOutboundInput
+  ) => Effect.Effect<ResendOutboundResult, RepositoryError>;
 }
 
 export class MailboxOutboundSendingRepository extends Context.Service<

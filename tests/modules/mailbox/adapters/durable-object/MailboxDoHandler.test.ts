@@ -4,7 +4,7 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { validateMailboxDoRequestIdentity } from "#/mailboxes/do-handler";
+import { validateMailboxDoRequestIdentity } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 
 describe("MailboxDO protocol identity", () => {

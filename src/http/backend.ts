@@ -24,12 +24,14 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import { MailboxDoClientLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import {
   MailboxDirectoryRepositoryDoLayer,
   MailboxDraftRepositoryDoLayer,
   MailboxMessageRepositoryDoLayer,
   MailboxOutboundDeliveryRepositoryDoLayer,
   MailboxOutboundSendingRepositoryDoLayer,
+  MailboxResourceRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { DraftAttachmentBlobStoreR2Layer } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { MailboxOutboundDeliveryReadingClockSystemLayer } from "#/modules/mailbox/adapters/system/MailboxOutboundDeliveryReadingClockSystem";
@@ -42,6 +44,7 @@ import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/Mailbox
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
+import { MailboxRegistryD1Layer } from "#/modules/organization/adapters/d1/MailboxRegistryD1";
 
 import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
@@ -74,7 +77,6 @@ import { MailResourceResolverLive } from "../authorization/mail-resource-resolve
 import { MailPermissionsLive } from "../authorization/permissions-live";
 import { AccountRecoveryLive } from "../control-plane/account-recovery-live";
 import { ControlPlaneLive } from "../control-plane/batch";
-import { MailboxRegistryLive } from "../control-plane/database";
 import {
   ExternalRecoveryIdentityManagementLive,
   ExternalRecoveryIdentityRuntimeLive,
@@ -95,7 +97,6 @@ import {
 } from "../control-plane/passkey-enrollment-live";
 import { RecoveryCodeAdministrationLive } from "../control-plane/recovery-code-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
-import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
 import { InboundAttachmentBlobReaderR2WithRuntimeLive } from "../mailboxes/inbound-attachment-reader-r2-live";
 import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
 import {
@@ -226,30 +227,32 @@ const BackendRoutesLive = Layer.unwrap(
     const permissionsLive = MailPermissionsLive.pipe(
       Layer.provide(authStorageLive)
     );
-    const mailboxRepositoryLive = MailboxRepositoryDoLive.pipe(
-      Layer.provide(MailboxRegistryLive)
+    const mailboxDoClientLayer = MailboxDoClientLayer.pipe(
+      Layer.provide(MailboxRegistryD1Layer)
     );
     const mailboxMessageRepositoryDoLayer =
-      MailboxMessageRepositoryDoLayer.pipe(
-        Layer.provide(mailboxRepositoryLive)
-      );
+      MailboxMessageRepositoryDoLayer.pipe(Layer.provide(mailboxDoClientLayer));
     const mailboxDirectoryRepositoryDoLayer =
       MailboxDirectoryRepositoryDoLayer.pipe(
-        Layer.provide(mailboxRepositoryLive)
+        Layer.provide(mailboxDoClientLayer)
       );
     const mailboxDraftRepositoryDoLayer = MailboxDraftRepositoryDoLayer.pipe(
-      Layer.provide(mailboxRepositoryLive)
+      Layer.provide(mailboxDoClientLayer)
     );
     const mailboxOutboundDeliveryRepositoryDoLayer =
       MailboxOutboundDeliveryRepositoryDoLayer.pipe(
-        Layer.provide(mailboxRepositoryLive)
+        Layer.provide(mailboxDoClientLayer)
       );
     const mailboxOutboundSendingRepositoryDoLayer =
       MailboxOutboundSendingRepositoryDoLayer.pipe(
-        Layer.provide(mailboxRepositoryLive)
+        Layer.provide(mailboxDoClientLayer)
+      );
+    const mailboxResourceRepositoryDoLayer =
+      MailboxResourceRepositoryDoLayer.pipe(
+        Layer.provide(mailboxDoClientLayer)
       );
     const resourceResolverLive = MailResourceResolverLive.pipe(
-      Layer.provide(mailboxRepositoryLive)
+      Layer.provide(mailboxResourceRepositoryDoLayer)
     );
     const mailAuthorizationLive = MailAuthorizationLive.pipe(
       Layer.provide(Layer.merge(permissionsLive, resourceResolverLive))
@@ -340,7 +343,9 @@ const BackendRoutesLive = Layer.unwrap(
     const inboundReplayLive = InboundReplayLive.pipe(
       Layer.provide(
         Layer.merge(
-          InboundReplayPreparerDoLive.pipe(Layer.provide(MailboxRegistryLive)),
+          InboundReplayPreparerDoLive.pipe(
+            Layer.provide(MailboxRegistryD1Layer)
+          ),
           InboundWorkflowStarterLive
         )
       )

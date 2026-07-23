@@ -6,17 +6,24 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { MailboxResourceRepository } from "#/modules/authorization/ports/MailboxResourceRepository";
 import {
+  MailboxDoClientLayer,
   MailboxDoNamespace,
-  MailboxRegistry,
-  MailboxRepositoryDoLive,
-} from "#/mailboxes/do-client";
-import { MailboxRepository } from "#/mailboxes/repository";
+} from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import {
+  MailboxDirectoryRepositoryDoLayer,
+  MailboxDraftRepositoryDoLayer,
+  MailboxResourceRepositoryDoLayer,
+} from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { FolderId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { CreateFolderInput } from "#/modules/mailbox/domain/MailboxDirectory";
 import { CreateDraftInput } from "#/modules/mailbox/domain/MailboxDraft";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
+import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 
 const unusedRpc = () => Effect.die(new Error("RPC is unused"));
 
@@ -25,7 +32,7 @@ const findFolder = (
   resolveMailResource: (input: unknown) => Effect.Effect<unknown>
 ) => {
   const addressedNames: string[] = [];
-  const live = MailboxRepositoryDoLive.pipe(
+  const clientLayer = MailboxDoClientLayer.pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(
@@ -50,8 +57,11 @@ const findFolder = (
       )
     )
   );
+  const live = MailboxResourceRepositoryDoLayer.pipe(
+    Layer.provide(clientLayer)
+  );
   const effect = Effect.gen(function* () {
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxResourceRepository;
     return yield* repository.findFolderLocation({
       mailboxId: Schema.decodeUnknownSync(MailboxId)("mailbox-a"),
       folderId: Schema.decodeUnknownSync(FolderId)("folder-a"),
@@ -67,7 +77,7 @@ const createFolderThroughRpc = (
 ) => {
   const requests: unknown[] = [];
   const addressedNames: string[] = [];
-  const live = MailboxRepositoryDoLive.pipe(
+  const clientLayer = MailboxDoClientLayer.pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(
@@ -95,8 +105,11 @@ const createFolderThroughRpc = (
       )
     )
   );
+  const live = MailboxDirectoryRepositoryDoLayer.pipe(
+    Layer.provide(clientLayer)
+  );
   const effect = Effect.gen(function* () {
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxDirectoryRepository;
     return yield* repository.createFolder(
       Schema.decodeUnknownSync(CreateFolderInput)({
         mailboxId: "mailbox-a",
@@ -115,7 +128,7 @@ const createDraftThroughRpc = (
 ) => {
   const requests: unknown[] = [];
   const addressedNames: string[] = [];
-  const live = MailboxRepositoryDoLive.pipe(
+  const clientLayer = MailboxDoClientLayer.pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(
@@ -143,8 +156,9 @@ const createDraftThroughRpc = (
       )
     )
   );
+  const live = MailboxDraftRepositoryDoLayer.pipe(Layer.provide(clientLayer));
   const effect = Effect.gen(function* () {
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxDraftRepository;
     return yield* repository.createDraft(
       Schema.decodeUnknownSync(CreateDraftInput)({
         mailboxId: "mailbox-a",

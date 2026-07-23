@@ -9,7 +9,6 @@ import * as DrizzleNode from "drizzle-orm/effect-sqlite-node";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
-import { MailboxDoHandlerLive } from "#/mailboxes/do-handler";
 import { applyMailboxMigrations } from "#/mailboxes/sqlite-migrations";
 import { mailboxRelations } from "#/mailboxes/sqlite-schema";
 import {
@@ -23,6 +22,7 @@ import {
   MailboxOutboundStoreLive,
   MailboxResourceIndexLive,
 } from "#/mailboxes/sqlite-services";
+import { MailboxDoHandlerLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 
 const acquireDatabase = () => {
@@ -97,7 +97,7 @@ export const MailboxStoresTestLive = Layer.mergeAll(
 ).pipe(Layer.provide(MailboxOperationStoreLive));
 
 /** SQLite stores plus the in-process Durable Object protocol handler. */
-export const MailboxDoHandlerTestLive = MailboxDoHandlerLive.pipe(
+export const MailboxDoHandlerTestLive = MailboxDoHandlerLayer.pipe(
   Layer.provide(
     Layer.succeed(
       MailboxOutboundAlarmScheduler,

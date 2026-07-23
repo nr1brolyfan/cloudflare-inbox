@@ -4,6 +4,16 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import {
+  MailboxDirectoryStore,
+  MailboxDraftAttachmentStore,
+  MailboxDraftStore,
+  MailboxIdentity,
+  MailboxInboundStore,
+  MailboxMessageStore,
+  MailboxOutboundStore,
+  MailboxResourceIndex,
+} from "#/mailboxes/sqlite-services";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
@@ -20,23 +30,13 @@ import {
   MailDataRpcRequest,
   MailDataRpcResponse,
   mailDataResponseMatchesRequest,
-} from "./do-protocol";
+} from "./MailboxDoProtocol";
 import type {
   DirectoryRpcRequest as DirectoryRpcRequestType,
   DirectoryRpcResponse as DirectoryRpcResponseType,
   MailDataRpcRequest as MailDataRpcRequestType,
   MailDataRpcResponse as MailDataRpcResponseType,
-} from "./do-protocol";
-import {
-  MailboxDirectoryStore,
-  MailboxDraftAttachmentStore,
-  MailboxDraftStore,
-  MailboxIdentity,
-  MailboxInboundStore,
-  MailboxMessageStore,
-  MailboxOutboundStore,
-  MailboxResourceIndex,
-} from "./sqlite-services";
+} from "./MailboxDoProtocol";
 
 const protocolMismatch = (channel: string) =>
   Effect.die(new Error(`MailboxDO ${channel} dispatch metadata mismatch`));
@@ -386,18 +386,19 @@ export const validateMailboxDoRequestIdentity = (
         new Error("MailboxDO request mailboxId does not match its identity")
       );
 
-export interface MailboxDoHandler {
+export interface MailboxDoHandlerService {
   readonly executeDirectory: (input: unknown) => Effect.Effect<unknown>;
   readonly executeMailData: (input: unknown) => Effect.Effect<unknown>;
   readonly resolveMailResource: (input: unknown) => Effect.Effect<unknown>;
 }
 
 /** Decodes and dispatches trusted Durable Object calls to mailbox stores. */
-export const MailboxDoHandler = Context.Service<MailboxDoHandler>(
-  "cloudflare-inbox/MailboxDoHandler"
-);
+export class MailboxDoHandler extends Context.Service<
+  MailboxDoHandler,
+  MailboxDoHandlerService
+>()("cloudflare-inbox/MailboxDoHandler") {}
 
-export const MailboxDoHandlerLive = Layer.effect(
+export const MailboxDoHandlerLayer = Layer.effect(
   MailboxDoHandler,
   Effect.gen(function* () {
     const directoryStore = yield* MailboxDirectoryStore;

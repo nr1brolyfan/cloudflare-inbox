@@ -16,9 +16,11 @@ Worker bindings and deployment config
          -> RequestSessionAuthenticatorLive
             -> CurrentRequestAuthMiddlewareLive
          -> CoreAuthGroupHandlersLive (wired only by the HTTP root)
-  -> MailboxDoNamespace
-     -> MailboxRepositoryDoLive
-        -> MailResourceResolverLive
+  -> MailboxDoNamespace + MailboxRegistry
+     -> MailboxDoClientLayer
+        -> narrow Mailbox*RepositoryDoLayer adapters
+        -> MailboxResourceRepositoryDoLayer
+           -> MailResourceResolverLive
            -> MailAuthorizationLive
               -> MailboxAdministrationLive (captured when its Layer is built)
   -> MailboxAdministrationConfig
@@ -35,7 +37,7 @@ BackendHttpApi
   <- development-email HTTP adapter
 ```
 
-Inside each `MailboxDO`, `MailboxDatabaseLive` feeds `MailboxOperationStoreLive`; directory, draft, and outbound stores acquire that service explicitly, while message and resource-index stores depend directly on the database. The final store graph is then supplied to `MailboxDoHandlerLive` and the Durable Object implementation.
+Inside each `MailboxDO`, `MailboxDatabaseLive` feeds `MailboxOperationStoreLive`; directory, draft, and outbound stores acquire that service explicitly, while message and resource-index stores depend directly on the database. The final store graph is then supplied to `MailboxDoHandlerLayer` and the Durable Object implementation.
 
 `MailboxAdministration.rename` retains only request-scoped `CurrentRequestAuth` and `CurrentPrincipal` requirements. Its stable authorization policy, runtime, configuration, and storage dependencies are captured by `MailboxAdministrationLive`.
 

@@ -3,6 +3,7 @@ import type * as Effect from "effect/Effect";
 
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
+  AddMessageLabelInput,
   AttachmentBlobLocation,
   GetAttachmentBlobInput,
   GetMessageInput,
@@ -13,6 +14,7 @@ import type {
   MessageMutationResult,
   MessagePage,
   MoveMessageInput,
+  RemoveMessageLabelInput,
   SearchMessagesInput,
   SetMessageReadInput,
   SetMessageStarredInput,
@@ -22,6 +24,9 @@ import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepo
 type RepositoryError = MailboxDomainError | MailboxRepositoryError;
 
 export interface MailboxMessageRepositoryService {
+  readonly addMessageLabel: (
+    input: AddMessageLabelInput
+  ) => Effect.Effect<MessageMutationResult, RepositoryError>;
   readonly getAttachmentBlob: (
     input: GetAttachmentBlobInput
   ) => Effect.Effect<AttachmentBlobLocation, RepositoryError>;
@@ -36,6 +41,9 @@ export interface MailboxMessageRepositoryService {
   ) => Effect.Effect<MessagePage, RepositoryError>;
   readonly moveMessage: (
     input: MoveMessageInput
+  ) => Effect.Effect<MessageMutationResult, RepositoryError>;
+  readonly removeMessageLabel: (
+    input: RemoveMessageLabelInput
   ) => Effect.Effect<MessageMutationResult, RepositoryError>;
   readonly searchMessages: (
     input: SearchMessagesInput

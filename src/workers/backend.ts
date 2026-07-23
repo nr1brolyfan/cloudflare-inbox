@@ -13,6 +13,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
+import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import {
   MailboxEmailSendBindingClient,
   MailboxEmailSendClientCloudflareLayer,
@@ -47,7 +48,6 @@ import {
   MailboxEmailSender,
   RawMessagesBucket,
 } from "../infra/resources";
-import { MailboxDoNamespace } from "../mailboxes/do-client";
 import { InboundAttachmentR2ReadClient } from "../mailboxes/inbound-attachment-reader-r2-live";
 import {
   InboundEmailIngressLive,

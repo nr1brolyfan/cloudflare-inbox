@@ -101,5 +101,5 @@ Rejected until Durable Object, R2, grant, route, backup, and restore lifecycles 
 - `PLAN-FIRMOWEJ-POCZTY.md`
 - `src/control-plane/schema.ts`
 - `src/control-plane/inbound-mailbox-resolver-live.ts`
-- `src/mailboxes/do-client.ts`
-- `src/mailboxes/outbound.ts`
+- `src/modules/mailbox/adapters/durable-object/MailboxDoClient.ts`
+- `src/modules/mailbox/domain/MailboxOutbound.ts`

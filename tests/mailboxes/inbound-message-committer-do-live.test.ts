@@ -3,13 +3,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailboxDoStub } from "#/mailboxes/do-client";
-import { MailboxDoNamespace } from "#/mailboxes/do-client";
 import {
   CommitInboundMessageV1,
   InboundMessageCommitter,
 } from "#/mailboxes/inbound";
 import { InboundMessageCommitterDoLive } from "#/mailboxes/inbound-message-committer-do-live";
+import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import type { MailboxDoStub } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 

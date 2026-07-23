@@ -3,13 +3,13 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { MailboxDoStub } from "#/mailboxes/do-client";
-import { MailboxDoNamespace } from "#/mailboxes/do-client";
 import {
   InboundProcessingRecorder,
   RecordInboundProcessingV1,
 } from "#/mailboxes/inbound";
 import { InboundProcessingRecorderDoLive } from "#/mailboxes/inbound-processing-recorder-do-live";
+import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import type { MailboxDoStub } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const input = Schema.decodeUnknownSync(RecordInboundProcessingV1)({

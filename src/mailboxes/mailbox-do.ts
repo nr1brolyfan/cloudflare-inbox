@@ -4,6 +4,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import {
+  MailboxDoHandler,
+  MailboxDoHandlerLayer,
+} from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
+import {
   MailboxEmailSendClient,
   OutboundEmailProviderCloudflareLayer,
 } from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
@@ -13,7 +17,6 @@ import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/Mai
 import { MailboxOutboundAlarmLayer } from "#/modules/mailbox/layers/MailboxOutboundAlarmLayer";
 import { MailboxOutboundLifecycleStore } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
-import { MailboxDoHandler, MailboxDoHandlerLive } from "./do-handler";
 import {
   MailboxDoOutboundBindings,
   MailboxDoOutboundBindingsLive,
@@ -170,7 +173,7 @@ const mailboxDoLive = Effect.gen(function* () {
       )
     )
   );
-  const mailboxHandlerLive = MailboxDoHandlerLive.pipe(
+  const mailboxHandlerLive = MailboxDoHandlerLayer.pipe(
     Layer.provide(Layer.merge(MailboxSqliteLive, outboundAlarmLive))
   );
 

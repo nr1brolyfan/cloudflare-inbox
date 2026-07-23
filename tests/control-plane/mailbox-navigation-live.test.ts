@@ -64,8 +64,14 @@ const repositoryWith = (
   listLabels: MailboxDirectoryRepositoryService["listLabels"]
 ) =>
   MailboxDirectoryRepository.of({
+    createFolder: unusedAuthorization,
+    createLabel: unusedAuthorization,
+    deleteFolder: unusedAuthorization,
+    deleteLabel: unusedAuthorization,
     listFolders,
     listLabels,
+    renameFolder: unusedAuthorization,
+    renameLabel: unusedAuthorization,
   });
 
 const authorizationWith = (

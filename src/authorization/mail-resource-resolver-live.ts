@@ -2,9 +2,9 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 
+import { MailboxResourceRepository } from "#/modules/authorization/ports/MailboxResourceRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
-import { MailboxRepository } from "../mailboxes/repository";
 import * as Resources from "./resources";
 
 const resolveError = (
@@ -26,7 +26,7 @@ const resolveError = (
 export const MailResourceResolverLive = Layer.effect(
   Resources.MailResourceResolver,
   Effect.gen(function* () {
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxResourceRepository;
     const fromRepository = <A>(
       resource: Resources.ResolvableMailResourceRef,
       effect: Effect.Effect<Option.Option<A>, MailboxRepositoryError>

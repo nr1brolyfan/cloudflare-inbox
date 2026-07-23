@@ -70,6 +70,7 @@ const repositoryWith = (
 ): MailboxOutboundSendingRepositoryService =>
   MailboxOutboundSendingRepository.of({
     cancelOutboundDelivery: unused,
+    resendOutbound: unused,
     scheduleOutbound: unused,
     ...overrides,
   });

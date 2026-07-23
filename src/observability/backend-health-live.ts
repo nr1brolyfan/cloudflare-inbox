@@ -14,6 +14,13 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { MailboxDoStub } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import {
+  DirectoryRpcRequest,
+  DirectoryRpcResponse,
+  MailDataRpcRequest,
+  MailDataRpcResponse,
+} from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
 import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
@@ -21,13 +28,6 @@ import {
 
 import { MailPermission, mailboxScope } from "../authorization/catalog";
 import { ControlPlaneDatabase } from "../control-plane/database";
-import type { MailboxDoStub } from "../mailboxes/do-client";
-import {
-  DirectoryRpcRequest,
-  DirectoryRpcResponse,
-  MailDataRpcRequest,
-  MailDataRpcResponse,
-} from "../mailboxes/do-protocol";
 import { BackendHealth } from "./health";
 import type { StorageHealth } from "./health";
 

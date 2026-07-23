@@ -6,7 +6,8 @@ import { describe, expect, it } from "vitest";
 
 import { MailResourceResolverLive } from "#/authorization/mail-resource-resolver-live";
 import { MailResourceResolver } from "#/authorization/resources";
-import { MailboxRepository } from "#/mailboxes/repository";
+import { MailboxResourceRepository } from "#/modules/authorization/ports/MailboxResourceRepository";
+import type { MailboxResourceRepositoryService } from "#/modules/authorization/ports/MailboxResourceRepository";
 import {
   MessageLocation,
   MessageLookup,
@@ -14,10 +15,8 @@ import {
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 const unused = () => Effect.succeed(Option.none());
-const unusedDirectory = () => Effect.die(new Error("Directory RPC is unused"));
-
 const resolverWith = (
-  findMessageLocation: MailboxRepository["findMessageLocation"]
+  findMessageLocation: MailboxResourceRepositoryService["findMessageLocation"]
 ) =>
   Effect.gen(function* () {
     const resolver = yield* MailResourceResolver;
@@ -33,43 +32,13 @@ const resolverWith = (
       MailResourceResolverLive.pipe(
         Layer.provide(
           Layer.succeed(
-            MailboxRepository,
-            MailboxRepository.of({
-              addMessageLabel: unusedDirectory,
-              cancelOutboundDelivery: unusedDirectory,
-              completeDraftAttachment: unusedDirectory,
-              createDraft: unusedDirectory,
-              createFolder: unusedDirectory,
-              createLabel: unusedDirectory,
-              deleteFolder: unusedDirectory,
-              deleteLabel: unusedDirectory,
+            MailboxResourceRepository,
+            MailboxResourceRepository.of({
               findAttachmentLocation: unused,
               findDraftLocation: unused,
               findFolderLocation: unused,
               findMessageLocation,
               findRuleLocation: unused,
-              getAttachmentBlob: unusedDirectory,
-              getDraft: unusedDirectory,
-              getDraftAttachment: unusedDirectory,
-              getMessage: unusedDirectory,
-              getOutboundDelivery: unusedDirectory,
-              getThread: unusedDirectory,
-              listFolders: unusedDirectory,
-              listDraftAttachments: unusedDirectory,
-              listDrafts: unusedDirectory,
-              listLabels: unusedDirectory,
-              listMessages: unusedDirectory,
-              searchMessages: unusedDirectory,
-              moveMessage: unusedDirectory,
-              removeMessageLabel: unusedDirectory,
-              reserveDraftAttachment: unusedDirectory,
-              renameFolder: unusedDirectory,
-              renameLabel: unusedDirectory,
-              resendOutbound: unusedDirectory,
-              scheduleOutbound: unusedDirectory,
-              setMessageRead: unusedDirectory,
-              setMessageStarred: unusedDirectory,
-              updateDraft: unusedDirectory,
             })
           )
         )

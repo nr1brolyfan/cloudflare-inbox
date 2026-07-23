@@ -1,13 +1,10 @@
 import * as D1Client from "@effect/sql-d1/D1Client";
-import { and, eq } from "drizzle-orm";
 import * as DrizzleD1 from "drizzle-orm/effect-d1";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { relations } from "../auth/schema/index.js";
-import { MailboxRegistry } from "../mailboxes/do-client";
-import { appMailbox } from "./schema";
 
 export interface ControlPlaneD1Binding {
   readonly database: D1Database;
@@ -39,25 +36,5 @@ export const ControlPlaneDatabaseLive = Layer.unwrap(
       ControlPlaneDatabase,
       DrizzleD1.makeWithDefaults({ relations })
     ).pipe(Layer.provide(clientLive));
-  })
-);
-
-/** Active mailbox existence lookup backed by the control-plane database. */
-export const MailboxRegistryLive = Layer.effect(
-  MailboxRegistry,
-  Effect.gen(function* () {
-    const controlPlane = yield* ControlPlaneDatabase;
-
-    return MailboxRegistry.of({
-      exists: (mailboxId) =>
-        controlPlane
-          .select({ id: appMailbox.id })
-          .from(appMailbox)
-          .where(
-            and(eq(appMailbox.id, mailboxId), eq(appMailbox.status, "active"))
-          )
-          .limit(1)
-          .pipe(Effect.map((rows) => rows.length === 1)),
-    });
   })
 );

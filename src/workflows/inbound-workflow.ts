@@ -6,6 +6,7 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import type { AsyncRuleJobId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
@@ -22,7 +23,6 @@ import {
   AsyncRuleWorkflowStarterLive,
 } from "../mailboxes/async-rule-workflow-starter-live";
 import { AsyncRuleWorkflowStarter } from "../mailboxes/async-rules";
-import { MailboxDoNamespace } from "../mailboxes/do-client";
 import type { ParsedInboundMessageV1 as ParsedInboundMessageV1Type } from "../mailboxes/inbound";
 import {
   InboundAttachmentStore,

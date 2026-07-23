@@ -5,7 +5,6 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxDoHandler } from "#/mailboxes/do-handler";
 import {
   CommitInboundMessageV1,
   CommitInboundMessageV2,
@@ -32,6 +31,7 @@ import {
   MailboxMessageStore,
   MailboxRuntime,
 } from "#/mailboxes/sqlite-services";
+import { MailboxDoHandler } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 
 import {

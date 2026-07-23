@@ -7,14 +7,6 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  MailboxDoNamespace,
-  MailboxRegistry,
-  MailboxRepositoryDoLive,
-} from "#/mailboxes/do-client";
-import { MailboxDoHandler, MailboxDoHandlerLive } from "#/mailboxes/do-handler";
-import { MailDataRpcResponse } from "#/mailboxes/do-protocol";
-import { MailboxRepository } from "#/mailboxes/repository";
-import {
   attachment,
   draft,
   draftAttachment,
@@ -34,6 +26,16 @@ import {
   MailboxOutboundStore,
   MailboxRuntime,
 } from "#/mailboxes/sqlite-services";
+import {
+  MailboxDoClientLayer,
+  MailboxDoNamespace,
+} from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import {
+  MailboxDoHandler,
+  MailboxDoHandlerLayer,
+} from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
+import { MailDataRpcResponse } from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
+import { MailboxDraftRepositoryDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import { MailAddress, MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
@@ -65,6 +67,8 @@ import {
   ScheduleOutboundInput,
   outboundUndoWindowMillis,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
+import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 
 import {
   MailboxDatabaseTestLive,
@@ -291,7 +295,7 @@ describe("Mailbox mail data SQLite", () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         const handler = yield* MailboxDoHandler;
-        const repositoryLive = MailboxRepositoryDoLive.pipe(
+        const clientLayer = MailboxDoClientLayer.pipe(
           Layer.provide(
             Layer.merge(
               Layer.succeed(
@@ -311,8 +315,11 @@ describe("Mailbox mail data SQLite", () => {
             )
           )
         );
+        const repositoryLayer = MailboxDraftRepositoryDoLayer.pipe(
+          Layer.provide(clientLayer)
+        );
         const error = yield* Effect.gen(function* () {
-          const repository = yield* MailboxRepository;
+          const repository = yield* MailboxDraftRepository;
           return yield* repository.updateDraft(
             Schema.decodeUnknownSync(UpdateDraftInput)({
               mailboxId,
@@ -328,7 +335,7 @@ describe("Mailbox mail data SQLite", () => {
               },
             })
           );
-        }).pipe(Effect.provide(repositoryLive), Effect.flip);
+        }).pipe(Effect.provide(repositoryLayer), Effect.flip);
 
         expect(error).toBeInstanceOf(MailboxDomainError);
         expect(error).toMatchObject({
@@ -1400,7 +1407,7 @@ describe("Mailbox mail data SQLite", () => {
         reconcileCount += 1;
       }),
     });
-    const testLive = MailboxDoHandlerLive.pipe(
+    const testLive = MailboxDoHandlerLayer.pipe(
       Layer.provide(
         Layer.succeed(MailboxOutboundAlarmScheduler, outboundAlarm)
       ),

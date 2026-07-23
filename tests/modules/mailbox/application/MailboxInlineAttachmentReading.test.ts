@@ -73,11 +73,13 @@ const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
 const repository = MailboxMessageRepository.of({
+  addMessageLabel: unused,
   getAttachmentBlob: () => Effect.succeed(blobLocation),
   getMessage: () => Effect.succeed(message),
   getThread: unused,
   listMessages: unused,
   moveMessage: unused,
+  removeMessageLabel: unused,
   searchMessages: unused,
   setMessageRead: unused,
   setMessageStarred: unused,

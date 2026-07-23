@@ -1,5 +1,12 @@
 import * as Schema from "effect/Schema";
 
+import {
+  CommitInboundMessage,
+  InboundProcessingResult,
+  PreparedInboundReplayV1,
+  RecordInboundProcessing,
+  ReplayInboundInput,
+} from "#/mailboxes/inbound";
 import { Version } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateFolderInput,
@@ -61,14 +68,6 @@ import {
   ScheduleOutboundInput,
   ScheduleOutboundResult,
 } from "#/modules/mailbox/domain/MailboxOutbound";
-
-import {
-  CommitInboundMessage,
-  InboundProcessingResult,
-  PreparedInboundReplayV1,
-  RecordInboundProcessing,
-  ReplayInboundInput,
-} from "./inbound";
 
 export const MailboxDomainErrorDto = Schema.Struct({
   _tag: Schema.Literal("DomainError"),

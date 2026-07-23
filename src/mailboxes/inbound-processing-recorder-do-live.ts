@@ -3,16 +3,16 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
-import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
-
-import { MailboxDoNamespace } from "./do-client";
+import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import {
   decodeMailboxDomainError,
   MailDataRpcRequest,
   MailDataRpcResponse,
   mailDataResponseMatchesRequest,
-} from "./do-protocol";
+} from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+
 import { InboundProcessingRecorder } from "./inbound";
 import type { InboundProcessingResult } from "./inbound";
 

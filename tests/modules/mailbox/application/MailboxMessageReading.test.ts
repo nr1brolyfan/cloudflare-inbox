@@ -108,11 +108,13 @@ const repositoryWith = (
   searchMessages: MailboxMessageRepositoryService["searchMessages"] = unused
 ) =>
   MailboxMessageRepository.of({
+    addMessageLabel: unused,
     getAttachmentBlob: unused,
     getMessage,
     getThread,
     listMessages,
     moveMessage: unused,
+    removeMessageLabel: unused,
     searchMessages,
     setMessageRead: unused,
     setMessageStarred: unused,
