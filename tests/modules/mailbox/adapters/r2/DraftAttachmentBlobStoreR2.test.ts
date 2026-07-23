@@ -4,18 +4,18 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import type {
-  DraftAttachmentBlobRuntime as DraftAttachmentBlobRuntimeShape,
-  DraftAttachmentR2Client as DraftAttachmentR2ClientShape,
-} from "#/mailboxes/draft-attachment-store-r2-live";
+  DraftAttachmentBlobRuntimeService,
+  DraftAttachmentR2ClientService,
+} from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import {
   DraftAttachmentBlobRuntime,
-  DraftAttachmentBlobStoreR2Live,
+  DraftAttachmentBlobStoreR2AdapterLayer,
   DraftAttachmentR2Client,
-} from "#/mailboxes/draft-attachment-store-r2-live";
+} from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { DraftAttachmentReservationSchema } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
 
-type PutOptions = Parameters<DraftAttachmentR2ClientShape["put"]>[2];
+type PutOptions = Parameters<DraftAttachmentR2ClientService["put"]>[2];
 
 const reservation = Schema.decodeUnknownSync(DraftAttachmentReservationSchema)({
   createdAt: 1000,
@@ -29,7 +29,7 @@ const reservation = Schema.decodeUnknownSync(DraftAttachmentReservationSchema)({
   status: "reserved",
 });
 const digest = "a".repeat(64);
-const runtime: DraftAttachmentBlobRuntimeShape = {
+const runtime: DraftAttachmentBlobRuntimeService = {
   sha256: () => Effect.succeed(digest),
 };
 const objectFrom = (options: PutOptions) => ({
@@ -38,14 +38,14 @@ const objectFrom = (options: PutOptions) => ({
   sha256: options.sha256,
   size: options.contentLength,
 });
-const runStore = (client: DraftAttachmentR2ClientShape) =>
+const runStore = (client: DraftAttachmentR2ClientService) =>
   Effect.runPromise(
     DraftAttachmentBlobStore.pipe(
       Effect.flatMap((store) =>
         store.store({ content: new Uint8Array([1, 2, 3]), reservation })
       ),
       Effect.provide(
-        DraftAttachmentBlobStoreR2Live.pipe(
+        DraftAttachmentBlobStoreR2AdapterLayer.pipe(
           Layer.provide(
             Layer.merge(
               Layer.succeed(

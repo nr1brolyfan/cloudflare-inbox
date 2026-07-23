@@ -31,6 +31,7 @@ import {
   MailboxOutboundDeliveryRepositoryDoLayer,
   MailboxOutboundSendingRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
+import { DraftAttachmentBlobStoreR2Layer } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { MailboxOutboundDeliveryReadingClockSystemLayer } from "#/modules/mailbox/adapters/system/MailboxOutboundDeliveryReadingClockSystem";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
@@ -95,7 +96,6 @@ import {
 import { RecoveryCodeAdministrationLive } from "../control-plane/recovery-code-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
-import { DraftAttachmentBlobStoreR2WithRuntimeLive } from "../mailboxes/draft-attachment-store-r2-live";
 import { InboundAttachmentBlobReaderR2WithRuntimeLive } from "../mailboxes/inbound-attachment-reader-r2-live";
 import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
 import {
@@ -316,7 +316,7 @@ const BackendRoutesLive = Layer.unwrap(
           Layer.mergeAll(
             mailAuthorizationLive,
             mailboxDraftRepositoryDoLayer,
-            DraftAttachmentBlobStoreR2WithRuntimeLive
+            DraftAttachmentBlobStoreR2Layer
           )
         )
       );

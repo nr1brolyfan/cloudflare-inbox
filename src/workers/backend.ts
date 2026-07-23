@@ -19,6 +19,8 @@ import {
   OutboundEmailProviderCloudflareLayer,
 } from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
 import { OutboundEmailProviderUnavailableLayer } from "#/modules/mailbox/adapters/email/OutboundEmailProviderUnavailable";
+import type { DraftAttachmentR2Object } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
+import { DraftAttachmentR2Client } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
 import { OutboundDraftAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
 
 import { AiInferenceUnavailableLive } from "../ai/inference";
@@ -46,8 +48,6 @@ import {
 } from "../infra/resources";
 import { EmailAddress } from "../mailboxes/core";
 import { MailboxDoNamespace } from "../mailboxes/do-client";
-import type { DraftAttachmentR2Object } from "../mailboxes/draft-attachment-store-r2-live";
-import { DraftAttachmentR2Client } from "../mailboxes/draft-attachment-store-r2-live";
 import { InboundAttachmentR2ReadClient } from "../mailboxes/inbound-attachment-reader-r2-live";
 import {
   InboundEmailIngressLive,

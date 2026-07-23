@@ -1,14 +1,14 @@
+/* oxlint-disable max-classes-per-file -- R2 client and hashing runtime are cohesive adapter internals. */
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { Sha256Digest } from "#/mailboxes/core";
+import { BlobStoreError } from "#/mailboxes/errors";
 import { draftAttachmentObjectKey } from "#/modules/mailbox/adapters/r2/DraftAttachmentR2Object";
 import type { DraftAttachmentBlobReservation } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
 import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
-
-import { Sha256Digest } from "./core";
-import { BlobStoreError } from "./errors";
 
 interface DraftAttachmentPutOptions {
   readonly contentLength: number;
@@ -25,7 +25,7 @@ export interface DraftAttachmentR2Object {
   readonly size: number;
 }
 
-export interface DraftAttachmentR2Client {
+export interface DraftAttachmentR2ClientService {
   readonly head: (
     key: string
   ) => Effect.Effect<DraftAttachmentR2Object | null, unknown>;
@@ -36,25 +36,26 @@ export interface DraftAttachmentR2Client {
   ) => Effect.Effect<DraftAttachmentR2Object | null, unknown>;
 }
 
-export const DraftAttachmentR2Client = Context.Service<DraftAttachmentR2Client>(
-  "cloudflare-inbox/DraftAttachmentR2Client"
-);
+export class DraftAttachmentR2Client extends Context.Service<
+  DraftAttachmentR2Client,
+  DraftAttachmentR2ClientService
+>()("cloudflare-inbox/DraftAttachmentR2Client") {}
 
-export interface DraftAttachmentBlobRuntime {
+export interface DraftAttachmentBlobRuntimeService {
   readonly sha256: (value: Uint8Array) => Effect.Effect<string, unknown>;
 }
 
-export const DraftAttachmentBlobRuntime =
-  Context.Service<DraftAttachmentBlobRuntime>(
-    "cloudflare-inbox/DraftAttachmentBlobRuntime"
-  );
+export class DraftAttachmentBlobRuntime extends Context.Service<
+  DraftAttachmentBlobRuntime,
+  DraftAttachmentBlobRuntimeService
+>()("cloudflare-inbox/DraftAttachmentBlobRuntime") {}
 
 const toHex = (value: ArrayBuffer) =>
   [...new Uint8Array(value)]
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
 
-export const DraftAttachmentBlobRuntimeLive = Layer.succeed(
+const DraftAttachmentBlobRuntimeWebCryptoLayer = Layer.succeed(
   DraftAttachmentBlobRuntime,
   DraftAttachmentBlobRuntime.of({
     sha256: (value) =>
@@ -108,7 +109,7 @@ const objectMatches = (
     ([key, value]) => object.customMetadata[key] === value
   );
 
-export const DraftAttachmentBlobStoreR2Live = Layer.effect(
+export const DraftAttachmentBlobStoreR2AdapterLayer = Layer.effect(
   DraftAttachmentBlobStore,
   Effect.gen(function* () {
     const client = yield* DraftAttachmentR2Client;
@@ -180,7 +181,7 @@ export const DraftAttachmentBlobStoreR2Live = Layer.effect(
   })
 );
 
-export const DraftAttachmentBlobStoreR2WithRuntimeLive =
-  DraftAttachmentBlobStoreR2Live.pipe(
-    Layer.provide(DraftAttachmentBlobRuntimeLive)
+export const DraftAttachmentBlobStoreR2Layer =
+  DraftAttachmentBlobStoreR2AdapterLayer.pipe(
+    Layer.provide(DraftAttachmentBlobRuntimeWebCryptoLayer)
   );
