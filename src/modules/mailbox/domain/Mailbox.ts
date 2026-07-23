@@ -1,8 +1,5 @@
 /* oxlint-disable max-classes-per-file -- Mailbox domain schemas are intentionally consolidated. */
-import { UserIdSchema } from "@effect-auth/core/Identifiers";
 import * as Schema from "effect/Schema";
-
-import { UnixMillis } from "#/shared/Temporal";
 
 const ResourceId = Schema.Trimmed.pipe(
   Schema.check(Schema.isLengthBetween(1, 128))
@@ -120,11 +117,6 @@ export const PageSize = Schema.Int.pipe(
   Schema.brand("cloudflare-inbox/PageSize")
 );
 export type PageSize = Schema.Schema.Type<typeof PageSize>;
-
-export const MailboxDisplayName = DisplayNameText.pipe(
-  Schema.brand("cloudflare-inbox/MailboxDisplayName")
-);
-export type MailboxDisplayName = Schema.Schema.Type<typeof MailboxDisplayName>;
 
 export const FolderName = DisplayNameText.pipe(
   Schema.brand("cloudflare-inbox/FolderName")
@@ -281,23 +273,3 @@ export class MailAddress extends Schema.Class<MailAddress>(
   address: EmailAddress,
   displayName: Schema.optional(Schema.String),
 }) {}
-
-export class MailboxRecord extends Schema.Class<MailboxRecord>(
-  "cloudflare-inbox/MailboxRecord"
-)({
-  createdAt: UnixMillis,
-  createdByUserId: UserIdSchema,
-  displayName: MailboxDisplayName,
-  id: MailboxId,
-  status: Schema.Literal("active"),
-  updatedAt: UnixMillis,
-  version: Version,
-}) {}
-
-export const MailboxRecordSchema = MailboxRecord.check(
-  Schema.makeFilter((mailbox) =>
-    mailbox.updatedAt >= mailbox.createdAt
-      ? undefined
-      : "updatedAt cannot be earlier than createdAt"
-  )
-);

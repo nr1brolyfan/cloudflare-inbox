@@ -6,13 +6,10 @@ import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuthShape } from "#/auth/session";
-import {
-  MailboxDisplayName,
-  MailboxId,
-  Version,
-} from "#/modules/mailbox/domain/Mailbox";
-import type { MailboxRecord } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
+import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import type { MailboxRecord } from "#/modules/organization/domain/Mailbox";
 import type { BackendRequestContext } from "#/observability/request-context";
 import { AdministrativeOperationId } from "#/shared/Operation";
 

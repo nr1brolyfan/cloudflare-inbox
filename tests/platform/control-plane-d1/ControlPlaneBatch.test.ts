@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
+import { appMailbox } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import {
   ControlPlaneBatch,
   ControlPlaneBatchError,
@@ -18,7 +19,6 @@ import {
   ControlPlaneDatabase,
   ControlPlaneDatabaseLayer,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { appMailbox } from "#/platform/control-plane-d1/ControlPlaneSchema";
 
 const query = (statement: SQL): ControlPlaneStatement => ({
   _: { dialect: "sqlite", result: undefined },

@@ -23,6 +23,7 @@ import {
   Version,
   normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
+import { appMailboxAddress } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import { UnixMillis } from "#/shared/Temporal";
 
 import {
@@ -53,7 +54,6 @@ import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneD
 import {
   appAuthorizationGuard,
   appExternalRecoveryIdentity,
-  appMailboxAddress,
 } from "../platform/control-plane-d1/ControlPlaneSchema";
 import {
   controlPlaneDatabaseNow,

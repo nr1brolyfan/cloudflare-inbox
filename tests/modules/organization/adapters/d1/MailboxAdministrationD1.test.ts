@@ -23,12 +23,6 @@ import {
   SensitiveOperationStepUpClock,
 } from "#/auth/step-up-policy";
 import {
-  MailboxAdministrationConfig,
-  MailboxAdministrationLive,
-  MailboxAdministrationOwnerEmail,
-  MailboxAdministrationRuntime,
-} from "#/control-plane/mailbox-administration-live";
-import {
   AdministrativeAuditLayer,
   AdministrativeAuditRuntimeLayer,
 } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
@@ -40,11 +34,7 @@ import {
   mailboxScope,
 } from "#/modules/authorization/domain/MailPermissionCatalog";
 import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
-import {
-  MailboxDisplayName,
-  MailboxId,
-  Version,
-} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import {
   AttachmentLocation,
   DraftLocation,
@@ -55,9 +45,16 @@ import {
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
+  MailboxAdministrationConfig,
+  MailboxAdministrationD1Layer,
+  MailboxAdministrationOwnerEmail,
+  MailboxAdministrationRuntime,
+} from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
+import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "#/modules/organization/application/MailboxAdministration";
+import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,
@@ -66,7 +63,10 @@ import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBat
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import { AdministrativeOperationId } from "#/shared/Operation";
 
-import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
+import {
+  applyControlPlaneMigrations,
+  makeTestD1Database,
+} from "../../../../support/d1";
 
 const now = 2000;
 const stepUpNow = Date.now();
@@ -302,7 +302,7 @@ const bootstrap = (
       });
     }).pipe(
       Effect.provide(
-        MailboxAdministrationLive.pipe(
+        MailboxAdministrationD1Layer.pipe(
           Layer.provide(unavailableMailAuthorizationLive),
           Layer.provide(
             Layer.mergeAll(
@@ -357,7 +357,7 @@ const rename = (
       });
     }).pipe(
       Effect.provide(
-        MailboxAdministrationLive.pipe(
+        MailboxAdministrationD1Layer.pipe(
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(

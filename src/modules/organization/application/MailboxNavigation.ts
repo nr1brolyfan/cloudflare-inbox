@@ -12,10 +12,10 @@ import {
   FolderName,
   LabelId,
   LabelName,
-  MailboxDisplayName,
   MailboxId,
 } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
+import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 
 export class MailboxNavigationMailbox extends Schema.Class<MailboxNavigationMailbox>(
   "cloudflare-inbox/MailboxNavigationMailbox"

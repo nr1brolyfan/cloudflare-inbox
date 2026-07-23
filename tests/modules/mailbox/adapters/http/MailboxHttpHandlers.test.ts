@@ -84,10 +84,7 @@ import {
   SendMailboxDraftResult,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
-import {
-  MailboxRecordSchema,
-  MimeType,
-} from "#/modules/mailbox/domain/Mailbox";
+import { MimeType } from "#/modules/mailbox/domain/Mailbox";
 import {
   DraftAttachmentReservationSchema,
   DraftAttachmentUploadResult,
@@ -107,6 +104,7 @@ import {
   MailboxNavigationResult,
 } from "#/modules/organization/application/MailboxNavigation";
 import type { MailboxNavigationService } from "#/modules/organization/application/MailboxNavigation";
+import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import {
   BackendRequestContextMiddlewareLive,
   backendRequestContext,

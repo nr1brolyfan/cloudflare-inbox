@@ -10,7 +10,7 @@ Worker bindings and deployment config
      -> ControlPlaneDatabaseLayer
         -> auth storage, MailboxRegistryLive, health control-plane probe
      -> ControlPlaneBatchLayer
-        -> D1DevEmailStoreLive, MailboxAdministrationLive
+         -> D1DevEmailStoreLive, MailboxAdministrationD1Layer
    -> AuthRuntimeConfig (schema-decoded origin and delivery mode)
       -> AuthServicesLive
          -> RequestSessionAuthenticatorLive
@@ -22,9 +22,9 @@ Worker bindings and deployment config
         -> MailboxResourceRepositoryDoLayer
            -> MailResourceResolverLive
            -> MailAuthorizationLive
-              -> MailboxAdministrationLive (captured when its Layer is built)
+               -> MailboxAdministrationD1Layer (captured by OrganizationLayer)
   -> MailboxAdministrationConfig
-     -> MailboxAdministrationLive
+      -> MailboxAdministrationD1Layer
   -> BackendHealthBindings
      -> BackendHealthLive
   -> DevEmailConfig
@@ -39,7 +39,7 @@ BackendHttpApi
 
 Inside each `MailboxDO`, `MailboxDatabaseLive` feeds `MailboxOperationStoreLive`; directory, draft, and outbound stores acquire that service explicitly, while message and resource-index stores depend directly on the database. The final store graph is then supplied to `MailboxDoHandlerLayer` and the Durable Object implementation.
 
-`MailboxAdministration.rename` retains only request-scoped `CurrentRequestAuth` and `CurrentPrincipal` requirements. Its stable authorization policy, runtime, configuration, and storage dependencies are captured by `MailboxAdministrationLive`.
+`MailboxAdministration.rename` retains only request-scoped `CurrentRequestAuth` and `CurrentPrincipal` requirements. Its stable authorization policy, runtime, configuration, and storage dependencies are captured by `MailboxAdministrationD1Layer` through `OrganizationLayer`.
 
 ## Boundaries
 

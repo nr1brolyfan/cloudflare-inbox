@@ -34,15 +34,15 @@ import {
   ExternalRecoveryIdentityManagementLive,
   ExternalRecoveryIdentityRuntime,
 } from "#/control-plane/external-recovery-identity-live";
-import {
-  MailboxAdministrationConfig,
-  MailboxAdministrationOwnerEmail,
-} from "#/control-plane/mailbox-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "#/control-plane/recovery-safe-identity-live";
 import {
   AdministrativeAuditLayer,
   AdministrativeAuditRuntimeLayer,
 } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
+import {
+  MailboxAdministrationConfig,
+  MailboxAdministrationOwnerEmail,
+} from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,

@@ -12,7 +12,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxNavigationLive } from "#/control-plane/mailbox-navigation-live";
 import {
   FolderList,
   LabelList,
@@ -21,13 +20,17 @@ import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorizati
 import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxDirectoryRepositoryService } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
+import { MailboxNavigationD1Layer } from "#/modules/organization/adapters/d1/MailboxNavigationD1";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
-import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
+import {
+  applyControlPlaneMigrations,
+  makeTestD1Database,
+} from "../../../../support/d1";
 
 const folders = Schema.decodeUnknownSync(FolderList)({
   items: [
@@ -106,7 +109,7 @@ const navigationEffect = (
   const databaseLive = ControlPlaneDatabaseLayer.pipe(
     Layer.provide(bindingLive)
   );
-  const navigationLive = MailboxNavigationLive.pipe(
+  const navigationLive = MailboxNavigationD1Layer.pipe(
     Layer.provide(
       Layer.mergeAll(
         databaseLive,

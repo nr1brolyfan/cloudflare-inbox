@@ -11,11 +11,11 @@ import {
   MailboxId,
   normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
-import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import {
   appMailbox,
   appMailboxAddress,
-} from "#/platform/control-plane-d1/ControlPlaneSchema";
+} from "#/modules/organization/adapters/d1/OrganizationSchema";
+import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 const resolutionError = (
   reason: "processing-unavailable" | "unknown-recipient",

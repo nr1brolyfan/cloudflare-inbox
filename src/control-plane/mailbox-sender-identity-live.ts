@@ -9,12 +9,12 @@ import {
   MailboxSenderIdentity,
   MailboxSenderIdentityError,
 } from "#/modules/mailbox/ports/MailboxSenderIdentity";
-
-import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
 import {
   appMailbox,
   appMailboxAddress,
-} from "../platform/control-plane-d1/ControlPlaneSchema";
+} from "#/modules/organization/adapters/d1/OrganizationSchema";
+
+import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
 
 const senderIdentityError = (
   mailboxId: MailboxId,

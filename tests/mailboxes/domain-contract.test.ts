@@ -9,7 +9,6 @@ import {
 } from "#/mailboxes/addresses";
 import {
   EmailAddress,
-  MailboxDisplayName,
   MailboxId,
   NormalizedEmailAddress,
   PageSize,
@@ -37,6 +36,7 @@ import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
+import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,

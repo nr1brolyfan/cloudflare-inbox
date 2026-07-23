@@ -38,20 +38,27 @@ src/modules/authorization/ports/
   MailboxResourceRepository.ts # trusted resource ancestry capability
 
 src/modules/organization/
+  domain/Mailbox.ts
+  application/MailboxAdministration.ts
+  application/MailboxNavigation.ts
   ports/MailboxRegistry.ts
+  adapters/d1/OrganizationSchema.ts
+  adapters/d1/MailboxAdministrationD1.ts
+  adapters/d1/MailboxNavigationD1.ts
   adapters/d1/MailboxRegistryD1.ts
+  layers/OrganizationLayer.ts
 
 src/mailboxes/
   mailbox-do.ts           # thin Durable Object composition root
 
-src/control-plane/
-  batch.ts                # contract and concrete D1 batch layer
-  database.ts             # D1/Drizzle contract and layers
-  mailbox-administration-live.ts
+src/platform/control-plane-d1/
+  ControlPlaneBatch.ts    # contract and concrete D1 batch layer
+  ControlPlaneDatabase.ts # D1/Drizzle contract and layers
 
 tests/modules/mailbox/    # tests mirroring migrated mailbox modules
+tests/modules/organization/ # tests mirroring organization modules
 tests/mailboxes/          # tests for not-yet-migrated mailbox modules
-tests/control-plane/      # control-plane tests mirroring the production domain
+tests/control-plane/      # tests for not-yet-migrated control-plane modules
 tests/support/            # shared test-only database and Layer setup
 ```
 

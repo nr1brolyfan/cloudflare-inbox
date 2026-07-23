@@ -4,7 +4,8 @@ import * as Layer from "effect/Layer";
 
 import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { appMailbox } from "#/platform/control-plane-d1/ControlPlaneSchema";
+
+import { appMailbox } from "./OrganizationSchema";
 
 /** Active mailbox existence lookup backed by the control-plane database. */
 export const MailboxRegistryD1Layer = Layer.effect(

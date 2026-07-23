@@ -39,7 +39,6 @@ import {
   SendMailboxDraftResult,
   UndoMailboxSendResult,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
-import { MailboxRecordSchema } from "#/modules/mailbox/domain/Mailbox";
 import type {
   DraftAttachmentReservationSchema,
   ReserveDraftAttachmentCommand,
@@ -55,6 +54,7 @@ import type {
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
+import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 
 import { BackendClient } from "./website-platform";
 

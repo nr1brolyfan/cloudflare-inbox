@@ -24,9 +24,7 @@ import {
 } from "#/modules/authorization/domain/MailPermissionCatalog";
 import {
   EmailAddress,
-  MailboxDisplayName,
   MailboxId,
-  MailboxRecordSchema,
   normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
@@ -34,33 +32,37 @@ import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "#/modules/organization/application/MailboxAdministration";
+import {
+  MailboxDisplayName,
+  MailboxRecordSchema,
+} from "#/modules/organization/domain/Mailbox";
 import { UnixMillis } from "#/shared/Temporal";
 
-import { authUserIdentity } from "../auth/schema/modules/core";
+import { authUserIdentity } from "../../../../auth/schema/modules/core";
 import {
   authRoleDefinition,
   authRoleGrant,
-} from "../auth/schema/modules/permissions";
-import type { CurrentRequestAuthShape } from "../auth/session";
-import { CurrentRequestAuth } from "../auth/session";
+} from "../../../../auth/schema/modules/permissions";
+import type { CurrentRequestAuthShape } from "../../../../auth/session";
+import { CurrentRequestAuth } from "../../../../auth/session";
 import {
   requireSensitiveOperationStepUp,
   SensitiveOperationStepUpClock,
-} from "../auth/step-up-policy";
-import * as ControlPlane from "../platform/control-plane-d1/ControlPlaneBatch";
-import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
-import {
-  appAuthorizationGuard,
-  appMailbox,
-  appMailboxAddress,
-  appMailboxMember,
-} from "../platform/control-plane-d1/ControlPlaneSchema";
-import { permissionPredicate } from "../platform/control-plane-d1/PermissionGuard";
+} from "../../../../auth/step-up-policy";
+import * as ControlPlane from "../../../../platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneDatabase } from "../../../../platform/control-plane-d1/ControlPlaneDatabase";
+import { appAuthorizationGuard } from "../../../../platform/control-plane-d1/ControlPlaneSchema";
+import { permissionPredicate } from "../../../../platform/control-plane-d1/PermissionGuard";
 import {
   sensitiveSessionPredicate,
   sessionPredicate,
   transactionalSessionPredicate,
-} from "../platform/control-plane-d1/RequestAuthGuard";
+} from "../../../../platform/control-plane-d1/RequestAuthGuard";
+import {
+  appMailbox,
+  appMailboxAddress,
+  appMailboxMember,
+} from "./OrganizationSchema";
 
 export const MailboxAdministrationOwnerEmail = EmailAddress;
 export type MailboxAdministrationOwnerEmail = Schema.Schema.Type<
@@ -88,7 +90,7 @@ export const MailboxAdministrationRuntime =
     "cloudflare-inbox/MailboxAdministrationRuntime"
   );
 
-export const MailboxAdministrationRuntimeLive = Layer.succeed(
+export const MailboxAdministrationRuntimeLayer = Layer.succeed(
   MailboxAdministrationRuntime,
   MailboxAdministrationRuntime.of({
     now: Date.now,
@@ -255,7 +257,7 @@ const RenamedMailboxRow = Schema.Struct({
 const CreatedMailboxRow = Schema.Struct({ id: Schema.String });
 
 /** Transactional mailbox service built from explicit Effect configuration. */
-export const MailboxAdministrationLive = Layer.effect(
+export const MailboxAdministrationD1Layer = Layer.effect(
   MailboxAdministration,
   Effect.gen(function* () {
     const options = yield* MailboxAdministrationConfig;

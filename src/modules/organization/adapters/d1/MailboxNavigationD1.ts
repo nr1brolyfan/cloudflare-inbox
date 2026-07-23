@@ -4,10 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import {
-  MailboxDisplayName,
-  MailboxId,
-} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
@@ -16,12 +13,10 @@ import {
   MailboxNavigationError,
   MailboxNavigationResult,
 } from "#/modules/organization/application/MailboxNavigation";
+import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
-import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
-import {
-  appMailbox,
-  appMailboxMember,
-} from "../platform/control-plane-d1/ControlPlaneSchema";
+import { appMailbox, appMailboxMember } from "./OrganizationSchema";
 
 const navigationError = (reason: "not-found" | "storage", cause?: unknown) =>
   new MailboxNavigationError({
@@ -39,7 +34,7 @@ const mapDirectoryError = (error: MailboxDomainError | unknown) =>
     : navigationError("storage", error);
 
 /** D1 mailbox discovery combined with authorized MailboxDO directory reads. */
-export const MailboxNavigationLive = Layer.effect(
+export const MailboxNavigationD1Layer = Layer.effect(
   MailboxNavigation,
   Effect.gen(function* () {
     const authorization = yield* MailboxAuthorization;

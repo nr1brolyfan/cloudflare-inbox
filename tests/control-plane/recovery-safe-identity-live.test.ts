@@ -9,15 +9,15 @@ import {
   ExternalRecoveryIdentityAddress,
   RecoverySafeIdentityPolicy,
 } from "#/auth/external-recovery-identity";
-import {
-  MailboxAdministrationConfig,
-  MailboxAdministrationOwnerEmail,
-} from "#/control-plane/mailbox-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "#/control-plane/recovery-safe-identity-live";
 import {
   EmailAddress,
   normalizeEmailAddressDomain,
 } from "#/modules/mailbox/domain/Mailbox";
+import {
+  MailboxAdministrationConfig,
+  MailboxAdministrationOwnerEmail,
+} from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,

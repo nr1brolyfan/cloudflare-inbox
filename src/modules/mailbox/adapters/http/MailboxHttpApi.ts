@@ -51,7 +51,6 @@ import {
   InboundIngestId,
   LabelId,
   MailboxId,
-  MailboxRecordSchema,
   MessageId,
   PageSize,
   SearchQuery,
@@ -72,6 +71,7 @@ import {
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
+import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });

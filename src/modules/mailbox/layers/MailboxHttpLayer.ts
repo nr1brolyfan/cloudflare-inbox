@@ -1,16 +1,6 @@
 import * as Layer from "effect/Layer";
 
-import { SensitiveOperationStepUpClockLive } from "#/auth/step-up-policy";
-import {
-  MailboxAdministrationLive,
-  MailboxAdministrationRuntimeLive,
-} from "#/control-plane/mailbox-administration-live";
-import { MailboxNavigationLive } from "#/control-plane/mailbox-navigation-live";
 import { MailboxSenderIdentityLive } from "#/control-plane/mailbox-sender-identity-live";
-import {
-  AdministrativeAuditLayer,
-  AdministrativeAuditRuntimeLayer,
-} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailboxDoClientLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { InboundReplayPreparerDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxInboundRepositoryDo";
 import {
@@ -39,6 +29,7 @@ import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMess
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { MailboxRegistryD1Layer } from "#/modules/organization/adapters/d1/MailboxRegistryD1";
+import { OrganizationLayer } from "#/modules/organization/layers/OrganizationLayer";
 
 const MailboxDoClientWithRegistryLayer = MailboxDoClientLayer.pipe(
   Layer.provide(MailboxRegistryD1Layer)
@@ -61,19 +52,7 @@ const MailboxOutboundSendingRepositoryLayer =
   MailboxOutboundSendingRepositoryDoLayer.pipe(
     Layer.provide(MailboxDoClientWithRegistryLayer)
   );
-const AdministrativeAuditWithRuntimeLayer = AdministrativeAuditLayer.pipe(
-  Layer.provide(AdministrativeAuditRuntimeLayer)
-);
-const MailboxAdministrationLayer = MailboxAdministrationLive.pipe(
-  Layer.provide(
-    Layer.mergeAll(
-      AdministrativeAuditWithRuntimeLayer,
-      MailboxAdministrationRuntimeLive,
-      SensitiveOperationStepUpClockLive
-    )
-  )
-);
-const MailboxNavigationLayer = MailboxNavigationLive.pipe(
+const OrganizationHttpLayer = OrganizationLayer.pipe(
   Layer.provide(MailboxDirectoryRepositoryLayer)
 );
 
@@ -143,8 +122,7 @@ const MailboxInboundReplayAuthorizationLayer =
 export const MailboxHttpLayer = MailboxHttpHandlersLayer.pipe(
   Layer.provide(
     Layer.mergeAll(
-      MailboxAdministrationLayer,
-      MailboxNavigationLayer,
+      OrganizationHttpLayer,
       MailboxMessageReadingLayer,
       MailboxMessageActionsLayer,
       MailboxDraftEditingLayer,

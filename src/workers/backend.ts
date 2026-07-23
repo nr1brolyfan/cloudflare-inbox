@@ -42,6 +42,7 @@ import {
   MailboxInboundEmailIngressRuntimeSystemLayer,
 } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { EmailAddress } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxAdministrationConfig } from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
 import {
   EmailRoutingEventSource,
   EmailRoutingEventSourceCloudflareLayer,
@@ -55,7 +56,6 @@ import {
   WorkersAiInferenceLive,
 } from "../ai/workers-ai-live";
 import { AuthRuntimeConfig, AuthRuntimeConfigSchema } from "../auth/live";
-import { MailboxAdministrationConfig } from "../control-plane/mailbox-administration-live";
 import { BackendHttpLive } from "../http/backend";
 import { DevEmailConfig } from "../http/dev-emails";
 import {

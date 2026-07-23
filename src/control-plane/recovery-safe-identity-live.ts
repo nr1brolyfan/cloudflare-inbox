@@ -2,6 +2,9 @@ import { and, eq, ne, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { MailboxAdministrationConfig } from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
+import { appMailboxAddress } from "#/modules/organization/adapters/d1/OrganizationSchema";
+
 import {
   externalRecoveryAddressComparisonKey,
   RecoverySafeIdentityPolicy,
@@ -9,11 +12,7 @@ import {
 import { RecoverySafeIdentityRejected } from "../auth/recovery-safe-identity-error";
 import { authUserIdentity } from "../auth/schema/modules/core";
 import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
-import {
-  appExternalRecoveryIdentity,
-  appMailboxAddress,
-} from "../platform/control-plane-d1/ControlPlaneSchema";
-import { MailboxAdministrationConfig } from "./mailbox-administration-live";
+import { appExternalRecoveryIdentity } from "../platform/control-plane-d1/ControlPlaneSchema";
 
 const storageError = (cause: unknown) =>
   new RecoverySafeIdentityRejected({ cause, reason: "storage" });
