@@ -16,7 +16,7 @@ import {
   GenerateRecoveryCodesCommand,
   GeneratedRecoveryCodeSet,
 } from "#/modules/account-security/application/RecoveryCodeAdministration";
-import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
+import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const Generate = HttpApiEndpoint.post(
   "generate",

@@ -6,12 +6,12 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { HttpApiPlatformLive } from "#/http/platform";
 import { DevEmailGroup } from "#/modules/account-security/adapters/http/DevEmailHttpApi";
 import {
   DevEmailConfig,
   DevEmailHttpHandlersLayer,
 } from "#/modules/account-security/adapters/http/DevEmailHttpHandlers";
+import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
 
 const DevEmailTestApi = HttpApi.make("AuthApi").add(DevEmailGroup);
 
@@ -38,7 +38,7 @@ describe("development email API", () => {
     const { dispose, handler } = HttpRouter.toWebHandler(
       HttpApiBuilder.layer(DevEmailTestApi).pipe(
         Layer.provide(groupLive),
-        Layer.provide(HttpApiPlatformLive),
+        Layer.provide(HttpApiPlatformLayer),
         Layer.provide(NodeServices.layer)
       ),
       { disableLogger: true }

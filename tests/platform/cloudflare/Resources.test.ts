@@ -5,9 +5,9 @@ import {
   InboxAiGateway,
   InboxAiGatewaySettings,
   MailboxEmailSender,
-} from "#/infra/resources";
+} from "#/platform/cloudflare/Resources";
 
-describe("infrastructure resources", () => {
+describe("Cloudflare resources", () => {
   it("declares an unrestricted mailbox email binding", async () => {
     const descriptor = await Effect.runPromise(MailboxEmailSender);
 

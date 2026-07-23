@@ -6,7 +6,7 @@ import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
-import type { BackendRequestContext } from "#/observability/request-context";
+import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 

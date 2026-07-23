@@ -20,7 +20,6 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { HttpApiPlatformLive } from "#/http/platform";
 import { PasskeyAuthenticationGroup } from "#/modules/account-security/adapters/http/PasskeyAuthenticationHttpApi";
 import { PasskeyAuthenticationHttpHandlersLayer } from "#/modules/account-security/adapters/http/PasskeyAuthenticationHttpHandlers";
 import {
@@ -29,11 +28,10 @@ import {
   StartedPasskeyAuthentication,
 } from "#/modules/account-security/application/PasskeyAuthentication";
 import type { PasskeyAuthenticationService } from "#/modules/account-security/application/PasskeyAuthentication";
-import {
-  BackendRequestContextMiddlewareLive,
-  backendRequestContext,
-} from "#/observability/backend-request-live";
-import { CurrentBackendRequestContext } from "#/observability/request-context";
+import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
+import { backendRequestContext } from "#/platform/observability/BackendRequestContext";
+import { BackendRequestContextMiddlewareLayer } from "#/platform/observability/BackendRequestContextMiddlewareLayer";
+import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
 
 const publicOrigin = "https://inbox.test";
 const TestApi = HttpApi.make("AuthApi").add(PasskeyAuthenticationGroup);
@@ -65,7 +63,7 @@ const makeHandler = (options: {
   readonly onStart?: (payload: unknown) => void;
 }) => {
   const middlewareLayer = Layer.mergeAll(
-    BackendRequestContextMiddlewareLive.pipe(
+    BackendRequestContextMiddlewareLayer.pipe(
       Layer.provide(
         Layer.succeed(
           CurrentBackendRequestContext,
@@ -131,7 +129,7 @@ const makeHandler = (options: {
   return HttpRouter.toWebHandler(
     HttpApiBuilder.layer(TestApi).pipe(
       Layer.provide(Layer.merge(groupLayer, middlewareLayer)),
-      Layer.provide(HttpApiPlatformLive),
+      Layer.provide(HttpApiPlatformLayer),
       Layer.provide(NodeServices.layer)
     ),
     { disableLogger: true }

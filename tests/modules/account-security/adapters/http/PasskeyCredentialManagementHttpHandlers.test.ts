@@ -28,7 +28,6 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { HttpApiPlatformLive } from "#/http/platform";
 import { PasskeyCredentialManagementGroup } from "#/modules/account-security/adapters/http/PasskeyCredentialManagementHttpApi";
 import { PasskeyCredentialManagementHttpHandlersLayer } from "#/modules/account-security/adapters/http/PasskeyCredentialManagementHttpHandlers";
 import {
@@ -42,11 +41,10 @@ import {
   PasskeyCredentialList,
   PasskeyRevocationReceipt,
 } from "#/modules/account-security/application/PasskeyCredentialAdministration";
-import {
-  BackendRequestContextMiddlewareLive,
-  backendRequestContext,
-} from "#/observability/backend-request-live";
-import { CurrentBackendRequestContext } from "#/observability/request-context";
+import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
+import { backendRequestContext } from "#/platform/observability/BackendRequestContext";
+import { BackendRequestContextMiddlewareLayer } from "#/platform/observability/BackendRequestContextMiddlewareLayer";
+import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
 
 const publicOrigin = "https://inbox.test";
 const TestApi = HttpApi.make("AuthApi").add(PasskeyCredentialManagementGroup);
@@ -116,7 +114,7 @@ const makeHandler = (administration: AdministrationService) => {
     })
   );
   const middlewareLive = Layer.mergeAll(
-    BackendRequestContextMiddlewareLive.pipe(
+    BackendRequestContextMiddlewareLayer.pipe(
       Layer.provide(
         Layer.succeed(
           CurrentBackendRequestContext,
@@ -150,7 +148,7 @@ const makeHandler = (administration: AdministrationService) => {
   return HttpRouter.toWebHandler(
     HttpApiBuilder.layer(TestApi).pipe(
       Layer.provide(Layer.merge(groupLive, middlewareLive)),
-      Layer.provide(HttpApiPlatformLive),
+      Layer.provide(HttpApiPlatformLayer),
       Layer.provide(NodeServices.layer)
     ),
     { disableLogger: true }

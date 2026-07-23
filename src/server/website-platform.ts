@@ -6,7 +6,7 @@ import type { WebsiteEnv } from "../../alchemy.run.ts";
 import {
   backendRequestMethod,
   backendRequestRoute,
-} from "../observability/request-completion";
+} from "../platform/observability/BackendRequestCompletion";
 
 const hasWebsiteBindings = (
   env: Cloudflare.Env

@@ -8,13 +8,12 @@ import { PasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http
 import { RecoveryCodeManagementGroup } from "#/modules/account-security/adapters/http/RecoveryCodeManagementHttpApi";
 import { RecoveryPasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http/RecoveryPasskeyEnrollmentHttpApi";
 import { MailboxGroup } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
-
-import { HealthGroup } from "./health-contract";
+import { BackendHealthGroup } from "#/platform/observability/http/BackendHealthHttpApi";
 
 /** The complete private Worker contract. Every route is registered by one builder. */
 export const BackendHttpApi = ApplicationAuthHttpApi.add(
   AccountRecoveryGroup,
-  HealthGroup,
+  BackendHealthGroup,
   MailboxGroup,
   DevEmailGroup,
   ExternalRecoveryIdentityGroup,

@@ -21,7 +21,7 @@ import {
   VerifyExternalRecoveryIdentityCommand,
 } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
 import { ExternalRecoveryIdentitySchema } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
-import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
+import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const ExternalRecoveryIdentityErrors = [
   AuthBadRequestError,

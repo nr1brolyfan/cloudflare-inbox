@@ -21,7 +21,7 @@ import {
   EnrolledPasskeyCredential,
   FinishPasskeyEnrollmentCommand,
 } from "#/modules/account-security/application/PasskeyEnrollment";
-import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
+import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const errors = [
   AuthBadRequestError,

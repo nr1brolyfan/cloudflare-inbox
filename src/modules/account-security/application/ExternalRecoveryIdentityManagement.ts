@@ -10,7 +10,7 @@ import type { ExternalRecoveryIdentitySchema } from "#/modules/account-security/
 import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { Version } from "#/modules/mailbox/domain/Mailbox";
-import type { BackendRequestContext } from "#/observability/request-context";
+import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 
 import type { AccountSecurityCommitState } from "./AccountSecurityCommitState";

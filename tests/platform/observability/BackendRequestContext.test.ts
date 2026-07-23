@@ -5,20 +5,18 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  BackendRequestCompletionLive,
-  backendRequestContext,
-} from "#/observability/backend-request-live";
-import {
+  BackendRequestCompletionLayer,
   BackendRequestCompletedEventSchema,
   BackendRequestCompletion,
   backendRequestCompletedAnnotations,
   backendRequestOutcome,
   backendRequestRoute,
-} from "#/observability/request-completion";
+} from "#/platform/observability/BackendRequestCompletion";
+import { backendRequestContext } from "#/platform/observability/BackendRequestContext";
 import {
   BackendRequestId,
   CurrentBackendRequestContext,
-} from "#/observability/request-context";
+} from "#/shared/BackendRequestContext";
 
 describe("backend request context", () => {
   it("generates independent server-owned request and correlation IDs", () => {
@@ -108,7 +106,7 @@ describe("backend request completion", () => {
           statusCode: 401,
         });
       }).pipe(
-        Effect.provide(BackendRequestCompletionLive),
+        Effect.provide(BackendRequestCompletionLayer),
         Effect.provide(Logger.layer([logger]))
       )
     );
@@ -142,7 +140,7 @@ describe("backend request completion", () => {
           startedAtNanos,
           statusCode: 200,
         });
-      }).pipe(Effect.provide(BackendRequestCompletionLive))
+      }).pipe(Effect.provide(BackendRequestCompletionLayer))
     );
     const serialized = JSON.stringify(
       backendRequestCompletedAnnotations(event)

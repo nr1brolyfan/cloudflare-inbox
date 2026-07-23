@@ -31,7 +31,6 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { HttpApiPlatformLive } from "#/http/platform";
 import {
   CurrentRequestAuthMiddlewareLayer,
   RequestSessionAuthenticatorEffectAuthLayer,
@@ -105,11 +104,10 @@ import {
 } from "#/modules/organization/application/MailboxNavigation";
 import type { MailboxNavigationService } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
-import {
-  BackendRequestContextMiddlewareLive,
-  backendRequestContext,
-} from "#/observability/backend-request-live";
-import { CurrentBackendRequestContext } from "#/observability/request-context";
+import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
+import { backendRequestContext } from "#/platform/observability/BackendRequestContext";
+import { BackendRequestContextMiddlewareLayer } from "#/platform/observability/BackendRequestContextMiddlewareLayer";
+import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
 
 const publicOrigin = "https://inbox.test";
 const MailboxTestApi = HttpApi.make("AuthApi").add(MailboxGroup);
@@ -380,7 +378,7 @@ const makeHandler = (
     })
   );
   const middlewareLive = Layer.mergeAll(
-    BackendRequestContextMiddlewareLive.pipe(
+    BackendRequestContextMiddlewareLayer.pipe(
       Layer.provide(
         Layer.succeed(
           CurrentBackendRequestContext,
@@ -434,7 +432,7 @@ const makeHandler = (
   return HttpRouter.toWebHandler(
     HttpApiBuilder.layer(MailboxTestApi).pipe(
       Layer.provide(Layer.merge(groupLive, middlewareLive)),
-      Layer.provide(HttpApiPlatformLive),
+      Layer.provide(HttpApiPlatformLayer),
       Layer.provide(NodeServices.layer)
     ),
     { disableLogger: true }

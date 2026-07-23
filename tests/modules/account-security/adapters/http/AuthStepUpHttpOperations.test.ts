@@ -34,7 +34,6 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiTest } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { HttpApiPlatformLive } from "#/http/platform";
 import { ApplicationAuthHttpApi } from "#/modules/account-security/adapters/http/AccountSecurityAuthHttpApi";
 import { PasswordEnrollmentUnavailableHttpHandlersLayer } from "#/modules/account-security/adapters/http/AccountSecurityAuthHttpHandlers";
 import {
@@ -48,6 +47,7 @@ import {
   StartedPasskeyAuthentication,
 } from "#/modules/account-security/application/PasskeyAuthentication";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
+import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
 
 const userId = UserId("user-a");
 const sessionId = SessionId("session-a");
@@ -140,7 +140,7 @@ const runRestrictedPasswordClient = <A, E>(
           AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
         ),
         Effect.provide(AuthSchemaErrorMiddlewareLive),
-        Effect.provide(HttpApiPlatformLive),
+        Effect.provide(HttpApiPlatformLayer),
         Effect.provide(WebCryptoLive()),
         Effect.provide(NodeServices.layer)
       )
@@ -270,7 +270,7 @@ const runStepUpClient = <A, E>(
           AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
         ),
         Effect.provide(AuthSchemaErrorMiddlewareLive),
-        Effect.provide(HttpApiPlatformLive),
+        Effect.provide(HttpApiPlatformLayer),
         Effect.provide(WebCryptoLive()),
         Effect.provide(NodeServices.layer)
       )

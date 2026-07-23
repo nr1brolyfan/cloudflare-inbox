@@ -11,7 +11,7 @@ const HttpPlatformStub = Layer.succeed(HttpPlatform.HttpPlatform, {
 });
 
 /** Minimal HttpApi platform support; Backend routes never serve files. */
-export const HttpApiPlatformLive = Layer.mergeAll(
+export const HttpApiPlatformLayer = Layer.mergeAll(
   Etag.layer,
   Path.layer,
   HttpPlatformStub

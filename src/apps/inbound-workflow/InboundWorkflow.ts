@@ -8,7 +8,6 @@ import * as Schema from "effect/Schema";
 
 import AsyncRuleWorkflow from "#/apps/async-rule-workflow/AsyncRuleWorkflow";
 import { MailboxDO } from "#/apps/mailbox-do/MailboxDO";
-import { RawMessagesBucket } from "#/infra/resources";
 import {
   AsyncRuleWorkflowClient,
   AsyncRuleWorkflowStarterCloudflareLayer,
@@ -41,6 +40,7 @@ import {
   InboundProcessingRecorder,
 } from "#/modules/mailbox/ports/MailboxInboundRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import { RawMessagesBucket } from "#/platform/cloudflare/Resources";
 
 const encodedManifest = (manifest: ParsedInboundMessageV1Type) =>
   JSON.stringify(Schema.encodeSync(ParsedInboundMessageV1)(manifest));

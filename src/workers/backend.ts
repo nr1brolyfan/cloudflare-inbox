@@ -59,33 +59,31 @@ import {
   EmailRoutingEventSource,
   EmailRoutingEventSourceCloudflareLayer,
 } from "#/platform/cloudflare/EmailRoutingEventSource";
-
-import { BackendHttpLayer } from "../http/backend";
 import {
   AuthEmailSender,
   ControlPlaneDatabase as ControlPlaneDatabaseResource,
   InboxAiGateway,
   MailboxEmailSender,
   RawMessagesBucket,
-} from "../infra/resources";
+} from "#/platform/cloudflare/Resources";
+import { BackendHealthBindings } from "#/platform/observability/BackendHealthLayer";
 import {
   BackendObservabilityConfig,
-  BackendObservabilityLive,
-} from "../observability/backend";
-import { BackendHealthBindings } from "../observability/backend-health-live";
+  BackendObservabilityLayer,
+} from "#/platform/observability/BackendObservability";
 import {
-  BackendRequestCompletionLive,
-  backendRequestContext,
-} from "../observability/backend-request-live";
-import {
+  BackendRequestCompletionLayer,
   BackendRequestCompletion,
   backendRequestMethod,
   backendRequestRoute,
-} from "../observability/request-completion";
+} from "#/platform/observability/BackendRequestCompletion";
 import {
-  CurrentBackendRequestContext,
+  backendRequestContext,
   backendRequestContextAnnotations,
-} from "../observability/request-context";
+} from "#/platform/observability/BackendRequestContext";
+import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
+
+import { BackendHttpLayer } from "../http/backend";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
@@ -341,8 +339,8 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       ),
       Layer.succeed(DevEmailConfig, DevEmailConfig.of({ isDevelopment }))
     );
-    const completionContext = yield* Layer.build(BackendRequestCompletionLive);
-    const observabilityLive = BackendObservabilityLive.pipe(
+    const completionContext = yield* Layer.build(BackendRequestCompletionLayer);
+    const observabilityLayer = BackendObservabilityLayer.pipe(
       Layer.provide(
         Layer.succeed(
           BackendObservabilityConfig,
@@ -418,7 +416,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
           Effect.provide(completionContext)
         );
         // Building in Alchemy's request scope flushes OTLP finalizers through waitUntil.
-        const observabilityExit = yield* Layer.build(observabilityLive).pipe(
+        const observabilityExit = yield* Layer.build(observabilityLayer).pipe(
           Effect.exit
         );
         if (Exit.isFailure(observabilityExit)) {

@@ -10,8 +10,8 @@ import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import {
   BackendCorrelationId,
   BackendRequestId,
-} from "#/observability/request-context";
-import type { BackendRequestContext } from "#/observability/request-context";
+} from "#/shared/BackendRequestContext";
+import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 

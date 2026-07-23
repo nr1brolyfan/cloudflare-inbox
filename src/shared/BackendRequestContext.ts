@@ -44,16 +44,3 @@ export const CurrentBackendRequestContext =
   Context.Service<BackendRequestContext>(
     "cloudflare-inbox/CurrentBackendRequestContext"
   );
-
-export const backendRequestContextAnnotations = (
-  context: BackendRequestContext
-): Record<string, unknown> => ({
-  ...(context.cloudflareColo === undefined
-    ? {}
-    : { "cloudflare.colo": context.cloudflareColo }),
-  ...(context.cloudflareRayId === undefined
-    ? {}
-    : { "cloudflare.ray_id": context.cloudflareRayId }),
-  "correlation.id": context.correlationId,
-  "request.id": context.requestId,
-});

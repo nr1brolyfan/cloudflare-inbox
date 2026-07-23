@@ -42,12 +42,12 @@ import {
   MailboxAdministrationConfig,
   MailboxAdministrationOwnerEmail,
 } from "#/modules/organization/adapters/d1/MailboxAdministrationD1";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,
-} from "#/observability/request-context";
-import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
-import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+} from "#/shared/BackendRequestContext";
 
 import {
   applyControlPlaneMigrations,

@@ -72,7 +72,7 @@ import {
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
-import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
+import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
 const InboundReplayParams = Schema.Struct({

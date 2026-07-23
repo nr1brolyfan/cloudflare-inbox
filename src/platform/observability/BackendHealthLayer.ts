@@ -29,10 +29,10 @@ import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
 } from "#/modules/mailbox/domain/MailboxResource";
+import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
-import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
-import { BackendHealth } from "./health";
-import type { StorageHealth } from "./health";
+import { BackendHealth } from "./BackendHealth";
+import type { StorageHealth } from "./BackendHealth";
 
 type RawMessagesClient = Effect.Success<
   ReturnType<typeof Cloudflare.R2.ReadWriteBucket>
@@ -51,7 +51,7 @@ export const BackendHealthBindings =
   );
 
 /** Probes every persistent binding used by request handling. */
-export const BackendHealthLive = Layer.effect(
+export const BackendHealthLayer = Layer.effect(
   BackendHealth,
   Effect.gen(function* () {
     const bindings = yield* BackendHealthBindings;

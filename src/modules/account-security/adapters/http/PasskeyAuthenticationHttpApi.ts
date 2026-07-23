@@ -15,7 +15,7 @@ import {
   FinishPasskeySignInCommand,
   StartPasskeySignInCommand,
 } from "#/modules/account-security/application/PasskeyAuthentication";
-import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
+import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const errors = [
   AuthBadRequestError,

@@ -5,12 +5,12 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { HealthGroupLive } from "#/http/health";
-import { HealthGroup } from "#/http/health-contract";
-import { HttpApiPlatformLive } from "#/http/platform";
-import * as Health from "#/observability/health";
+import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
+import * as Health from "#/platform/observability/BackendHealth";
+import { BackendHealthGroup } from "#/platform/observability/http/BackendHealthHttpApi";
+import { BackendHealthHttpHandlersLayer } from "#/platform/observability/http/BackendHealthHttpHandlers";
 
-const HealthTestApi = HttpApi.make("AuthApi").add(HealthGroup);
+const HealthTestApi = HttpApi.make("AuthApi").add(BackendHealthGroup);
 const healthyReport: Health.BackendHealthReport = {
   service: "backend",
   status: "ok",
@@ -26,14 +26,14 @@ const healthyReport: Health.BackendHealthReport = {
 const makeHealthHandler = (report: Health.BackendHealthReport) =>
   HttpRouter.toWebHandler(
     HttpApiBuilder.layer(HealthTestApi).pipe(
-      Layer.provide(HealthGroupLive),
+      Layer.provide(BackendHealthHttpHandlersLayer),
       Layer.provide(
         Layer.succeed(
           Health.BackendHealth,
           Health.BackendHealth.of({ check: Effect.succeed(report) })
         )
       ),
-      Layer.provide(HttpApiPlatformLive),
+      Layer.provide(HttpApiPlatformLayer),
       Layer.provide(NodeServices.layer)
     ),
     { disableLogger: true }

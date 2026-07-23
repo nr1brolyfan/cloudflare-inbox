@@ -11,8 +11,8 @@ import * as Layer from "effect/Layer";
 import { HttpApiTest } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
-import { HttpApiPlatformLive } from "#/http/platform";
 import { RestrictedEmailOtpHttpHandlersLayer } from "#/modules/account-security/adapters/http/AccountSecurityAuthHttpHandlers";
+import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
 
 const identity = {
   kind: "email",
@@ -53,7 +53,7 @@ const runEmailOtpClient = <A, E>(
           AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
         ),
         Effect.provide(AuthSchemaErrorMiddlewareLive),
-        Effect.provide(HttpApiPlatformLive),
+        Effect.provide(HttpApiPlatformLayer),
         Effect.provide(NodeServices.layer)
       )
     )

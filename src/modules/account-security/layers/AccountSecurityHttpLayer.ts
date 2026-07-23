@@ -45,7 +45,6 @@ import {
   RecoveryRemediationRequestAuthMiddlewareLayer,
 } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import { AccountSecurityLayer } from "#/modules/account-security/layers/AccountSecurityLayer";
-import { BackendRequestContextMiddlewareLive } from "#/observability/backend-request-live";
 
 /** Shared origin, metadata, schema-error, and authenticated-request middleware. */
 export const AccountSecurityHttpMiddlewareLayer = Layer.unwrap(
@@ -114,16 +113,12 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
       RecoveryRemediationRequestAuthMiddlewareLayer.pipe(
         Layer.provide(accountSecurityLayer)
       );
-    const protectedHttpDependencies = Layer.mergeAll(
-      AccountSecurityHttpMiddlewareLayer,
-      BackendRequestContextMiddlewareLive
-    );
+    const protectedHttpDependencies = AccountSecurityHttpMiddlewareLayer;
 
     return Layer.mergeAll(
       coreHandlersLayer,
       AccountRecoveryHttpHandlersLayer.pipe(
         Layer.provide(accountSecurityLayer),
-        Layer.provide(BackendRequestContextMiddlewareLive),
         Layer.provide(requestValidationLayer)
       ),
       ExternalRecoveryIdentityHttpHandlersLayer.pipe(
@@ -137,12 +132,10 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
       RecoveryPasskeyEnrollmentHttpHandlersLayer.pipe(
         Layer.provide(accountSecurityLayer),
         Layer.provide(recoveryRequestAuthLayer),
-        Layer.provide(BackendRequestContextMiddlewareLive),
         Layer.provide(requestValidationLayer)
       ),
       PasskeyAuthenticationHttpHandlersLayer.pipe(
         Layer.provide(accountSecurityLayer),
-        Layer.provide(BackendRequestContextMiddlewareLive),
         Layer.provide(requestValidationLayer)
       ),
       PasskeyCredentialManagementHttpHandlersLayer.pipe(

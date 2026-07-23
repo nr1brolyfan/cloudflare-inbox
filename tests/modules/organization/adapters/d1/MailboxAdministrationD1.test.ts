@@ -52,12 +52,12 @@ import {
   MailboxAdministrationError,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,
-} from "#/observability/request-context";
-import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
-import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+} from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 
 import {

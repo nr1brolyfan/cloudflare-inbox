@@ -1,6 +1,6 @@
 import { HttpApiMiddleware } from "effect/unstable/httpapi";
 
-import type { BackendRequestContext } from "./request-context";
+import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 
 export class BackendRequestContextMiddleware extends HttpApiMiddleware.Service<
   BackendRequestContextMiddleware,

@@ -25,7 +25,7 @@ const signalUrl = (baseUrl: string, signal: "logs" | "traces") =>
   ).toString();
 
 /** Request-scoped logging and tracing; its scope flushes through Alchemy waitUntil. */
-export const BackendObservabilityLive = Layer.unwrap(
+export const BackendObservabilityLayer = Layer.unwrap(
   Effect.gen(function* () {
     const options = yield* BackendObservabilityConfig;
     if (!options.isDevelopment) {

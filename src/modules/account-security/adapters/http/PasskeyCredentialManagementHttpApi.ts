@@ -20,7 +20,7 @@ import {
   ReadPasskeyRevocationQuery,
   RevokePasskeyCredentialCommand,
 } from "#/modules/account-security/application/PasskeyCredentialAdministration";
-import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
+import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const errors = [
   AuthBadRequestError,

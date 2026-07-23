@@ -29,12 +29,12 @@ import {
 } from "#/modules/account-security/application/PasskeyCredentialAdministration";
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,
-} from "#/observability/request-context";
-import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
-import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+} from "#/shared/BackendRequestContext";
 
 import {
   applyControlPlaneMigrations,

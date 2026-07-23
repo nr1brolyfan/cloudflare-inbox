@@ -15,7 +15,7 @@ import {
   CompleteAccountRecoveryCommand,
   StartAccountRecoveryCommand,
 } from "#/modules/account-security/domain/AccountRecovery";
-import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
+import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const errors = [
   AuthBadRequestError,

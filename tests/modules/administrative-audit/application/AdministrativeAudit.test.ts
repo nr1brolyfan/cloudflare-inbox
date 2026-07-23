@@ -26,7 +26,7 @@ import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,
-} from "#/observability/request-context";
+} from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 

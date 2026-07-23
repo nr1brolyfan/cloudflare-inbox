@@ -10,7 +10,7 @@ import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import type { MailboxRecord } from "#/modules/organization/domain/Mailbox";
-import type { BackendRequestContext } from "#/observability/request-context";
+import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 
 export const BootstrapOwnerMailboxCommand = Schema.Struct({
