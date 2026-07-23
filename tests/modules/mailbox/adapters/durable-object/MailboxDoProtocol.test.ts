@@ -1,16 +1,16 @@
 import { describe, expect, it } from "vitest";
 
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   directoryRequestMetadataByTag,
   mailDataRequestMetadataByTag,
-} from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
+} from "#/modules/mailbox/ports/MailboxDoProtocol";
 import type {
   DirectoryRpcRequest,
   DirectoryRpcResponse,
   MailDataRpcRequest,
   MailDataRpcResponse,
-} from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
-import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+} from "#/modules/mailbox/ports/MailboxDoProtocol";
 
 interface DirectoryMetadata {
   readonly operation: MailboxDomainError["operation"];

@@ -27,8 +27,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import { HttpApiMiddleware } from "effect/unstable/httpapi";
 
+import {
+  CurrentRequestAuthMiddleware,
+  RecoveryRemediationRequestAuthMiddleware,
+} from "#/modules/account-security/contracts/RequestAuthMiddleware";
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 
@@ -67,32 +70,6 @@ export class RequestSessionAuthenticator extends Context.Service<
   RequestSessionAuthenticator,
   RequestSessionAuthenticatorShape
 >()("cloudflare-inbox/RequestSessionAuthenticator") {}
-
-export class CurrentRequestAuthMiddleware extends HttpApiMiddleware.Service<
-  CurrentRequestAuthMiddleware,
-  {
-    provides:
-      | CurrentRequestAuth
-      | CurrentSession
-      | CurrentActor
-      | CurrentPrincipal;
-  }
->()("cloudflare-inbox/CurrentRequestAuthMiddleware", {
-  error: [AuthUnauthenticatedError, AuthPolicyDeniedError, AuthInternalError],
-}) {}
-
-export class RecoveryRemediationRequestAuthMiddleware extends HttpApiMiddleware.Service<
-  RecoveryRemediationRequestAuthMiddleware,
-  {
-    provides:
-      | CurrentRequestAuth
-      | CurrentSession
-      | CurrentActor
-      | CurrentPrincipal;
-  }
->()("cloudflare-inbox/RecoveryRemediationRequestAuthMiddleware", {
-  error: [AuthUnauthenticatedError, AuthPolicyDeniedError, AuthInternalError],
-}) {}
 
 /** Concrete request authenticator with stable auth dependencies captured once. */
 export const RequestSessionAuthenticatorEffectAuthLayer = Layer.effect(

@@ -2,7 +2,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
-import { MailboxDoClient } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import { TrustedMailResourceTransport } from "#/modules/authorization/ports/TrustedMailResourceTransport";
 import type { MailboxResourceLookupResult } from "#/modules/mailbox/domain/MailboxResource";
 import { MailResourceResolveError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { ResolvableMailResourceRef } from "#/modules/mailbox/ports/MailboxAuthorization";
@@ -22,18 +22,18 @@ const resolveError = (
     resource,
   });
 
-/** Adapts trusted MailboxDO ancestry reads to authorization resource resolution. */
-export const TrustedMailResourceResolverDurableObjectLayer = Layer.effect(
+/** Adapts the public mailbox transport to authorization resource resolution. */
+export const TrustedMailResourceResolverTransportLayer = Layer.effect(
   TrustedMailResourceResolver,
   Effect.gen(function* () {
-    const client = yield* MailboxDoClient;
+    const transport = yield* TrustedMailResourceTransport;
     const resolve = <
       A extends Exclude<MailboxResourceLookupResult, { _tag: "NotFound" }>,
     >(
       resource: ResolvableMailResourceRef,
       expectedTag: A["_tag"]
     ): Effect.Effect<A, MailResourceResolveError> =>
-      client.resolveMailResource(resource).pipe(
+      transport.resolve(resource).pipe(
         Effect.mapError((cause) => resolveError(resource, "storage", cause)),
         Effect.flatMap((result) =>
           result._tag === "NotFound"

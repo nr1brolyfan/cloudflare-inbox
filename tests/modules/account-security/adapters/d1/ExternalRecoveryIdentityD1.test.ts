@@ -39,7 +39,7 @@ import { ExternalRecoveryIdentityChallenge } from "#/modules/account-security/po
 import { ExternalRecoveryIdentityDelivery } from "#/modules/account-security/ports/ExternalRecoveryIdentityDelivery";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import {
-  AdministrativeAuditLayer,
+  AdministrativeAuditApplicationLayer,
   AdministrativeAuditRuntimeLayer,
 } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
@@ -214,7 +214,7 @@ const managementLive = (
   return ExternalRecoveryIdentityD1Layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        AdministrativeAuditLayer.pipe(
+        AdministrativeAuditApplicationLayer.pipe(
           Layer.provide(AdministrativeAuditRuntimeLayer)
         ),
         challengeLive,

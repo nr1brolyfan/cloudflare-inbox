@@ -11,6 +11,7 @@ import * as Layer from "effect/Layer";
 
 import { MailboxDoHandlerLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
 import { MailboxDirectoryStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
+import { MailboxDoStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDoStoreSqlite";
 import { MailboxDraftAttachmentStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDraftAttachmentStoreSqlite";
 import { MailboxDraftStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDraftStoreSqlite";
 import { MailboxInboundStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxInboundStoreSqlite";
@@ -95,15 +96,19 @@ export const MailboxStoresTestLive = Layer.mergeAll(
 ).pipe(Layer.provide(MailboxOperationStoreSqliteLayer));
 
 /** SQLite stores plus the in-process Durable Object protocol handler. */
-export const MailboxDoHandlerTestLive = MailboxDoHandlerLayer.pipe(
-  Layer.provide(
-    Layer.succeed(
-      MailboxOutboundAlarmScheduler,
-      MailboxOutboundAlarmScheduler.of({
-        nextScheduledAt: Effect.succeed(null),
-        reconcile: Effect.void,
-      })
-    )
-  ),
-  Layer.provideMerge(MailboxStoresTestLive)
+const MailboxOutboundAlarmTestLayer = Layer.succeed(
+  MailboxOutboundAlarmScheduler,
+  MailboxOutboundAlarmScheduler.of({
+    nextScheduledAt: Effect.succeed(null),
+    reconcile: Effect.void,
+  })
+);
+const MailboxDoStoreTestLayer = MailboxDoStoreSqliteLayer.pipe(
+  Layer.provide(MailboxOutboundAlarmTestLayer),
+  Layer.provide(MailboxStoresTestLive)
+);
+
+export const MailboxDoHandlerTestLive = Layer.merge(
+  MailboxDoHandlerLayer.pipe(Layer.provide(MailboxDoStoreTestLayer)),
+  MailboxStoresTestLive
 );

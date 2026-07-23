@@ -3,18 +3,18 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import {
+  MailboxDoClient,
+  MailboxDoNamespace,
+} from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import type { InboundProcessingResult } from "#/modules/mailbox/domain/MailboxInbound";
 import {
   decodeMailboxDomainError,
   MailDataRpcRequest,
   MailDataRpcResponse,
   mailDataResponseMatchesRequest,
-} from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
-import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
-import type {
-  InboundProcessingResult,
-  PreparedInboundReplayV1,
-} from "#/modules/mailbox/domain/MailboxInbound";
+} from "#/modules/mailbox/ports/MailboxDoProtocol";
 import {
   InboundMessageCommitter,
   InboundProcessingRecorder,
@@ -22,7 +22,6 @@ import {
 } from "#/modules/mailbox/ports/MailboxInboundRepository";
 import type { InboundProcessingRecorderService } from "#/modules/mailbox/ports/MailboxInboundRepository";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
-import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 
 const commitRepositoryError = (
   message: string,
@@ -295,113 +294,30 @@ export const InboundProcessingRecorderDoLayer = Layer.effect(
   })
 );
 
-const replayRepositoryError = (message: string, cause: unknown) =>
-  new MailboxRepositoryError({
-    cause,
-    commitState: "unknown",
-    message,
-    operation: "write",
-    transient: true,
-  });
-
 /** Registry-gated Durable Object adapter that atomically claims replay attempts. */
 export const InboundReplayPreparerDoLayer = Layer.effect(
   InboundReplayPreparer,
   Effect.gen(function* () {
-    const namespace = yield* MailboxDoNamespace;
-    const registry = yield* MailboxRegistry;
+    const client = yield* MailboxDoClient;
     return InboundReplayPreparer.of({
       claim: (input) => {
         const request = { _tag: "PrepareInboundReplay" as const, input };
-        const invoke = Schema.encodeEffect(MailDataRpcRequest)(request).pipe(
-          Effect.mapError((cause) =>
-            replayRepositoryError("Invalid replay request", cause)
-          ),
-          Effect.flatMap((encoded) =>
-            Effect.try({
-              try: () =>
-                namespace.getByName(input.mailboxId).executeMailData(encoded),
-              catch: (cause) =>
-                replayRepositoryError("Replay RPC failed", cause),
-            }).pipe(
-              Effect.flatMap((rpc) =>
-                rpc.pipe(
-                  Effect.provide(RuntimeContext.phantom),
-                  Effect.mapError((cause) =>
-                    replayRepositoryError("Replay RPC failed", cause)
-                  ),
-                  Effect.catchDefect((cause) =>
-                    Effect.fail(
-                      replayRepositoryError("Replay RPC failed", cause)
-                    )
-                  )
-                )
-              )
-            )
-          ),
-          Effect.flatMap((response) =>
-            Schema.decodeUnknownEffect(MailDataRpcResponse)(response).pipe(
-              Effect.mapError((cause) =>
-                replayRepositoryError("Replay RPC returned invalid data", cause)
-              )
-            )
-          ),
-          Effect.flatMap(
-            (
-              response
-            ): Effect.Effect<
-              PreparedInboundReplayV1,
-              MailboxDomainError | MailboxRepositoryError
-            > => {
-              if (!mailDataResponseMatchesRequest(request, response)) {
-                return Effect.fail(
-                  replayRepositoryError(
-                    "Replay RPC returned the wrong response",
-                    response
-                  )
-                );
-              }
-              if (response._tag === "DomainError") {
-                return Effect.fail(decodeMailboxDomainError(response));
-              }
-              if (
-                response._tag !== "InboundReplayPrepared" ||
-                response.value.processing.id !== input.inboundIngestId ||
-                response.value.processing.mailboxId !== input.mailboxId
-              ) {
-                return Effect.fail(
-                  replayRepositoryError(
-                    "Replay RPC returned unrelated data",
-                    response
-                  )
-                );
-              }
-              return Effect.succeed(response.value);
+        return client.executeMailData(request).pipe(
+          Effect.flatMap((response) => {
+            if (response._tag === "DomainError") {
+              return Effect.fail(decodeMailboxDomainError(response));
             }
-          )
-        );
-        return registry.exists(input.mailboxId).pipe(
-          Effect.mapError((cause) =>
-            replayRepositoryError("Mailbox registry lookup failed", cause)
-          ),
-          Effect.catchDefect((cause) =>
-            Effect.fail(
-              replayRepositoryError("Mailbox registry lookup failed", cause)
-            )
-          ),
-          Effect.flatMap((exists) =>
-            exists
-              ? invoke
-              : Effect.fail(
-                  new MailboxDomainError({
-                    message: "Mailbox was not found",
-                    operation: "replay-inbound",
-                    reason: "not-found",
-                    resourceId: input.mailboxId,
-                    resourceType: "mailbox",
-                  })
-                )
-          )
+            if (
+              response._tag !== "InboundReplayPrepared" ||
+              response.value.processing.id !== input.inboundIngestId ||
+              response.value.processing.mailboxId !== input.mailboxId
+            ) {
+              return Effect.die(
+                new Error("Replay RPC returned unrelated data")
+              );
+            }
+            return Effect.succeed(response.value);
+          })
         );
       },
     });

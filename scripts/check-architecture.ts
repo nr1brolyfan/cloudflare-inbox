@@ -32,10 +32,12 @@ const isCrossContextD1AdapterImport = (
   targetContext !== sourceContext &&
   target.includes("/adapters/");
 
-const isPlatformRequestAuthBusinessImport = (
-  isPlatformRequestAuthGuard: boolean,
+const isPlatformBusinessImport = (
+  inPlatform: boolean,
   target: string
-): boolean => isPlatformRequestAuthGuard && target.startsWith("src/modules/");
+): boolean =>
+  inPlatform &&
+  (target.startsWith("src/modules/") || target.startsWith("src/apps/"));
 
 export const checkArchitecturePath = (file: string): readonly string[] => {
   const normalizedFile = normalize(file);
@@ -76,16 +78,18 @@ export const checkArchitectureImports = (
   );
   const violations = new Set<string>();
   const inModules = normalizedFile.startsWith("src/modules/");
+  const inPlatform = normalizedFile.startsWith("src/platform/");
   const sourceContext = inModules ? normalizedFile.split("/")[2] : undefined;
   const inD1Adapter = inModules && normalizedFile.includes("/adapters/d1/");
-  const isPlatformRequestAuthGuard = normalizedFile.endsWith(
-    "/platform/control-plane-d1/RequestAuthGuard.ts"
-  );
+  const inAdapter = inModules && normalizedFile.includes("/adapters/");
+  const inContextLayer = inModules && normalizedFile.includes("/layers/");
   const inMailbox = normalizedFile.startsWith("src/modules/mailbox/");
   const inDomain = inModules && normalizedFile.includes("/domain/");
   const inApplication = inModules && normalizedFile.includes("/application/");
   const inPorts = inModules && normalizedFile.includes("/ports/");
 
+  // Every branch represents an independently enforced dependency rule.
+  // oxlint-disable-next-line eslint/complexity
   const inspect = (node: ts.Node): void => {
     if (
       ts.isImportDeclaration(node) &&
@@ -99,14 +103,28 @@ export const checkArchitectureImports = (
         if (inModules && target.startsWith("src/apps/")) {
           violations.add("business modules must not import runtime apps");
         }
+        if (isPlatformBusinessImport(inPlatform, target)) {
+          violations.add("platform modules must not import business contexts");
+        }
         if (
-          isPlatformRequestAuthBusinessImport(
-            isPlatformRequestAuthGuard,
-            target
-          )
+          inAdapter &&
+          !inD1Adapter &&
+          targetContext !== undefined &&
+          targetContext !== sourceContext &&
+          target.includes("/adapters/")
         ) {
           violations.add(
-            "platform request auth guard must not import business contexts"
+            "adapters must not import another context's adapters or schemas"
+          );
+        }
+        if (
+          inContextLayer &&
+          targetContext !== undefined &&
+          targetContext !== sourceContext &&
+          (target.includes("/adapters/") || target.includes("/layers/"))
+        ) {
+          violations.add(
+            "context layers must not select another context's concrete layers"
           );
         }
         if (

@@ -19,7 +19,7 @@ import {
   AdministrativeAuditEventSchema,
 } from "#/modules/administrative-audit/application/AdministrativeAudit";
 import {
-  AdministrativeAuditLayer,
+  AdministrativeAuditApplicationLayer,
   AdministrativeAuditRuntimeLayer,
 } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
@@ -74,7 +74,7 @@ const prepareBootstrap = (principalId = "user-a") =>
     });
   }).pipe(
     Effect.provide(
-      AdministrativeAuditLayer.pipe(
+      AdministrativeAuditApplicationLayer.pipe(
         Layer.provide(AdministrativeAuditRuntimeLayer)
       )
     ),

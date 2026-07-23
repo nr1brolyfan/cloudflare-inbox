@@ -30,11 +30,11 @@ export const ControlPlaneDatabase = Context.Service<ControlPlaneDatabase>(
 export const ControlPlaneDatabaseLayer = Layer.unwrap(
   Effect.gen(function* () {
     const { database } = yield* ControlPlaneD1Binding;
-    const clientLive = D1Client.layer({ db: database }).pipe(Layer.orDie);
+    const clientLayer = D1Client.layer({ db: database }).pipe(Layer.orDie);
 
     return Layer.effect(
       ControlPlaneDatabase,
       DrizzleD1.makeWithDefaults({ relations })
-    ).pipe(Layer.provide(clientLive));
+    ).pipe(Layer.provide(clientLayer));
   })
 );

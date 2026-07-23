@@ -15,9 +15,6 @@ import type {
   MailboxResourceLookup as MailboxResourceLookupType,
   MailboxResourceLookupResult as MailboxResourceLookupResultType,
 } from "#/modules/mailbox/domain/MailboxResource";
-import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
-import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
-
 import {
   DirectoryRpcRequest,
   DirectoryRpcResponse,
@@ -27,13 +24,15 @@ import {
   MailDataRpcResponse,
   mailDataRequestMetadata,
   mailDataResponseMatchesRequest,
-} from "./MailboxDoProtocol";
+} from "#/modules/mailbox/ports/MailboxDoProtocol";
 import type {
   DirectoryRpcRequest as DirectoryRpcRequestType,
   DirectoryRpcResponse as DirectoryRpcResponseType,
   MailDataRpcRequest as MailDataRpcRequestType,
   MailDataRpcResponse as MailDataRpcResponseType,
-} from "./MailboxDoProtocol";
+} from "#/modules/mailbox/ports/MailboxDoProtocol";
+import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
+import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 
 export interface MailboxDoStub {
   readonly executeDirectory: (

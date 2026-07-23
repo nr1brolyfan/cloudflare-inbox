@@ -15,11 +15,11 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
-import { CurrentRequestAuthMiddleware } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import {
   EnrollExternalRecoveryIdentityCommand,
   VerifyExternalRecoveryIdentityCommand,
 } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
+import { CurrentRequestAuthMiddleware } from "#/modules/account-security/contracts/RequestAuthMiddleware";
 import { ExternalRecoveryIdentitySchema } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 

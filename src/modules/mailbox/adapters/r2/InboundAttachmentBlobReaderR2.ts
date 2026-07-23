@@ -147,7 +147,7 @@ export const InboundAttachmentBlobReaderR2Layer = Layer.effect(
   })
 );
 
-export const InboundAttachmentBlobReaderR2WithRuntimeLayer =
+export const InboundAttachmentBlobReaderR2RuntimeLayer =
   InboundAttachmentBlobReaderR2Layer.pipe(
     Layer.provide(InboundAttachmentStoreRuntimeSystemLayer)
   );

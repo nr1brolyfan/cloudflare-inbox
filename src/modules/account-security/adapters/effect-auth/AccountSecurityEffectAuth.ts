@@ -42,11 +42,6 @@ import { externalRecoveryLinkEvidence } from "#/modules/account-security/domain/
 import { completionUrl } from "#/modules/account-security/domain/CompletionUrl";
 import { meetsPasswordPolicy } from "#/modules/account-security/domain/PasswordPolicy";
 
-export {
-  AuthRuntimeConfig,
-  AuthRuntimeConfigSchema,
-} from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
-
 const flowUrl = (
   publicOrigin: string,
   path: string,

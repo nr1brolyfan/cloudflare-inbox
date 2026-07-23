@@ -71,7 +71,6 @@ import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { BackendHealthBindings } from "#/platform/observability/BackendHealthLayer";
 import {
   BackendObservabilityConfig,
   BackendObservabilityLayer,
@@ -89,6 +88,7 @@ import {
 import { CurrentBackendRequestContext } from "#/shared/BackendRequestContext";
 
 import { BackendApplicationLayer } from "./BackendApplicationLayer";
+import { BackendHealthBindings } from "./BackendHealthLayer";
 
 const r2AttachmentObject = (object: {
   readonly checksums: { readonly sha256?: ArrayBuffer };

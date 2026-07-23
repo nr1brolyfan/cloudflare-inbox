@@ -3,19 +3,18 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { TrustedMailResourceResolverDurableObjectLayer } from "#/modules/authorization/adapters/durable-object/TrustedMailResourceResolverDurableObject";
+import { TrustedMailResourceResolverTransportLayer } from "#/modules/authorization/adapters/transport/TrustedMailResourceResolverTransport";
 import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
-import { MailboxDoClient } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
-import type { MailboxDoClientService } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import { TrustedMailResourceTransport } from "#/modules/authorization/ports/TrustedMailResourceTransport";
+import type { TrustedMailResourceTransportService } from "#/modules/authorization/ports/TrustedMailResourceTransport";
 import {
   MessageLocation,
   MessageLookup,
 } from "#/modules/mailbox/domain/MailboxResource";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
-const unused = () => Effect.die(new Error("RPC is unused"));
 const resolverWith = (
-  resolveMailResource: MailboxDoClientService["resolveMailResource"]
+  resolve: TrustedMailResourceTransportService["resolve"]
 ) =>
   Effect.gen(function* () {
     const resolver = yield* TrustedMailResourceResolver;
@@ -28,22 +27,18 @@ const resolverWith = (
     );
   }).pipe(
     Effect.provide(
-      TrustedMailResourceResolverDurableObjectLayer.pipe(
+      TrustedMailResourceResolverTransportLayer.pipe(
         Layer.provide(
           Layer.succeed(
-            MailboxDoClient,
-            MailboxDoClient.of({
-              executeDirectory: unused,
-              executeMailData: unused,
-              resolveMailResource,
-            })
+            TrustedMailResourceTransport,
+            TrustedMailResourceTransport.of({ resolve })
           )
         )
       )
     )
   );
 
-describe("MailboxDO mail resource resolver", () => {
+describe("mail resource transport resolver", () => {
   it("returns ancestry supplied by the trusted repository", async () => {
     const location = Schema.decodeUnknownSync(MessageLocation)({
       _tag: "Message",

@@ -116,7 +116,7 @@ const eventDetails = (input: PrepareAdministrativeAuditEvent) => {
   };
 };
 
-export const AdministrativeAuditLayer = Layer.effect(
+export const AdministrativeAuditApplicationLayer = Layer.effect(
   AdministrativeAudit,
   Effect.gen(function* () {
     const runtime = yield* AdministrativeAuditRuntime;

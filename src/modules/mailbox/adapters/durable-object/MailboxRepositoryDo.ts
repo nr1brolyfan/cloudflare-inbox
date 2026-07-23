@@ -4,6 +4,13 @@ import * as Layer from "effect/Layer";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type { MessageMutationResult } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
+import { decodeMailboxDomainError } from "#/modules/mailbox/ports/MailboxDoProtocol";
+import type {
+  DirectoryRpcResponse,
+  MailDataRpcRequest,
+  MailDataRpcResponse,
+  MailboxDomainErrorDto,
+} from "#/modules/mailbox/ports/MailboxDoProtocol";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
@@ -11,13 +18,6 @@ import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/Mailbo
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 import { MailboxDoClient } from "./MailboxDoClient";
-import { decodeMailboxDomainError } from "./MailboxDoProtocol";
-import type {
-  DirectoryRpcResponse,
-  MailDataRpcRequest,
-  MailDataRpcResponse,
-  MailboxDomainErrorDto,
-} from "./MailboxDoProtocol";
 
 type RepositoryError = MailboxDomainError | MailboxRepositoryError;
 

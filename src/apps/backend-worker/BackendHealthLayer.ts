@@ -20,19 +20,18 @@ import {
   mailboxScope,
 } from "#/modules/authorization/domain/MailPermissionCatalog";
 import {
+  MailboxResourceLookup,
+  MailboxResourceLookupResult,
+} from "#/modules/mailbox/domain/MailboxResource";
+import {
   DirectoryRpcRequest,
   DirectoryRpcResponse,
   MailDataRpcRequest,
   MailDataRpcResponse,
-} from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
-import {
-  MailboxResourceLookup,
-  MailboxResourceLookupResult,
-} from "#/modules/mailbox/domain/MailboxResource";
+} from "#/modules/mailbox/ports/MailboxDoProtocol";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-
-import { BackendHealth } from "./BackendHealth";
-import type { StorageHealth } from "./BackendHealth";
+import { BackendHealth } from "#/platform/observability/BackendHealth";
+import type { StorageHealth } from "#/platform/observability/BackendHealth";
 
 type RawMessagesClient = Effect.Success<
   ReturnType<typeof Cloudflare.R2.ReadWriteBucket>
@@ -44,13 +43,13 @@ export interface BackendHealthBindingsShape {
   readonly rawMessages: RawMessagesClient;
 }
 
-/** Cloudflare bindings used only by concrete readiness probes. */
+/** Cloudflare bindings used only by the backend readiness probes. */
 export const BackendHealthBindings =
   Context.Service<BackendHealthBindingsShape>(
     "cloudflare-inbox/BackendHealthBindings"
   );
 
-/** Probes every persistent binding used by request handling. */
+/** Probes every persistent binding used by backend request handling. */
 export const BackendHealthLayer = Layer.effect(
   BackendHealth,
   Effect.gen(function* () {
@@ -75,7 +74,6 @@ export const BackendHealthLayer = Layer.effect(
         subject: PermissionSubject.make("health", "backend"),
       });
     });
-    // A zero-token request verifies the Durable Object binding without consuming quota.
     const probeAuthRateLimit = bindings.authRateLimit
       .getByName("health")
       .fixedWindow({
@@ -111,20 +109,25 @@ export const BackendHealthLayer = Layer.effect(
       )(resourceLookup);
 
       return yield* Effect.all({
-        ready: healthMailbox.sqliteReady(),
+        ready: healthMailbox
+          .sqliteReady()
+          .pipe(Effect.provide(RuntimeContext.phantom)),
         folders: healthMailbox
           .executeDirectory(encodedDirectoryRequest)
           .pipe(
+            Effect.provide(RuntimeContext.phantom),
             Effect.flatMap(Schema.decodeUnknownEffect(DirectoryRpcResponse))
           ),
         messages: healthMailbox
           .executeMailData(encodedMailDataRequest)
           .pipe(
+            Effect.provide(RuntimeContext.phantom),
             Effect.flatMap(Schema.decodeUnknownEffect(MailDataRpcResponse))
           ),
         missing: healthMailbox
           .resolveMailResource(encodedResourceLookup)
           .pipe(
+            Effect.provide(RuntimeContext.phantom),
             Effect.flatMap(
               Schema.decodeUnknownEffect(MailboxResourceLookupResult)
             )
@@ -145,8 +148,7 @@ export const BackendHealthLayer = Layer.effect(
           : Effect.die(
               new Error("MailboxDO system folders are not initialized")
             );
-      }),
-      Effect.provide(RuntimeContext.phantom)
+      })
     );
     const probeRawMessages = bindings.rawMessages
       .head("__health__")

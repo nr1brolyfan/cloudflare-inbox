@@ -10,7 +10,7 @@ import {
   MailboxDoClientLayer,
   MailboxDoNamespace,
 } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
-import { DirectoryRpcRequest } from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
+import { DirectoryRpcRequest } from "#/modules/mailbox/ports/MailboxDoProtocol";
 import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
 
 const request = Schema.decodeUnknownSync(DirectoryRpcRequest)({

@@ -11,6 +11,10 @@ const evaluationTaskConfig = {
   timeout: "5 minutes",
 } as const;
 
+/** Application graph built separately for each Workflow instance. */
+export const AsyncRuleWorkflowApplicationLayer =
+  AiRuleEvaluatorUnavailableLayer;
+
 export const asyncRuleWorkflowProgram = Effect.succeed((input: unknown) =>
   Effect.gen(function* () {
     const params = yield* Schema.decodeUnknownEffect(AsyncRuleWorkflowParams)(
@@ -36,7 +40,7 @@ export const asyncRuleWorkflowProgram = Effect.succeed((input: unknown) =>
 const asyncRuleWorkflowImplementation = Effect.gen(function* () {
   const program = yield* asyncRuleWorkflowProgram;
   return (input: unknown) =>
-    program(input).pipe(Effect.provide(AiRuleEvaluatorUnavailableLayer));
+    program(input).pipe(Effect.provide(AsyncRuleWorkflowApplicationLayer));
 });
 
 export default class AsyncRuleWorkflow extends Cloudflare.Workflow<AsyncRuleWorkflow>()(

@@ -12,11 +12,11 @@ import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
-import { CurrentRequestAuthMiddleware } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import {
   GenerateRecoveryCodesCommand,
   GeneratedRecoveryCodeSet,
 } from "#/modules/account-security/application/RecoveryCodeAdministration";
+import { CurrentRequestAuthMiddleware } from "#/modules/account-security/contracts/RequestAuthMiddleware";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const Generate = HttpApiEndpoint.post(

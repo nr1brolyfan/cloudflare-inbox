@@ -13,13 +13,13 @@ import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 
-import { RecoveryRemediationRequestAuthMiddleware } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import {
   FinishPasskeyEnrollmentCommand,
   RecoveryPasskeyRemediationCompleted,
   StartedPasskeyEnrollment,
   StartPasskeyEnrollmentCommand,
 } from "#/modules/account-security/application/PasskeyEnrollment";
+import { RecoveryRemediationRequestAuthMiddleware } from "#/modules/account-security/contracts/RequestAuthMiddleware";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const errors = [

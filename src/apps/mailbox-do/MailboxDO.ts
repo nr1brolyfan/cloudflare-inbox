@@ -56,7 +56,7 @@ const mailboxDoImplementation = Effect.gen(function* () {
   };
 });
 
-const mailboxDoLive = Effect.gen(function* () {
+const mailboxDoRuntime = Effect.gen(function* () {
   const bindings = yield* MailboxDoBindings;
 
   return mailboxDoImplementation.pipe(
@@ -74,7 +74,7 @@ const mailboxDoLive = Effect.gen(function* () {
 /** SQLite-backed data-plane object with migrations completed before RPC starts. */
 export class MailboxDO extends Cloudflare.DurableObject<MailboxDO>()(
   "MailboxDO",
-  mailboxDoLive
+  mailboxDoRuntime
 ) {}
 
 export interface MailboxDOStub extends MailboxDoStub {

@@ -36,10 +36,6 @@ import { ExternalRecoveryIdentityDeliveryEmailLayer } from "#/modules/account-se
 import { RequestSessionAuthenticatorEffectAuthLayer } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import { PasskeyAuthentication } from "#/modules/account-security/application/PasskeyAuthentication";
 import { PasswordResetEligibility } from "#/modules/account-security/application/PasswordResetEligibility";
-import {
-  AdministrativeAuditLayer,
-  AdministrativeAuditRuntimeLayer,
-} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 
 /** Account-security use cases with concrete persistence and auth adapters selected. */
 export const AccountSecurityLayer = Layer.unwrap(
@@ -84,13 +80,9 @@ export const AccountSecurityLayer = Layer.unwrap(
         Layer.provide(passwordResetEligibilityLayer),
         Layer.provide(effectAuthLayer)
       );
-    const administrativeAuditLayer = AdministrativeAuditLayer.pipe(
-      Layer.provide(AdministrativeAuditRuntimeLayer)
-    );
     const recoveryIdentityLayer = ExternalRecoveryIdentityD1Layer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          administrativeAuditLayer,
           ExternalRecoveryIdentityChallengeEffectAuthLayer.pipe(
             Layer.provide(effectAuthLayer)
           ),

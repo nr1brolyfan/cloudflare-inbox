@@ -16,7 +16,6 @@ import {
   HttpApiGroup,
 } from "effect/unstable/httpapi";
 
-import { CurrentRequestAuthMiddleware } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import {
   ListPasskeyCredentialsQuery,
   PasskeyCredentialList,
@@ -24,6 +23,7 @@ import {
   ReadPasskeyRevocationQuery,
   RevokePasskeyCredentialCommand,
 } from "#/modules/account-security/application/PasskeyCredentialAdministration";
+import { CurrentRequestAuthMiddleware } from "#/modules/account-security/contracts/RequestAuthMiddleware";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
 const errors = [

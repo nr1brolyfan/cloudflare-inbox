@@ -105,6 +105,12 @@ const mailboxStateTaskConfig = {
   timeout: "1 minute",
 } as const;
 
+/** Application graph whose binding clients are supplied per Workflow instance. */
+export const InboundWorkflowApplicationLayer = Layer.merge(
+  MailboxInboundLayer,
+  AsyncRuleWorkflowStarterCloudflareLayer
+);
+
 const mimeFailure = (error: MimeParseError): ProcessingFailure => ({
   code:
     error.reason === "malformed-message"
@@ -485,7 +491,7 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
   const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
   const mailboxDataPlane = yield* MailboxDO;
   const asyncRuleWorkflow = yield* AsyncRuleWorkflow;
-  const rawMessageClientLive = Layer.succeed(
+  const rawMessageClientLayer = Layer.succeed(
     InboundRawMessageR2Client,
     InboundRawMessageR2Client.of({
       get: (key) =>
@@ -503,7 +509,7 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
         ),
     })
   );
-  const attachmentClientLive = Layer.succeed(
+  const attachmentClientLayer = Layer.succeed(
     InboundAttachmentR2Client,
     InboundAttachmentR2Client.of({
       put: (key, content, options) =>
@@ -522,7 +528,7 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
         ),
     })
   );
-  const mailboxDoNamespaceLive = Layer.succeed(
+  const mailboxDoNamespaceLayer = Layer.succeed(
     MailboxDoNamespace,
     MailboxDoNamespace.of(mailboxDataPlane)
   );
@@ -539,27 +545,20 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
           .pipe(Effect.provide(RuntimeContext.phantom)),
     })
   );
-  const asyncRuleWorkflowStarterLayer =
-    AsyncRuleWorkflowStarterCloudflareLayer.pipe(
-      Layer.provide(asyncRuleWorkflowClientLayer)
-    );
-  const mailboxInboundLayer = MailboxInboundLayer.pipe(
+  const instanceApplicationLayer = InboundWorkflowApplicationLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        rawMessageClientLive,
-        attachmentClientLive,
-        mailboxDoNamespaceLive
+        rawMessageClientLayer,
+        attachmentClientLayer,
+        mailboxDoNamespaceLayer,
+        asyncRuleWorkflowClientLayer
       )
     )
-  );
-  const applicationLayer = Layer.merge(
-    mailboxInboundLayer,
-    asyncRuleWorkflowStarterLayer
   );
   const program = yield* inboundWorkflowProgram;
 
   return (input: unknown) =>
-    program(input).pipe(Effect.provide(applicationLayer));
+    program(input).pipe(Effect.provide(instanceApplicationLayer));
 });
 
 export default class InboundWorkflow extends Cloudflare.Workflow<InboundWorkflow>()(

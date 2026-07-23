@@ -20,7 +20,7 @@ import { CONTROL_PLANE_STEP_UP_POLICY } from "#/modules/account-security/domain/
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import {
-  AdministrativeAuditLayer,
+  AdministrativeAuditApplicationLayer,
   AdministrativeAuditRuntimeLayer,
 } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
@@ -77,7 +77,7 @@ const requestContext = Schema.decodeUnknownSync(BackendRequestContext)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
 });
-const administrativeAuditLayer = AdministrativeAuditLayer.pipe(
+const administrativeAuditLayer = AdministrativeAuditApplicationLayer.pipe(
   Layer.provide(AdministrativeAuditRuntimeLayer)
 );
 

@@ -1,7 +1,5 @@
 import * as Layer from "effect/Layer";
 
-import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
-import { MailboxDoClientLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { InboundReplayPreparerDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxInboundRepositoryDo";
 import {
   MailboxDirectoryRepositoryDoLayer,
@@ -12,7 +10,7 @@ import {
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { MailboxHttpHandlersLayer } from "#/modules/mailbox/adapters/http/MailboxHttpHandlers";
 import { DraftAttachmentBlobStoreR2Layer } from "#/modules/mailbox/adapters/r2/DraftAttachmentBlobStoreR2";
-import { InboundAttachmentBlobReaderR2WithRuntimeLayer } from "#/modules/mailbox/adapters/r2/InboundAttachmentBlobReaderR2";
+import { InboundAttachmentBlobReaderR2RuntimeLayer } from "#/modules/mailbox/adapters/r2/InboundAttachmentBlobReaderR2";
 import { MailboxOutboundDeliveryReadingClockSystemLayer } from "#/modules/mailbox/adapters/system/MailboxOutboundDeliveryReadingClockSystem";
 import { InboundWorkflowStarterCloudflareLayer } from "#/modules/mailbox/adapters/workflow/InboundWorkflowStarterCloudflare";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
@@ -28,33 +26,14 @@ import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/Mailbox
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
-import { MailboxRegistryD1Layer } from "#/modules/organization/adapters/d1/MailboxRegistryD1";
-import { OrganizationLayer } from "#/modules/organization/layers/OrganizationLayer";
 
-const MailboxDoClientWithRegistryLayer = MailboxDoClientLayer.pipe(
-  Layer.provide(MailboxRegistryD1Layer)
-);
-
-const MailboxMessageRepositoryLayer = MailboxMessageRepositoryDoLayer.pipe(
-  Layer.provide(MailboxDoClientWithRegistryLayer)
-);
-const MailboxDirectoryRepositoryLayer = MailboxDirectoryRepositoryDoLayer.pipe(
-  Layer.provide(MailboxDoClientWithRegistryLayer)
-);
-const MailboxDraftRepositoryLayer = MailboxDraftRepositoryDoLayer.pipe(
-  Layer.provide(MailboxDoClientWithRegistryLayer)
-);
+const MailboxMessageRepositoryLayer = MailboxMessageRepositoryDoLayer;
+const MailboxDirectoryRepositoryLayer = MailboxDirectoryRepositoryDoLayer;
+const MailboxDraftRepositoryLayer = MailboxDraftRepositoryDoLayer;
 const MailboxOutboundDeliveryRepositoryLayer =
-  MailboxOutboundDeliveryRepositoryDoLayer.pipe(
-    Layer.provide(MailboxDoClientWithRegistryLayer)
-  );
+  MailboxOutboundDeliveryRepositoryDoLayer;
 const MailboxOutboundSendingRepositoryLayer =
-  MailboxOutboundSendingRepositoryDoLayer.pipe(
-    Layer.provide(MailboxDoClientWithRegistryLayer)
-  );
-const OrganizationHttpLayer = OrganizationLayer.pipe(
-  Layer.provide(MailboxDirectoryRepositoryLayer)
-);
+  MailboxOutboundSendingRepositoryDoLayer;
 
 const MailboxMessageReadingLayer = MailboxMessageReading.layerNoDeps.pipe(
   Layer.provide(MailboxMessageRepositoryLayer)
@@ -74,9 +53,7 @@ const MailboxDraftReadingLayer = MailboxDraftReading.layerNoDeps.pipe(
   Layer.provide(MailboxDraftRepositoryLayer)
 );
 const MailboxOutboundSendingLayer = MailboxOutboundSending.layerNoDeps.pipe(
-  Layer.provide(
-    Layer.mergeAll(MailboxOutboundSendingRepositoryLayer, AddressRoutingLayer)
-  )
+  Layer.provide(MailboxOutboundSendingRepositoryLayer)
 );
 const MailboxOutboundDeliveryReadingLayer =
   MailboxOutboundDeliveryReading.layerNoDeps.pipe(
@@ -100,14 +77,14 @@ const MailboxInlineAttachmentLayer =
     Layer.provide(
       Layer.mergeAll(
         MailboxMessageRepositoryLayer,
-        InboundAttachmentBlobReaderR2WithRuntimeLayer
+        InboundAttachmentBlobReaderR2RuntimeLayer
       )
     )
   );
 const MailboxInboundReplayLayer = MailboxInboundReplay.layerNoDeps.pipe(
   Layer.provide(
     Layer.merge(
-      InboundReplayPreparerDoLayer.pipe(Layer.provide(MailboxRegistryD1Layer)),
+      InboundReplayPreparerDoLayer,
       InboundWorkflowStarterCloudflareLayer
     )
   )
@@ -115,11 +92,10 @@ const MailboxInboundReplayLayer = MailboxInboundReplay.layerNoDeps.pipe(
 const MailboxInboundReplayAuthorizationLayer =
   MailboxInboundReplayAuthorization.layerNoDeps;
 
-/** Mailbox HTTP handlers with concrete mailbox and organization adapters selected. */
+/** Mailbox HTTP handlers with only mailbox-owned adapters selected. */
 export const MailboxHttpLayer = MailboxHttpHandlersLayer.pipe(
   Layer.provide(
     Layer.mergeAll(
-      OrganizationHttpLayer,
       MailboxMessageReadingLayer,
       MailboxMessageActionsLayer,
       MailboxDraftEditingLayer,

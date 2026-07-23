@@ -80,8 +80,28 @@ describe("architecture policy", () => {
         "src/platform/control-plane-d1/RequestAuthGuard.ts",
         'import type { RequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";'
       )
+    ).toStrictEqual(["platform modules must not import business contexts"]);
+  });
+
+  it("rejects cross-context adapter imports outside D1", () => {
+    expect(
+      checkArchitectureImports(
+        "src/modules/authorization/adapters/transport/Resolver.ts",
+        'import { Client } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";'
+      )
     ).toStrictEqual([
-      "platform request auth guard must not import business contexts",
+      "adapters must not import another context's adapters or schemas",
+    ]);
+  });
+
+  it("rejects concrete cross-context selection from context layers", () => {
+    expect(
+      checkArchitectureImports(
+        "src/modules/mailbox/layers/MailboxHttpLayer.ts",
+        'import { OrganizationLayer } from "#/modules/organization/layers/OrganizationLayer";'
+      )
+    ).toStrictEqual([
+      "context layers must not select another context's concrete layers",
     ]);
   });
 });

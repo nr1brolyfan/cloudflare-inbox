@@ -15,9 +15,9 @@ import {
   MailboxDoHandler,
   MailboxDoHandlerLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
-import { MailDataRpcResponse } from "#/modules/mailbox/adapters/durable-object/MailboxDoProtocol";
 import { MailboxDraftRepositoryDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { MailboxDirectoryStore } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
+import { MailboxDoStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDoStoreSqlite";
 import { MailboxDraftAttachmentStore } from "#/modules/mailbox/adapters/sqlite/MailboxDraftAttachmentStoreSqlite";
 import { MailboxDraftStore } from "#/modules/mailbox/adapters/sqlite/MailboxDraftStoreSqlite";
 import { MailboxMessageStore } from "#/modules/mailbox/adapters/sqlite/MailboxMessageStoreSqlite";
@@ -65,6 +65,7 @@ import {
   ScheduleOutboundInput,
   outboundUndoWindowMillis,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailDataRpcResponse } from "#/modules/mailbox/ports/MailboxDoProtocol";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import { MailboxRegistry } from "#/modules/organization/ports/MailboxRegistry";
@@ -1406,11 +1407,18 @@ describe("Mailbox mail data SQLite", () => {
         reconcileCount += 1;
       }),
     });
-    const testLive = MailboxDoHandlerLayer.pipe(
-      Layer.provide(
-        Layer.succeed(MailboxOutboundAlarmScheduler, outboundAlarm)
-      ),
-      Layer.provideMerge(MailboxStoresTestLive),
+    const outboundAlarmLayer = Layer.succeed(
+      MailboxOutboundAlarmScheduler,
+      outboundAlarm
+    );
+    const storeLayer = MailboxDoStoreSqliteLayer.pipe(
+      Layer.provide(outboundAlarmLayer),
+      Layer.provide(MailboxStoresTestLive)
+    );
+    const testLive = Layer.merge(
+      MailboxDoHandlerLayer.pipe(Layer.provide(storeLayer)),
+      MailboxStoresTestLive
+    ).pipe(
       Layer.provide(
         Layer.merge(
           Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
