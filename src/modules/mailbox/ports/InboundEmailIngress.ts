@@ -5,6 +5,7 @@ export class InboundEmailRejected extends Data.TaggedError(
 )<{
   readonly reason:
     | "invalid-envelope"
+    | "message-too-large"
     | "processing-unavailable"
     | "unknown-recipient";
   readonly message: string;

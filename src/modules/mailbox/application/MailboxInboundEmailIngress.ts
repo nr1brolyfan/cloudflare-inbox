@@ -7,6 +7,7 @@ import * as Schema from "effect/Schema";
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { InboundIngestId } from "#/modules/mailbox/domain/Mailbox";
 import type { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
+import { isInboundRawSizeAllowed } from "#/modules/mailbox/domain/MailboxInbound";
 import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
 import { InboundRawMessageStore } from "#/modules/mailbox/ports/InboundRawMessageStore";
 import { InboundWorkflowStarter } from "#/modules/mailbox/ports/InboundWorkflowStarter";
@@ -62,6 +63,15 @@ export class MailboxInboundEmailIngress extends Context.Service<
     return {
       receive: (message) =>
         Effect.gen(function* () {
+          if (!isInboundRawSizeAllowed(message.envelope.rawSize)) {
+            return yield* Effect.fail(
+              new InboundEmailRejected({
+                message: "Message too large",
+                reason: "message-too-large",
+              })
+            );
+          }
+
           const inboundIngestId = yield* Schema.decodeUnknownEffect(
             InboundIngestId
           )(runtime.randomId()).pipe(Effect.mapError(rejectStorageFailure));

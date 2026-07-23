@@ -18,6 +18,7 @@ import {
 } from "#/modules/mailbox/domain/Mailbox";
 import {
   ExtractedInboundMessageV1,
+  MAXIMUM_INBOUND_RAW_BYTES,
   ParsedInboundMessageV1,
 } from "#/modules/mailbox/domain/MailboxInbound";
 import type {
@@ -53,7 +54,7 @@ export const InboundMimeParserConfigLayer = Layer.succeed(
     maximumAttachments: 256,
     maximumHeadersBytes: 256 * 1024,
     maximumNestingDepth: 64,
-    maximumRawBytes: 10 * 1024 * 1024,
+    maximumRawBytes: MAXIMUM_INBOUND_RAW_BYTES,
     maximumReferences: 100,
     maximumWorkflowResultBytes: 768 * 1024,
   })

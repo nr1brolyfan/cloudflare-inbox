@@ -19,6 +19,12 @@ import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 import { UnixMillis, Version } from "#/shared/Temporal";
 
+/** Live inbound admission limit for raw RFC 822 bytes. */
+export const MAXIMUM_INBOUND_RAW_BYTES = 10 * 1024 * 1024;
+
+export const isInboundRawSizeAllowed = (rawSize: number): boolean =>
+  rawSize <= MAXIMUM_INBOUND_RAW_BYTES;
+
 export const InboundFailureCode = Schema.Literals([
   "malformed_message",
   "message_too_large",

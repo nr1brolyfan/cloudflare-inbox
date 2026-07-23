@@ -6,8 +6,10 @@ import type { InboundMimeParserConfig as InboundMimeParserConfigShape } from "#/
 import {
   InboundMimeAttachmentExtractorPostalLayer,
   InboundMimeParserConfig,
+  InboundMimeParserConfigLayer,
   InboundMimeParserPostalLayer,
 } from "#/modules/mailbox/adapters/mime/InboundMimeParserPostal";
+import { MAXIMUM_INBOUND_RAW_BYTES } from "#/modules/mailbox/domain/MailboxInbound";
 import {
   InboundMimeAttachmentExtractor,
   InboundMimeParser,
@@ -18,7 +20,7 @@ const defaultConfig: InboundMimeParserConfigShape = {
   maximumAttachments: 256,
   maximumHeadersBytes: 256 * 1024,
   maximumNestingDepth: 64,
-  maximumRawBytes: 10 * 1024 * 1024,
+  maximumRawBytes: MAXIMUM_INBOUND_RAW_BYTES,
   maximumReferences: 100,
   maximumWorkflowResultBytes: 768 * 1024,
 };
@@ -66,6 +68,14 @@ const runExtract = (
   );
 
 describe("PostalMime inbound parser", () => {
+  it("uses the shared inbound admission limit by default", async () => {
+    const config = await Effect.runPromise(
+      InboundMimeParserConfig.pipe(Effect.provide(InboundMimeParserConfigLayer))
+    );
+
+    expect(config.maximumRawBytes).toBe(MAXIMUM_INBOUND_RAW_BYTES);
+  });
+
   it("maps decoded headers, addresses, threading, and text", async () => {
     const result = await runParse(
       `From: =?UTF-8?Q?Sender_=E2=9C=93?= <sender@example.test>\r

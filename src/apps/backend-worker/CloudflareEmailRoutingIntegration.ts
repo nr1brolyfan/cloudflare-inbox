@@ -7,7 +7,11 @@ import { InboundMailboxResolver } from "#/modules/address-routing/ports/InboundM
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { ByteSize } from "#/modules/mailbox/domain/Mailbox";
 import type { ReceiveInboundEmailInput as ReceiveInboundEmailInputType } from "#/modules/mailbox/domain/MailboxInbound";
-import { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
+import {
+  isInboundRawSizeAllowed,
+  MAXIMUM_INBOUND_RAW_BYTES,
+  ReceiveInboundEmailInput,
+} from "#/modules/mailbox/domain/MailboxInbound";
 import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
 import { EmailAddress } from "#/shared/EmailAddress";
 
@@ -32,7 +36,12 @@ const reject = (message: ForwardableEmailMessage, reason: string) =>
 
 const rejectInboundEmail =
   (message: ForwardableEmailMessage) => (error: InboundEmailRejected) =>
-    reject(message, error.message);
+    Effect.annotateCurrentSpan({
+      "email.rejection_reason": error.reason,
+      ...(error.reason === "message-too-large"
+        ? { "email.maximum_raw_bytes": MAXIMUM_INBOUND_RAW_BYTES }
+        : {}),
+    }).pipe(Effect.andThen(reject(message, error.message)));
 
 const decodeEnvelopeAddress = (
   value: string,
@@ -68,26 +77,40 @@ const decodeRawSize = (
   ReceiveInboundEmailInputType["rawSize"],
   InboundEmailRejected
 > =>
-  Schema.decodeUnknownEffect(ByteSize)(value).pipe(
-    Effect.mapError(
-      (cause) =>
+  Effect.gen(function* () {
+    const rawSize = yield* Schema.decodeUnknownEffect(ByteSize)(value).pipe(
+      Effect.mapError(
+        (cause) =>
+          new InboundEmailRejected({
+            cause,
+            message: "Invalid raw message size",
+            reason: "invalid-envelope",
+          })
+      )
+    );
+
+    if (!isInboundRawSizeAllowed(rawSize)) {
+      return yield* Effect.fail(
         new InboundEmailRejected({
-          cause,
-          message: "Invalid raw message size",
-          reason: "invalid-envelope",
+          message: "Message too large",
+          reason: "message-too-large",
         })
-    )
-  );
+      );
+    }
+
+    return rawSize;
+  });
 
 const decodeEnvelope = (message: ForwardableEmailMessage) =>
   Effect.gen(function* () {
+    const rawSize = yield* decodeRawSize(message.rawSize);
     const envelope = {
       envelopeFrom: yield* decodeEnvelopeSender(message.from),
       envelopeTo: yield* decodeEnvelopeAddress(
         message.to,
         "Invalid envelope recipient"
       ),
-      rawSize: yield* decodeRawSize(message.rawSize),
+      rawSize,
     };
 
     return yield* Schema.decodeUnknownEffect(ReceiveInboundEmailInput)(
@@ -113,6 +136,8 @@ export const handleCloudflareEmailRoutingMessage = (
     const mailboxId = yield* resolver.resolve(envelope.envelopeTo);
     const ingress = yield* MailboxInboundEmailIngress;
 
+    // Admission trusts validated Cloudflare transport metadata without reading
+    // raw; FixedLengthStream verifies declared versus actual bytes during R2 put.
     yield* ingress.receive({
       envelope,
       headers: message.headers as unknown as Headers,

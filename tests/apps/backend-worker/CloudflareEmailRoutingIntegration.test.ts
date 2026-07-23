@@ -13,6 +13,7 @@ import type { InboundMailboxResolverService } from "#/modules/address-routing/po
 import type { InboundEmailRoutingMessage } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { MAXIMUM_INBOUND_RAW_BYTES } from "#/modules/mailbox/domain/MailboxInbound";
 import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
 
 type ForwardableEmailMessage = CloudflareWorkers.ForwardableEmailMessage;
@@ -25,6 +26,17 @@ const rawStream = () =>
       controller.close();
     },
   }) as unknown as ForwardableEmailMessage["raw"];
+
+const lazyRawStream = (onPull: () => void) =>
+  new ReadableStream<Uint8Array>(
+    {
+      pull: () => {
+        onPull();
+        throw new Error("Raw stream must not be consumed during admission");
+      },
+    },
+    { highWaterMark: 0 }
+  ) as unknown as ForwardableEmailMessage["raw"];
 
 const headers = (): ForwardableEmailMessage["headers"] => {
   const source = new Headers({ to: "header-recipient@example.com" });
@@ -88,6 +100,116 @@ const runWithIngress = (
   );
 
 describe("Cloudflare Email Routing inbound adapter", () => {
+  it("accepts the exact raw limit without consuming the stream", async () => {
+    let pulls = 0;
+    let received = 0;
+    let resolved = 0;
+    let deliveredRaw: InboundEmailRoutingMessage["raw"] | undefined;
+    const raw = lazyRawStream(() => {
+      pulls += 1;
+    });
+    const { message, rejected } = makeMessage({
+      raw,
+      rawSize: MAXIMUM_INBOUND_RAW_BYTES,
+    });
+
+    await runWithIngress(
+      message,
+      (input) =>
+        Effect.sync(() => {
+          deliveredRaw = input.raw;
+          received += 1;
+        }),
+      () =>
+        Effect.sync(() => {
+          resolved += 1;
+          return primaryMailboxId;
+        })
+    );
+
+    expect({
+      pulls,
+      received,
+      rejected,
+      resolved,
+      sameRaw: deliveredRaw === raw,
+    }).toStrictEqual({
+      pulls: 0,
+      received: 1,
+      rejected: [],
+      resolved: 1,
+      sameRaw: true,
+    });
+  });
+
+  it("rejects above the raw limit before decoding or consuming anything else", async () => {
+    let pulls = 0;
+    let received = 0;
+    let resolved = 0;
+    const { message, rejected } = makeMessage({
+      from: "bad sender",
+      raw: lazyRawStream(() => {
+        pulls += 1;
+      }),
+      rawSize: MAXIMUM_INBOUND_RAW_BYTES + 1,
+      to: "bad recipient",
+    });
+
+    await runWithIngress(
+      message,
+      () =>
+        Effect.sync(() => {
+          received += 1;
+        }),
+      () =>
+        Effect.sync(() => {
+          resolved += 1;
+          return primaryMailboxId;
+        })
+    );
+
+    expect({ pulls, received, rejected, resolved }).toStrictEqual({
+      pulls: 0,
+      received: 0,
+      rejected: ["Message too large"],
+      resolved: 0,
+    });
+  });
+
+  it.each([
+    -1,
+    0.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    Number.NEGATIVE_INFINITY,
+  ])(
+    "keeps invalid raw size %s in the invalid-envelope path",
+    async (rawSize) => {
+      let received = 0;
+      let resolved = 0;
+      const { message, rejected } = makeMessage({ rawSize });
+
+      await runWithIngress(
+        message,
+        () =>
+          Effect.sync(() => {
+            received += 1;
+          }),
+        () =>
+          Effect.sync(() => {
+            resolved += 1;
+            return primaryMailboxId;
+          })
+      );
+
+      expect({ received, rejected, resolved }).toStrictEqual({
+        received: 0,
+        rejected: ["Invalid raw message size"],
+        resolved: 0,
+      });
+    }
+  );
+
   it("passes the SMTP envelope recipient instead of the To header", async () => {
     const { message, rejected } = makeMessage();
     let delivered: InboundEmailRoutingMessage | undefined;

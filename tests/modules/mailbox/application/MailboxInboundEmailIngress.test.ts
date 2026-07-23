@@ -15,7 +15,10 @@ import {
 import type { InboundEmailRoutingMessage } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
-import { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
+import {
+  MAXIMUM_INBOUND_RAW_BYTES,
+  ReceiveInboundEmailInput,
+} from "#/modules/mailbox/domain/MailboxInbound";
 import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
 import { InboundWorkflowStarter } from "#/modules/mailbox/ports/InboundWorkflowStarter";
 import type { InboundWorkflowStarterService } from "#/modules/mailbox/ports/InboundWorkflowStarter";
@@ -34,25 +37,62 @@ const rawStream = () =>
     },
   });
 
+const chunkedRawStream = () =>
+  new ReadableStream<Uint8Array>({
+    start: (controller) => {
+      controller.enqueue(bytes.subarray(0, 1));
+      controller.enqueue(bytes.subarray(1));
+      controller.close();
+    },
+  });
+
+const enforceExactLength = (
+  raw: ReadableStream<Uint8Array>,
+  expectedLength: number
+) => {
+  let observedLength = 0;
+  return raw.pipeThrough(
+    new TransformStream<Uint8Array, Uint8Array>({
+      flush: () => {
+        if (observedLength !== expectedLength) {
+          throw new Error("Raw stream ended before its declared length");
+        }
+      },
+      transform: (chunk, controller) => {
+        observedLength += chunk.byteLength;
+        if (observedLength > expectedLength) {
+          throw new Error("Raw stream exceeded its declared length");
+        }
+        controller.enqueue(chunk);
+      },
+    })
+  );
+};
+
 const message = (
-  envelopeFrom: string | null = "sender@example.test"
+  envelopeFrom: string | null = "sender@example.test",
+  rawSize = bytes.length,
+  raw: ReadableStream<Uint8Array> = rawStream()
 ): InboundEmailRoutingMessage => ({
   envelope: Schema.decodeUnknownSync(ReceiveInboundEmailInput)({
     envelopeFrom: envelopeFrom ?? undefined,
     envelopeTo: "owner@example.test",
-    rawSize: bytes.length,
+    rawSize,
   }),
   headers: new Headers({ subject: "must not become metadata" }),
   mailboxId: Schema.decodeUnknownSync(MailboxId)("primary"),
-  raw: rawStream(),
+  raw,
 });
 
-const ingressRuntime = () =>
+const ingressRuntime = (
+  now: () => number = () => 2000,
+  randomId: () => string = () => "ingest-1"
+) =>
   Layer.succeed(
     MailboxInboundEmailIngressRuntime,
     MailboxInboundEmailIngressRuntime.of({
-      now: () => 2000,
-      randomId: () => "ingest-1",
+      now,
+      randomId,
     })
   );
 
@@ -70,7 +110,8 @@ const runIngress = (
   input: InboundEmailRoutingMessage,
   put: InboundRawMessageR2WriteClientService["put"],
   enforceLength?: InboundRawMessageStoreRuntimeService["enforceLength"],
-  start: InboundWorkflowStarterService["start"] = () => Effect.void
+  start: InboundWorkflowStarterService["start"] = () => Effect.void,
+  runtime = ingressRuntime()
 ) =>
   Effect.runPromise(
     MailboxInboundEmailIngress.pipe(
@@ -90,7 +131,7 @@ const runIngress = (
                   )
                 )
               ),
-              ingressRuntime(),
+              runtime,
               Layer.succeed(
                 InboundWorkflowStarter,
                 InboundWorkflowStarter.of({ start })
@@ -103,6 +144,140 @@ const runIngress = (
   );
 
 describe("inbound raw MIME R2 ingress", () => {
+  it("rejects above the raw limit before identity, time, R2, or Workflow", async () => {
+    const calls = {
+      enforceLength: 0,
+      now: 0,
+      put: 0,
+      randomId: 0,
+      workflow: 0,
+    };
+    const failure = await runIngress(
+      message("sender@example.test", MAXIMUM_INBOUND_RAW_BYTES + 1),
+      () =>
+        Effect.sync(() => {
+          calls.put += 1;
+          return { size: MAXIMUM_INBOUND_RAW_BYTES + 1 };
+        }),
+      (raw) => {
+        calls.enforceLength += 1;
+        return raw;
+      },
+      () =>
+        Effect.sync(() => {
+          calls.workflow += 1;
+        }),
+      ingressRuntime(
+        () => {
+          calls.now += 1;
+          return 2000;
+        },
+        () => {
+          calls.randomId += 1;
+          return "ingest-1";
+        }
+      )
+    ).catch((error: unknown) => error);
+
+    expect({ calls, failure }).toMatchObject({
+      calls: {
+        enforceLength: 0,
+        now: 0,
+        put: 0,
+        randomId: 0,
+        workflow: 0,
+      },
+      failure: {
+        message: "Message too large",
+        reason: "message-too-large",
+      },
+    });
+  });
+
+  it("allows the exact raw limit to reach storage", async () => {
+    let enforcedLength: number | undefined;
+    let putCalls = 0;
+    let workflowStarts = 0;
+
+    await runIngress(
+      message("sender@example.test", MAXIMUM_INBOUND_RAW_BYTES),
+      (_, __, options) =>
+        Effect.sync(() => {
+          putCalls += 1;
+          expect(options.contentLength).toBe(MAXIMUM_INBOUND_RAW_BYTES);
+          return { size: MAXIMUM_INBOUND_RAW_BYTES };
+        }),
+      (raw, expectedLength) => {
+        enforcedLength = expectedLength;
+        return raw;
+      },
+      () =>
+        Effect.sync(() => {
+          workflowStarts += 1;
+        })
+    );
+
+    expect({ enforcedLength, putCalls, workflowStarts }).toStrictEqual({
+      enforcedLength: MAXIMUM_INBOUND_RAW_BYTES,
+      putCalls: 1,
+      workflowStarts: 1,
+    });
+  });
+
+  it("streams exact declared length across multiple chunks before Workflow", async () => {
+    const events: string[] = [];
+
+    await runIngress(
+      message("sender@example.test", bytes.length, chunkedRawStream()),
+      (_, raw) =>
+        Effect.promise(async () => {
+          const stored = await new Response(
+            raw as unknown as BodyInit
+          ).arrayBuffer();
+          events.push("r2-put");
+          return { size: stored.byteLength };
+        }),
+      enforceExactLength,
+      () =>
+        Effect.sync(() => {
+          events.push("workflow-start");
+        })
+    );
+
+    expect(events).toStrictEqual(["r2-put", "workflow-start"]);
+  });
+
+  it.each([
+    ["longer", bytes.length - 1],
+    ["shorter", bytes.length + 1],
+  ] as const)(
+    "rejects an actual stream %s than its declared length before Workflow",
+    async (_name, rawSize) => {
+      let workflowStarts = 0;
+      const failure = await runIngress(
+        message("sender@example.test", rawSize, chunkedRawStream()),
+        (_, raw) =>
+          Effect.promise(async () => {
+            const stored = await new Response(
+              raw as unknown as BodyInit
+            ).arrayBuffer();
+            return { size: stored.byteLength };
+          }),
+        enforceExactLength,
+        () =>
+          Effect.sync(() => {
+            workflowStarts += 1;
+          })
+      ).catch((error: unknown) => error);
+
+      expect(failure).toMatchObject({
+        cause: { _tag: "BlobStoreError" },
+        reason: "processing-unavailable",
+      });
+      expect(workflowStarts).toBe(0);
+    }
+  );
+
   it("streams raw bytes to an append-only ingest key with bounded metadata", async () => {
     let captured:
       | {

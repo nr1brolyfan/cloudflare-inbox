@@ -65,7 +65,11 @@ const storageError = (cause: unknown) =>
     retryable: true,
   });
 
-/** Streams the original MIME bytes to private R2 before downstream processing. */
+/**
+ * Streams the original MIME bytes to private R2 before downstream processing.
+ * FixedLengthStream checks the admitted transport length as R2 consumes the
+ * stream; admission does not pre-read an arbitrary stream to discover its size.
+ */
 export const InboundRawMessageStoreR2Layer = Layer.effect(
   InboundRawMessageStore,
   Effect.gen(function* () {
