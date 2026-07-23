@@ -2,7 +2,8 @@
 import type * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
@@ -10,6 +11,7 @@ import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import type { MailboxRecord } from "#/modules/organization/domain/Mailbox";
+import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
 import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 
@@ -80,4 +82,10 @@ export interface MailboxAdministrationService {
 export class MailboxAdministration extends Context.Service<
   MailboxAdministration,
   MailboxAdministrationService
->()("cloudflare-inbox/MailboxAdministration") {}
+>()("cloudflare-inbox/MailboxAdministration", {
+  make: Effect.gen(function* () {
+    return yield* MailboxAdministrationTransaction;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

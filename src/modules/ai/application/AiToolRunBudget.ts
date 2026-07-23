@@ -1,3 +1,4 @@
+/* oxlint-disable max-classes-per-file -- Budget failure and run-scoped service form one cohesive use case. */
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
@@ -33,7 +34,7 @@ export class AiToolBudgetExceeded extends Data.TaggedError(
   readonly limit: AiToolBudgetLimit;
 }> {}
 
-export interface AiToolRunBudget {
+export interface AiToolRunBudgetShape {
   /** Reserves the total-call slot as soon as trustworthy call metadata exists. */
   readonly consumeCall: (
     callId: AiToolCallId,
@@ -49,10 +50,6 @@ export interface AiToolRunBudget {
     resultBytes: number
   ) => Effect.Effect<void, AiToolBudgetExceeded>;
 }
-
-export const AiToolRunBudget = Context.Service<AiToolRunBudget>(
-  "cloudflare-inbox/AiToolRunBudget"
-);
 
 interface CallReservation {
   readonly argumentBytes?: number;
@@ -86,116 +83,121 @@ const fromDecision = (decision: BudgetDecision) =>
   decision._tag === "Allowed" ? Effect.void : Effect.fail(decision.error);
 
 /** A fresh layer must be acquired once per AI run; Ref.modify makes parallel calls atomic. */
-export const AiToolRunBudgetLayer = Layer.effect(
+export class AiToolRunBudget extends Context.Service<
   AiToolRunBudget,
-  Ref.make<BudgetState>({
+  AiToolRunBudgetShape
+>()("cloudflare-inbox/AiToolRunBudget", {
+  make: Ref.make<BudgetState>({
     argumentBytes: 0,
     calls: new Map(),
     mutations: 0,
     reads: 0,
     resultBytes: 0,
   }).pipe(
-    Effect.map((state) =>
-      AiToolRunBudget.of({
-        consumeCall: (callId, name) =>
-          Ref.modify(state, (current) => {
-            const existing = current.calls.get(callId);
-            if (existing !== undefined) {
-              return existing.name === name
-                ? [allowed, current]
-                : [denied("replay-mismatch"), current];
-            }
-            if (current.calls.size >= aiToolRunLimits.totalCalls) {
-              return [denied("total-calls"), current];
-            }
+    Effect.map(
+      (state) =>
+        ({
+          consumeCall: (callId, name) =>
+            Ref.modify(state, (current) => {
+              const existing = current.calls.get(callId);
+              if (existing !== undefined) {
+                return existing.name === name
+                  ? [allowed, current]
+                  : [denied("replay-mismatch"), current];
+              }
+              if (current.calls.size >= aiToolRunLimits.totalCalls) {
+                return [denied("total-calls"), current];
+              }
 
-            const calls = new Map([...current.calls, [callId, { name }]]);
-            return [allowed, { ...current, calls }];
-          }).pipe(Effect.flatMap(fromDecision)),
-        consumeInput: (callId, kind, argumentBytes) =>
-          Ref.modify(state, (current) => {
-            const existing = current.calls.get(callId);
-            if (existing === undefined) {
-              return [denied("replay-mismatch"), current];
-            }
-            if (
-              existing.argumentBytes !== undefined ||
-              existing.kind !== undefined
-            ) {
-              return existing.argumentBytes === argumentBytes &&
-                existing.kind === kind
-                ? [allowed, current]
-                : [denied("replay-mismatch"), current];
-            }
-            if (argumentBytes > aiToolRunLimits.argumentBytesPerCall) {
-              return [denied("argument-bytes-per-call"), current];
-            }
-            if (
-              current.argumentBytes + argumentBytes >
-              aiToolRunLimits.aggregateArgumentBytes
-            ) {
-              return [denied("aggregate-argument-bytes"), current];
-            }
-            if (kind === "read" && current.reads >= aiToolRunLimits.reads) {
-              return [denied("reads"), current];
-            }
-            if (
-              kind === "mutation" &&
-              current.mutations >= aiToolRunLimits.mutations
-            ) {
-              return [denied("mutations"), current];
-            }
+              const calls = new Map([...current.calls, [callId, { name }]]);
+              return [allowed, { ...current, calls }];
+            }).pipe(Effect.flatMap(fromDecision)),
+          consumeInput: (callId, kind, argumentBytes) =>
+            Ref.modify(state, (current) => {
+              const existing = current.calls.get(callId);
+              if (existing === undefined) {
+                return [denied("replay-mismatch"), current];
+              }
+              if (
+                existing.argumentBytes !== undefined ||
+                existing.kind !== undefined
+              ) {
+                return existing.argumentBytes === argumentBytes &&
+                  existing.kind === kind
+                  ? [allowed, current]
+                  : [denied("replay-mismatch"), current];
+              }
+              if (argumentBytes > aiToolRunLimits.argumentBytesPerCall) {
+                return [denied("argument-bytes-per-call"), current];
+              }
+              if (
+                current.argumentBytes + argumentBytes >
+                aiToolRunLimits.aggregateArgumentBytes
+              ) {
+                return [denied("aggregate-argument-bytes"), current];
+              }
+              if (kind === "read" && current.reads >= aiToolRunLimits.reads) {
+                return [denied("reads"), current];
+              }
+              if (
+                kind === "mutation" &&
+                current.mutations >= aiToolRunLimits.mutations
+              ) {
+                return [denied("mutations"), current];
+              }
 
-            const calls = new Map([
-              ...current.calls,
-              [callId, { ...existing, argumentBytes, kind }],
-            ]);
-            return [
-              allowed,
-              {
-                ...current,
-                argumentBytes: current.argumentBytes + argumentBytes,
-                calls,
-                mutations: current.mutations + (kind === "mutation" ? 1 : 0),
-                reads: current.reads + (kind === "read" ? 1 : 0),
-              },
-            ];
-          }).pipe(Effect.flatMap(fromDecision)),
-        consumeResult: (callId, resultBytes) =>
-          Ref.modify(state, (current) => {
-            const existing = current.calls.get(callId);
-            if (existing?.kind === undefined) {
-              return [denied("replay-mismatch"), current];
-            }
-            if (existing.resultBytes !== undefined) {
-              return existing.resultBytes === resultBytes
-                ? [allowed, current]
-                : [denied("replay-mismatch"), current];
-            }
-            if (resultBytes > aiToolRunLimits.resultBytesPerCall) {
-              return [denied("result-bytes-per-call"), current];
-            }
-            if (
-              current.resultBytes + resultBytes >
-              aiToolRunLimits.aggregateResultBytes
-            ) {
-              return [denied("aggregate-result-bytes"), current];
-            }
+              const calls = new Map([
+                ...current.calls,
+                [callId, { ...existing, argumentBytes, kind }],
+              ]);
+              return [
+                allowed,
+                {
+                  ...current,
+                  argumentBytes: current.argumentBytes + argumentBytes,
+                  calls,
+                  mutations: current.mutations + (kind === "mutation" ? 1 : 0),
+                  reads: current.reads + (kind === "read" ? 1 : 0),
+                },
+              ];
+            }).pipe(Effect.flatMap(fromDecision)),
+          consumeResult: (callId, resultBytes) =>
+            Ref.modify(state, (current) => {
+              const existing = current.calls.get(callId);
+              if (existing?.kind === undefined) {
+                return [denied("replay-mismatch"), current];
+              }
+              if (existing.resultBytes !== undefined) {
+                return existing.resultBytes === resultBytes
+                  ? [allowed, current]
+                  : [denied("replay-mismatch"), current];
+              }
+              if (resultBytes > aiToolRunLimits.resultBytesPerCall) {
+                return [denied("result-bytes-per-call"), current];
+              }
+              if (
+                current.resultBytes + resultBytes >
+                aiToolRunLimits.aggregateResultBytes
+              ) {
+                return [denied("aggregate-result-bytes"), current];
+              }
 
-            const calls = new Map([
-              ...current.calls,
-              [callId, { ...existing, resultBytes }],
-            ]);
-            return [
-              allowed,
-              {
-                ...current,
-                calls,
-                resultBytes: current.resultBytes + resultBytes,
-              },
-            ];
-          }).pipe(Effect.flatMap(fromDecision)),
-      })
+              const calls = new Map([
+                ...current.calls,
+                [callId, { ...existing, resultBytes }],
+              ]);
+              return [
+                allowed,
+                {
+                  ...current,
+                  calls,
+                  resultBytes: current.resultBytes + resultBytes,
+                },
+              ];
+            }).pipe(Effect.flatMap(fromDecision)),
+        }) satisfies AiToolRunBudgetShape
     )
-  )
-);
+  ),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

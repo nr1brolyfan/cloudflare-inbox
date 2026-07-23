@@ -38,6 +38,7 @@ import {
   externalRecoveryAddressComparisonKey,
 } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import { AccountRecoveryDelivery } from "#/modules/account-security/ports/AccountRecoveryDelivery";
+import { AccountRecoveryTransaction } from "#/modules/account-security/ports/AccountRecoveryTransaction";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
@@ -87,8 +88,8 @@ const withPublicStartResponseFloor = <A, E, R>(
     );
   });
 
-export const AccountRecoveryD1Layer = Layer.effect(
-  AccountRecovery,
+const AccountRecoveryTransactionD1Layer = Layer.effect(
+  AccountRecoveryTransaction,
   Effect.gen(function* () {
     const authFlowState = yield* AuthFlowState;
     const authRateLimit = yield* AuthRateLimit;
@@ -101,7 +102,7 @@ export const AccountRecoveryD1Layer = Layer.effect(
     const sessions = yield* Sessions;
     const verificationStore = yield* VerificationStore;
 
-    return AccountRecovery.of({
+    return AccountRecoveryTransaction.of({
       start: (untrusted) =>
         withPublicStartResponseFloor(
           Effect.gen(function* () {
@@ -570,4 +571,8 @@ export const AccountRecoveryD1Layer = Layer.effect(
         }),
     });
   })
+);
+
+export const AccountRecoveryD1Layer = AccountRecovery.layerNoDeps.pipe(
+  Layer.provide(AccountRecoveryTransactionD1Layer)
 );

@@ -11,8 +11,8 @@ import {
 import {
   InboundEmailRejected,
   InboundMailboxResolver,
-} from "#/modules/address-routing/application/InboundMailboxResolver";
-import type { InboundMailboxResolverService } from "#/modules/address-routing/application/InboundMailboxResolver";
+} from "#/modules/address-routing/ports/InboundMailboxResolver";
+import type { InboundMailboxResolverService } from "#/modules/address-routing/ports/InboundMailboxResolver";
 import type { InboundEmailRoutingMessage } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";

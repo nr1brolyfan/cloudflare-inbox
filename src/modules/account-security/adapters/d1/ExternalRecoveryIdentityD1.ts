@@ -39,6 +39,7 @@ import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequ
 import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { ExternalRecoveryIdentityChallenge } from "#/modules/account-security/ports/ExternalRecoveryIdentityChallenge";
 import { ExternalRecoveryIdentityDelivery } from "#/modules/account-security/ports/ExternalRecoveryIdentityDelivery";
+import { ExternalRecoveryIdentityTransaction } from "#/modules/account-security/ports/ExternalRecoveryIdentityTransaction";
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import {
@@ -269,8 +270,8 @@ const requireUnrestricted = (
     : Effect.fail(managementError(operation, "restricted-session"));
 
 /** Recovery lifecycle with session/challenge/audit changes committed atomically. */
-export const ExternalRecoveryIdentityD1Layer = Layer.effect(
-  ExternalRecoveryIdentityManagement,
+const ExternalRecoveryIdentityTransactionD1Layer = Layer.effect(
+  ExternalRecoveryIdentityTransaction,
   Effect.gen(function* () {
     const audit = yield* AdministrativeAudit;
     const batch = yield* ControlPlane.ControlPlaneBatch;
@@ -281,7 +282,7 @@ export const ExternalRecoveryIdentityD1Layer = Layer.effect(
     const runtime = yield* ExternalRecoveryIdentityRuntime;
     const stepUpClock = yield* SensitiveOperationStepUpClock;
 
-    return ExternalRecoveryIdentityManagement.of({
+    return ExternalRecoveryIdentityTransaction.of({
       enroll: (untrustedCommand) =>
         Effect.gen(function* () {
           const command = yield* Schema.decodeUnknownEffect(
@@ -688,3 +689,8 @@ export const ExternalRecoveryIdentityD1Layer = Layer.effect(
     });
   })
 );
+
+export const ExternalRecoveryIdentityD1Layer =
+  ExternalRecoveryIdentityManagement.layerNoDeps.pipe(
+    Layer.provide(ExternalRecoveryIdentityTransactionD1Layer)
+  );

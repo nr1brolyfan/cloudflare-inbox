@@ -5,19 +5,19 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { AiToolRunBudget } from "#/modules/ai/application/AiToolRunBudget";
+import {
+  AiToolCall,
+  AiToolSuccessResult,
+} from "#/modules/ai/domain/AiToolProtocol";
+import { AiToolAudit, AiToolAuditError } from "#/modules/ai/ports/AiToolAudit";
 import {
   AiToolExecutor,
   AiToolExecutorFoundationLayer,
   AiToolExecutorMailInteractiveLayer,
   CurrentAiToolScope,
   CurrentAiToolScopeSchema,
-} from "#/modules/ai/application/AiToolExecutor";
-import { AiToolRunBudgetLayer } from "#/modules/ai/application/AiToolRunBudget";
-import {
-  AiToolCall,
-  AiToolSuccessResult,
-} from "#/modules/ai/domain/AiToolProtocol";
-import { AiToolAudit, AiToolAuditError } from "#/modules/ai/ports/AiToolAudit";
+} from "#/modules/ai/ports/AiToolExecutor";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
@@ -93,7 +93,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
     const executorLayer = AiToolExecutorFoundationLayer.pipe(
       Layer.provide(
         Layer.merge(
-          AiToolRunBudgetLayer,
+          AiToolRunBudget.layerNoDeps,
           Layer.succeed(
             AiToolAudit,
             AiToolAudit.of({
@@ -141,7 +141,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
     const executorLayer = AiToolExecutorFoundationLayer.pipe(
       Layer.provide(
         Layer.merge(
-          AiToolRunBudgetLayer,
+          AiToolRunBudget.layerNoDeps,
           Layer.succeed(
             AiToolAudit,
             AiToolAudit.of({ record: () => Effect.void })
@@ -189,7 +189,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
     const executorLayer = AiToolExecutorMailInteractiveLayer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          AiToolRunBudgetLayer,
+          AiToolRunBudget.layerNoDeps,
           Layer.succeed(
             AiToolAudit,
             AiToolAudit.of({ record: () => Effect.fail(auditError()) })
@@ -262,7 +262,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
     const executorLayer = AiToolExecutorMailInteractiveLayer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          AiToolRunBudgetLayer,
+          AiToolRunBudget.layerNoDeps,
           Layer.succeed(
             AiToolAudit,
             AiToolAudit.of({

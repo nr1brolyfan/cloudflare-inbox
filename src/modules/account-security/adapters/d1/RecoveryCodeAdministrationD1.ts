@@ -26,6 +26,7 @@ import {
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { RecoveryCodeAdministrationTransaction } from "#/modules/account-security/ports/RecoveryCodeAdministrationTransaction";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
@@ -55,8 +56,8 @@ const ensureTrusted = (
     : Effect.die(new Error("Current request auth contexts are inconsistent"));
 };
 
-export const RecoveryCodeAdministrationD1Layer = Layer.effect(
-  RecoveryCodeAdministration,
+const RecoveryCodeAdministrationTransactionD1Layer = Layer.effect(
+  RecoveryCodeAdministrationTransaction,
   Effect.gen(function* () {
     const authRateLimit = yield* AuthRateLimit;
     const batch = yield* ControlPlane.ControlPlaneBatch;
@@ -64,7 +65,7 @@ export const RecoveryCodeAdministrationD1Layer = Layer.effect(
     const recoveryCodes = yield* RecoveryCodes;
     const stepUpClock = yield* SensitiveOperationStepUpClock;
 
-    return RecoveryCodeAdministration.of({
+    return RecoveryCodeAdministrationTransaction.of({
       generate: (untrusted) =>
         Effect.gen(function* () {
           yield* Schema.decodeUnknownEffect(GenerateRecoveryCodesCommand)(
@@ -278,3 +279,8 @@ export const RecoveryCodeAdministrationD1Layer = Layer.effect(
     });
   })
 );
+
+export const RecoveryCodeAdministrationD1Layer =
+  RecoveryCodeAdministration.layerNoDeps.pipe(
+    Layer.provide(RecoveryCodeAdministrationTransactionD1Layer)
+  );

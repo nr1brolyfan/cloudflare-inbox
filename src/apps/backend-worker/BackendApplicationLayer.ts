@@ -9,10 +9,8 @@ import {
 } from "#/modules/account-security/layers/AccountSecurityHttpLayer";
 import { AccountSecurityLayer } from "#/modules/account-security/layers/AccountSecurityLayer";
 import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
-import {
-  AdministrativeAuditApplicationLayer,
-  AdministrativeAuditRuntimeLayer,
-} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
+import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
+import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
 import { MailboxAuthorizationLayer } from "#/modules/authorization/layers/MailboxAuthorizationLayer";
 import { TrustedMailResourceTransport } from "#/modules/authorization/ports/TrustedMailResourceTransport";
@@ -34,7 +32,7 @@ import { BackendHttpApi } from "./BackendHttpApi";
 
 /** Builds the one Backend API from closed bounded-context HTTP graphs. */
 const AdministrativeAuditApplicationRuntimeLayer =
-  AdministrativeAuditApplicationLayer.pipe(
+  AdministrativeAudit.layerNoDeps.pipe(
     Layer.provide(AdministrativeAuditRuntimeLayer)
   );
 const AccountSecurityApplicationLayer = AccountSecurityLayer.pipe(

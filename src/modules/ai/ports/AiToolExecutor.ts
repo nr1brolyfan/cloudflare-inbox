@@ -30,6 +30,11 @@ import {
 } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import { OperationId } from "#/shared/Operation";
 
+import { AiToolRunBudget } from "../application/AiToolRunBudget";
+import type {
+  AiToolBudgetExceeded,
+  AiToolRunBudgetShape,
+} from "../application/AiToolRunBudget";
 import {
   AiToolAuditEvent,
   AiToolAuditReason,
@@ -65,9 +70,7 @@ import {
   mailSearchDefaultLimit,
   mailThreadMaxMessages,
 } from "../domain/MailTools";
-import { AiToolAudit } from "../ports/AiToolAudit";
-import { AiToolRunBudget } from "./AiToolRunBudget";
-import type { AiToolBudgetExceeded } from "./AiToolRunBudget";
+import { AiToolAudit } from "./AiToolAudit";
 
 export const CurrentAiToolScopeSchema = Schema.Struct({
   mailboxId: MailboxId,
@@ -662,7 +665,7 @@ const operationIdFrom = (runId: AiToolRunId, callId: AiToolCall["callId"]) => {
 
 const mailExecutor = (
   audit: AiToolAudit,
-  budget: AiToolRunBudget,
+  budget: AiToolRunBudgetShape,
   reading: MailboxMessageReadingService,
   editing?: MailboxDraftEditingService
 ) =>

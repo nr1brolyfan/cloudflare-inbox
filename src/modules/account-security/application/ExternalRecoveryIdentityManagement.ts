@@ -3,11 +3,13 @@ import { ChallengeIdSchema } from "@effect-auth/core/Identifiers";
 import type * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { ExternalRecoveryIdentitySchema } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { ExternalRecoveryIdentityTransaction } from "#/modules/account-security/ports/ExternalRecoveryIdentityTransaction";
 import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { Version } from "#/modules/mailbox/domain/Mailbox";
 import type { BackendRequestContext } from "#/shared/BackendRequestContext";
@@ -82,4 +84,10 @@ export interface ExternalRecoveryIdentityManagementShape {
 export class ExternalRecoveryIdentityManagement extends Context.Service<
   ExternalRecoveryIdentityManagement,
   ExternalRecoveryIdentityManagementShape
->()("cloudflare-inbox/ExternalRecoveryIdentityManagement") {}
+>()("cloudflare-inbox/ExternalRecoveryIdentityManagement", {
+  make: Effect.gen(function* () {
+    return yield* ExternalRecoveryIdentityTransaction;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

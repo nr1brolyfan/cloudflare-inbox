@@ -66,6 +66,7 @@ import {
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { PasskeyEnrollmentTransaction } from "#/modules/account-security/ports/PasskeyEnrollmentTransaction";
 import { PasskeyRuntimeConfig } from "#/modules/account-security/ports/PasskeyRuntimeConfig";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
@@ -133,8 +134,8 @@ const backedUpValue = (value: boolean | undefined) => {
 };
 
 /** Guarded first-passkey enrollment over the maintained effect-auth primitives. */
-export const PasskeyEnrollmentD1Layer = Layer.effect(
-  PasskeyEnrollment,
+const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
+  PasskeyEnrollmentTransaction,
   Effect.gen(function* () {
     const batch = yield* ControlPlane.ControlPlaneBatch;
     const authRateLimit = yield* AuthRateLimit;
@@ -247,7 +248,7 @@ export const PasskeyEnrollmentD1Layer = Layer.effect(
         return { recovery, recoveryMode, requestAuth };
       });
 
-    return PasskeyEnrollment.of({
+    return PasskeyEnrollmentTransaction.of({
       start: (untrusted) =>
         Effect.gen(function* () {
           yield* Schema.decodeUnknownEffect(StartPasskeyEnrollmentCommand)(
@@ -971,4 +972,8 @@ export const PasskeyEnrollmentD1Layer = Layer.effect(
         }),
     });
   })
+);
+
+export const PasskeyEnrollmentD1Layer = PasskeyEnrollment.layerNoDeps.pipe(
+  Layer.provide(PasskeyEnrollmentTransactionD1Layer)
 );

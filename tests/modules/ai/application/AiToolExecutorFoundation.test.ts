@@ -4,17 +4,7 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import {
-  AiToolExecutor,
-  AiToolExecutorFoundationLayer,
-  CurrentAiToolScope,
-  CurrentAiToolScopeSchema,
-} from "#/modules/ai/application/AiToolExecutor";
-import type {
-  AiToolExecutor as AiToolExecutorService,
-  CurrentAiToolScope as CurrentAiToolScopeValue,
-} from "#/modules/ai/application/AiToolExecutor";
-import { AiToolRunBudgetLayer } from "#/modules/ai/application/AiToolRunBudget";
+import { AiToolRunBudget } from "#/modules/ai/application/AiToolRunBudget";
 import { AiToolAuditEvent } from "#/modules/ai/domain/AiToolAuditEvent";
 import {
   AiToolArguments,
@@ -39,6 +29,16 @@ import type {
 } from "#/modules/ai/domain/AiToolProtocol";
 import { AiToolAudit } from "#/modules/ai/ports/AiToolAudit";
 import type { AiToolAudit as AiToolAuditService } from "#/modules/ai/ports/AiToolAudit";
+import {
+  AiToolExecutor,
+  AiToolExecutorFoundationLayer,
+  CurrentAiToolScope,
+  CurrentAiToolScopeSchema,
+} from "#/modules/ai/ports/AiToolExecutor";
+import type {
+  AiToolExecutor as AiToolExecutorService,
+  CurrentAiToolScope as CurrentAiToolScopeValue,
+} from "#/modules/ai/ports/AiToolExecutor";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 
 const call = Schema.decodeUnknownSync(AiToolCall)({
@@ -71,7 +71,7 @@ const AiToolAuditTestLayer = Layer.succeed(
 );
 
 const AiToolExecutorTestLayer = AiToolExecutorFoundationLayer.pipe(
-  Layer.provide(Layer.merge(AiToolAuditTestLayer, AiToolRunBudgetLayer))
+  Layer.provide(Layer.merge(AiToolAuditTestLayer, AiToolRunBudget.layerNoDeps))
 );
 
 const executeWithVisibleRequirements = (

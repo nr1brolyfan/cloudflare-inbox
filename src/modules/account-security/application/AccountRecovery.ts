@@ -1,6 +1,7 @@
 import type { IssuedSession } from "@effect-auth/core/Sessions";
 import * as Context from "effect/Context";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import type * as Schema from "effect/Schema";
 
 import type {
@@ -9,6 +10,7 @@ import type {
   CompleteAccountRecoveryCommand,
   StartAccountRecoveryCommand,
 } from "#/modules/account-security/domain/AccountRecovery";
+import { AccountRecoveryTransaction } from "#/modules/account-security/ports/AccountRecoveryTransaction";
 
 export interface AccountRecoveryService {
   readonly complete: (
@@ -22,4 +24,10 @@ export interface AccountRecoveryService {
 export class AccountRecovery extends Context.Service<
   AccountRecovery,
   AccountRecoveryService
->()("cloudflare-inbox/AccountRecovery") {}
+>()("cloudflare-inbox/AccountRecovery", {
+  make: Effect.gen(function* () {
+    return yield* AccountRecoveryTransaction;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

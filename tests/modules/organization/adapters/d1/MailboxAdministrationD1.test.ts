@@ -19,10 +19,8 @@ import { describe, expect, it } from "vitest";
 import { CONTROL_PLANE_STEP_UP_POLICY } from "#/modules/account-security/domain/StepUpPolicy";
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import {
-  AdministrativeAuditApplicationLayer,
-  AdministrativeAuditRuntimeLayer,
-} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
+import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
+import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
 import { MailboxAuthorizationApplicationLayer } from "#/modules/authorization/application/MailboxAuthorization";
 import {
@@ -77,7 +75,7 @@ const requestContext = Schema.decodeUnknownSync(BackendRequestContext)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
 });
-const administrativeAuditLayer = AdministrativeAuditApplicationLayer.pipe(
+const administrativeAuditLayer = AdministrativeAudit.layerNoDeps.pipe(
   Layer.provide(AdministrativeAuditRuntimeLayer)
 );
 

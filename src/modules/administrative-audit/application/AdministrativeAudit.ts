@@ -1,21 +1,25 @@
+/* oxlint-disable max-classes-per-file -- Audit event and its application service form one cohesive boundary. */
 import { UserIdSchema } from "@effect-auth/core/Identifiers";
-import type * as AuthPermission from "@effect-auth/core/Permission";
+import * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { ExternalRecoveryIdentityId } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
-import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { AdministrativeAuditRuntime } from "#/modules/administrative-audit/ports/AdministrativeAuditRuntime";
 import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
 import {
   BackendCorrelationId,
   BackendRequestId,
+  CurrentBackendRequestContext,
 } from "#/shared/BackendRequestContext";
 import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 
-import type { AdministrativeAuditError } from "./AdministrativeAuditError";
+import { AdministrativeAuditError } from "./AdministrativeAuditError";
 
 export const AdministrativeAuditEventId = Schema.String.pipe(
   Schema.check(
@@ -210,7 +214,7 @@ export type PrepareAdministrativeAuditEvent = Schema.Schema.Type<
   typeof PrepareAdministrativeAuditEvent
 >;
 
-export interface AdministrativeAudit {
+export interface AdministrativeAuditShape {
   readonly prepare: (
     input: PrepareAdministrativeAuditEvent
   ) => Effect.Effect<
@@ -220,7 +224,163 @@ export interface AdministrativeAudit {
   >;
 }
 
+const eventDetails = (input: PrepareAdministrativeAuditEvent) => {
+  if (input._tag === "MailboxBootstrapped") {
+    return {
+      action: "mailbox.owner-bootstrap" as const,
+      change: {
+        _tag: "MailboxBootstrapped" as const,
+        afterVersion: Schema.decodeUnknownSync(Version)(1),
+      },
+      reasonCode: "owner-bootstrap" as const,
+      resource: { _tag: "Mailbox" as const, id: input.mailboxId },
+      tenantScope: {
+        _tag: "LegacyMailbox" as const,
+        mailboxId: input.mailboxId,
+      },
+    };
+  }
+  if (input._tag === "MailboxRenamed") {
+    return {
+      action: "mailbox.rename" as const,
+      change: {
+        _tag: "MailboxRenamed" as const,
+        afterVersion: Schema.decodeUnknownSync(Version)(
+          input.beforeVersion + 1
+        ),
+        beforeVersion: input.beforeVersion,
+        changedField: "displayName" as const,
+      },
+      reasonCode: "mailbox-renamed" as const,
+      resource: { _tag: "Mailbox" as const, id: input.mailboxId },
+      tenantScope: {
+        _tag: "LegacyMailbox" as const,
+        mailboxId: input.mailboxId,
+      },
+    };
+  }
+  if (input._tag === "ExternalRecoveryIdentityEnrolled") {
+    return {
+      action: "external-recovery-identity.enroll" as const,
+      change: {
+        _tag: "ExternalRecoveryIdentityEnrolled" as const,
+        afterVersion: Schema.decodeUnknownSync(Version)(1),
+      },
+      reasonCode: "recovery-enrolled" as const,
+      resource: {
+        _tag: "ExternalRecoveryIdentity" as const,
+        id: input.identityId,
+      },
+      tenantScope: { _tag: "Global" as const },
+    };
+  }
+  if (input._tag === "ExternalRecoveryIdentityVerified") {
+    return {
+      action: "external-recovery-identity.verify" as const,
+      change: {
+        _tag: "ExternalRecoveryIdentityVerified" as const,
+        afterVersion: Schema.decodeUnknownSync(Version)(
+          input.beforeVersion + 1
+        ),
+        beforeVersion: input.beforeVersion,
+      },
+      reasonCode: "recovery-verified" as const,
+      resource: {
+        _tag: "ExternalRecoveryIdentity" as const,
+        id: input.identityId,
+      },
+      tenantScope: { _tag: "Global" as const },
+    };
+  }
+  return {
+    action: "external-recovery-identity.revoke" as const,
+    change: {
+      _tag: "ExternalRecoveryIdentityRevoked" as const,
+      afterVersion: Schema.decodeUnknownSync(Version)(input.beforeVersion + 1),
+      beforeVersion: input.beforeVersion,
+    },
+    reasonCode: "recovery-revoked" as const,
+    resource: {
+      _tag: "ExternalRecoveryIdentity" as const,
+      id: input.identityId,
+    },
+    tenantScope: { _tag: "Global" as const },
+  };
+};
+
 /** Prepares immutable audit metadata; concrete mutation adapters persist it atomically. */
-export const AdministrativeAudit = Context.Service<AdministrativeAudit>(
-  "cloudflare-inbox/AdministrativeAudit"
-);
+export class AdministrativeAudit extends Context.Service<
+  AdministrativeAudit,
+  AdministrativeAuditShape
+>()("cloudflare-inbox/AdministrativeAudit", {
+  make: Effect.gen(function* () {
+    const runtime = yield* AdministrativeAuditRuntime;
+
+    return {
+      prepare: (input) =>
+        Effect.gen(function* () {
+          const principal = yield* AuthPermission.CurrentPrincipal;
+          const requestAuth = yield* CurrentRequestAuth;
+          const requestContext = yield* CurrentBackendRequestContext;
+          if (
+            principal.type !== "user" ||
+            principal.id !== requestAuth.validated.actor.userId
+          ) {
+            return yield* new AdministrativeAuditError({
+              cause: new Error("Administrative audit actor contexts differ"),
+              reason: "invalid-context",
+            });
+          }
+
+          const details = eventDetails(input);
+          const digest = yield* runtime
+            .digestSha256(
+              JSON.stringify([
+                1,
+                input.operationId,
+                details.action,
+                details.resource._tag,
+                details.resource.id,
+                "succeeded",
+              ])
+            )
+            .pipe(
+              Effect.mapError(
+                (cause) =>
+                  new AdministrativeAuditError({ cause, reason: "digest" })
+              )
+            );
+          const eventId = Schema.decodeUnknownSync(AdministrativeAuditEventId)(
+            `admin-audit-sha256:${digest}`
+          );
+
+          return yield* Schema.decodeUnknownEffect(
+            AdministrativeAuditEventSchema
+          )({
+            ...details,
+            actor: { id: principal.id, type: "user" },
+            eventId,
+            eventVersion: 1,
+            occurredAt: input.occurredAt,
+            operationId: input.operationId,
+            outcome: "succeeded",
+            requestContext: {
+              correlationId: requestContext.correlationId,
+              requestId: requestContext.requestId,
+            },
+            schemaVersion: 1,
+          }).pipe(
+            Effect.mapError(
+              (cause) =>
+                new AdministrativeAuditError({
+                  cause,
+                  reason: "invalid-event",
+                })
+            )
+          );
+        }),
+    } satisfies AdministrativeAuditShape;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

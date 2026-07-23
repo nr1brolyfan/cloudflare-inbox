@@ -24,51 +24,51 @@ export interface PasswordResetEligibilityShape {
   ) => Effect.Effect<boolean, PasswordResetEligibilityError>;
 }
 
-const makePasswordResetEligibility = Effect.gen(function* () {
-  const credentials = yield* CredentialStore;
-  const identities = yield* IdentityStore;
-  const identityKinds = yield* IdentityKindRegistry;
-  const hasActivePasswordForUserId = (userId: UserId) =>
-    credentials.findPasswordByUserId(userId).pipe(
-      Effect.mapError((cause) => new PasswordResetEligibilityError({ cause })),
-      Effect.map(
-        (credential) =>
-          Option.isSome(credential) && credential.value.revokedAt === undefined
-      )
-    );
-
-  return {
-    hasActivePassword: (input) =>
-      Effect.gen(function* () {
-        const normalized = yield* identityKinds
-          .normalize(input)
-          .pipe(Effect.option);
-        if (Option.isNone(normalized)) {
-          return false;
-        }
-        const identity = yield* identities
-          .findByKindAndNormalizedValue(normalized.value)
-          .pipe(
-            Effect.mapError(
-              (cause) => new PasswordResetEligibilityError({ cause })
-            )
-          );
-        if (Option.isNone(identity)) {
-          return false;
-        }
-        return yield* hasActivePasswordForUserId(identity.value.userId);
-      }),
-    hasActivePasswordForUserId,
-  } satisfies PasswordResetEligibilityShape;
-});
-
 /** Keeps password reset from becoming an implicit first-factor enrollment. */
 export class PasswordResetEligibility extends Context.Service<
   PasswordResetEligibility,
   PasswordResetEligibilityShape
->()("cloudflare-inbox/PasswordResetEligibility") {
-  static readonly layerNoDeps = Layer.effect(
-    this,
-    makePasswordResetEligibility
-  );
+>()("cloudflare-inbox/PasswordResetEligibility", {
+  make: Effect.gen(function* () {
+    const credentials = yield* CredentialStore;
+    const identities = yield* IdentityStore;
+    const identityKinds = yield* IdentityKindRegistry;
+    const hasActivePasswordForUserId = (userId: UserId) =>
+      credentials.findPasswordByUserId(userId).pipe(
+        Effect.mapError(
+          (cause) => new PasswordResetEligibilityError({ cause })
+        ),
+        Effect.map(
+          (credential) =>
+            Option.isSome(credential) &&
+            credential.value.revokedAt === undefined
+        )
+      );
+
+    return {
+      hasActivePassword: (input) =>
+        Effect.gen(function* () {
+          const normalized = yield* identityKinds
+            .normalize(input)
+            .pipe(Effect.option);
+          if (Option.isNone(normalized)) {
+            return false;
+          }
+          const identity = yield* identities
+            .findByKindAndNormalizedValue(normalized.value)
+            .pipe(
+              Effect.mapError(
+                (cause) => new PasswordResetEligibilityError({ cause })
+              )
+            );
+          if (Option.isNone(identity)) {
+            return false;
+          }
+          return yield* hasActivePasswordForUserId(identity.value.userId);
+        }),
+      hasActivePasswordForUserId,
+    } satisfies PasswordResetEligibilityShape;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
 }

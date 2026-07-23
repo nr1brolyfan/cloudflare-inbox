@@ -39,6 +39,7 @@ import {
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
 import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
 import type { CurrentRequestAuthShape } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { PasskeyCredentialAdministrationTransaction } from "#/modules/account-security/ports/PasskeyCredentialAdministrationTransaction";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
@@ -98,8 +99,8 @@ const requireUnrestricted = (
     : Effect.fail(failure(operation, "restricted-session"));
 
 /** Privacy-safe passkey inventory and replay-safe destructive administration. */
-export const PasskeyCredentialAdministrationD1Layer = Layer.effect(
-  PasskeyCredentialAdministration,
+const PasskeyCredentialAdministrationTransactionD1Layer = Layer.effect(
+  PasskeyCredentialAdministrationTransaction,
   Effect.gen(function* () {
     const authRateLimit = yield* AuthRateLimit;
     const batch = yield* ControlPlane.ControlPlaneBatch;
@@ -164,7 +165,7 @@ export const PasskeyCredentialAdministrationD1Layer = Layer.effect(
           )
         );
 
-    return PasskeyCredentialAdministration.of({
+    return PasskeyCredentialAdministrationTransaction.of({
       list: (untrusted) =>
         Effect.gen(function* () {
           yield* Schema.decodeUnknownEffect(ListPasskeyCredentialsQuery)(
@@ -625,3 +626,8 @@ export const PasskeyCredentialAdministrationD1Layer = Layer.effect(
     });
   })
 );
+
+export const PasskeyCredentialAdministrationD1Layer =
+  PasskeyCredentialAdministration.layerNoDeps.pipe(
+    Layer.provide(PasskeyCredentialAdministrationTransactionD1Layer)
+  );

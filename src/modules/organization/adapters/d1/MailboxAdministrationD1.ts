@@ -46,6 +46,7 @@ import {
   MailboxDisplayName,
   MailboxRecordSchema,
 } from "#/modules/organization/domain/Mailbox";
+import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
 import { UnixMillis } from "#/shared/Temporal";
 
 import { authUserIdentity } from "../../../../auth/schema/modules/core";
@@ -252,8 +253,8 @@ const RenamedMailboxRow = Schema.Struct({
 const CreatedMailboxRow = Schema.Struct({ id: Schema.String });
 
 /** Transactional mailbox service built from explicit Effect configuration. */
-export const MailboxAdministrationD1Layer = Layer.effect(
-  MailboxAdministration,
+const MailboxAdministrationTransactionD1Layer = Layer.effect(
+  MailboxAdministrationTransaction,
   Effect.gen(function* () {
     const options = yield* MailboxAdministrationConfig;
     const runtime = yield* MailboxAdministrationRuntime;
@@ -266,7 +267,7 @@ export const MailboxAdministrationD1Layer = Layer.effect(
     const { now, randomId } = runtime;
     const ownerEmail = normalizeEmailAddressDomain(configuredOwnerEmail);
 
-    return MailboxAdministration.of({
+    return MailboxAdministrationTransaction.of({
       bootstrapOwner: (input) =>
         Effect.gen(function* () {
           const requestAuth = yield* CurrentRequestAuth;
@@ -705,3 +706,8 @@ export const MailboxAdministrationD1Layer = Layer.effect(
     });
   })
 );
+
+export const MailboxAdministrationD1Layer =
+  MailboxAdministration.layerNoDeps.pipe(
+    Layer.provide(MailboxAdministrationTransactionD1Layer)
+  );

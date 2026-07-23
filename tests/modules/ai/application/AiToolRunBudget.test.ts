@@ -5,7 +5,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   AiToolRunBudget,
-  AiToolRunBudgetLayer,
   aiToolRunLimits,
 } from "#/modules/ai/application/AiToolRunBudget";
 import { AiToolCallId, AiToolName } from "#/modules/ai/domain/AiToolProtocol";
@@ -35,7 +34,7 @@ describe("AI tool run budget", () => {
           toolName("mail_read")
         );
       }
-    }).pipe(Effect.provide(AiToolRunBudgetLayer));
+    }).pipe(Effect.provide(AiToolRunBudget.layerNoDeps));
 
     await expect(Effect.runPromise(consumeRun)).resolves.toBeUndefined();
     await expect(Effect.runPromise(consumeRun)).resolves.toBeUndefined();
@@ -53,7 +52,7 @@ describe("AI tool run budget", () => {
               .pipe(Effect.result),
           { concurrency: "unbounded" }
         );
-      }).pipe(Effect.provide(AiToolRunBudgetLayer))
+      }).pipe(Effect.provide(AiToolRunBudget.layerNoDeps))
     );
 
     expect(results.filter((result) => result._tag === "Success")).toHaveLength(
@@ -85,7 +84,7 @@ describe("AI tool run budget", () => {
         expect(mutationFailure).toMatchObject({
           failure: { limit: "mutations" },
         });
-      }).pipe(Effect.provide(AiToolRunBudgetLayer))
+      }).pipe(Effect.provide(AiToolRunBudget.layerNoDeps))
     );
 
     await Effect.runPromise(
@@ -102,7 +101,7 @@ describe("AI tool run budget", () => {
           .consumeInput(read7, "read", 1)
           .pipe(Effect.result);
         expect(readFailure).toMatchObject({ failure: { limit: "reads" } });
-      }).pipe(Effect.provide(AiToolRunBudgetLayer))
+      }).pipe(Effect.provide(AiToolRunBudget.layerNoDeps))
     );
   });
 
@@ -136,7 +135,7 @@ describe("AI tool run budget", () => {
         ).toMatchObject({
           failure: { limit: "aggregate-argument-bytes" },
         });
-      }).pipe(Effect.provide(AiToolRunBudgetLayer))
+      }).pipe(Effect.provide(AiToolRunBudget.layerNoDeps))
     );
   });
 
@@ -162,7 +161,7 @@ describe("AI tool run budget", () => {
             .consumeCall(id, toolName("mail_search"))
             .pipe(Effect.result)
         ).toMatchObject({ failure: { limit: "replay-mismatch" } });
-      }).pipe(Effect.provide(AiToolRunBudgetLayer))
+      }).pipe(Effect.provide(AiToolRunBudget.layerNoDeps))
     );
   });
 
@@ -184,7 +183,7 @@ describe("AI tool run budget", () => {
         ).toMatchObject({
           failure: { limit: "aggregate-result-bytes" },
         });
-      }).pipe(Effect.provide(AiToolRunBudgetLayer))
+      }).pipe(Effect.provide(AiToolRunBudget.layerNoDeps))
     );
   });
 });

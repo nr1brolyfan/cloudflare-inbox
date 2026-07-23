@@ -14,6 +14,7 @@ import {
   MailboxNavigationResult,
 } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import { MailboxNavigationReader } from "#/modules/organization/ports/MailboxNavigationReader";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { appMailbox, appMailboxMember } from "./OrganizationSchema";
@@ -34,14 +35,14 @@ const mapDirectoryError = (error: MailboxDomainError | unknown) =>
     : navigationError("storage", error);
 
 /** D1 mailbox discovery combined with authorized MailboxDO directory reads. */
-export const MailboxNavigationD1Layer = Layer.effect(
-  MailboxNavigation,
+const MailboxNavigationReaderD1Layer = Layer.effect(
+  MailboxNavigationReader,
   Effect.gen(function* () {
     const authorization = yield* MailboxAuthorization;
     const controlPlane = yield* ControlPlaneDatabase;
     const directoryRepository = yield* MailboxDirectoryRepository;
 
-    return MailboxNavigation.of({
+    return MailboxNavigationReader.of({
       getCurrent: Effect.gen(function* () {
         const actor = yield* CurrentActor;
         const [row] = yield* controlPlane
@@ -112,4 +113,8 @@ export const MailboxNavigationD1Layer = Layer.effect(
       }),
     });
   })
+);
+
+export const MailboxNavigationD1Layer = MailboxNavigation.layerNoDeps.pipe(
+  Layer.provide(MailboxNavigationReaderD1Layer)
 );

@@ -38,10 +38,8 @@ import { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequ
 import { ExternalRecoveryIdentityChallenge } from "#/modules/account-security/ports/ExternalRecoveryIdentityChallenge";
 import { ExternalRecoveryIdentityDelivery } from "#/modules/account-security/ports/ExternalRecoveryIdentityDelivery";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
-import {
-  AdministrativeAuditApplicationLayer,
-  AdministrativeAuditRuntimeLayer,
-} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
+import { AdministrativeAudit } from "#/modules/administrative-audit/application/AdministrativeAudit";
+import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import {
@@ -214,7 +212,7 @@ const managementLive = (
   return ExternalRecoveryIdentityD1Layer.pipe(
     Layer.provide(
       Layer.mergeAll(
-        AdministrativeAuditApplicationLayer.pipe(
+        AdministrativeAudit.layerNoDeps.pipe(
           Layer.provide(AdministrativeAuditRuntimeLayer)
         ),
         challengeLive,

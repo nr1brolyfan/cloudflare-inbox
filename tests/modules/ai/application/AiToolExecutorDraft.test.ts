@@ -6,15 +6,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import {
-  AiToolExecutor,
-  AiToolExecutorMailInteractiveLayer,
-  AiToolExecutorMailReadOnlyLayer,
-  CurrentAiToolScope,
-  CurrentAiToolScopeSchema,
-} from "#/modules/ai/application/AiToolExecutor";
-import { AiToolRunBudgetLayer } from "#/modules/ai/application/AiToolRunBudget";
-import type { AiToolRunBudget } from "#/modules/ai/application/AiToolRunBudget";
+import { AiToolRunBudget } from "#/modules/ai/application/AiToolRunBudget";
 import { AiToolAuditEvent } from "#/modules/ai/domain/AiToolAuditEvent";
 import {
   AiToolCall,
@@ -29,6 +21,13 @@ import {
   mailPlainTextMaxLength,
 } from "#/modules/ai/domain/MailTools";
 import { AiToolAudit } from "#/modules/ai/ports/AiToolAudit";
+import {
+  AiToolExecutor,
+  AiToolExecutorMailInteractiveLayer,
+  AiToolExecutorMailReadOnlyLayer,
+  CurrentAiToolScope,
+  CurrentAiToolScopeSchema,
+} from "#/modules/ai/ports/AiToolExecutor";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
@@ -130,7 +129,7 @@ const execute = (
         Layer.provide(
           Layer.mergeAll(
             AuditTestLayer,
-            AiToolRunBudgetLayer,
+            AiToolRunBudget.layerNoDeps,
             Layer.succeed(MailboxDraftEditing, editing),
             Layer.succeed(MailboxMessageReading, reading)
           )
@@ -488,7 +487,7 @@ describe("mail create draft tool", () => {
               Layer.merge(
                 AuditTestLayer,
                 Layer.merge(
-                  AiToolRunBudgetLayer,
+                  AiToolRunBudget.layerNoDeps,
                   Layer.succeed(MailboxMessageReading, reading)
                 )
               )

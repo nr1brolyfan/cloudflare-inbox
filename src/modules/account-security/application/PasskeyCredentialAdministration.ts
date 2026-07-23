@@ -2,10 +2,12 @@
 import type * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { PasskeyCredentialAdministrationTransaction } from "#/modules/account-security/ports/PasskeyCredentialAdministrationTransaction";
 import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
@@ -105,4 +107,10 @@ export interface PasskeyCredentialAdministrationShape {
 export class PasskeyCredentialAdministration extends Context.Service<
   PasskeyCredentialAdministration,
   PasskeyCredentialAdministrationShape
->()("cloudflare-inbox/PasskeyCredentialAdministration") {}
+>()("cloudflare-inbox/PasskeyCredentialAdministration", {
+  make: Effect.gen(function* () {
+    return yield* PasskeyCredentialAdministrationTransaction;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

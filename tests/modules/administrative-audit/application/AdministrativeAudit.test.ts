@@ -18,10 +18,7 @@ import {
   AdministrativeAudit,
   AdministrativeAuditEventSchema,
 } from "#/modules/administrative-audit/application/AdministrativeAudit";
-import {
-  AdministrativeAuditApplicationLayer,
-  AdministrativeAuditRuntimeLayer,
-} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
+import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   BackendRequestContext,
@@ -74,7 +71,7 @@ const prepareBootstrap = (principalId = "user-a") =>
     });
   }).pipe(
     Effect.provide(
-      AdministrativeAuditApplicationLayer.pipe(
+      AdministrativeAudit.layerNoDeps.pipe(
         Layer.provide(AdministrativeAuditRuntimeLayer)
       )
     ),

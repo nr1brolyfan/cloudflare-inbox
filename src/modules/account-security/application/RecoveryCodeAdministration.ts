@@ -2,10 +2,12 @@
 import type * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { RecoveryCodeAdministrationTransaction } from "#/modules/account-security/ports/RecoveryCodeAdministrationTransaction";
 import { UnixMillis } from "#/shared/Temporal";
 
 import type { AccountSecurityCommitState } from "./AccountSecurityCommitState";
@@ -67,4 +69,10 @@ export interface RecoveryCodeAdministrationService {
 export class RecoveryCodeAdministration extends Context.Service<
   RecoveryCodeAdministration,
   RecoveryCodeAdministrationService
->()("cloudflare-inbox/RecoveryCodeAdministration") {}
+>()("cloudflare-inbox/RecoveryCodeAdministration", {
+  make: Effect.gen(function* () {
+    return yield* RecoveryCodeAdministrationTransaction;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

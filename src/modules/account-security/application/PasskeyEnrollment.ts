@@ -7,10 +7,12 @@ import type * as AuthPermission from "@effect-auth/core/Permission";
 import type { IssuedSession } from "@effect-auth/core/Sessions";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import type { CurrentRequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";
+import { PasskeyEnrollmentTransaction } from "#/modules/account-security/ports/PasskeyEnrollmentTransaction";
 import type { BackendRequestContext } from "#/shared/BackendRequestContext";
 import { AdministrativeOperationId } from "#/shared/Operation";
 
@@ -132,4 +134,10 @@ export interface PasskeyEnrollmentShape {
 export class PasskeyEnrollment extends Context.Service<
   PasskeyEnrollment,
   PasskeyEnrollmentShape
->()("cloudflare-inbox/PasskeyEnrollment") {}
+>()("cloudflare-inbox/PasskeyEnrollment", {
+  make: Effect.gen(function* () {
+    return yield* PasskeyEnrollmentTransaction;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

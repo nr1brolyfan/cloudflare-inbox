@@ -4,11 +4,11 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
+import { normalizeEmailAddressDomain } from "#/modules/address-routing/domain/EmailAddress";
 import {
   InboundEmailRejected,
   InboundMailboxResolver,
-} from "#/modules/address-routing/application/InboundMailboxResolver";
-import { normalizeEmailAddressDomain } from "#/modules/address-routing/domain/EmailAddress";
+} from "#/modules/address-routing/ports/InboundMailboxResolver";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { activeOrganizationMailboxPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";

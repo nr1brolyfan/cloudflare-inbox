@@ -3,7 +3,8 @@ import type { CurrentPrincipal } from "@effect-auth/core/Permission";
 import type { CurrentActor } from "@effect-auth/core/Sessions";
 import * as Context from "effect/Context";
 import * as Data from "effect/Data";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import {
@@ -16,6 +17,7 @@ import {
 } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import { MailboxNavigationReader } from "#/modules/organization/ports/MailboxNavigationReader";
 
 export class MailboxNavigationMailbox extends Schema.Class<MailboxNavigationMailbox>(
   "cloudflare-inbox/MailboxNavigationMailbox"
@@ -84,4 +86,10 @@ export interface MailboxNavigationService {
 export class MailboxNavigation extends Context.Service<
   MailboxNavigation,
   MailboxNavigationService
->()("cloudflare-inbox/MailboxNavigation") {}
+>()("cloudflare-inbox/MailboxNavigation", {
+  make: Effect.gen(function* () {
+    return yield* MailboxNavigationReader;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}
