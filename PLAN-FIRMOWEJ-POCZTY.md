@@ -4,11 +4,11 @@ Kompletny plan przejścia z jednej skrzynki do modelu organizacji, wielu izolowa
 
 ## Status
 
-- Ostatnia aktualizacja: 2026-07-23
+- Ostatnia aktualizacja: 2026-07-24
 - Stan: `IN PROGRESS`
 - Aktualny etap: `1. Fundament bezpieczeństwa i operacji`
-- Aktualne zadanie: `SAFE-005` backup i identity-preserving restore
-- Następne zadanie: `SAFE-007` transakcyjny session oraz authorization recheck
+- Aktualne zadanie: `SAFE-007` transakcyjny session oraz authorization recheck
+- Następne zadanie: `SAFE-008` bazowy limit rozmiaru inbound przed zapisem raw MIME
 - Zakres pierwszego wydania: jedna organizacja i jedna domena na wdrożenie, ale model danych od początku tenant-aware
 - Migracja układu źródeł i zależności: `DONE` zgodnie z [Architecture Migration Guide](docs/architecture-migration-guide.md); nie oznacza to ukończenia produktu organization/multi-mailbox
 - Źródło prawdy dla istniejącego v1: `TODO.md`
@@ -482,6 +482,7 @@ Cel: przed rozszerzeniem liczby użytkowników i skrzynek domknąć mechanizmy w
 - [x] SAFE-003 Wprowadzić wersjonowaną macierz session requirements dla całej grupy mailbox operations. Macierz `mailbox-session-requirements` version 1 obejmuje dokładnie 19 bieżących endpoint identifiers i oznacza każdy jako `unrestricted-only`; policy-neutral authentication dostarcza zaufaną sesję, a group middleware sprawdza identifier przed handlerem i domyślnie odrzuca operację nieznaną, restricted session, nieukończone requirement oraz malformed lub dangling recovery capability. Generyczny pure evaluator dopuszcza przyszły wyjątek wyłącznie jako exact singleton recovery requirement i exact singleton capability bez dodatkowych requirement, capability lub drugiego kontenera. Odmowa HTTP jest zawsze zanonimizowanym `Mailbox operation denied`, a transakcyjny D1 predicate recovery remediation wymaga exact singleton `second-passkey`. Testy wiążą komplet kluczy macierzy z endpointami, pokrywają sukces i odmowę dla wszystkich 19 operacji, pełne malformed/dangling/unknown/exact-capability vectors w pure policy oraz exact, overbroad, duplicate i second-container przypadki w SQL.
 - [x] SAFE-004 Dodać wersjonowany append-only administracyjny audit event store, privacy contract i atomowe API zapisu używane przez kolejne etapy. D1 wymusza zamkniętą taksonomię i spójność metadanych, opaque UUID v4 dla operation ID, blokuje update/delete/conflict replacement oraz indeksuje operation, tenant, actor, resource i action; owner bootstrap, mailbox rename oraz external recovery enrollment/verification zapisują sukces w tym samym batchu co mutacja, a odmowa nie tworzy zdarzenia. Typed prepare contract obejmuje także przyszłe recovery revoke bez publicznego niezależnego write API i bez generic JSON, treści wiadomości, adresów email, sekretów lub tokenów. Replay/readback i pełna idempotency pozostają w SAFE-006.
 - [ ] SAFE-005 Dodać backup D1, R2 i każdego MailboxDO SQLite wraz z procedurą identity-preserving restore przed pierwszą migracją destrukcyjną.
+  Decyzja operacyjna 2026-07-24: archiwum pozostaje Cloudflare-only w osobnym prywatnym R2 bucket z retention lock, szyfrowaniem, osobnymi least-privilege credentials i writerem bez prawa delete; przyjęte cele to RPO 24 h, RTO 4 h i retencja 35 dni. Zadanie pozostaje otwarte i nieblokujące dla kolejnych niedestrukcyjnych prac foundation, ponieważ brak obecnie Cloudflare credentials oraz datowanego staging backup/identity-preserving restore drill. Blokuje jednak ukończenie etapu 1, produkcyjne uruchomienie firmowej poczty oraz każdą nową destrukcyjną migrację; lokalny manifest, rehearsal lub test nie zastępuje wymaganego evidence środowiskowego.
 - [x] SAFE-006 Dodać operation ID, expected version i readback dla skończonego bieżącego inwentarza mutacji control plane: mailbox bootstrap/rename, external recovery enroll/verify, recovery-code rotation, account-recovery consume, normal/recovery passkey finish oraz passkey revoke. Każda pozycja ma właściwy immutable typed receipt, exact replay, operation-conflict, unknown-commit recovery i bezpieczny readback; jednorazowe cookie, bearer material i plaintext recovery codes są zwracane wyłącznie przy pierwszym jednoznacznym sukcesie właściwej operacji. Ten skończony zakres jawnie nie obejmuje generycznego effect-auth session/protocol bookkeeping, ephemeral ceremony starts, development email/rate-limit storage, MailboxDO data plane ani przyszłych feature mutations. Każda przyszła mutacja przyjmuje ogólny Definition of Done dla operation ID, expected state/version, audytu, atomic receipt, exact replay, conflict i readback zamiast ponownie otwierać ten historyczny checkbox.
 - [ ] SAFE-007 Zachować transactional session oraz authorization recheck dla każdej mutacji D1. Owner bootstrap, rename i część account-security mutations stanowią aktualny guarded-D1 baseline; DoD przyszłych mutacji wymaga tego samego token-bound session, requirement, authorization i expected-state rechecku w jednym batchu z zapisem, receipt i audytem.
 - [ ] SAFE-008 Dodać bazowy limit rozmiaru inbound przed zapisem raw MIME do R2; INB-009 ma zachować i przetestować guard na nowej ścieżce.
@@ -915,7 +916,7 @@ Etap można oznaczyć `DONE`, gdy wszystkie jego checkboxy spełniają właściw
 
 Etapy powyżej opisują pełne zależności. Implementację warto dostarczać w małych milestone'ach i pionowych slice'ach:
 
-1. Foundation milestone: domknąć pozostałe bramy bieżącego etapu 1, kolejno SAFE-005, SAFE-007-011, SAFE-013 i SAFE-015; ukończone SAFE-001-004, SAFE-006, SAFE-012 i SAFE-014 pozostają baseline, nie nowym zakresem.
+1. Foundation milestone: realizować niedestrukcyjne SAFE-007-011, SAFE-013 i SAFE-015, równolegle utrzymując otwarty SAFE-005 jako obowiązkowy gate przed pierwszą nową destrukcyjną migracją i zamknięciem etapu; ukończone SAFE-001-004, SAFE-006, SAFE-012 i SAFE-014 pozostają baseline, nie nowym zakresem.
 2. Migration milestone: organization bootstrap, domain ownership, role catalog, MailboxAssignment i migracja obecnego `primary`, nadal z aktywnym singletonem.
 3. Security milestone: organization/mailbox gates, global-grant cleanup i adversarial tests, nadal bez drugiego mailboxa.
 4. Pierwszy funkcjonalny slice: drugi mailbox tylko dla obecnego ownera, jawny URL, feature flag i switcher.
