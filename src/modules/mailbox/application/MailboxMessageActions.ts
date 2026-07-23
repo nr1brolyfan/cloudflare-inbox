@@ -10,7 +10,6 @@ import {
   FolderId,
   MailboxId,
   MessageId,
-  Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type { MessageMutationResult } from "#/modules/mailbox/domain/MailboxMessage";
@@ -20,6 +19,7 @@ import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirec
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import { OperationId } from "#/shared/Operation";
+import { Version } from "#/shared/Temporal";
 
 const ActionFields = {
   expectedVersion: Version,

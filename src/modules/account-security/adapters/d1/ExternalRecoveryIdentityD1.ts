@@ -31,7 +31,6 @@ import {
 } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
 import {
-  controlPlaneDatabaseNow,
   sensitiveSessionPredicate,
   transactionalSessionPredicate,
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
@@ -47,6 +46,7 @@ import { administrativeAuditInsertStatement } from "#/modules/administrative-aud
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { controlPlaneDatabaseNow } from "#/platform/control-plane-d1/RequestAuthGuard";
 import {
   EmailAddress,
   normalizeEmailAddressDomain,

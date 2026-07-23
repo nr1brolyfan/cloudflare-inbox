@@ -21,7 +21,7 @@ import {
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import { MailboxOutboundDispatchStore } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 
-import { MailboxDatabaseTestLive } from "../../../../support/mailbox-sqlite";
+import { MailboxDatabaseTestLayer } from "../../../../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
 const digest = "a".repeat(64);
@@ -29,7 +29,7 @@ const testLive = MailboxOutboundDispatchStoreSqliteLayer.pipe(
   Layer.provide(
     Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId }))
   ),
-  Layer.provideMerge(MailboxDatabaseTestLive)
+  Layer.provideMerge(MailboxDatabaseTestLayer)
 );
 
 describe("outbound dispatch SQLite snapshot store", () => {

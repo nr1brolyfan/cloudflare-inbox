@@ -1,6 +1,5 @@
 import * as Schema from "effect/Schema";
 
-import { Version } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateFolderInput,
   CreateLabelInput,
@@ -68,6 +67,7 @@ import {
   ScheduleOutboundInput,
   ScheduleOutboundResult,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { Version } from "#/shared/Temporal";
 
 export const MailboxDomainErrorDto = Schema.Struct({
   _tag: Schema.Literal("DomainError"),

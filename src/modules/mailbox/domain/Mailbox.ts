@@ -3,8 +3,6 @@ import * as Schema from "effect/Schema";
 
 import { ResourceId } from "#/shared/Resource";
 
-export { Version } from "#/shared/Temporal";
-
 export const MailboxId = ResourceId.pipe(
   Schema.brand("cloudflare-inbox/MailboxId")
 );

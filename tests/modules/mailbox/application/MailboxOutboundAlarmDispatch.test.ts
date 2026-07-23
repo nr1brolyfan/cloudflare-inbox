@@ -32,7 +32,7 @@ import {
   OutboundProviderAcceptance,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";
 
-import { MailboxDatabaseTestLive } from "../../../support/mailbox-sqlite";
+import { MailboxDatabaseTestLayer } from "../../../support/mailbox-sqlite";
 
 const acceptance = Schema.decodeUnknownSync(OutboundProviderAcceptance)({
   providerMessageId: "provider-message-1",
@@ -71,7 +71,7 @@ const testLive = (
   onReconcile: () => void
 ) => {
   const base = Layer.merge(
-    MailboxDatabaseTestLive,
+    MailboxDatabaseTestLayer,
     Layer.succeed(
       MailboxOutboundAlarmClock,
       MailboxOutboundAlarmClock.of({ now })
@@ -462,7 +462,7 @@ describe("outbound alarm dispatch", () => {
         }),
     });
     const base = Layer.merge(
-      MailboxDatabaseTestLive,
+      MailboxDatabaseTestLayer,
       Layer.succeed(
         MailboxOutboundAlarmClock,
         MailboxOutboundAlarmClock.of({ now: alarmNow })

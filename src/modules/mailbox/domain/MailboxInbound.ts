@@ -13,12 +13,11 @@ import {
   MessageId,
   MimeType,
   RfcMessageId,
-  Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { EmailAddress } from "#/shared/EmailAddress";
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 export const InboundFailureCode = Schema.Literals([
   "malformed_message",

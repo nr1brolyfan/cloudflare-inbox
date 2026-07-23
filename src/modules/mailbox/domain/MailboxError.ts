@@ -1,6 +1,6 @@
 import * as Data from "effect/Data";
 
-import type { Version } from "./Mailbox";
+import type { Version } from "#/shared/Temporal";
 
 export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
   readonly operation:

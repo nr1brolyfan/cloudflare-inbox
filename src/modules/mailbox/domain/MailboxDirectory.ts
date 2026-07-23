@@ -2,7 +2,7 @@
 import * as Schema from "effect/Schema";
 
 import { OperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import {
   FolderId,
@@ -11,7 +11,6 @@ import {
   LabelId,
   LabelName,
   MailboxId,
-  Version,
 } from "./Mailbox";
 
 export class Folder extends Schema.Class<Folder>("cloudflare-inbox/Folder")({

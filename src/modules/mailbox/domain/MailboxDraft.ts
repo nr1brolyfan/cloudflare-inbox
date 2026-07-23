@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import {
   AttachmentId,
@@ -15,7 +15,6 @@ import {
   MessageSubject,
   PageSize,
   ThreadId,
-  Version,
 } from "./Mailbox";
 
 export class Draft extends Schema.Class<Draft>("cloudflare-inbox/Draft")({

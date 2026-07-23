@@ -15,12 +15,7 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import {
-  Cursor,
-  MailboxId,
-  MessageId,
-  Version,
-} from "#/modules/mailbox/domain/Mailbox";
+import { Cursor, MailboxId, MessageId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   AddMessageLabelInput,
@@ -47,7 +42,7 @@ import type {
   SearchMessagesInput,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";

@@ -61,7 +61,7 @@ const acquireDatabase = () => {
 };
 
 /** Fresh migrated SQLite database whose temporary directory follows Layer scope. */
-export const MailboxDatabaseTestLive = Layer.unwrap(
+export const MailboxDatabaseTestLayer = Layer.unwrap(
   Effect.acquireRelease(Effect.sync(acquireDatabase), ({ directory }) =>
     Effect.sync(() => rmSync(directory, { recursive: true, force: true }))
   ).pipe(
@@ -85,7 +85,7 @@ export const MailboxDatabaseTestLive = Layer.unwrap(
 );
 
 /** All SQLite mailbox stores; callers provide database, identity, and runtime. */
-export const MailboxStoresTestLive = Layer.mergeAll(
+export const MailboxStoresTestLayer = Layer.mergeAll(
   MailboxResourceIndexSqliteLayer,
   MailboxDirectoryStoreSqliteLayer,
   MailboxMessageStoreSqliteLayer,
@@ -105,10 +105,10 @@ const MailboxOutboundAlarmTestLayer = Layer.succeed(
 );
 const MailboxDoStoreTestLayer = MailboxDoStoreSqliteLayer.pipe(
   Layer.provide(MailboxOutboundAlarmTestLayer),
-  Layer.provide(MailboxStoresTestLive)
+  Layer.provide(MailboxStoresTestLayer)
 );
 
-export const MailboxDoHandlerTestLive = Layer.merge(
+export const MailboxDoHandlerTestLayer = Layer.merge(
   MailboxDoHandlerLayer.pipe(Layer.provide(MailboxDoStoreTestLayer)),
-  MailboxStoresTestLive
+  MailboxStoresTestLayer
 );

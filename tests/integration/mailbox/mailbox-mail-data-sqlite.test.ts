@@ -71,10 +71,10 @@ import { MailboxRegistry } from "#/modules/mailbox/ports/MailboxRegistry";
 import { MailAddress } from "#/shared/MailAddress";
 
 import {
-  MailboxDatabaseTestLive,
-  MailboxDoHandlerTestLive,
-  MailboxStoresTestLive,
-} from "../../../../support/mailbox-sqlite";
+  MailboxDatabaseTestLayer,
+  MailboxDoHandlerTestLayer,
+  MailboxStoresTestLayer,
+} from "../../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
 const sender = Schema.decodeUnknownSync(MailAddress)({
@@ -92,14 +92,14 @@ const makeRuntime = () => {
 };
 
 const mailboxSqliteTestLive = (runtime = makeRuntime()) =>
-  MailboxDoHandlerTestLive.pipe(
+  MailboxDoHandlerTestLayer.pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
         Layer.succeed(MailboxRuntime, MailboxRuntime.of(runtime))
       )
     ),
-    Layer.provideMerge(MailboxDatabaseTestLive)
+    Layer.provideMerge(MailboxDatabaseTestLayer)
   );
 
 const listMessages = (input: ListMessagesInput) =>
@@ -1413,11 +1413,11 @@ describe("Mailbox mail data SQLite", () => {
     );
     const storeLayer = MailboxDoStoreSqliteLayer.pipe(
       Layer.provide(outboundAlarmLayer),
-      Layer.provide(MailboxStoresTestLive)
+      Layer.provide(MailboxStoresTestLayer)
     );
     const testLive = Layer.merge(
       MailboxDoHandlerLayer.pipe(Layer.provide(storeLayer)),
-      MailboxStoresTestLive
+      MailboxStoresTestLayer
     ).pipe(
       Layer.provide(
         Layer.merge(
@@ -1425,7 +1425,7 @@ describe("Mailbox mail data SQLite", () => {
           Layer.succeed(MailboxRuntime, MailboxRuntime.of(runtime))
         )
       ),
-      Layer.provideMerge(MailboxDatabaseTestLive)
+      Layer.provideMerge(MailboxDatabaseTestLayer)
     );
 
     await Effect.runPromise(

@@ -13,16 +13,14 @@ import {
   InboundRawMessageStoreRuntime,
 } from "#/modules/mailbox/adapters/r2/InboundRawMessageStoreR2";
 import type { InboundEmailRoutingMessage } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
-import {
-  MailboxInboundEmailIngress,
-  MailboxInboundEmailIngressRuntime,
-} from "#/modules/mailbox/application/MailboxInboundEmailIngress";
+import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { ReceiveInboundEmailInput } from "#/modules/mailbox/domain/MailboxInbound";
 import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngress";
 import { InboundWorkflowStarter } from "#/modules/mailbox/ports/InboundWorkflowStarter";
 import type { InboundWorkflowStarterService } from "#/modules/mailbox/ports/InboundWorkflowStarter";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import { MailboxInboundEmailIngressRuntime } from "#/modules/mailbox/ports/MailboxInboundEmailIngressRuntime";
 import { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
 
 type PutOptions = Parameters<InboundRawMessageR2WriteClientService["put"]>[2];

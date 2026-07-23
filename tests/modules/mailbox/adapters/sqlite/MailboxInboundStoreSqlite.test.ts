@@ -33,9 +33,9 @@ import {
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 
 import {
-  MailboxDatabaseTestLive,
-  MailboxDoHandlerTestLive,
-  MailboxStoresTestLive,
+  MailboxDatabaseTestLayer,
+  MailboxDoHandlerTestLayer,
+  MailboxStoresTestLayer,
 } from "../../../../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
@@ -52,25 +52,25 @@ const makeRuntime = () => {
 };
 
 const testLive = (runtime: ReturnType<typeof makeRuntime>["service"]) =>
-  MailboxStoresTestLive.pipe(
+  MailboxStoresTestLayer.pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
         Layer.succeed(MailboxRuntime, MailboxRuntime.of(runtime))
       )
     ),
-    Layer.provideMerge(MailboxDatabaseTestLive)
+    Layer.provideMerge(MailboxDatabaseTestLayer)
   );
 
 const handlerTestLive = (runtime: ReturnType<typeof makeRuntime>["service"]) =>
-  MailboxDoHandlerTestLive.pipe(
+  MailboxDoHandlerTestLayer.pipe(
     Layer.provide(
       Layer.merge(
         Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
         Layer.succeed(MailboxRuntime, MailboxRuntime.of(runtime))
       )
     ),
-    Layer.provideMerge(MailboxDatabaseTestLive)
+    Layer.provideMerge(MailboxDatabaseTestLayer)
   );
 
 const commitInput = Schema.decodeUnknownSync(CommitInboundMessageV1)({

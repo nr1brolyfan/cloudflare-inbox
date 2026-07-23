@@ -33,7 +33,6 @@ import {
 } from "#/modules/account-security/application/PasskeyCredentialAdministration";
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
 import {
-  controlPlaneDatabaseNow,
   sensitiveSessionPredicate,
   transactionalSessionPredicate,
 } from "#/modules/account-security/integration/AccountSecurityD1RequestGuard";
@@ -42,6 +41,7 @@ import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { controlPlaneDatabaseNow } from "#/platform/control-plane-d1/RequestAuthGuard";
 import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 import { UnixMillis } from "#/shared/Temporal";

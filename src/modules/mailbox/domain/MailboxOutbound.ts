@@ -3,7 +3,7 @@ import * as Schema from "effect/Schema";
 
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import {
   AttemptCount,
@@ -11,7 +11,6 @@ import {
   MailboxId,
   MessageId,
   OutboundDeliveryId,
-  Version,
 } from "./Mailbox";
 
 export const outboundUndoWindowMillis = 10_000;

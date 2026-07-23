@@ -4,7 +4,7 @@ import * as Schema from "effect/Schema";
 import { EmailAddress } from "#/shared/EmailAddress";
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import {
   AttachmentId,
@@ -26,7 +26,6 @@ import {
   RfcMessageId,
   SearchQuery,
   ThreadId,
-  Version,
 } from "./Mailbox";
 import { OutboundDeliveryStatus } from "./MailboxOutbound";
 

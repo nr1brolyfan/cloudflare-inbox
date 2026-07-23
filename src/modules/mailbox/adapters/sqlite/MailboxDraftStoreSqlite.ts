@@ -5,12 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import {
-  Cursor,
-  DraftId,
-  MailboxId,
-  Version,
-} from "#/modules/mailbox/domain/Mailbox";
+import { Cursor, DraftId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateDraftInput,
   DraftPage,
@@ -25,7 +20,7 @@ import type {
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import { MailAddress } from "#/shared/MailAddress";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";

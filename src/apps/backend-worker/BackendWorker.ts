@@ -45,14 +45,12 @@ import {
   InboundRawMessageStoreRuntimeCloudflareLayer,
 } from "#/modules/mailbox/adapters/r2/InboundRawMessageStoreR2";
 import { OutboundDraftAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
+import { MailboxInboundEmailIngressRuntimeSystemLayer } from "#/modules/mailbox/adapters/system/MailboxInboundEmailIngressRuntimeSystem";
 import {
   InboundWorkflowClient,
   InboundWorkflowStarterCloudflareLayer,
 } from "#/modules/mailbox/adapters/workflow/InboundWorkflowStarterCloudflare";
-import {
-  MailboxInboundEmailIngress,
-  MailboxInboundEmailIngressRuntimeSystemLayer,
-} from "#/modules/mailbox/application/MailboxInboundEmailIngress";
+import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import {
   EmailRoutingEventSource,
   EmailRoutingEventSourceCloudflareLayer,

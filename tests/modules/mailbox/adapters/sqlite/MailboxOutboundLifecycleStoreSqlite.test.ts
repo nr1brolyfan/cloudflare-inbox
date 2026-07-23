@@ -21,7 +21,7 @@ import {
   outboundSendingStaleTimeoutMillis,
 } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
-import { MailboxDatabaseTestLive } from "../../../../support/mailbox-sqlite";
+import { MailboxDatabaseTestLayer } from "../../../../support/mailbox-sqlite";
 
 const runtime = (now: () => number) =>
   Layer.succeed(
@@ -35,7 +35,7 @@ const providerMessageId = (value: string) =>
 const lifecycleLive = (now: () => number) =>
   MailboxOutboundLifecycleStoreSqliteLayer.pipe(
     Layer.provide(runtime(now)),
-    Layer.provideMerge(MailboxDatabaseTestLive)
+    Layer.provideMerge(MailboxDatabaseTestLayer)
   );
 
 const setup = Effect.gen(function* () {

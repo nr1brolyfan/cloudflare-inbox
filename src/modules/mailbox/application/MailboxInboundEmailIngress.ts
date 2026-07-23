@@ -11,6 +11,7 @@ import { InboundEmailRejected } from "#/modules/mailbox/ports/InboundEmailIngres
 import { InboundRawMessageStore } from "#/modules/mailbox/ports/InboundRawMessageStore";
 import { InboundWorkflowStarter } from "#/modules/mailbox/ports/InboundWorkflowStarter";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import { MailboxInboundEmailIngressRuntime } from "#/modules/mailbox/ports/MailboxInboundEmailIngressRuntime";
 import { UnixMillis } from "#/shared/Temporal";
 
 export interface InboundEmailRoutingMessage {
@@ -25,24 +26,6 @@ export interface MailboxInboundEmailIngressService {
     message: InboundEmailRoutingMessage
   ) => Effect.Effect<void, InboundEmailRejected>;
 }
-
-export interface MailboxInboundEmailIngressRuntimeService {
-  readonly now: () => number;
-  readonly randomId: () => string;
-}
-
-export class MailboxInboundEmailIngressRuntime extends Context.Service<
-  MailboxInboundEmailIngressRuntime,
-  MailboxInboundEmailIngressRuntimeService
->()("cloudflare-inbox/InboundEmailIngressRuntime") {}
-
-export const MailboxInboundEmailIngressRuntimeSystemLayer = Layer.succeed(
-  MailboxInboundEmailIngressRuntime,
-  MailboxInboundEmailIngressRuntime.of({
-    now: Date.now,
-    randomId: () => crypto.randomUUID(),
-  })
-);
 
 const rejectStorageFailure = (cause: unknown) =>
   new InboundEmailRejected({

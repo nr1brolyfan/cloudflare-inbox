@@ -116,8 +116,6 @@ const guardedRequestAuth = (
   userId: requestAuth.validated.issued.userId,
 });
 
-export { controlPlaneDatabaseNow } from "#/platform/control-plane-d1/RequestAuthGuard";
-
 export const sessionPredicate = (
   database: ControlPlaneDatabase,
   requestAuth: CurrentRequestAuthShape,

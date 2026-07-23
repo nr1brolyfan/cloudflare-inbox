@@ -2,7 +2,8 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { MailboxId, PageSize, Version } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId, PageSize } from "#/modules/mailbox/domain/Mailbox";
+import { Version } from "#/shared/Temporal";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,

@@ -22,7 +22,6 @@ import {
   PageSize,
   SearchQuery,
   ThreadId,
-  Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
@@ -30,7 +29,7 @@ import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxA
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import { MailAddress } from "#/shared/MailAddress";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 export const MailboxMessageView = Schema.Union([
   Schema.Struct({

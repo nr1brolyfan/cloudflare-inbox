@@ -19,7 +19,7 @@ import type { MailboxAlarmStorageService } from "#/modules/mailbox/ports/Mailbox
 import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
 import { outboundSendingStaleTimeoutMillis } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
-import { MailboxDatabaseTestLive } from "../../../support/mailbox-sqlite";
+import { MailboxDatabaseTestLayer } from "../../../support/mailbox-sqlite";
 
 const makeAlarmStorage = (initial: number | null = null) => {
   const operations: (`delete` | `set:${number}`)[] = [];
@@ -66,7 +66,7 @@ const makeSchedulerLive = (
         )
       )
     ),
-    Layer.provideMerge(MailboxDatabaseTestLive)
+    Layer.provideMerge(MailboxDatabaseTestLayer)
   );
 
 const seedDelivery = (

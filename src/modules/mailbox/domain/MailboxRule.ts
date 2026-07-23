@@ -2,7 +2,7 @@
 import * as Schema from "effect/Schema";
 
 import { EmailAddress } from "#/shared/EmailAddress";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import {
   FolderId,
@@ -13,7 +13,6 @@ import {
   RuleId,
   RuleName,
   RulePriority,
-  Version,
 } from "./Mailbox";
 
 export const RuleAddressCondition = Schema.Struct({

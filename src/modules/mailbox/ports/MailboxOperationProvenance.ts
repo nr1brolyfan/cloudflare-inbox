@@ -7,9 +7,9 @@ import {
   DraftId,
   MailboxId,
   OutboundDeliveryId,
-  Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { OperationId } from "#/shared/Operation";
+import { Version } from "#/shared/Temporal";
 
 const ExplicitUserActionResource = Schema.Union([
   Schema.Struct({ _tag: Schema.Literal("Draft"), draftId: DraftId }),

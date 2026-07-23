@@ -2,7 +2,7 @@
 import * as Schema from "effect/Schema";
 
 import { OperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
+import { UnixMillis, Version } from "#/shared/Temporal";
 
 import {
   AttachmentId,
@@ -12,7 +12,6 @@ import {
   MailboxId,
   MimeType,
   Sha256Digest,
-  Version,
 } from "./Mailbox";
 
 export const draftAttachmentMaxBytes = 10 * 1024 * 1024;

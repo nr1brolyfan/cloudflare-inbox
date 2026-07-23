@@ -11,7 +11,6 @@ import {
   DraftId,
   MailboxId,
   OutboundDeliveryId,
-  Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
@@ -26,6 +25,7 @@ import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepo
 import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import type { MailboxSenderIdentityError } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import { OperationId } from "#/shared/Operation";
+import { Version } from "#/shared/Temporal";
 
 export const SendMailboxDraftCommand = Schema.Struct({
   mailboxId: MailboxId,

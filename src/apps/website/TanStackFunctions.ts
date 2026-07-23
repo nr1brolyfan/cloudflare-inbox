@@ -25,8 +25,6 @@ import {
 
 import { WebsiteApplication } from "./WebsiteApplication";
 
-export type { DevEmailInboxResult } from "./DevEmailOperations";
-
 const bootstrapInput = Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand);
 const renameInput = Schema.decodeUnknownSync(RenameMailboxCommand);
 const mailboxMessageListInput = Schema.decodeUnknownSync(

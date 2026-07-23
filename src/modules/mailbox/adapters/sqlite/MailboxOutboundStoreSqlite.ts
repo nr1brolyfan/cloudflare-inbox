@@ -5,7 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { DraftId, MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
+import { DraftId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   CancelOutboundDeliveryInput,
@@ -26,6 +26,7 @@ import type {
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
+import { Version } from "#/shared/Temporal";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";

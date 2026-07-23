@@ -2,7 +2,7 @@
 
 ## Status And Purpose
 
-This is the normative, compact context for the architecture migration. Read it together with `effect-code-style-guide.md`; this document governs architecture and naming, while the style guide governs Effect coding style. Preserve these rules across planning, implementation, reviews, and context compaction. Do not redesign behavior while moving code unless a migration step explicitly requires it.
+This is the normative, compact architecture guide. The migration is complete; these rules now prevent regression. Read it together with `effect-code-style-guide.md`: this document governs architecture and naming, while the style guide governs Effect coding style.
 
 ## Target Model
 
@@ -70,6 +70,8 @@ src/
   routeTree.gen.ts    # generated
 ```
 
+These roots are exact. The only framework/generated source exceptions are `src/routes/`, `src/auth/schema/`, `src/router.tsx`, `src/routeTree.gen.ts`, and `src/styles.css`. The required contexts are `account-security`, `address-routing`, `administrative-audit`, `ai`, `authorization`, `automation`, `mailbox`, and `organization`. The required apps are `async-rule-workflow`, `backend-worker`, `inbound-workflow`, `mailbox-do`, and `website`. The required platform capabilities are `cloudflare`, `control-plane-d1`, and `observability`.
+
 Natural context ownership:
 
 | Context | Owns |
@@ -105,10 +107,12 @@ Rules:
 - Cross-context D1 collaboration uses narrowly named `integration/` predicates and statement factories. These factories return composable Drizzle SQL or `ControlPlaneStatement` values; callers retain one ordered `ControlPlaneBatch` and must not replace transaction-local checks with preflight CRUD calls.
 - Platform request guards accept platform-neutral guarded session facts. Account-security owns adaptation from `CurrentRequestAuth` and binds step-up and remediation policy SQL.
 - `shared` contains only truly context-neutral semantics, e.g. generic time/operation primitives. No generic helpers dump.
-- Add automated import-boundary checks before considering the migration complete.
+- Keep the automated architecture and import-boundary checks in `bun run check`.
 - Avoid barrels unless they define a deliberate, narrow public API; never add compatibility re-exports without a concrete consumer.
 
-Known cycles to remove: `mailbox <-> authorization`, `account-security <-> control-plane`, auth client code importing global HTTP internals, and domain/application contracts importing observability or persistence-owned types unnecessarily.
+Approved context edges are exact and acyclic: `account-security -> address-routing`, `account-security -> administrative-audit`, `address-routing -> mailbox`, `address-routing -> organization`, `administrative-audit -> mailbox`, `ai -> mailbox`, `authorization -> mailbox`, `automation -> mailbox`, and `organization -> mailbox`. Cross-context imports target `contracts/`, `domain/`, `integration/`, or `ports/`, except for the explicitly approved AI tool calls into `MailboxDraftEditing` and `MailboxMessageReading`.
+
+Approved cross-app edges are also exact and acyclic: `backend-worker -> inbound-workflow`, `backend-worker -> mailbox-do`, `inbound-workflow -> async-rule-workflow`, `inbound-workflow -> mailbox-do`, and `website -> backend-worker`. Platform can depend only on platform/shared code; shared can depend only on shared or external context-neutral libraries; modules never import apps.
 
 ## Hexagonal Vocabulary
 
@@ -138,7 +142,7 @@ Use **PascalCase for first-class TypeScript/TSX modules and symbols**, mirroring
 | Feature/root Layer | descriptive PascalCase + `Layer` | `MailboxHttpLayer`, `BackendApplicationLayer` |
 | Context service identifier | stable namespace + PascalCase | `cloudflare-inbox/MailboxMessageReading` |
 
-Do not introduce new `XLive`, `GroupLive`, `WithRuntimeLive`, or mixed `ApiLayer`/`Live` conventions. Existing names migrate to:
+Local Layer exports use descriptive PascalCase names ending in `Layer`; static service Layers use only `layerNoDeps`, `layer`, or `mockLayer`. Upstream effect-auth identifiers retain their package-defined names and are exempt from this local naming rule. The completed migration used this mapping:
 
 ```text
 canonical service construction -> Service.layerNoDeps / Service.layer
@@ -149,7 +153,7 @@ closed feature graph           -> <Feature>Layer or <Feature>HttpLayer
 final runtime graph            -> <Runtime>ApplicationLayer
 ```
 
-Framework/generated exceptions retain their required names: TanStack routes, `routeTree.gen.ts`, generated auth schema, migrations, scripts, and tool configuration. Tests mirror source names, e.g. `MailboxMessageReading.test.ts`.
+Framework/generated exceptions retain their required names: TanStack routes, `routeTree.gen.ts`, generated auth schema, migrations, scripts, and tool configuration. Tests under `tests/modules/`, `tests/apps/`, `tests/platform/`, and `tests/shared/` mirror source paths and names. Cross-module suites are permitted only in the explicit checker allowlist under `tests/integration/`; route, script, and support tests retain their own framework/tooling layout.
 
 ## Effect Services And Layers
 
@@ -166,6 +170,7 @@ Follow `effect-code-style-guide.md`:
 - Use `Effect.fn` for meaningful operations/boundaries, not trivial helpers.
 - Install logging/exporters at program boundaries. Preserve one wide completion event and current privacy/redaction rules.
 - Never promote request-, run-, Workflow-, or DO-scoped state into a longer-lived convenience Layer.
+- `RuntimeContext.phantom` appears only at concrete adapter or app call sites that invoke generated Alchemy/Cloudflare APIs.
 
 Representative shape:
 
@@ -213,7 +218,7 @@ export const MailboxMessageRepositoryDoLayer = Layer.effect(
 
 File length alone is not a split criterion. Prefer fewer, longer, self-contained modules with one reason to change.
 
-Acceptable long modules: one domain topic, one use case including projections/error/service/make, one wire protocol, one transport client, or one cohesive page controller. Split modules that combine independent stores/features/lifetimes. Keep mailbox SQLite persistence split by its existing store seams; narrow the current broad `MailboxRepository` by consumer capability, while allowing one DO adapter/transport to implement several narrow ports.
+Acceptable long modules: one domain topic, one use case including projections/error/service/make, one wire protocol, one transport client, or one cohesive page controller. Split modules that combine independent stores/features/lifetimes. Keep mailbox SQLite persistence split by its store seams and preserve narrow consumer capabilities, while allowing one DO adapter/transport to implement several narrow ports.
 
 Avoid one-file-per-schema/error/interface. Also avoid generic names such as `Core.ts`, `Utils.ts`, `Services.ts`, `Interfaces.ts`, or `Errors.ts` when a precise PascalCase topic name exists.
 
@@ -236,18 +241,11 @@ Preserve throughout moves and refactors:
 - generated/framework-owned files and historical migrations untouched unless explicitly scoped;
 - telemetry privacy: no credentials, secrets, tokens, message content, raw paths/headers/bodies, or unbounded user data.
 
-## Migration Protocol
+## Migration Record
 
-- Move in vertical, compiling slices; do not perform an unreviewable repository-wide rename plus behavior redesign.
-- Establish naming/import rules first, then use the mailbox module as the reference implementation.
-- Prefer move-only commits/steps before semantic changes where practical; preserve serialized and public behavior.
-- Do not leave duplicate implementations, obsolete files, or compatibility re-exports after consumers migrate.
-- Do not extract CRUD repositories that weaken transaction-local authorization or atomicity.
-- Close feature dependency graphs locally, then simplify runtime roots.
-- Mirror every source move in tests; use narrow port mocks and scoped `@effect/vitest` Layers for resources.
-- Treat unrelated worktree changes as owned by others; never revert them.
+The migration used vertical compiling slices, established naming and import rules first, and used mailbox as the reference implementation. Moves preserved serialized behavior, transaction-local authorization, resource lifetimes, and atomicity. Each feature graph was closed before runtime roots were simplified; source moves were mirrored in tests; obsolete implementations and compatibility re-exports were removed after consumers migrated.
 
-Expected broad order:
+The broad historical order was:
 
 ```text
 naming/import rules
@@ -262,7 +260,7 @@ naming/import rules
 
 ## Verification Gate
 
-Each completed migration slice must format, typecheck, and run its focused tests. Before declaring the migration complete run:
+Every architecture change must format, typecheck, and run focused tests. The complete verification gate is:
 
 ```sh
 bun run format

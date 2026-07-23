@@ -39,8 +39,8 @@ import { MailboxResourceLookup } from "#/modules/mailbox/domain/MailboxResource"
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 
 import {
-  MailboxDatabaseTestLive,
-  MailboxStoresTestLive,
+  MailboxDatabaseTestLayer,
+  MailboxStoresTestLayer,
 } from "../../../../support/mailbox-sqlite";
 
 const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
@@ -134,14 +134,14 @@ const deleteLabel = (input: DeleteLabelInput) =>
     Effect.flatMap((store) => store.deleteLabel(input))
   );
 
-const MailboxSqliteTest = MailboxStoresTestLive.pipe(
+const MailboxSqliteTest = MailboxStoresTestLayer.pipe(
   Layer.provide(
     Layer.merge(
       Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
       Layer.succeed(MailboxRuntime, runtimeProxy)
     )
   ),
-  Layer.provideMerge(MailboxDatabaseTestLive)
+  Layer.provideMerge(MailboxDatabaseTestLayer)
 );
 
 layer(MailboxSqliteTest)("MailboxDO SQLite repository", (it) => {

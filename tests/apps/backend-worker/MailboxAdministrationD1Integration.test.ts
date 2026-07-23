@@ -34,7 +34,7 @@ import {
   mailboxScope,
 } from "#/modules/authorization/domain/MailPermissionCatalog";
 import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
-import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   AttachmentLocation,
   DraftLocation,
@@ -57,11 +57,12 @@ import {
   CurrentRequestCorrelation,
   RequestCorrelation,
 } from "#/shared/RequestCorrelation";
+import { Version } from "#/shared/Temporal";
 
 import {
   applyControlPlaneMigrations,
   makeTestD1Database,
-} from "../../../../support/d1";
+} from "../../support/d1";
 
 const now = 2000;
 const stepUpNow = Date.now();

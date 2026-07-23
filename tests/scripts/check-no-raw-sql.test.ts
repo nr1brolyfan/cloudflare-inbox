@@ -27,7 +27,10 @@ describe("raw SQL source policy", () => {
     ].join("\n");
 
     expect(
-      checkSourcePolicy("src/control-plane/mailbox-reading-live.ts", source)
+      checkSourcePolicy(
+        "src/modules/mailbox/application/MailboxReading.ts",
+        source
+      )
     ).toStrictEqual([]);
   });
 
@@ -42,14 +45,17 @@ describe("raw SQL source policy", () => {
     ].join("\n");
 
     expect(
-      checkSourcePolicy("src/control-plane/documentation.ts", source)
+      checkSourcePolicy(
+        "src/modules/mailbox/application/Documentation.ts",
+        source
+      )
     ).toStrictEqual([]);
   });
 
   it("allows direct object-shaped domain prepare calls", () => {
     expect(
       checkSourcePolicy(
-        "src/control-plane/audit-live.ts",
+        "src/modules/mailbox/application/Audit.ts",
         'audit.prepare({ _tag: "MailboxCreated", sql: "audit metadata" });'
       )
     ).toStrictEqual([]);
@@ -67,7 +73,10 @@ describe("raw SQL source policy", () => {
     ].join("\n");
 
     expect(
-      checkSourcePolicy("src/control-plane/domain-workflow.ts", source)
+      checkSourcePolicy(
+        "src/modules/mailbox/application/DomainWorkflow.ts",
+        source
+      )
     ).toStrictEqual([]);
   });
 
@@ -232,7 +241,7 @@ describe("raw SQL source policy", () => {
   ])("rejects $name", ({ message, source }) => {
     expect(
       checkSourcePolicy(
-        "src/control-plane/unreviewed.ts",
+        "src/modules/mailbox/application/Unreviewed.ts",
         withControlPlane(source)
       )
     ).toStrictEqual([message]);

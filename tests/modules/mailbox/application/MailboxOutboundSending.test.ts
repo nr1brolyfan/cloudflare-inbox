@@ -12,7 +12,7 @@ import {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
-import { DraftId, MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
+import { DraftId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
@@ -30,6 +30,7 @@ import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIden
 import type { MailboxSenderIdentityService } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
+import { Version } from "#/shared/Temporal";
 
 const scheduledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
   attemptCount: 0,

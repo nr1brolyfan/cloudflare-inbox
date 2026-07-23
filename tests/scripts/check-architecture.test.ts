@@ -4,6 +4,9 @@ import {
   checkArchitectureCycles,
   checkArchitectureImports,
   checkArchitecturePath,
+  checkArchitectureSource,
+  checkArchitectureSourceLayout,
+  checkArchitectureTestLayout,
 } from "../../scripts/check-architecture";
 
 describe("architecture policy", () => {
@@ -83,7 +86,169 @@ describe("architecture policy", () => {
         "src/platform/control-plane-d1/RequestAuthGuard.ts",
         'import type { RequestAuth } from "#/modules/account-security/ports/CurrentRequestAuth";'
       )
-    ).toStrictEqual(["platform modules must not import business contexts"]);
+    ).toStrictEqual([
+      "platform modules must not import business contexts or apps",
+    ]);
+  });
+
+  it("scans export-from and dynamic imports", () => {
+    expect(
+      checkArchitectureImports(
+        "src/modules/mailbox/domain/Example.ts",
+        `
+          export { Handler } from "../adapters/http/Handler";
+          const load = () => import("cloudflare:workers");
+        `
+      )
+    ).toStrictEqual([
+      "domain modules must not depend on HTTP, storage, Cloudflare, Alchemy, React or Workflow adapters",
+      "domain, application and ports must not import adapters",
+    ]);
+  });
+
+  it("rejects shared dependencies on higher architecture roots", () => {
+    expect(
+      checkArchitectureImports(
+        "src/shared/Example.ts",
+        'export { Mailbox } from "../modules/mailbox/domain/Mailbox";'
+      )
+    ).toStrictEqual([
+      "shared modules must not import modules, apps or platform",
+    ]);
+  });
+
+  it("rejects unapproved cross-app dependencies", () => {
+    expect(
+      checkArchitectureImports(
+        "src/apps/website/WebsiteApplication.ts",
+        'const workflow = import("../inbound-workflow/InboundWorkflow");'
+      )
+    ).toStrictEqual([
+      "app dependency is not an approved one-way edge: website -> inbound-workflow",
+    ]);
+  });
+
+  it("includes AI in approved context edges and cycle checks", () => {
+    expect(
+      checkArchitectureImports(
+        "src/modules/ai/domain/MailTools.ts",
+        'export { MailboxId } from "../../mailbox/domain/Mailbox";'
+      )
+    ).toStrictEqual([]);
+    expect(
+      checkArchitectureCycles([
+        {
+          file: "src/modules/ai/domain/MailTools.ts",
+          source: 'export { MailboxId } from "../../mailbox/domain/Mailbox";',
+        },
+        {
+          file: "src/modules/mailbox/domain/Mailbox.ts",
+          source: 'const tools = import("../../ai/domain/MailTools");',
+        },
+      ])
+    ).toStrictEqual(["context dependency cycle: ai <-> mailbox"]);
+  });
+
+  it("accepts explicitly approved cross-context application surfaces", () => {
+    expect(
+      checkArchitectureImports(
+        "src/modules/ai/ports/AiToolExecutor.ts",
+        'import { Reading } from "#/modules/mailbox/application/MailboxMessageReading";'
+      )
+    ).toStrictEqual([]);
+  });
+
+  it("rejects forbidden compatibility re-exports and phantom placement", () => {
+    expect(
+      checkArchitectureSource(
+        "src/modules/mailbox/domain/Mailbox.ts",
+        `
+          export { Version } from "#/shared/Temporal";
+          const runtime = RuntimeContext.phantom;
+        `
+      )
+    ).toStrictEqual([
+      "RuntimeContext.phantom is allowed only in concrete adapters and apps",
+      "cross-boundary compatibility re-exports are forbidden; import from the owner",
+    ]);
+  });
+
+  it("enforces local Layer and application service naming", () => {
+    expect(
+      checkArchitectureSource(
+        "src/modules/mailbox/application/Example.ts",
+        `
+          export const ExampleLive = Layer.succeed(Example, {});
+          export class Clock extends Context.Service<Clock>()("Clock") {}
+        `
+      )
+    ).toStrictEqual([
+      "local declarations must use a descriptive *Layer name, not ExampleLive",
+      "standalone Layer export must use PascalCase and end in Layer: ExampleLive",
+      "Clock must define make and static layerNoDeps or move to ports/contracts",
+    ]);
+  });
+
+  it("enforces exact source roots and required architecture roots", () => {
+    const required = [
+      "account-security",
+      "address-routing",
+      "administrative-audit",
+      "ai",
+      "authorization",
+      "automation",
+      "mailbox",
+      "organization",
+    ].map((context) => `src/modules/${context}/domain/Example.ts`);
+    const apps = [
+      "async-rule-workflow",
+      "backend-worker",
+      "inbound-workflow",
+      "mailbox-do",
+      "website",
+    ].map((app) => `src/apps/${app}/Example.ts`);
+    const platform = ["cloudflare", "control-plane-d1", "observability"].map(
+      (capability) => `src/platform/${capability}/Example.ts`
+    );
+    expect(
+      checkArchitectureSourceLayout([
+        ...required,
+        ...apps,
+        ...platform,
+        "src/routes/index.tsx",
+        "src/auth/schema/index.ts",
+        "src/router.tsx",
+        "src/routeTree.gen.ts",
+        "src/styles.css",
+      ])
+    ).toStrictEqual([]);
+    expect(
+      checkArchitectureSourceLayout([
+        ...required,
+        ...apps,
+        ...platform,
+        "src/legacy/Legacy.ts",
+      ])
+    ).toContain(
+      "src/legacy/Legacy.ts: source path is not an allowed architecture root"
+    );
+  });
+
+  it("requires managed tests to mirror source paths", () => {
+    expect(
+      checkArchitectureTestLayout(
+        ["src/modules/mailbox/domain/Mailbox.ts"],
+        ["tests/modules/mailbox/domain/Mailbox.test.ts"]
+      )
+    ).toStrictEqual([]);
+    expect(
+      checkArchitectureTestLayout(
+        ["src/modules/mailbox/domain/Mailbox.ts"],
+        ["tests/modules/mailbox/domain/MailboxVariant.test.ts"]
+      )
+    ).toStrictEqual([
+      "tests/modules/mailbox/domain/MailboxVariant.test.ts: managed test must mirror src/modules/mailbox/domain/MailboxVariant.ts",
+    ]);
   });
 
   it("rejects cross-context adapter imports outside D1", () => {

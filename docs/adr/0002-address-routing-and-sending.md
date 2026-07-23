@@ -93,5 +93,5 @@ Rejected because receiving and sending have different security requirements.
 - `src/modules/address-routing/adapters/d1/AddressRoutingSchema.ts`
 - `src/modules/address-routing/adapters/d1/InboundMailboxResolverD1.ts`
 - `src/modules/address-routing/adapters/d1/MailboxSenderIdentityD1.ts`
-- `src/modules/address-routing/adapters/email/CloudflareEmailRouting.ts`
-- `src/mailboxes/outbound-sending.ts`
+- `src/apps/backend-worker/CloudflareEmailRoutingIntegration.ts`
+- `src/modules/mailbox/application/MailboxOutboundSending.ts`
