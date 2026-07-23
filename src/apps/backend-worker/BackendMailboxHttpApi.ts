@@ -18,7 +18,7 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
-import { CurrentRequestAuthMiddleware } from "#/modules/account-security/contracts/RequestAuthMiddleware";
+import { SessionAuthenticationMiddleware } from "#/modules/account-security/contracts/RequestAuthMiddleware";
 import {
   CreateMailboxDraftCommand,
   DraftEditorDraft,
@@ -76,6 +76,11 @@ import {
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
+
+import {
+  MailboxOperation,
+  MailboxSessionRequirementsMiddleware,
+} from "./MailboxSessionRequirements";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
 const InboundReplayParams = Schema.Struct({
@@ -151,7 +156,7 @@ export type MailboxPublicError = Schema.Codec.Encoded<
 >;
 
 export const BootstrapOwnerEndpoint = HttpApiEndpoint.post(
-  "bootstrapOwner",
+  MailboxOperation.bootstrapOwner,
   "/api/mailboxes/bootstrap-owner",
   {
     error: MailboxErrors,
@@ -161,7 +166,7 @@ export const BootstrapOwnerEndpoint = HttpApiEndpoint.post(
 );
 
 export const GetMailboxNavigationEndpoint = HttpApiEndpoint.get(
-  "getNavigation",
+  MailboxOperation.getNavigation,
   "/api/mailboxes/current/navigation",
   {
     error: MailboxErrors,
@@ -170,7 +175,7 @@ export const GetMailboxNavigationEndpoint = HttpApiEndpoint.get(
 );
 
 export const ReadMailboxAdministrationOperationEndpoint = HttpApiEndpoint.get(
-  "readOperation",
+  MailboxOperation.readOperation,
   "/api/mailboxes/operations/:operationId",
   {
     error: MailboxErrors,
@@ -182,7 +187,7 @@ export const ReadMailboxAdministrationOperationEndpoint = HttpApiEndpoint.get(
 );
 
 export const ListMailboxMessagesEndpoint = HttpApiEndpoint.get(
-  "listMessages",
+  MailboxOperation.listMessages,
   "/api/mailboxes/:mailboxId/messages",
   {
     error: MailboxErrors,
@@ -193,7 +198,7 @@ export const ListMailboxMessagesEndpoint = HttpApiEndpoint.get(
 );
 
 export const ActOnMailboxMessageEndpoint = HttpApiEndpoint.patch(
-  "actOnMessage",
+  MailboxOperation.actOnMessage,
   "/api/mailboxes/:mailboxId/messages/:messageId",
   {
     error: MailboxErrors,
@@ -204,7 +209,7 @@ export const ActOnMailboxMessageEndpoint = HttpApiEndpoint.patch(
 );
 
 export const CreateMailboxDraftEndpoint = HttpApiEndpoint.post(
-  "createDraft",
+  MailboxOperation.createDraft,
   "/api/mailboxes/:mailboxId/drafts",
   {
     error: MailboxErrors,
@@ -218,7 +223,7 @@ export const CreateMailboxDraftEndpoint = HttpApiEndpoint.post(
 );
 
 export const GetMailboxDraftEndpoint = HttpApiEndpoint.get(
-  "getDraft",
+  MailboxOperation.getDraft,
   "/api/mailboxes/:mailboxId/drafts/:draftId",
   {
     error: MailboxErrors,
@@ -228,7 +233,7 @@ export const GetMailboxDraftEndpoint = HttpApiEndpoint.get(
 );
 
 export const ListMailboxDraftsEndpoint = HttpApiEndpoint.get(
-  "listDrafts",
+  MailboxOperation.listDrafts,
   "/api/mailboxes/:mailboxId/drafts",
   {
     error: MailboxErrors,
@@ -242,7 +247,7 @@ export const ListMailboxDraftsEndpoint = HttpApiEndpoint.get(
 );
 
 export const UpdateMailboxDraftEndpoint = HttpApiEndpoint.patch(
-  "updateDraft",
+  MailboxOperation.updateDraft,
   "/api/mailboxes/:mailboxId/drafts/:draftId",
   {
     error: MailboxErrors,
@@ -257,7 +262,7 @@ export const UpdateMailboxDraftEndpoint = HttpApiEndpoint.patch(
 );
 
 export const SendMailboxDraftEndpoint = HttpApiEndpoint.post(
-  "sendDraft",
+  MailboxOperation.sendDraft,
   "/api/mailboxes/:mailboxId/drafts/:draftId/send",
   {
     error: MailboxErrors,
@@ -272,7 +277,7 @@ export const SendMailboxDraftEndpoint = HttpApiEndpoint.post(
 );
 
 export const UndoMailboxSendEndpoint = HttpApiEndpoint.post(
-  "undoSend",
+  MailboxOperation.undoSend,
   "/api/mailboxes/:mailboxId/outbound/:outboundDeliveryId/undo",
   {
     error: MailboxErrors,
@@ -286,7 +291,7 @@ export const UndoMailboxSendEndpoint = HttpApiEndpoint.post(
 );
 
 export const GetMailboxOutboundDeliveryEndpoint = HttpApiEndpoint.get(
-  "getOutboundDelivery",
+  MailboxOperation.getOutboundDelivery,
   "/api/mailboxes/:mailboxId/outbound/:outboundDeliveryId",
   {
     error: MailboxErrors,
@@ -296,7 +301,7 @@ export const GetMailboxOutboundDeliveryEndpoint = HttpApiEndpoint.get(
 );
 
 export const ReserveDraftAttachmentEndpoint = HttpApiEndpoint.post(
-  "reserveDraftAttachment",
+  MailboxOperation.reserveDraftAttachment,
   "/api/mailboxes/:mailboxId/drafts/:draftId/attachments/reservations",
   {
     error: MailboxErrors,
@@ -312,7 +317,7 @@ export const ReserveDraftAttachmentEndpoint = HttpApiEndpoint.post(
 );
 
 export const UploadDraftAttachmentEndpoint = HttpApiEndpoint.put(
-  "uploadDraftAttachment",
+  MailboxOperation.uploadDraftAttachment,
   "/api/mailboxes/:mailboxId/drafts/:draftId/attachments/:attachmentId/content",
   {
     error: MailboxErrors,
@@ -325,7 +330,7 @@ export const UploadDraftAttachmentEndpoint = HttpApiEndpoint.put(
 );
 
 export const GetMailboxMessageHtmlEndpoint = HttpApiEndpoint.get(
-  "getMessageHtml",
+  MailboxOperation.getMessageHtml,
   "/api/mailboxes/:mailboxId/messages/:messageId/html",
   {
     error: MailboxErrors,
@@ -336,7 +341,7 @@ export const GetMailboxMessageHtmlEndpoint = HttpApiEndpoint.get(
 );
 
 export const GetMailboxInlineAttachmentEndpoint = HttpApiEndpoint.get(
-  "getInlineAttachment",
+  MailboxOperation.getInlineAttachment,
   "/api/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/inline",
   {
     error: MailboxErrors,
@@ -347,7 +352,7 @@ export const GetMailboxInlineAttachmentEndpoint = HttpApiEndpoint.get(
 );
 
 export const GetMailboxThreadEndpoint = HttpApiEndpoint.get(
-  "getThread",
+  MailboxOperation.getThread,
   "/api/mailboxes/:mailboxId/threads/:threadId",
   {
     error: MailboxErrors,
@@ -358,7 +363,7 @@ export const GetMailboxThreadEndpoint = HttpApiEndpoint.get(
 );
 
 export const RenameMailboxEndpoint = HttpApiEndpoint.patch(
-  "rename",
+  MailboxOperation.rename,
   "/api/mailboxes/:mailboxId",
   {
     error: MailboxErrors,
@@ -373,7 +378,7 @@ export const RenameMailboxEndpoint = HttpApiEndpoint.patch(
 );
 
 export const ReplayInboundEndpoint = HttpApiEndpoint.post(
-  "replayInbound",
+  MailboxOperation.replayInbound,
   "/api/mailboxes/:mailboxId/inbound/:inboundIngestId/replay",
   {
     error: MailboxErrors,
@@ -409,7 +414,8 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
   )
   .middleware(AuthSchemaErrorMiddleware)
   .middleware(BackendRequestContextMiddleware)
-  .middleware(CurrentRequestAuthMiddleware)
+  .middleware(MailboxSessionRequirementsMiddleware)
+  .middleware(SessionAuthenticationMiddleware)
   .middleware(AuthOriginCheckMiddleware) {}
 
 export const MailboxHttpApi = HttpApi.make("AuthApi").add(MailboxGroup);

@@ -85,24 +85,34 @@ and exists (
      and (${sql.join(acceptedEvidencePredicates, sql` or `)})
 )`;
 
-const recoveryRemediationSession = sql<boolean>`json_array_length(
-  json_extract(
-    ${authSession.metadata},
-    '$.__effectAuthSession.claims.requirements'
-  )
-) = 1
+const recoveryRemediationSession = sql<boolean>`json_type(
+  ${authSession.metadata},
+  '$.__effectAuthSession.claims.requirements'
+) = 'array'
+and json_array_length(json_extract(
+  ${authSession.metadata},
+  '$.__effectAuthSession.claims.requirements'
+)) = 1
 and json_extract(
   ${authSession.metadata},
   '$.__effectAuthSession.claims.requirements[0]'
 ) = 'recovery_remediation'
-and exists (
-  select 1
-    from json_each(json_extract(
-      ${authSession.metadata},
-      '$.__effectAuthSession.claims.recoveryRemediation.allowed'
-    )) as capability
-   where capability.value = 'second-passkey'
-)`;
+and json_type(
+  ${authSession.metadata},
+  '$.__effectAuthSession.claims.recoveryRemediation.allowed'
+) = 'array'
+and json_array_length(json_extract(
+  ${authSession.metadata},
+  '$.__effectAuthSession.claims.recoveryRemediation.allowed'
+)) = 1
+and json_extract(
+  ${authSession.metadata},
+  '$.__effectAuthSession.claims.recoveryRemediation.allowed[0]'
+) = 'second-passkey'
+and json_type(
+  ${authSession.metadata},
+  '$.__effectAuthSession.claims.recoveryEnrollment'
+) is null`;
 
 const guardedRequestAuth = (
   requestAuth: CurrentRequestAuthShape

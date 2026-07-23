@@ -31,6 +31,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {
   CurrentRequestAuthMiddleware,
   RecoveryRemediationRequestAuthMiddleware,
+  SessionAuthenticationMiddleware,
 } from "#/modules/account-security/contracts/RequestAuthMiddleware";
 import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
@@ -135,6 +136,48 @@ export const RequestSessionAuthenticatorEffectAuthLayer = Layer.effect(
   })
 );
 
+const authenticateHttpRequest = (
+  authenticator: RequestSessionAuthenticatorShape
+) =>
+  Effect.gen(function* () {
+    const request = yield* HttpServerRequest.HttpServerRequest;
+    const webRequest = yield* HttpServerRequest.toWeb(request).pipe(
+      Effect.mapError(
+        () =>
+          new AuthInternalError({
+            code: "internal_error",
+            message: "Failed to read request",
+          })
+      )
+    );
+    return yield* authenticator.authenticate(webRequest);
+  });
+
+const provideAuthenticatedRequest = <A, E, R>(
+  effect: Effect.Effect<A, E, R>,
+  authenticated: AuthenticatedRequest
+) =>
+  effect.pipe(
+    Effect.provideService(CurrentRequestAuth, authenticated.requestAuth),
+    Effect.provideService(CurrentSession, authenticated.session),
+    Effect.provideService(CurrentActor, authenticated.actor),
+    Effect.provideService(CurrentPrincipal, authenticated.principal)
+  );
+
+/** Authenticates without deciding which session requirements an operation allows. */
+export const SessionAuthenticationMiddlewareLayer = Layer.effect(
+  SessionAuthenticationMiddleware,
+  Effect.gen(function* () {
+    const authenticator = yield* RequestSessionAuthenticator;
+
+    return (httpEffect) =>
+      Effect.gen(function* () {
+        const authenticated = yield* authenticateHttpRequest(authenticator);
+        return yield* provideAuthenticatedRequest(httpEffect, authenticated);
+      });
+  })
+);
+
 /** Validates one request and provides the trusted auth services to its handlers. */
 export const CurrentRequestAuthMiddlewareLayer = Layer.effect(
   CurrentRequestAuthMiddleware,
@@ -143,17 +186,7 @@ export const CurrentRequestAuthMiddlewareLayer = Layer.effect(
 
     return (httpEffect) =>
       Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const webRequest = yield* HttpServerRequest.toWeb(request).pipe(
-          Effect.mapError(
-            () =>
-              new AuthInternalError({
-                code: "internal_error",
-                message: "Failed to read request",
-              })
-          )
-        );
-        const authenticated = yield* authenticator.authenticate(webRequest);
+        const authenticated = yield* authenticateHttpRequest(authenticator);
         if ((authenticated.session.claims?.requirements?.length ?? 0) !== 0) {
           return yield* new AuthPolicyDeniedError({
             code: "policy_denied",
@@ -161,12 +194,7 @@ export const CurrentRequestAuthMiddlewareLayer = Layer.effect(
           });
         }
 
-        return yield* httpEffect.pipe(
-          Effect.provideService(CurrentRequestAuth, authenticated.requestAuth),
-          Effect.provideService(CurrentSession, authenticated.session),
-          Effect.provideService(CurrentActor, authenticated.actor),
-          Effect.provideService(CurrentPrincipal, authenticated.principal)
-        );
+        return yield* provideAuthenticatedRequest(httpEffect, authenticated);
       });
   })
 );
@@ -178,23 +206,14 @@ export const RecoveryRemediationRequestAuthMiddlewareLayer = Layer.effect(
 
     return (httpEffect) =>
       Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest;
-        const webRequest = yield* HttpServerRequest.toWeb(request).pipe(
-          Effect.mapError(
-            () =>
-              new AuthInternalError({
-                code: "internal_error",
-                message: "Failed to read request",
-              })
-          )
-        );
-        const authenticated = yield* authenticator.authenticate(webRequest);
+        const authenticated = yield* authenticateHttpRequest(authenticator);
         const { claims } = authenticated.session;
         if (
           claims?.requirements?.length !== 1 ||
           claims.requirements[0] !== "recovery_remediation" ||
           claims.recoveryRemediation?.allowed.length !== 1 ||
-          claims.recoveryRemediation.allowed[0] !== "second-passkey"
+          claims.recoveryRemediation.allowed[0] !== "second-passkey" ||
+          claims.recoveryEnrollment !== undefined
         ) {
           return yield* new AuthPolicyDeniedError({
             code: "policy_denied",
@@ -202,12 +221,7 @@ export const RecoveryRemediationRequestAuthMiddlewareLayer = Layer.effect(
           });
         }
 
-        return yield* httpEffect.pipe(
-          Effect.provideService(CurrentRequestAuth, authenticated.requestAuth),
-          Effect.provideService(CurrentSession, authenticated.session),
-          Effect.provideService(CurrentActor, authenticated.actor),
-          Effect.provideService(CurrentPrincipal, authenticated.principal)
-        );
+        return yield* provideAuthenticatedRequest(httpEffect, authenticated);
       });
   })
 );

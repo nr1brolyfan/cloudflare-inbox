@@ -1320,6 +1320,37 @@ describe("guarded passkey enrollment", () => {
     }
   });
 
+  it("rejects recovery remediation with a second capability container before starting a ceremony", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const base = recoveryRemediationSession();
+      const claims = {
+        ...base.currentSession.claims,
+        recoveryEnrollment: { allowed: ["recovery-codes"] },
+      } as const;
+      const session: ValidatedSession = {
+        ...base,
+        currentSession: { ...base.currentSession, claims },
+        issued: { ...base.issued, claims },
+      };
+      insertSession(database, session);
+      insertVerifiedRecovery(database);
+      const d1 = makeTestD1Database(database);
+      const state = makeState();
+
+      const failure = await Effect.runPromise(
+        start(database, d1, state, session).pipe(Effect.flip)
+      );
+
+      expect(failure).toMatchObject({ reason: "restricted-session" });
+      expect(state.optionCalls).toBe(0);
+      expect(state.rateLimitOperations).toStrictEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
   it("rejects changed raw client intent with the same credential ID before verification", async () => {
     const database = new DatabaseSync(":memory:");
     try {

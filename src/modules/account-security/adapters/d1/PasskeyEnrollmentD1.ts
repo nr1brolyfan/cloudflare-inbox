@@ -367,7 +367,8 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
           claims?.requirements?.length === 1 &&
           claims.requirements[0] === "recovery_remediation" &&
           claims.recoveryRemediation?.allowed.length === 1 &&
-          claims.recoveryRemediation.allowed[0] === "second-passkey";
+          claims.recoveryRemediation.allowed[0] === "second-passkey" &&
+          claims.recoveryEnrollment === undefined;
         if (!recoveryMode) {
           yield* requireSession(requestAuth, operation);
         }

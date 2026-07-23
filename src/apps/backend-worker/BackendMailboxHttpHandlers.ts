@@ -473,7 +473,7 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("AuthInternalError", () => Effect.fail(internalError()))
   );
 
-/** Mailbox handlers; request auth is supplied by CurrentRequestAuthMiddleware. */
+/** Mailbox handlers; request auth is supplied by session authentication middleware. */
 export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
   MailboxHttpApi,
   "mailboxes",

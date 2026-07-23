@@ -27,6 +27,7 @@ import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/Ma
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
 
 import { MailboxHttpHandlersLayer } from "./BackendMailboxHttpHandlers";
+import { MailboxSessionRequirementsMiddlewareLayer } from "./MailboxSessionRequirements";
 
 const MailboxMessageRepositoryLayer = MailboxMessageRepositoryDoLayer;
 const MailboxDirectoryRepositoryLayer = MailboxDirectoryRepositoryDoLayer;
@@ -110,7 +111,8 @@ export const MailboxHttpLayer = MailboxHttpHandlersLayer.pipe(
       MailboxMessageHtmlLayer,
       MailboxInlineAttachmentLayer,
       MailboxInboundReplayAuthorizationLayer,
-      MailboxInboundReplayLayer
+      MailboxInboundReplayLayer,
+      MailboxSessionRequirementsMiddlewareLayer
     )
   )
 );

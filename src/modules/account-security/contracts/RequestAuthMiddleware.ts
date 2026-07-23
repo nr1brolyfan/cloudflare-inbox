@@ -1,4 +1,4 @@
-/* oxlint-disable max-classes-per-file -- Normal and recovery auth are one public middleware contract. */
+/* oxlint-disable max-classes-per-file -- Session authentication policies share one public middleware contract. */
 import {
   AuthInternalError,
   AuthPolicyDeniedError,
@@ -22,6 +22,20 @@ export class CurrentRequestAuthMiddleware extends HttpApiMiddleware.Service<
   }
 >()("cloudflare-inbox/CurrentRequestAuthMiddleware", {
   error: [AuthUnauthenticatedError, AuthPolicyDeniedError, AuthInternalError],
+}) {}
+
+/** Policy-neutral session authentication for groups with their own session matrix. */
+export class SessionAuthenticationMiddleware extends HttpApiMiddleware.Service<
+  SessionAuthenticationMiddleware,
+  {
+    provides:
+      | CurrentRequestAuth
+      | CurrentSession
+      | CurrentActor
+      | CurrentPrincipal;
+  }
+>()("cloudflare-inbox/SessionAuthenticationMiddleware", {
+  error: [AuthUnauthenticatedError, AuthInternalError],
 }) {}
 
 export class RecoveryRemediationRequestAuthMiddleware extends HttpApiMiddleware.Service<

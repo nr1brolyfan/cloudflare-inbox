@@ -44,6 +44,7 @@ import { RecoveryCodeManagementHttpHandlersLayer } from "#/modules/account-secur
 import {
   CurrentRequestAuthMiddlewareLayer,
   RecoveryRemediationRequestAuthMiddlewareLayer,
+  SessionAuthenticationMiddlewareLayer,
 } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import { AccountSecurityLayer } from "#/modules/account-security/layers/AccountSecurityLayer";
 
@@ -61,6 +62,9 @@ export const AccountSecurityHttpMiddlewareLayer = Layer.unwrap(
       AuthOriginCheckMiddlewareLive(originPolicy),
       AuthRequestMetadataMiddlewareLive({ trustProxyHeaders: true }),
       CurrentRequestAuthMiddlewareLayer.pipe(
+        Layer.provide(AccountSecurityLayer)
+      ),
+      SessionAuthenticationMiddlewareLayer.pipe(
         Layer.provide(AccountSecurityLayer)
       )
     );

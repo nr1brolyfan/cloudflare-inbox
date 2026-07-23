@@ -12,6 +12,7 @@ import {
 } from "@effect-auth/core/Identifiers";
 import * as AuthPolicy from "@effect-auth/core/Policy";
 import type {
+  SessionClaims,
   SessionsService,
   ValidatedSession,
 } from "@effect-auth/core/Sessions";
@@ -34,8 +35,13 @@ import { describe, expect, it } from "vitest";
 import { MailboxGroup } from "#/apps/backend-worker/BackendMailboxHttpApi";
 import { MailboxHttpHandlersLayer } from "#/apps/backend-worker/BackendMailboxHttpHandlers";
 import {
-  CurrentRequestAuthMiddlewareLayer,
+  MailboxOperation,
+  MailboxSessionRequirementsMiddlewareLayer,
+} from "#/apps/backend-worker/MailboxSessionRequirements";
+import type { MailboxOperation as MailboxOperationName } from "#/apps/backend-worker/MailboxSessionRequirements";
+import {
   RequestSessionAuthenticatorEffectAuthLayer,
+  SessionAuthenticationMiddlewareLayer,
 } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
@@ -53,6 +59,7 @@ import {
   MailboxInboundReplay,
   MailboxInboundReplayAuthorization,
 } from "#/modules/mailbox/application/MailboxInboundReplay";
+import type { MailboxInboundReplayService } from "#/modules/mailbox/application/MailboxInboundReplay";
 import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxInlineAttachmentReadingService } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import {
@@ -381,6 +388,9 @@ const makeHandler = (
   ),
   draftReading: MailboxDraftReadingService = MailboxDraftReading.of({
     list: () => Effect.succeed(mailboxDrafts),
+  }),
+  inboundReplay: MailboxInboundReplayService = MailboxInboundReplay.of({
+    replay: () => Effect.succeed(replayedProcessing),
   })
 ) => {
   const requestAuthLive = Layer.mergeAll(
@@ -407,13 +417,14 @@ const makeHandler = (
       allowMissingOrigin: false,
       allowedOrigins: [publicOrigin],
     }),
-    CurrentRequestAuthMiddlewareLayer.pipe(
+    SessionAuthenticationMiddlewareLayer.pipe(
       Layer.provide(
         RequestSessionAuthenticatorEffectAuthLayer.pipe(
           Layer.provide(requestAuthLive)
         )
       )
-    )
+    ),
+    MailboxSessionRequirementsMiddlewareLayer
   );
   const groupLive = MailboxHttpHandlersLayer.pipe(
     Layer.provide(
@@ -429,12 +440,7 @@ const makeHandler = (
         Layer.succeed(MailboxDraftAttachments, draftAttachments),
         Layer.succeed(MailboxOutboundSending, outboundSending),
         Layer.succeed(MailboxOutboundDeliveryReading, outboundDeliveryReading),
-        Layer.succeed(
-          MailboxInboundReplay,
-          MailboxInboundReplay.of({
-            replay: () => Effect.succeed(replayedProcessing),
-          })
-        ),
+        Layer.succeed(MailboxInboundReplay, inboundReplay),
         Layer.succeed(
           MailboxInboundReplayAuthorization,
           MailboxInboundReplayAuthorization.of({ require: () => Effect.void })
@@ -498,7 +504,362 @@ const mailboxRequest = (
   });
 };
 
+const validatedSessionWithClaims = (
+  claims: SessionClaims | undefined
+): ValidatedSession => ({
+  ...validatedSession,
+  currentSession: {
+    ...validatedSession.currentSession,
+    ...(claims === undefined ? {} : { claims }),
+  },
+  issued: {
+    ...validatedSession.issued,
+    ...(claims === undefined ? {} : { claims }),
+  },
+});
+
+interface MailboxOperationCase {
+  readonly operation: MailboxOperationName;
+  readonly request: () => Request;
+  readonly successStatus: number;
+}
+
+const draftContent = {
+  bcc: [],
+  cc: [],
+  subject: "Draft",
+  textBody: "Draft body",
+  to: [],
+} as const;
+
+const mailboxOperationCases: readonly MailboxOperationCase[] = [
+  {
+    operation: MailboxOperation.actOnMessage,
+    request: () =>
+      mailboxRequest("/api/mailboxes/primary/messages/message-1", "PATCH", {
+        body: {
+          _tag: "SetRead",
+          expectedVersion: 1,
+          operationId: "message-action-1",
+          read: true,
+        },
+      }),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.bootstrapOwner,
+    request: () => mailboxRequest("/api/mailboxes/bootstrap-owner", "POST"),
+    successStatus: 201,
+  },
+  {
+    operation: MailboxOperation.createDraft,
+    request: () =>
+      mailboxRequest("/api/mailboxes/primary/drafts", "POST", {
+        body: { content: draftContent, operationId: "create-draft-1" },
+      }),
+    successStatus: 201,
+  },
+  {
+    operation: MailboxOperation.getDraft,
+    request: () =>
+      mailboxRequest("/api/mailboxes/primary/drafts/draft-1", "GET"),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.getInlineAttachment,
+    request: () =>
+      mailboxRequest(
+        "/api/mailboxes/primary/messages/message-1/attachments/attachment-1/inline?folder=inbox",
+        "GET"
+      ),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.getMessageHtml,
+    request: () =>
+      mailboxRequest(
+        "/api/mailboxes/primary/messages/message-1/html?folder=inbox",
+        "GET"
+      ),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.getNavigation,
+    request: () => mailboxRequest("/api/mailboxes/current/navigation", "GET"),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.getOutboundDelivery,
+    request: () =>
+      mailboxRequest("/api/mailboxes/primary/outbound/delivery-1", "GET"),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.getThread,
+    request: () =>
+      mailboxRequest(
+        "/api/mailboxes/primary/threads/thread-1?folder=inbox&message=message-1",
+        "GET"
+      ),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.listDrafts,
+    request: () => mailboxRequest("/api/mailboxes/primary/drafts", "GET"),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.listMessages,
+    request: () =>
+      mailboxRequest("/api/mailboxes/primary/messages?folder=inbox", "GET"),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.readOperation,
+    request: () =>
+      mailboxRequest(
+        "/api/mailboxes/operations/00000000-0000-4000-8000-000000000010",
+        "GET"
+      ),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.rename,
+    request: () => mailboxRequest("/api/mailboxes/primary", "PATCH"),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.replayInbound,
+    request: () =>
+      mailboxRequest("/api/mailboxes/primary/inbound/ingest-1/replay", "POST", {
+        body: { operationId: "replay-inbound-1" },
+      }),
+    successStatus: 202,
+  },
+  {
+    operation: MailboxOperation.reserveDraftAttachment,
+    request: () =>
+      mailboxRequest(
+        "/api/mailboxes/primary/drafts/draft-1/attachments/reservations",
+        "POST",
+        {
+          body: {
+            fileName: "brief.pdf",
+            mimeType: "application/pdf",
+            operationId: "reserve-attachment-1",
+            size: 3,
+          },
+        }
+      ),
+    successStatus: 201,
+  },
+  {
+    operation: MailboxOperation.sendDraft,
+    request: () =>
+      mailboxRequest("/api/mailboxes/primary/drafts/draft-1/send", "POST", {
+        body: { expectedVersion: 1, operationId: "send-draft-1" },
+      }),
+    successStatus: 202,
+  },
+  {
+    operation: MailboxOperation.undoSend,
+    request: () =>
+      mailboxRequest(
+        "/api/mailboxes/primary/outbound/delivery-1/undo",
+        "POST",
+        { body: { expectedVersion: 1, operationId: "undo-send-1" } }
+      ),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.updateDraft,
+    request: () =>
+      mailboxRequest("/api/mailboxes/primary/drafts/draft-1", "PATCH", {
+        body: {
+          content: draftContent,
+          expectedVersion: 1,
+          operationId: "update-draft-1",
+        },
+      }),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.uploadDraftAttachment,
+    request: () =>
+      new Request(
+        "https://backend.test/api/mailboxes/primary/drafts/draft-1/attachments/attachment-1/content",
+        {
+          body: new Uint8Array([1, 2, 3]),
+          headers: {
+            "content-type": "application/octet-stream",
+            cookie: `__Host-session=${sessionToken}`,
+            origin: publicOrigin,
+          },
+          method: "PUT",
+        }
+      ),
+    successStatus: 200,
+  },
+];
+
+const makeCountingHandler = (session: ValidatedSession) => {
+  const counts = Object.fromEntries(
+    Object.values(MailboxOperation).map((operation) => [operation, 0])
+  ) as Record<MailboxOperationName, number>;
+  const counted = <A>(operation: MailboxOperationName, value: A) =>
+    Effect.sync(() => {
+      counts[operation] += 1;
+      return value;
+    });
+
+  return {
+    counts,
+    ...makeHandler(
+      MailboxAdministration.of({
+        bootstrapOwner: () => counted(MailboxOperation.bootstrapOwner, mailbox),
+        readOperation: () =>
+          counted(MailboxOperation.readOperation, mailboxAdministrationReceipt),
+        rename: () => counted(MailboxOperation.rename, mailbox),
+      }),
+      () => Effect.succeed(session),
+      MailboxNavigation.of({
+        getCurrent: counted(MailboxOperation.getNavigation, mailboxNavigation),
+      }),
+      MailboxMessageReading.of({
+        listView: () => counted(MailboxOperation.listMessages, mailboxMessages),
+        openThread: () => counted(MailboxOperation.getThread, mailboxThread),
+        readMessage: () => Effect.die("Unexpected message read"),
+      }),
+      MailboxMessageActions.of({
+        execute: () =>
+          counted(MailboxOperation.actOnMessage, mailboxMessageAction),
+      }),
+      MailboxMessageHtmlReading.of({
+        get: () => counted(MailboxOperation.getMessageHtml, mailboxMessageHtml),
+      }),
+      MailboxInlineAttachmentReading.of({
+        get: () =>
+          counted(MailboxOperation.getInlineAttachment, {
+            bytes: new Uint8Array([1, 2, 3]),
+            mimeType: Schema.decodeUnknownSync(MimeType)("image/png"),
+          }),
+      }),
+      MailboxDraftEditing.of({
+        create: () => counted(MailboxOperation.createDraft, mailboxDraft),
+        get: () => counted(MailboxOperation.getDraft, mailboxDraft),
+        update: () => counted(MailboxOperation.updateDraft, mailboxDraft),
+      }),
+      MailboxDraftAttachments.of({
+        reserve: () =>
+          counted(MailboxOperation.reserveDraftAttachment, draftAttachment),
+        upload: () =>
+          counted(
+            MailboxOperation.uploadDraftAttachment,
+            draftAttachmentUpload
+          ),
+      }),
+      MailboxOutboundSending.of({
+        send: () => counted(MailboxOperation.sendDraft, mailboxDraftSend),
+        undo: () => counted(MailboxOperation.undoSend, cancelledDelivery),
+      }),
+      MailboxOutboundDeliveryReading.of({
+        get: () =>
+          counted(
+            MailboxOperation.getOutboundDelivery,
+            mailboxOutboundDelivery
+          ),
+      }),
+      MailboxDraftReading.of({
+        list: () => counted(MailboxOperation.listDrafts, mailboxDrafts),
+      }),
+      MailboxInboundReplay.of({
+        replay: () =>
+          counted(MailboxOperation.replayInbound, replayedProcessing),
+      })
+    ),
+  };
+};
+
 describe("protected mailbox API", () => {
+  it.each(mailboxOperationCases)(
+    "allows unrestricted session for $operation",
+    async ({ operation, request, successStatus }) => {
+      const { counts, dispose, handler } =
+        makeCountingHandler(validatedSession);
+      try {
+        const response = await handler(request());
+        expect(response.status).toBe(successStatus);
+        expect(counts[operation]).toBe(1);
+      } finally {
+        await dispose();
+      }
+    }
+  );
+
+  it.each(mailboxOperationCases)(
+    "denies exact recovery remediation for $operation",
+    async ({ operation, request }) => {
+      const restricted = validatedSessionWithClaims({
+        recoveryRemediation: { allowed: ["second-passkey"] },
+        requirements: ["recovery_remediation"],
+      });
+      const { counts, dispose, handler } = makeCountingHandler(restricted);
+      try {
+        const response = await handler(request());
+        expect({
+          body: await response.json(),
+          count: counts[operation],
+          status: response.status,
+        }).toStrictEqual({
+          body: {
+            _tag: "AuthPolicyDeniedError",
+            code: "policy_denied",
+            message: "Mailbox operation denied",
+          },
+          count: 0,
+          status: 403,
+        });
+      } finally {
+        await dispose();
+      }
+    }
+  );
+
+  it.each([
+    ["unfinished requirement", { requirements: ["email_verification"] }],
+    [
+      "dangling capability",
+      {
+        recoveryRemediation: { allowed: ["second-passkey"] },
+        requirements: [],
+      },
+    ],
+  ] as const)("denies representative %s claims", async (_, claims) => {
+    const { counts, dispose, handler } = makeCountingHandler(
+      validatedSessionWithClaims(claims)
+    );
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/current/navigation", "GET")
+      );
+      expect({
+        body: await response.json(),
+        count: counts.getNavigation,
+        status: response.status,
+      }).toStrictEqual({
+        body: {
+          _tag: "AuthPolicyDeniedError",
+          code: "policy_denied",
+          message: "Mailbox operation denied",
+        },
+        count: 0,
+        status: 403,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
   it("sends, reads, and undoes with path identity", async () => {
     const commands: unknown[] = [];
     const provenances: unknown[] = [];

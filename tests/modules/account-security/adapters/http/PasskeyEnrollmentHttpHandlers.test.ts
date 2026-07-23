@@ -108,12 +108,16 @@ const issuedSession = {
 } as const;
 
 const validatedSession = (
-  recoveryAllowed: readonly string[] | null
+  recoveryAllowed: readonly string[] | null,
+  includeRecoveryEnrollment = false
 ): ValidatedSession => {
   const claims =
     recoveryAllowed === null
       ? undefined
       : {
+          ...(includeRecoveryEnrollment
+            ? { recoveryEnrollment: { allowed: ["recovery-codes"] } }
+            : {}),
           recoveryRemediation: { allowed: [...recoveryAllowed] },
           requirements: ["recovery_remediation"],
         };
@@ -158,13 +162,19 @@ const makeEnrollment = (
     ...overrides,
   });
 
-const requestAuthLayers = (recoveryAllowed: readonly string[] | null) => {
+const requestAuthLayers = (
+  recoveryAllowed: readonly string[] | null,
+  includeRecoveryEnrollment = false
+) => {
   const authLive = Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
     Layer.succeed(
       Sessions,
       Sessions.of({
-        validate: () => Effect.succeed(validatedSession(recoveryAllowed)),
+        validate: () =>
+          Effect.succeed(
+            validatedSession(recoveryAllowed, includeRecoveryEnrollment)
+          ),
       } as unknown as SessionsService)
     ),
     WebCryptoLive(),
@@ -212,9 +222,13 @@ const makeHandler = (
   rateLimit: AuthRateLimitService = AuthRateLimit.of({
     require: () => Effect.void,
   }),
-  recoveryAllowed: readonly string[] | null = ["second-passkey"]
+  recoveryAllowed: readonly string[] | null = ["second-passkey"],
+  includeRecoveryEnrollment = false
 ) => {
-  const auth = requestAuthLayers(kind === "recovery" ? recoveryAllowed : null);
+  const auth = requestAuthLayers(
+    kind === "recovery" ? recoveryAllowed : null,
+    includeRecoveryEnrollment
+  );
   if (kind === "normal") {
     const api = HttpApi.make("AuthApi").add(PasskeyEnrollmentGroup);
     const groupLive = PasskeyEnrollmentHttpHandlersLayer.pipe(
@@ -369,13 +383,14 @@ describe("passkey enrollment receipt HTTP contracts", () => {
   });
 
   it.each([
-    ["overbroad", ["second-passkey", "account-settings"]],
-    ["unrelated", ["account-settings"]],
-    ["empty", []],
-    ["unrestricted", null],
+    ["overbroad", ["second-passkey", "account-settings"], false],
+    ["unrelated", ["account-settings"], false],
+    ["empty", [], false],
+    ["unrestricted", null, false],
+    ["second-container", ["second-passkey"], true],
   ] as const)(
     "denies a %s capability session before recovery handler invocation",
-    async (_name, allowed) => {
+    async (_name, allowed, includeRecoveryEnrollment) => {
       let finishes = 0;
       const { dispose, handler } = makeHandler(
         "recovery",
@@ -386,7 +401,8 @@ describe("passkey enrollment receipt HTTP contracts", () => {
           },
         }),
         undefined,
-        allowed
+        allowed,
+        includeRecoveryEnrollment
       );
       try {
         const response = await handler(
