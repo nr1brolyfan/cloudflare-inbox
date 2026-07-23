@@ -7,27 +7,28 @@ import * as Schema from "effect/Schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
-  MailCreateDraftArguments,
-  MailCreateDraftTool,
-  mailPlainTextMaxLength,
-} from "#/ai/mail-tools";
-import { AiToolAudit, AiToolAuditEvent } from "#/ai/tool-audit";
-import {
   AiToolExecutor,
-  AiToolExecutorMailInteractiveLive,
-  AiToolExecutorMailReadOnlyLive,
+  AiToolExecutorMailInteractiveLayer,
+  AiToolExecutorMailReadOnlyLayer,
   CurrentAiToolScope,
   CurrentAiToolScopeSchema,
-} from "#/ai/tool-executor";
+} from "#/modules/ai/application/AiToolExecutor";
+import { AiToolRunBudgetLayer } from "#/modules/ai/application/AiToolRunBudget";
+import type { AiToolRunBudget } from "#/modules/ai/application/AiToolRunBudget";
+import { AiToolAuditEvent } from "#/modules/ai/domain/AiToolAuditEvent";
 import {
   AiToolCall,
   AiToolFailureResult,
   AiToolResultData,
   AiToolSuccessResult,
-} from "#/ai/tool-protocol";
-import type { AiToolResult } from "#/ai/tool-protocol";
-import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
-import type { AiToolRunBudget } from "#/ai/tool-run-budget";
+} from "#/modules/ai/domain/AiToolProtocol";
+import type { AiToolResult } from "#/modules/ai/domain/AiToolProtocol";
+import {
+  MailCreateDraftArguments,
+  MailCreateDraftTool,
+  mailPlainTextMaxLength,
+} from "#/modules/ai/domain/MailTools";
+import { AiToolAudit } from "#/modules/ai/ports/AiToolAudit";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
@@ -105,7 +106,7 @@ interface AuditRecord {
 
 const auditRecords: AuditRecord[] = [];
 
-const AuditTestLive = Layer.succeed(
+const AuditTestLayer = Layer.succeed(
   AiToolAudit,
   AiToolAudit.of({
     record: (event) =>
@@ -125,11 +126,11 @@ const execute = (
   AiToolExecutor.pipe(
     Effect.flatMap((executor) => executor.execute(call)),
     Effect.provide(
-      AiToolExecutorMailInteractiveLive.pipe(
+      AiToolExecutorMailInteractiveLayer.pipe(
         Layer.provide(
           Layer.mergeAll(
-            AuditTestLive,
-            AiToolRunBudgetLive,
+            AuditTestLayer,
+            AiToolRunBudgetLayer,
             Layer.succeed(MailboxDraftEditing, editing),
             Layer.succeed(MailboxMessageReading, reading)
           )
@@ -163,7 +164,7 @@ const visibleInteractiveRequirements: Layer.Layer<
   AiToolExecutor,
   never,
   AiToolAudit | AiToolRunBudget | MailboxDraftEditing | MailboxMessageReading
-> = AiToolExecutorMailInteractiveLive;
+> = AiToolExecutorMailInteractiveLayer;
 
 describe("mail create draft tool", () => {
   beforeEach(() => {
@@ -446,7 +447,7 @@ describe("mail create draft tool", () => {
       /Private subject|Private body|private-principal|person@example/u
     );
     expect(visibleInteractiveRequirements).toBe(
-      AiToolExecutorMailInteractiveLive
+      AiToolExecutorMailInteractiveLayer
     );
   });
 
@@ -482,12 +483,12 @@ describe("mail create draft tool", () => {
           executor.execute(makeCall("mail_create_draft", createArguments))
         ),
         Effect.provide(
-          AiToolExecutorMailReadOnlyLive.pipe(
+          AiToolExecutorMailReadOnlyLayer.pipe(
             Layer.provide(
               Layer.merge(
-                AuditTestLive,
+                AuditTestLayer,
                 Layer.merge(
-                  AiToolRunBudgetLive,
+                  AiToolRunBudgetLayer,
                   Layer.succeed(MailboxMessageReading, reading)
                 )
               )

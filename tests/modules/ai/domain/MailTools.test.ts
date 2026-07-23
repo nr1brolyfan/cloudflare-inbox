@@ -6,6 +6,29 @@ import * as Schema from "effect/Schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import {
+  AiToolExecutor,
+  AiToolExecutorMailReadOnlyLayer,
+  CurrentAiToolScope,
+  CurrentAiToolScopeSchema,
+} from "#/modules/ai/application/AiToolExecutor";
+import type {
+  AiToolExecutor as AiToolExecutorService,
+  CurrentAiToolScope as CurrentAiToolScopeValue,
+} from "#/modules/ai/application/AiToolExecutor";
+import { AiToolRunBudgetLayer } from "#/modules/ai/application/AiToolRunBudget";
+import { AiToolAuditEvent } from "#/modules/ai/domain/AiToolAuditEvent";
+import {
+  AiToolCall,
+  AiToolFailureResult,
+  AiToolResultData,
+  AiToolSuccessResult,
+} from "#/modules/ai/domain/AiToolProtocol";
+import type {
+  AiToolExecutionError,
+  AiToolProtocolError,
+  AiToolResult,
+} from "#/modules/ai/domain/AiToolProtocol";
+import {
   MailCreateDraftArguments,
   MailCreateDraftTool,
   MailReadArguments,
@@ -20,30 +43,8 @@ import {
   mailPlainTextMaxLength,
   mailSearchMaxResults,
   mailThreadMaxMessages,
-} from "#/ai/mail-tools";
-import { AiToolAudit, AiToolAuditEvent } from "#/ai/tool-audit";
-import {
-  AiToolExecutor,
-  AiToolExecutorMailReadOnlyLive,
-  CurrentAiToolScope,
-  CurrentAiToolScopeSchema,
-} from "#/ai/tool-executor";
-import type {
-  AiToolExecutor as AiToolExecutorService,
-  CurrentAiToolScope as CurrentAiToolScopeValue,
-} from "#/ai/tool-executor";
-import {
-  AiToolCall,
-  AiToolFailureResult,
-  AiToolResultData,
-  AiToolSuccessResult,
-} from "#/ai/tool-protocol";
-import type {
-  AiToolExecutionError,
-  AiToolProtocolError,
-  AiToolResult,
-} from "#/ai/tool-protocol";
-import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
+} from "#/modules/ai/domain/MailTools";
+import { AiToolAudit } from "#/modules/ai/ports/AiToolAudit";
 import {
   MailboxMessageListResult,
   MailboxMessageReadResult,
@@ -149,7 +150,7 @@ interface AuditRecord {
 
 const auditRecords: AuditRecord[] = [];
 
-const AuditTestLive = Layer.succeed(
+const AuditTestLayer = Layer.succeed(
   AiToolAudit,
   AiToolAudit.of({
     record: (event) =>
@@ -180,12 +181,12 @@ const execute = (
       executeWithVisibleRequirements(executor, call)
     ),
     Effect.provide(
-      AiToolExecutorMailReadOnlyLive.pipe(
+      AiToolExecutorMailReadOnlyLayer.pipe(
         Layer.provide(
           Layer.merge(
-            AuditTestLive,
+            AuditTestLayer,
             Layer.merge(
-              AiToolRunBudgetLive,
+              AiToolRunBudgetLayer,
               Layer.succeed(MailboxMessageReading, reading)
             )
           )

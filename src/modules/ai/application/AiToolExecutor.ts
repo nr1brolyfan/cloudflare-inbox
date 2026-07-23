@@ -31,20 +31,13 @@ import {
 import { OperationId } from "#/shared/Operation";
 
 import {
-  MailCreateDraftArguments,
-  MailCreateDraftSuccess,
-  MailReadArguments,
-  MailReadSuccess,
-  MailSearchArguments,
-  MailSearchSuccess,
-  MailThreadArguments,
-  MailThreadSuccess,
-  mailPlainTextMaxLength,
-  mailSearchDefaultLimit,
-  mailThreadMaxMessages,
-} from "./mail-tools";
-import { AiToolAudit, AiToolAuditEvent, AiToolAuditReason } from "./tool-audit";
-import type { AiToolAuditReason as AiToolAuditReasonValue } from "./tool-audit";
+  AiToolAuditEvent,
+  AiToolAuditReason,
+} from "../domain/AiToolAuditEvent";
+import type {
+  AiToolAuditReason as AiToolAuditReasonValue,
+  AiToolKind,
+} from "../domain/AiToolAuditEvent";
 import {
   AiToolArguments,
   AiToolCall,
@@ -57,10 +50,24 @@ import {
   AiToolName,
   AiToolSuccessResult,
   AiToolResultData,
-} from "./tool-protocol";
-import type { AiToolResult } from "./tool-protocol";
-import { AiToolRunBudget } from "./tool-run-budget";
-import type { AiToolBudgetExceeded, AiToolKind } from "./tool-run-budget";
+} from "../domain/AiToolProtocol";
+import type { AiToolResult } from "../domain/AiToolProtocol";
+import {
+  MailCreateDraftArguments,
+  MailCreateDraftSuccess,
+  MailReadArguments,
+  MailReadSuccess,
+  MailSearchArguments,
+  MailSearchSuccess,
+  MailThreadArguments,
+  MailThreadSuccess,
+  mailPlainTextMaxLength,
+  mailSearchDefaultLimit,
+  mailThreadMaxMessages,
+} from "../domain/MailTools";
+import { AiToolAudit } from "../ports/AiToolAudit";
+import { AiToolRunBudget } from "./AiToolRunBudget";
+import type { AiToolBudgetExceeded } from "./AiToolRunBudget";
 
 export const CurrentAiToolScopeSchema = Schema.Struct({
   mailboxId: MailboxId,
@@ -360,7 +367,7 @@ const auditExecutionError = (callId: AiToolCallId) =>
   });
 
 /** Foundation toolset has no names or handlers and therefore fails closed. */
-export const AiToolExecutorFoundationLive = Layer.effect(
+export const AiToolExecutorFoundationLayer = Layer.effect(
   AiToolExecutor,
   Effect.gen(function* () {
     const audit = yield* AiToolAudit;
@@ -983,7 +990,7 @@ const mailExecutor = (
   });
 
 /** Concrete read-only toolset; model input never supplies mailbox or principal authority. */
-export const AiToolExecutorMailReadOnlyLive = Layer.effect(
+export const AiToolExecutorMailReadOnlyLayer = Layer.effect(
   AiToolExecutor,
   Effect.gen(function* () {
     const audit = yield* AiToolAudit;
@@ -995,7 +1002,7 @@ export const AiToolExecutorMailReadOnlyLive = Layer.effect(
 );
 
 /** Interactive toolset adds authorized draft creation without outbound capability. */
-export const AiToolExecutorMailInteractiveLive = Layer.effect(
+export const AiToolExecutorMailInteractiveLayer = Layer.effect(
   AiToolExecutor,
   Effect.gen(function* () {
     const audit = yield* AiToolAudit;

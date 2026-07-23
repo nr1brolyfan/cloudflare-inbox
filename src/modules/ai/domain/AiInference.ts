@@ -1,7 +1,4 @@
 /* oxlint-disable max-classes-per-file -- The inference contract is intentionally consolidated. */
-import * as Context from "effect/Context";
-import * as Effect from "effect/Effect";
-import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 export const aiSystemTextMaxLength = 8192;
@@ -95,28 +92,3 @@ export class AiInferenceError extends Schema.TaggedErrorClass<AiInferenceError>(
   reason: AiInferenceErrorReason,
   retryable: Schema.Boolean,
 }) {}
-
-export interface AiInference {
-  readonly generate: (
-    input: AiInferenceInput
-  ) => Effect.Effect<AiInferenceOutput, AiInferenceError>;
-}
-
-/** Transport-neutral text inference boundary; it deliberately exposes no tools. */
-export const AiInference = Context.Service<AiInference>(
-  "cloudflare-inbox/AiInference"
-);
-
-export const AiInferenceUnavailableLive = Layer.succeed(
-  AiInference,
-  AiInference.of({
-    generate: () =>
-      Effect.fail(
-        new AiInferenceError({
-          message: "AI inference is not available in this runtime",
-          reason: "unavailable",
-          retryable: false,
-        })
-      ),
-  })
-);

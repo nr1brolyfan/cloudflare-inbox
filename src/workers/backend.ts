@@ -23,6 +23,13 @@ import { DevEmailConfig } from "#/modules/account-security/adapters/http/DevEmai
 import { handleCloudflareEmailRoutingMessage } from "#/modules/address-routing/adapters/email/CloudflareEmailRouting";
 import { EmailAddress } from "#/modules/address-routing/domain/EmailAddress";
 import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
+import {
+  WorkersAiClientLayer,
+  WorkersAiConfigLayer,
+  WorkersAiGateway,
+  WorkersAiInferenceLayer,
+} from "#/modules/ai/adapters/cloudflare/AiInferenceCloudflare";
+import { AiInferenceUnavailableLayer } from "#/modules/ai/layers/AiInferenceLayer";
 import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import {
   MailboxEmailSendBindingClient,
@@ -53,13 +60,6 @@ import {
   EmailRoutingEventSourceCloudflareLayer,
 } from "#/platform/cloudflare/EmailRoutingEventSource";
 
-import { AiInferenceUnavailableLive } from "../ai/inference";
-import {
-  WorkersAiClientLive,
-  WorkersAiConfigLive,
-  WorkersAiGateway,
-  WorkersAiInferenceLive,
-} from "../ai/workers-ai-live";
 import { BackendHttpLayer } from "../http/backend";
 import {
   AuthEmailSender,
@@ -149,15 +149,15 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const inboundWorkflow = yield* InboundWorkflow;
     const emailRouting = yield* EmailRoutingEventSource;
     const isDevelopment = yield* ALCHEMY_DEV;
-    const aiInferenceLive = isDevelopment
-      ? AiInferenceUnavailableLive
+    const aiInferenceLayer = isDevelopment
+      ? AiInferenceUnavailableLayer
       : yield* Effect.gen(function* () {
           const queryGateway =
             yield* Cloudflare.AI.QueryGateway(InboxAiGateway);
-          return WorkersAiInferenceLive.pipe(
+          return WorkersAiInferenceLayer.pipe(
             Layer.provide(
-              WorkersAiClientLive.pipe(
-                Layer.provide(WorkersAiConfigLive),
+              WorkersAiClientLayer.pipe(
+                Layer.provide(WorkersAiConfigLayer),
                 Layer.provide(
                   Layer.succeed(
                     WorkersAiGateway,
@@ -322,7 +322,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       draftAttachmentClientLive,
       outboundAttachmentReadClientLive,
       mailboxOutboundProviderLive,
-      aiInferenceLive,
+      aiInferenceLayer,
       Layer.succeed(
         MailboxAdministrationConfig,
         MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })

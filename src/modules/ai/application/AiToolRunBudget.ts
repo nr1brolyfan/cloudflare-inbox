@@ -4,7 +4,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 
-import type { AiToolCallId, AiToolName } from "./tool-protocol";
+import type { AiToolKind } from "../domain/AiToolAuditEvent";
+import type { AiToolCallId, AiToolName } from "../domain/AiToolProtocol";
 
 export const aiToolRunLimits = {
   aggregateArgumentBytes: 32 * 1024,
@@ -15,8 +16,6 @@ export const aiToolRunLimits = {
   resultBytesPerCall: 32 * 1024,
   totalCalls: 8,
 } as const;
-
-export type AiToolKind = "mutation" | "read" | "unknown";
 
 export type AiToolBudgetLimit =
   | "aggregate-argument-bytes"
@@ -87,7 +86,7 @@ const fromDecision = (decision: BudgetDecision) =>
   decision._tag === "Allowed" ? Effect.void : Effect.fail(decision.error);
 
 /** A fresh layer must be acquired once per AI run; Ref.modify makes parallel calls atomic. */
-export const AiToolRunBudgetLive = Layer.effect(
+export const AiToolRunBudgetLayer = Layer.effect(
   AiToolRunBudget,
   Ref.make<BudgetState>({
     argumentBytes: 0,

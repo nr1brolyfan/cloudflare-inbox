@@ -3,14 +3,14 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  AiInference,
   AiInferenceInput,
   AiInferenceOutput,
-  AiInferenceUnavailableLive,
   aiGeneratedTextMaxLength,
   aiPromptTextMaxLength,
   aiSystemTextMaxLength,
-} from "#/ai/inference";
+} from "#/modules/ai/domain/AiInference";
+import { AiInferenceUnavailableLayer } from "#/modules/ai/layers/AiInferenceLayer";
+import { AiInference } from "#/modules/ai/ports/AiInference";
 
 describe("AI inference contract", () => {
   it("accepts only bounded system and prompt text", () => {
@@ -98,7 +98,7 @@ describe("AI inference contract", () => {
     const error = await Effect.runPromise(
       AiInference.pipe(
         Effect.flatMap((inference) => inference.generate(input)),
-        Effect.provide(AiInferenceUnavailableLive),
+        Effect.provide(AiInferenceUnavailableLayer),
         Effect.flip
       )
     );

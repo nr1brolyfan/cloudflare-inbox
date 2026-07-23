@@ -1,74 +1,22 @@
-/* oxlint-disable max-classes-per-file -- Audit event and its storage error form one port contract. */
 import * as AuthPermission from "@effect-auth/core/Permission";
 import { eq } from "drizzle-orm";
 import * as Clock from "effect/Clock";
-import * as Context from "effect/Context";
-import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 
-import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { appAiToolAudit } from "#/platform/control-plane-d1/ControlPlaneSchema";
 
-import { ControlPlaneDatabase } from "../platform/control-plane-d1/ControlPlaneDatabase";
-import { appAiToolAudit } from "../platform/control-plane-d1/ControlPlaneSchema";
-import { AiToolCallId, AiToolName, AiToolRunId } from "./tool-protocol";
-import type { AiToolKind } from "./tool-run-budget";
+import type {
+  AiToolAuditEvent,
+  AiToolKind,
+} from "../../domain/AiToolAuditEvent";
+import { AiToolAudit, AiToolAuditError } from "../../ports/AiToolAudit";
 
 export const aiToolAuditRetentionDays = 90;
 /** Indexed retention horizon for future cleanup; no deletion job exists yet. */
 export const aiToolAuditRetentionMillis =
   aiToolAuditRetentionDays * 24 * 60 * 60 * 1000;
-
-export const AiToolAuditReason = Schema.Literals([
-  "completed",
-  "denied",
-  "execution-failed",
-  "forbidden-arguments",
-  "invalid-arguments",
-  "invalid-call",
-  "invalid-result",
-  "limit-aggregate-argument-bytes",
-  "limit-aggregate-result-bytes",
-  "limit-argument-bytes-per-call",
-  "limit-mutations",
-  "limit-reads",
-  "limit-replay-mismatch",
-  "limit-result-bytes-per-call",
-  "limit-total-calls",
-  "unavailable",
-  "unknown-tool",
-]);
-export type AiToolAuditReason = Schema.Schema.Type<typeof AiToolAuditReason>;
-
-/** Audit data is intentionally metadata-only and excludes model or tool content. */
-export class AiToolAuditEvent extends Schema.Class<AiToolAuditEvent>(
-  "cloudflare-inbox/AiToolAuditEvent"
-)({
-  callId: AiToolCallId,
-  kind: Schema.Literals(["mutation", "read", "unknown"]),
-  mailboxId: MailboxId,
-  name: AiToolName,
-  outcome: Schema.Literals(["failed", "rejected", "succeeded"]),
-  reason: AiToolAuditReason,
-  runId: AiToolRunId,
-  source: Schema.Literal("interactive-session"),
-}) {}
-
-export class AiToolAuditError extends Data.TaggedError("AiToolAuditError")<{
-  readonly cause: unknown;
-  readonly reason: "collision" | "storage";
-}> {}
-
-export interface AiToolAudit {
-  readonly record: (
-    event: AiToolAuditEvent
-  ) => Effect.Effect<void, AiToolAuditError, AuthPermission.CurrentPrincipal>;
-}
-
-export const AiToolAudit = Context.Service<AiToolAudit>(
-  "cloudflare-inbox/AiToolAudit"
-);
 
 const digestHex = (value: string) =>
   Effect.tryPromise({
@@ -126,7 +74,7 @@ const sameEvent = (
   row.reason === event.reason;
 
 /** D1 metadata sink with deterministic identity and replay/collision verification. */
-export const AiToolAuditD1Live = Layer.effect(
+export const AiToolAuditD1Layer = Layer.effect(
   AiToolAudit,
   Effect.gen(function* () {
     const database = yield* ControlPlaneDatabase;

@@ -3,12 +3,12 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { AiToolCallId, AiToolName } from "#/ai/tool-protocol";
 import {
   AiToolRunBudget,
-  AiToolRunBudgetLive,
+  AiToolRunBudgetLayer,
   aiToolRunLimits,
-} from "#/ai/tool-run-budget";
+} from "#/modules/ai/application/AiToolRunBudget";
+import { AiToolCallId, AiToolName } from "#/modules/ai/domain/AiToolProtocol";
 
 const callId = (value: string) => Schema.decodeUnknownSync(AiToolCallId)(value);
 const toolName = (value: string) => Schema.decodeUnknownSync(AiToolName)(value);
@@ -26,6 +26,21 @@ describe("AI tool run budget", () => {
     });
   });
 
+  it("starts with a fresh budget for every AI run acquisition", async () => {
+    const consumeRun = Effect.gen(function* () {
+      const budget = yield* AiToolRunBudget;
+      for (let index = 0; index < aiToolRunLimits.totalCalls; index += 1) {
+        yield* budget.consumeCall(
+          callId(`fresh-run-${index}`),
+          toolName("mail_read")
+        );
+      }
+    }).pipe(Effect.provide(AiToolRunBudgetLayer));
+
+    await expect(Effect.runPromise(consumeRun)).resolves.toBeUndefined();
+    await expect(Effect.runPromise(consumeRun)).resolves.toBeUndefined();
+  });
+
   it("atomically admits eight concurrent calls and rejects the ninth", async () => {
     const results = await Effect.runPromise(
       Effect.gen(function* () {
@@ -38,7 +53,7 @@ describe("AI tool run budget", () => {
               .pipe(Effect.result),
           { concurrency: "unbounded" }
         );
-      }).pipe(Effect.provide(AiToolRunBudgetLive))
+      }).pipe(Effect.provide(AiToolRunBudgetLayer))
     );
 
     expect(results.filter((result) => result._tag === "Success")).toHaveLength(
@@ -70,7 +85,7 @@ describe("AI tool run budget", () => {
         expect(mutationFailure).toMatchObject({
           failure: { limit: "mutations" },
         });
-      }).pipe(Effect.provide(AiToolRunBudgetLive))
+      }).pipe(Effect.provide(AiToolRunBudgetLayer))
     );
 
     await Effect.runPromise(
@@ -87,7 +102,7 @@ describe("AI tool run budget", () => {
           .consumeInput(read7, "read", 1)
           .pipe(Effect.result);
         expect(readFailure).toMatchObject({ failure: { limit: "reads" } });
-      }).pipe(Effect.provide(AiToolRunBudgetLive))
+      }).pipe(Effect.provide(AiToolRunBudgetLayer))
     );
   });
 
@@ -121,7 +136,7 @@ describe("AI tool run budget", () => {
         ).toMatchObject({
           failure: { limit: "aggregate-argument-bytes" },
         });
-      }).pipe(Effect.provide(AiToolRunBudgetLive))
+      }).pipe(Effect.provide(AiToolRunBudgetLayer))
     );
   });
 
@@ -147,7 +162,7 @@ describe("AI tool run budget", () => {
             .consumeCall(id, toolName("mail_search"))
             .pipe(Effect.result)
         ).toMatchObject({ failure: { limit: "replay-mismatch" } });
-      }).pipe(Effect.provide(AiToolRunBudgetLive))
+      }).pipe(Effect.provide(AiToolRunBudgetLayer))
     );
   });
 
@@ -169,7 +184,7 @@ describe("AI tool run budget", () => {
         ).toMatchObject({
           failure: { limit: "aggregate-result-bytes" },
         });
-      }).pipe(Effect.provide(AiToolRunBudgetLive))
+      }).pipe(Effect.provide(AiToolRunBudgetLayer))
     );
   });
 });

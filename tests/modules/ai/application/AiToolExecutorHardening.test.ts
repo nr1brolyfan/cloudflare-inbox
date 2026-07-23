@@ -5,16 +5,19 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { AiToolAudit, AiToolAuditError } from "#/ai/tool-audit";
 import {
   AiToolExecutor,
-  AiToolExecutorFoundationLive,
-  AiToolExecutorMailInteractiveLive,
+  AiToolExecutorFoundationLayer,
+  AiToolExecutorMailInteractiveLayer,
   CurrentAiToolScope,
   CurrentAiToolScopeSchema,
-} from "#/ai/tool-executor";
-import { AiToolCall, AiToolSuccessResult } from "#/ai/tool-protocol";
-import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
+} from "#/modules/ai/application/AiToolExecutor";
+import { AiToolRunBudgetLayer } from "#/modules/ai/application/AiToolRunBudget";
+import {
+  AiToolCall,
+  AiToolSuccessResult,
+} from "#/modules/ai/domain/AiToolProtocol";
+import { AiToolAudit, AiToolAuditError } from "#/modules/ai/ports/AiToolAudit";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
@@ -87,10 +90,10 @@ const auditError = () =>
 describe("AI tool executor audit fail-closed behavior", () => {
   it("charges malformed safe envelopes to total quota only", async () => {
     const records: unknown[] = [];
-    const executorLive = AiToolExecutorFoundationLive.pipe(
+    const executorLayer = AiToolExecutorFoundationLayer.pipe(
       Layer.provide(
         Layer.merge(
-          AiToolRunBudgetLive,
+          AiToolRunBudgetLayer,
           Layer.succeed(
             AiToolAudit,
             AiToolAudit.of({
@@ -122,7 +125,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
           name: "unknown_tool",
         });
       }).pipe(
-        Effect.provide(executorLive),
+        Effect.provide(executorLayer),
         Effect.provideService(CurrentAiToolScope, scope),
         Effect.provideService(AuthPermission.CurrentPrincipal, principal)
       )
@@ -135,10 +138,10 @@ describe("AI tool executor audit fail-closed behavior", () => {
   });
 
   it("does not charge malformed input without safe call metadata", async () => {
-    const executorLive = AiToolExecutorFoundationLive.pipe(
+    const executorLayer = AiToolExecutorFoundationLayer.pipe(
       Layer.provide(
         Layer.merge(
-          AiToolRunBudgetLive,
+          AiToolRunBudgetLayer,
           Layer.succeed(
             AiToolAudit,
             AiToolAudit.of({ record: () => Effect.void })
@@ -162,7 +165,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
           })
           .pipe(Effect.result);
       }).pipe(
-        Effect.provide(executorLive),
+        Effect.provide(executorLayer),
         Effect.provideService(CurrentAiToolScope, scope),
         Effect.provideService(AuthPermission.CurrentPrincipal, principal)
       )
@@ -183,10 +186,10 @@ describe("AI tool executor audit fail-closed behavior", () => {
         return Effect.succeed(readResult);
       },
     });
-    const executorLive = AiToolExecutorMailInteractiveLive.pipe(
+    const executorLayer = AiToolExecutorMailInteractiveLayer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          AiToolRunBudgetLive,
+          AiToolRunBudgetLayer,
           Layer.succeed(
             AiToolAudit,
             AiToolAudit.of({ record: () => Effect.fail(auditError()) })
@@ -207,7 +210,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
       AiToolExecutor.pipe(
         Effect.flatMap((executor) => executor.execute(readCall)),
         Effect.provide(
-          executorLive.pipe(
+          executorLayer.pipe(
             Layer.provide(
               Layer.succeed(
                 MailboxMessageReading,
@@ -227,7 +230,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
     const successAuditFailure = await Effect.runPromise(
       AiToolExecutor.pipe(
         Effect.flatMap((executor) => executor.execute(readCall)),
-        Effect.provide(executorLive),
+        Effect.provide(executorLayer),
         Effect.provideService(CurrentAiToolScope, scope),
         Effect.provideService(AuthPermission.CurrentPrincipal, principal),
         Effect.result
@@ -256,10 +259,10 @@ describe("AI tool executor audit fail-closed behavior", () => {
   it("retries an idempotent draft and repairs a missing audit row", async () => {
     let auditAttempts = 0;
     const operationIds: string[] = [];
-    const executorLive = AiToolExecutorMailInteractiveLive.pipe(
+    const executorLayer = AiToolExecutorMailInteractiveLayer.pipe(
       Layer.provide(
         Layer.mergeAll(
-          AiToolRunBudgetLive,
+          AiToolRunBudgetLayer,
           Layer.succeed(
             AiToolAudit,
             AiToolAudit.of({
@@ -301,7 +304,7 @@ describe("AI tool executor audit fail-closed behavior", () => {
         const second = yield* executor.execute(draftCall);
         return { first, second };
       }).pipe(
-        Effect.provide(executorLive),
+        Effect.provide(executorLayer),
         Effect.provideService(CurrentAiToolScope, scope),
         Effect.provideService(AuthPermission.CurrentPrincipal, principal)
       )

@@ -8,22 +8,21 @@ import * as Schema from "effect/Schema";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
-  AiToolAudit,
-  AiToolAuditD1Live,
-  AiToolAuditEvent,
+  AiToolAuditD1Layer,
   aiToolAuditRetentionMillis,
-} from "#/ai/tool-audit";
-import { AiToolExecutor } from "#/ai/tool-executor";
-import { BackendAiInteractiveToolkitLive } from "#/http/backend";
-import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
-import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
+} from "#/modules/ai/adapters/d1/AiToolAuditD1";
+import { AiToolAuditEvent } from "#/modules/ai/domain/AiToolAuditEvent";
+import { AiToolAudit } from "#/modules/ai/ports/AiToolAudit";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
-import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
+import {
+  applyControlPlaneMigrations,
+  makeTestD1Database,
+} from "../../../../support/d1";
 
 const event = Schema.decodeUnknownSync(AiToolAuditEvent)({
   callId: "call-a",
@@ -35,24 +34,22 @@ const event = Schema.decodeUnknownSync(AiToolAuditEvent)({
   runId: "run-a",
   source: "interactive-session",
 });
-const unexpected = () => Effect.die("Unexpected operation");
-
 describe("D1 AI tool audit", () => {
   let database: DatabaseSync;
-  let auditLive: Layer.Layer<AiToolAudit, never>;
-  let databaseLive: Layer.Layer<ControlPlaneDatabase, never>;
+  let auditLayer: Layer.Layer<AiToolAudit, never>;
+  let databaseLayer: Layer.Layer<ControlPlaneDatabase, never>;
 
   beforeEach(async () => {
     database = new DatabaseSync(":memory:");
     await applyControlPlaneMigrations(database);
-    const bindingLive = Layer.succeed(
+    const bindingLayer = Layer.succeed(
       ControlPlaneD1Binding,
       ControlPlaneD1Binding.of({
         database: makeTestD1Database(database) as unknown as D1Database,
       })
     );
-    databaseLive = ControlPlaneDatabaseLayer.pipe(Layer.provide(bindingLive));
-    auditLive = AiToolAuditD1Live.pipe(Layer.provide(databaseLive));
+    databaseLayer = ControlPlaneDatabaseLayer.pipe(Layer.provide(bindingLayer));
+    auditLayer = AiToolAuditD1Layer.pipe(Layer.provide(databaseLayer));
   });
 
   afterEach(() => database.close());
@@ -60,7 +57,7 @@ describe("D1 AI tool audit", () => {
   const record = (value: AiToolAuditEvent = event, principalId = "user-a") =>
     AiToolAudit.pipe(
       Effect.flatMap((audit) => audit.record(value)),
-      Effect.provide(auditLive),
+      Effect.provide(auditLayer),
       Effect.provideService(
         AuthPermission.CurrentPrincipal,
         AuthPermission.CurrentPrincipal.of(
@@ -171,36 +168,5 @@ describe("D1 AI tool audit", () => {
     expect(columns.join(" ")).not.toMatch(
       /\b(?:prompt|argument|result|query|content|session|ip|cause|token)\b/u
     );
-  });
-
-  it("composes the concrete backend interactive toolkit per acquisition", async () => {
-    const toolkitLive = BackendAiInteractiveToolkitLive.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          databaseLive,
-          Layer.succeed(
-            MailboxMessageReading,
-            MailboxMessageReading.of({
-              listView: unexpected,
-              openThread: unexpected,
-              readMessage: unexpected,
-            })
-          ),
-          Layer.succeed(
-            MailboxDraftEditing,
-            MailboxDraftEditing.of({
-              create: unexpected,
-              get: unexpected,
-              update: unexpected,
-            })
-          )
-        )
-      )
-    );
-    const executor = await Effect.runPromise(
-      AiToolExecutor.pipe(Effect.provide(toolkitLive))
-    );
-
-    expect(executor.execute).toBeTypeOf("function");
   });
 });

@@ -4,18 +4,18 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { AiToolAudit, AiToolAuditEvent } from "#/ai/tool-audit";
-import type { AiToolAudit as AiToolAuditService } from "#/ai/tool-audit";
 import {
   AiToolExecutor,
-  AiToolExecutorFoundationLive,
+  AiToolExecutorFoundationLayer,
   CurrentAiToolScope,
   CurrentAiToolScopeSchema,
-} from "#/ai/tool-executor";
+} from "#/modules/ai/application/AiToolExecutor";
 import type {
   AiToolExecutor as AiToolExecutorService,
   CurrentAiToolScope as CurrentAiToolScopeValue,
-} from "#/ai/tool-executor";
+} from "#/modules/ai/application/AiToolExecutor";
+import { AiToolRunBudgetLayer } from "#/modules/ai/application/AiToolRunBudget";
+import { AiToolAuditEvent } from "#/modules/ai/domain/AiToolAuditEvent";
 import {
   AiToolArguments,
   AiToolCall,
@@ -32,12 +32,13 @@ import {
   aiToolJsonMaxEntries,
   aiToolJsonMaxLength,
   aiToolNameMaxLength,
-} from "#/ai/tool-protocol";
+} from "#/modules/ai/domain/AiToolProtocol";
 import type {
   AiToolProtocolError,
   AiToolResult as AiToolResultValue,
-} from "#/ai/tool-protocol";
-import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
+} from "#/modules/ai/domain/AiToolProtocol";
+import { AiToolAudit } from "#/modules/ai/ports/AiToolAudit";
+import type { AiToolAudit as AiToolAuditService } from "#/modules/ai/ports/AiToolAudit";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 
 const call = Schema.decodeUnknownSync(AiToolCall)({
@@ -58,7 +59,7 @@ interface AuditRecord {
 
 const auditRecords: AuditRecord[] = [];
 
-const AiToolAuditTestLive = Layer.succeed(
+const AiToolAuditTestLayer = Layer.succeed(
   AiToolAudit,
   AiToolAudit.of({
     record: (event) =>
@@ -69,8 +70,8 @@ const AiToolAuditTestLive = Layer.succeed(
   })
 );
 
-const AiToolExecutorTestLive = AiToolExecutorFoundationLive.pipe(
-  Layer.provide(Layer.merge(AiToolAuditTestLive, AiToolRunBudgetLive))
+const AiToolExecutorTestLayer = AiToolExecutorFoundationLayer.pipe(
+  Layer.provide(Layer.merge(AiToolAuditTestLayer, AiToolRunBudgetLayer))
 );
 
 const executeWithVisibleRequirements = (
@@ -91,7 +92,7 @@ const execute = (
     Effect.flatMap((executor) =>
       executeWithVisibleRequirements(executor, input)
     ),
-    Effect.provide(AiToolExecutorTestLive),
+    Effect.provide(AiToolExecutorTestLayer),
     Effect.provideService(CurrentAiToolScope, scope),
     Effect.provideService(
       AuthPermission.CurrentPrincipal,

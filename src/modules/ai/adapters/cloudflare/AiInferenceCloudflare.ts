@@ -5,8 +5,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { AiInference, AiInferenceError, AiInferenceOutput } from "./inference";
-import type { AiFinishReason, AiInferenceInput } from "./inference";
+import { AiInferenceError, AiInferenceOutput } from "../../domain/AiInference";
+import type {
+  AiFinishReason,
+  AiInferenceInput,
+} from "../../domain/AiInference";
+import { AiInference } from "../../ports/AiInference";
 
 export const workersAiModel =
   "@cf/meta/llama-3.3-70b-instruct-fp8-fast" as const;
@@ -21,7 +25,7 @@ export const WorkersAiConfig = Context.Service<WorkersAiConfig>(
   "cloudflare-inbox/WorkersAiConfig"
 );
 
-export const WorkersAiConfigLive = Layer.succeed(
+export const WorkersAiConfigLayer = Layer.succeed(
   WorkersAiConfig,
   WorkersAiConfig.of({
     maxOutputTokens: workersAiMaxOutputTokens,
@@ -200,7 +204,7 @@ const decodeResponse = (
   });
 };
 
-export const WorkersAiClientLive = Layer.effect(
+export const WorkersAiClientLayer = Layer.effect(
   WorkersAiClient,
   Effect.gen(function* () {
     const config = yield* WorkersAiConfig;
@@ -292,7 +296,7 @@ const decodeOutput = (
   );
 };
 
-export const WorkersAiInferenceLive = Layer.effect(
+export const WorkersAiInferenceLayer = Layer.effect(
   AiInference,
   Effect.gen(function* () {
     const client = yield* WorkersAiClient;

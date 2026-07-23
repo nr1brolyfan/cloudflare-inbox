@@ -4,23 +4,23 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  AiInference,
-  AiInferenceInput,
-  aiGeneratedTextMaxLength,
-} from "#/ai/inference";
-import {
   WorkersAiClient,
   WorkersAiClientError,
-  WorkersAiClientLive,
-  WorkersAiConfigLive,
+  WorkersAiClientLayer,
+  WorkersAiConfigLayer,
   WorkersAiGateway,
-  WorkersAiInferenceLive,
+  WorkersAiInferenceLayer,
   workersAiModel,
-} from "#/ai/workers-ai-live";
+} from "#/modules/ai/adapters/cloudflare/AiInferenceCloudflare";
 import type {
   WorkersAiClientResponse,
   WorkersAiGatewayRequest,
-} from "#/ai/workers-ai-live";
+} from "#/modules/ai/adapters/cloudflare/AiInferenceCloudflare";
+import {
+  AiInferenceInput,
+  aiGeneratedTextMaxLength,
+} from "#/modules/ai/domain/AiInference";
+import { AiInference } from "#/modules/ai/ports/AiInference";
 
 const input = Schema.decodeUnknownSync(AiInferenceInput)({
   prompt: "Summarize the synthetic document.",
@@ -34,7 +34,7 @@ const runInference = (
     AiInference.pipe(
       Effect.flatMap((inference) => inference.generate(input)),
       Effect.provide(
-        WorkersAiInferenceLive.pipe(
+        WorkersAiInferenceLayer.pipe(
           Layer.provide(
             Layer.succeed(
               WorkersAiClient,
@@ -59,8 +59,8 @@ const runClient = (
         })
       ),
       Effect.provide(
-        WorkersAiClientLive.pipe(
-          Layer.provide(WorkersAiConfigLive),
+        WorkersAiClientLayer.pipe(
+          Layer.provide(WorkersAiConfigLayer),
           Layer.provide(
             Layer.succeed(WorkersAiGateway, WorkersAiGateway.of({ run }))
           )
@@ -99,7 +99,7 @@ describe("Workers AI inference adapter", () => {
       AiInference.pipe(
         Effect.flatMap((inference) => inference.generate(input)),
         Effect.provide(
-          WorkersAiInferenceLive.pipe(
+          WorkersAiInferenceLayer.pipe(
             Layer.provide(
               Layer.succeed(
                 WorkersAiClient,

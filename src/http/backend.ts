@@ -1,9 +1,6 @@
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
-import { AiToolAuditD1Live } from "#/ai/tool-audit";
-import { AiToolExecutorMailInteractiveLive } from "#/ai/tool-executor";
-import { AiToolRunBudgetLive } from "#/ai/tool-run-budget";
 import {
   AccountSecurityHttpLayer,
   AccountSecurityHttpMiddlewareLayer,
@@ -21,13 +18,6 @@ import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBat
 import { BackendHttpApi } from "./api";
 import { HealthGroupLive } from "./health";
 import { HttpApiPlatformLive } from "./platform";
-
-/** Acquire once per interactive request/run so its atomic budget is never process-global. */
-export const BackendAiInteractiveToolkitLive =
-  AiToolExecutorMailInteractiveLive.pipe(
-    Layer.provide(AiToolRunBudgetLive),
-    Layer.provide(AiToolAuditD1Live)
-  );
 
 /** Builds the one Backend API from closed bounded-context HTTP graphs. */
 const accountSecurityLayer = AccountSecurityLayer;
