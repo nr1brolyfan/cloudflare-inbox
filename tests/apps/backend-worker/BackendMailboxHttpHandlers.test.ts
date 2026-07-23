@@ -96,6 +96,7 @@ import type { MailboxAdministrationService } from "#/modules/organization/applic
 import {
   MailboxAdministration,
   MailboxAdministrationError,
+  MailboxAdministrationReceipt,
 } from "#/modules/organization/application/MailboxAdministration";
 import {
   MailboxNavigation,
@@ -146,6 +147,18 @@ const mailbox = Schema.decodeUnknownSync(MailboxRecordSchema)({
   status: "active",
   updatedAt: 1000,
   version: 1,
+});
+const mailboxAdministrationReceipt = Schema.decodeUnknownSync(
+  MailboxAdministrationReceipt
+)({
+  actorUserId: userId,
+  committedAt: 1000,
+  displayName: "Inbox",
+  mailboxId: "primary",
+  operationId: "00000000-0000-4000-8000-000000000010",
+  operationKind: "bootstrap-owner",
+  result: mailbox,
+  schemaVersion: 1,
 });
 const replayedProcessing = Schema.decodeUnknownSync(InboundProcessingSchema)({
   attemptCount: 2,
@@ -307,6 +320,7 @@ const makeAdministration = (
 ) =>
   MailboxAdministration.of({
     bootstrapOwner: () => Effect.succeed(mailbox),
+    readOperation: () => Effect.succeed(mailboxAdministrationReceipt),
     rename: ({ displayName }) =>
       Effect.succeed(
         Schema.decodeUnknownSync(MailboxRecordSchema)({
@@ -1178,6 +1192,61 @@ describe("protected mailbox API", () => {
         status: "active",
       });
       expect(validations).toBe(1);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("returns an authenticated typed mailbox operation receipt", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/operations/00000000-0000-4000-8000-000000000010",
+          "GET"
+        )
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toMatchObject({
+        actorUserId: "user-a",
+        operationId: "00000000-0000-4000-8000-000000000010",
+        operationKind: "bootstrap-owner",
+        result: { id: "primary", version: 1 },
+        schemaVersion: 1,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("maps operation-ID intent conflicts without leaking internal details", async () => {
+    const { dispose, handler } = makeHandler(
+      makeAdministration({
+        bootstrapOwner: () =>
+          Effect.fail(
+            new MailboxAdministrationError({
+              cause: new Error("stored actor and intent details"),
+              message: "sensitive operation mismatch",
+              operation: "bootstrap-owner",
+              reason: "operation-conflict",
+            })
+          ),
+      })
+    );
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/bootstrap-owner", "POST")
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(409);
+      expect(body).toMatchObject({
+        code: "conflict",
+        message: "Mailbox operation ID conflict",
+      });
+      expect(JSON.stringify(body)).not.toContain("sensitive");
+      expect(JSON.stringify(body)).not.toContain("stored actor");
     } finally {
       await dispose();
     }

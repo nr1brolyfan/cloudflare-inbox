@@ -92,6 +92,76 @@ export const appMailboxMember = sqliteTable(
   ]
 );
 
+export const appMailboxAdministrationReceipt = sqliteTable(
+  "app_mailbox_administration_receipt",
+  {
+    operationId: text("operation_id").primaryKey(),
+    operationKind: text("operation_kind", {
+      enum: ["bootstrap-owner", "rename"],
+    }).notNull(),
+    actorUserId: text("actor_user_id").notNull(),
+    mailboxId: text("mailbox_id").notNull(),
+    displayName: text("display_name").notNull(),
+    expectedVersion: integer("expected_version"),
+    resultMailboxId: text("result_mailbox_id").notNull(),
+    resultDisplayName: text("result_display_name").notNull(),
+    resultStatus: text("result_status", { enum: ["active"] }).notNull(),
+    resultCreatedByUserId: text("result_created_by_user_id").notNull(),
+    resultCreatedAt: integer("result_created_at").notNull(),
+    resultUpdatedAt: integer("result_updated_at").notNull(),
+    resultVersion: integer("result_version").notNull(),
+    committedAt: integer("committed_at").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  (t) => [
+    check(
+      "app_mailbox_administration_receipt_operation_id_check",
+      sql`length(operation_id) = 36
+        and operation_id = lower(trim(operation_id))
+        and substr(operation_id, 9, 1) = '-'
+        and substr(operation_id, 14, 1) = '-'
+        and substr(operation_id, 15, 1) = '4'
+        and substr(operation_id, 19, 1) = '-'
+        and substr(operation_id, 20, 1) in ('8', '9', 'a', 'b')
+        and substr(operation_id, 24, 1) = '-'
+        and length(replace(operation_id, '-', '')) = 32
+        and replace(operation_id, '-', '') not glob '*[^0-9a-f]*'`
+    ),
+    check(
+      "app_mailbox_administration_receipt_kind_check",
+      sql`operation_kind in ('bootstrap-owner', 'rename')`
+    ),
+    check(
+      "app_mailbox_administration_receipt_actor_check",
+      sql`length(actor_user_id) between 1 and 128
+        and actor_user_id = trim(actor_user_id)`
+    ),
+    check(
+      "app_mailbox_administration_receipt_intent_check",
+      sql`length(mailbox_id) between 1 and 128
+        and length(display_name) between 1 and 200
+        and ((operation_kind = 'bootstrap-owner' and expected_version is null)
+          or (operation_kind = 'rename' and expected_version >= 1))`
+    ),
+    check(
+      "app_mailbox_administration_receipt_result_check",
+      sql`result_mailbox_id = mailbox_id
+        and result_display_name = display_name
+        and result_status = 'active'
+        and length(result_created_by_user_id) between 1 and 128
+        and result_created_at >= 0
+        and result_updated_at >= result_created_at
+        and result_version >= 1
+        and committed_at = result_updated_at
+        and schema_version = 1`
+    ),
+    index("app_mailbox_administration_receipt_actor_operation_idx").on(
+      t.actorUserId,
+      t.operationId
+    ),
+  ]
+);
+
 export const appUserPreference = sqliteTable(
   "app_user_preference",
   {

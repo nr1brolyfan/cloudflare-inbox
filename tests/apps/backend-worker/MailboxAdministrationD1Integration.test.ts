@@ -285,15 +285,17 @@ const bootstrap = (
   database: D1EffectQbDatabaseLike,
   validated: ValidatedSession,
   nonce: string,
-  ownerEmail = "user-a@example.test"
+  ownerEmail = "user-a@example.test",
+  operationId = "00000000-0000-4000-8000-000000000010",
+  displayName = "Inbox"
 ) =>
   provideRequestAuth(
     Effect.gen(function* () {
       const administration = yield* MailboxAdministration;
       return yield* administration.bootstrapOwner({
-        displayName: Schema.decodeUnknownSync(MailboxDisplayName)("Inbox"),
+        displayName: Schema.decodeUnknownSync(MailboxDisplayName)(displayName),
         operationId: Schema.decodeUnknownSync(AdministrativeOperationId)(
-          "00000000-0000-4000-8000-000000000010"
+          operationId
         ),
       });
     }).pipe(
@@ -386,6 +388,54 @@ const rename = (
     validated
   );
 
+const readOperation = (
+  database: D1EffectQbDatabaseLike,
+  validated: ValidatedSession,
+  operationId = "00000000-0000-4000-8000-000000000010"
+) =>
+  provideRequestAuth(
+    Effect.gen(function* () {
+      const administration = yield* MailboxAdministration;
+      return yield* administration.readOperation({
+        operationId: Schema.decodeUnknownSync(AdministrativeOperationId)(
+          operationId
+        ),
+      });
+    }).pipe(
+      Effect.provide(
+        MailboxAdministrationD1Layer.pipe(
+          Layer.provide(unavailableMailAuthorizationLive),
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(
+                MailboxAdministrationConfig,
+                MailboxAdministrationConfig.of({
+                  ownerEmail: Schema.decodeUnknownSync(
+                    MailboxAdministrationOwnerEmail
+                  )("user-a@example.test"),
+                })
+              ),
+              administrativeAuditLayer,
+              Layer.succeed(
+                MailboxAdministrationRuntime,
+                MailboxAdministrationRuntime.of({
+                  now: () => now,
+                  randomId: () => "read-guard",
+                })
+              ),
+              Layer.succeed(
+                SensitiveOperationStepUpClock,
+                SensitiveOperationStepUpClock.of({ now: () => stepUpNow })
+              )
+            )
+          ),
+          Layer.provide(controlPlaneBatchLive(database))
+        )
+      )
+    ),
+    validated
+  );
+
 const countRows = (database: DatabaseSync, table: string) =>
   (
     database.prepare(`select count(*) as count from ${table}`).get() as {
@@ -439,6 +489,7 @@ describe("mailbox administration", () => {
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        receipts: countRows(database, "app_mailbox_administration_receipt"),
       }).toStrictEqual({
         addresses: 1,
         auditEvents: 1,
@@ -446,6 +497,7 @@ describe("mailbox administration", () => {
         guards: 0,
         mailboxes: 1,
         members: 1,
+        receipts: 1,
       });
       expect(
         database
@@ -515,6 +567,154 @@ describe("mailbox administration", () => {
     }
   });
 
+  it("returns an exact bootstrap replay before step-up checks", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      const first = await Effect.runPromise(
+        bootstrap(d1, validated, "bootstrap-guard")
+      );
+      database
+        .prepare(
+          "update auth_session set authentication_events = '[]', amr = '[]' where id = 'session-a'"
+        )
+        .run();
+
+      const replay = await Effect.runPromise(
+        bootstrap(d1, validated, "unused-guard")
+      );
+
+      expect(replay).toStrictEqual(first);
+      expect(countRows(database, "app_administrative_audit_event")).toBe(1);
+      expect(countRows(database, "app_mailbox_administration_receipt")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects changed bootstrap intent reusing an operation ID", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+
+      const error = await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "unused-guard",
+          "user-a@example.test",
+          "00000000-0000-4000-8000-000000000010",
+          "Other"
+        ).pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({
+        operation: "bootstrap-owner",
+        reason: "operation-conflict",
+      });
+      expect(countRows(database, "app_administrative_audit_event")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("reads the typed receipt only for its actor", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const owner = makeValidatedSession("user-a", "session-a");
+      const other = makeValidatedSession("user-b", "session-b");
+      insertCurrentSession(database, owner);
+      insertCurrentSession(database, other);
+      await Effect.runPromise(bootstrap(d1, owner, "bootstrap-guard"));
+
+      const receipt = await Effect.runPromise(readOperation(d1, owner));
+      const error = await Effect.runPromise(
+        readOperation(d1, other).pipe(Effect.flip)
+      );
+      const reuseError = await Effect.runPromise(
+        bootstrap(d1, other, "other-guard", "user-b@example.test").pipe(
+          Effect.flip
+        )
+      );
+
+      expect(receipt).toMatchObject({
+        actorUserId: "user-a",
+        committedAt: now,
+        displayName: "Inbox",
+        mailboxId: "primary",
+        operationKind: "bootstrap-owner",
+        result: { id: "primary", version: 1 },
+        schemaVersion: 1,
+      });
+      expect(receipt.expectedVersion).toBeUndefined();
+      expect(error).toMatchObject({
+        operation: "read-operation",
+        reason: "not-found",
+      });
+      expect(reuseError).toMatchObject({
+        operation: "bootstrap-owner",
+        reason: "operation-conflict",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("binds receipts to mailbox state and makes them immutable", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+
+      expect(() =>
+        database
+          .prepare(
+            "update app_mailbox_administration_receipt set result_version = result_version + 1"
+          )
+          .run()
+      ).toThrow("mailbox administration receipts are immutable");
+      expect(() =>
+        database.prepare("delete from app_mailbox_administration_receipt").run()
+      ).toThrow("mailbox administration receipts are retained");
+      expect(() =>
+        database
+          .prepare(
+            `insert or replace into app_mailbox_administration_receipt
+             select * from app_mailbox_administration_receipt`
+          )
+          .run()
+      ).toThrow("mailbox administration receipts are immutable");
+      expect(() =>
+        database
+          .prepare(
+            `insert into app_mailbox_administration_receipt
+              (operation_id, operation_kind, actor_user_id, mailbox_id,
+               display_name, expected_version, result_mailbox_id,
+               result_display_name, result_status, result_created_by_user_id,
+               result_created_at, result_updated_at, result_version,
+               committed_at, schema_version)
+             values (?, 'bootstrap-owner', 'user-a', 'primary', 'Wrong', null,
+                     'primary', 'Wrong', 'active', 'user-a', ?, ?, 1, ?, 1)`
+          )
+          .run("00000000-0000-4000-8000-000000000099", now, now, now)
+      ).toThrow("invalid mailbox administration receipt binding");
+    } finally {
+      database.close();
+    }
+  });
+
   it("normalizes only the primary address domain during bootstrap", async () => {
     const database = new DatabaseSync(":memory:");
 
@@ -574,12 +774,14 @@ describe("mailbox administration", () => {
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        receipts: countRows(database, "app_mailbox_administration_receipt"),
       }).toStrictEqual({
         addresses: 0,
         grants: 0,
         guards: 0,
         mailboxes: 0,
         members: 0,
+        receipts: 0,
       });
     } finally {
       database.close();
@@ -614,12 +816,14 @@ describe("mailbox administration", () => {
         grants: countRows(database, "auth_role_grant"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        receipts: countRows(database, "app_mailbox_administration_receipt"),
       }).toStrictEqual({
         addresses: 0,
         auditEvents: 0,
         grants: 0,
         mailboxes: 0,
         members: 0,
+        receipts: 0,
       });
     } finally {
       database.close();
@@ -1099,7 +1303,142 @@ describe("mailbox administration", () => {
     }
   });
 
-  it("rolls back a rename when its audit identity collides", async () => {
+  it("returns an exact rename replay before permission checks", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+      const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
+        Layer.provide(
+          Layer.merge(
+            MailPermissionsEffectAuthLayer.pipe(
+              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
+            ),
+            makeResolverLive()
+          )
+        )
+      );
+      const first = await Effect.runPromise(
+        rename(d1, validated, mailAuthorizationLive, "primary", "Recruiting")
+      );
+      database
+        .prepare("update auth_role_grant set revoked_at = ?")
+        .run(now + 500);
+
+      const replay = await Effect.runPromise(
+        rename(
+          d1,
+          validated,
+          unavailableMailAuthorizationLive,
+          "primary",
+          "Recruiting"
+        )
+      );
+
+      expect(replay).toStrictEqual(first);
+      expect(countRows(database, "app_administrative_audit_event")).toBe(2);
+      expect(countRows(database, "app_mailbox_administration_receipt")).toBe(2);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("treats expectedVersion as part of rename operation intent", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+      const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
+        Layer.provide(
+          Layer.merge(
+            MailPermissionsEffectAuthLayer.pipe(
+              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
+            ),
+            makeResolverLive()
+          )
+        )
+      );
+      await Effect.runPromise(
+        rename(d1, validated, mailAuthorizationLive, "primary", "Recruiting")
+      );
+
+      const error = await Effect.runPromise(
+        rename(
+          d1,
+          validated,
+          mailAuthorizationLive,
+          "primary",
+          "Recruiting",
+          2
+        ).pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({ reason: "operation-conflict" });
+      expect(
+        database.prepare("select display_name, version from app_mailbox").get()
+      ).toMatchObject({ display_name: "Recruiting", version: 2 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rolls back rename and receipt when its audit insert fails", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+      database.exec(`create trigger fail_mailbox_rename_audit
+        before insert on app_administrative_audit_event
+        when new.action = 'mailbox.rename'
+        begin
+          select raise(abort, 'rename audit failed');
+        end`);
+      const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
+        Layer.provide(
+          Layer.merge(
+            MailPermissionsEffectAuthLayer.pipe(
+              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
+            ),
+            makeResolverLive()
+          )
+        )
+      );
+
+      const error = await Effect.runPromise(
+        rename(
+          d1,
+          validated,
+          mailAuthorizationLive,
+          "primary",
+          "Recruiting"
+        ).pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({
+        commitState: "unknown",
+        operation: "rename",
+        reason: "storage",
+      });
+      expect(
+        database.prepare("select display_name, version from app_mailbox").get()
+      ).toMatchObject({ display_name: "Inbox", version: 1 });
+      expect(countRows(database, "app_mailbox_administration_receipt")).toBe(1);
+      expect(countRows(database, "app_administrative_audit_event")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects changed rename intent reusing an operation ID", async () => {
     const database = new DatabaseSync(":memory:");
     try {
       await applyControlPlaneMigrations(database);
@@ -1134,8 +1473,8 @@ describe("mailbox administration", () => {
       );
 
       expect(error).toMatchObject({
-        commitState: "unknown",
-        reason: "storage",
+        operation: "rename",
+        reason: "operation-conflict",
       });
       expect(
         database.prepare("select display_name, version from app_mailbox").get()
@@ -1374,7 +1713,7 @@ describe("mailbox administration", () => {
     }
   });
 
-  it("does not retry when D1 reports an unknown commit state", async () => {
+  it("recovers a committed result when D1 reports an unknown commit state", async () => {
     const database = new DatabaseSync(":memory:");
 
     try {
@@ -1392,14 +1731,11 @@ describe("mailbox administration", () => {
         prepare: baseD1.prepare,
       };
 
-      const error = await Effect.runPromise(
-        bootstrap(ambiguousD1, validated, "bootstrap-guard").pipe(Effect.flip)
+      const mailbox = await Effect.runPromise(
+        bootstrap(ambiguousD1, validated, "bootstrap-guard")
       );
 
-      expect(error).toMatchObject({
-        commitState: "unknown",
-        reason: "storage",
-      });
+      expect(mailbox).toMatchObject({ id: "primary", version: 1 });
       expect(batches).toBe(1);
       expect({
         addresses: countRows(database, "app_mailbox_address"),
@@ -1440,6 +1776,7 @@ describe("mailbox administration", () => {
                       base_session_valid: 0,
                       catalog_valid: 0,
                       mailbox_available: 0,
+                      operation_available: 0,
                       owner_eligible: 0,
                       step_up_valid: 0,
                     },

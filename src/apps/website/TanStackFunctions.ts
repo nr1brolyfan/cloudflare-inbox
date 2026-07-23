@@ -20,6 +20,7 @@ import {
 import { ReserveDraftAttachmentCommand } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
   BootstrapOwnerMailboxCommand,
+  ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 
@@ -27,6 +28,9 @@ import { WebsiteApplication } from "./WebsiteApplication";
 
 const bootstrapInput = Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand);
 const renameInput = Schema.decodeUnknownSync(RenameMailboxCommand);
+const readMailboxOperationInput = Schema.decodeUnknownSync(
+  ReadMailboxAdministrationOperationQuery
+);
 const mailboxMessageListInput = Schema.decodeUnknownSync(
   MailboxMessageListInput
 );
@@ -74,6 +78,14 @@ export const getMailboxOutboundDelivery = createServerFn({ method: "GET" })
 export const renameMailbox = createServerFn({ method: "POST" })
   .validator(renameInput)
   .handler(({ data }) => WebsiteApplication.renameMailbox(data));
+
+export const readMailboxAdministrationOperation = createServerFn({
+  method: "GET",
+})
+  .validator(readMailboxOperationInput)
+  .handler(({ data }) =>
+    WebsiteApplication.readMailboxAdministrationOperation(data)
+  );
 
 export const reserveMailboxDraftAttachment = createServerFn({ method: "POST" })
   .validator(reserveDraftAttachmentInput)

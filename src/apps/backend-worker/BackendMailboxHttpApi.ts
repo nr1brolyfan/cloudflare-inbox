@@ -69,6 +69,8 @@ import {
 } from "#/modules/mailbox/domain/MailboxInbound";
 import {
   BootstrapOwnerMailboxCommand,
+  MailboxAdministrationReceiptSchema,
+  ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
@@ -164,6 +166,18 @@ export const GetMailboxNavigationEndpoint = HttpApiEndpoint.get(
   {
     error: MailboxErrors,
     success: MailboxNavigationResult,
+  }
+);
+
+export const ReadMailboxAdministrationOperationEndpoint = HttpApiEndpoint.get(
+  "readOperation",
+  "/api/mailboxes/operations/:operationId",
+  {
+    error: MailboxErrors,
+    params: Schema.Struct({
+      operationId: ReadMailboxAdministrationOperationQuery.fields.operationId,
+    }),
+    success: MailboxAdministrationReceiptSchema,
   }
 );
 
@@ -384,6 +398,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     GetMailboxNavigationEndpoint,
     ListMailboxDraftsEndpoint,
     ListMailboxMessagesEndpoint,
+    ReadMailboxAdministrationOperationEndpoint,
     RenameMailboxEndpoint,
     ReserveDraftAttachmentEndpoint,
     ReplayInboundEndpoint,

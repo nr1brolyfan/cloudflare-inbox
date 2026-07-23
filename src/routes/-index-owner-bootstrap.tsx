@@ -12,7 +12,10 @@ import {
 } from "lucide-react";
 import { useState, useSyncExternalStore } from "react";
 
-import { bootstrapMailboxOwner } from "#/apps/website/TanStackFunctions";
+import {
+  bootstrapMailboxOwner,
+  readMailboxAdministrationOperation,
+} from "#/apps/website/TanStackFunctions";
 import {
   authClient,
   authErrorMessage,
@@ -31,11 +34,33 @@ const usePasskeySupport = () =>
 const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
   const [stepUpPassword, setStepUpPassword] = useState("");
   const [stepUpComplete, setStepUpComplete] = useState(false);
+  const [operationId] = useState(() => crypto.randomUUID());
   const mailboxBootstrap = useMutation({
-    mutationFn: () =>
-      bootstrapMailboxOwner({
-        data: { displayName: "Inbox", operationId: crypto.randomUUID() },
-      }),
+    mutationFn: async () => {
+      const readback = async () => {
+        const result = await readMailboxAdministrationOperation({
+          data: { operationId },
+        });
+        return result.ok
+          ? ({ ok: true, mailbox: result.receipt.result } as const)
+          : null;
+      };
+      try {
+        const result = await bootstrapMailboxOwner({
+          data: { displayName: "Inbox", operationId },
+        });
+        if (!result.ok && (result.status === 500 || result.status === 502)) {
+          return (await readback()) ?? result;
+        }
+        return result;
+      } catch (error) {
+        const recovered = await readback().catch(() => null);
+        if (recovered !== null) {
+          return recovered;
+        }
+        throw error;
+      }
+    },
     onSuccess: async (result) => {
       if (!result.ok && result.status === 401) {
         await clearCachedAuthSession(queryClient);

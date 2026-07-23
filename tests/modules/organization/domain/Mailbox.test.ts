@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   BootstrapOwnerMailboxCommand,
+  MailboxAdministrationReceiptSchema,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
@@ -75,6 +76,44 @@ describe("organization mailbox contracts", () => {
       decodeSucceeds(BootstrapOwnerMailboxCommand, {
         displayName: "Team inbox",
         operationId: "owner@example.test",
+      })
+    ).toBeFalsy();
+  });
+
+  it("validates typed mailbox administration receipt invariants", () => {
+    const receipt = {
+      actorUserId: "user-a",
+      committedAt: 2000,
+      displayName: "Recruiting",
+      expectedVersion: 1,
+      mailboxId: "primary",
+      operationId: "00000000-0000-4000-8000-000000000011",
+      operationKind: "rename",
+      result: {
+        createdAt: 1000,
+        createdByUserId: "user-a",
+        displayName: "Recruiting",
+        id: "primary",
+        status: "active",
+        updatedAt: 2000,
+        version: 2,
+      },
+      schemaVersion: 1,
+    } as const;
+
+    expect(
+      decodeSucceeds(MailboxAdministrationReceiptSchema, receipt)
+    ).toBeTruthy();
+    expect(
+      decodeSucceeds(MailboxAdministrationReceiptSchema, {
+        ...receipt,
+        expectedVersion: undefined,
+      })
+    ).toBeFalsy();
+    expect(
+      decodeSucceeds(MailboxAdministrationReceiptSchema, {
+        ...receipt,
+        result: { ...receipt.result, displayName: "Other" },
       })
     ).toBeFalsy();
   });

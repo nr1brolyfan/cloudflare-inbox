@@ -79,14 +79,17 @@ const mapAdministrationError = (
         })
       );
     }
-    case "conflict": {
+    case "conflict":
+    case "operation-conflict": {
       return Effect.fail(
         new AuthConflictError({
           code: "conflict",
           message:
-            error.operation === "rename"
-              ? "Mailbox changed"
-              : "Mailbox already exists",
+            error.reason === "operation-conflict"
+              ? "Mailbox operation ID conflict"
+              : error.operation === "rename"
+                ? "Mailbox changed"
+                : "Mailbox already exists",
         })
       );
     }
@@ -513,6 +516,9 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
             page: { cursor: query.cursor, limit: query.limit },
           })
           .pipe(mapHttpErrors)
+      )
+      .handle("readOperation", ({ params }) =>
+        administration.readOperation(params).pipe(mapHttpErrors)
       )
       .handle("getOutboundDelivery", ({ params }) =>
         outboundDeliveryReading.get(params).pipe(mapHttpErrors)

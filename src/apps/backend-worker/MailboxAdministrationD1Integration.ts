@@ -39,16 +39,19 @@ import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
   appMailbox,
+  appMailboxAdministrationReceipt,
   appMailboxMember,
 } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import {
   MailboxAdministration,
   MailboxAdministrationError,
+  MailboxAdministrationReceipt,
+  MailboxAdministrationReceiptSchema,
+  BootstrapOwnerMailboxCommand,
+  ReadMailboxAdministrationOperationQuery,
+  RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
-import {
-  MailboxDisplayName,
-  MailboxRecordSchema,
-} from "#/modules/organization/domain/Mailbox";
+import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
@@ -154,7 +157,7 @@ const ensureTrustedAuthInvariant = (
 
 const requireUnrestrictedSession = (
   requestAuth: CurrentRequestAuthShape,
-  operation: "bootstrap-owner" | "rename"
+  operation: MailboxAdministrationError["operation"]
 ) =>
   (requestAuth.validated.currentSession.claims?.requirements?.length ?? 0) === 0
     ? Effect.void
@@ -231,6 +234,7 @@ const BootstrapStatusRow = Schema.Struct({
   base_session_valid: Schema.Number,
   catalog_valid: Schema.Number,
   mailbox_available: Schema.Number,
+  operation_available: Schema.Number,
   owner_eligible: Schema.Number,
   step_up_valid: Schema.Number,
 });
@@ -238,6 +242,7 @@ const BootstrapStatusRow = Schema.Struct({
 const RenameStatusRow = Schema.Struct({
   authorized: Schema.Number,
   mailbox_exists: Schema.Number,
+  operation_available: Schema.Number,
   permission_valid: Schema.Number,
   session_valid: Schema.Number,
   version_valid: Schema.Number,
@@ -254,6 +259,74 @@ const RenamedMailboxRow = Schema.Struct({
 
 const CreatedMailboxRow = Schema.Struct({ id: Schema.String });
 
+const ReceiptRow = Schema.Struct({
+  actor_user_id: Schema.String,
+  committed_at: Schema.Number,
+  display_name: Schema.String,
+  expected_version: Schema.NullOr(Schema.Number),
+  mailbox_id: Schema.String,
+  operation_id: Schema.String,
+  operation_kind: Schema.Literals(["bootstrap-owner", "rename"]),
+  result_created_at: Schema.Number,
+  result_created_by_user_id: Schema.String,
+  result_display_name: Schema.String,
+  result_mailbox_id: Schema.String,
+  result_status: Schema.Literal("active"),
+  result_updated_at: Schema.Number,
+  result_version: Schema.Number,
+  schema_version: Schema.Literal(1),
+});
+
+const decodeReceipt = (
+  row: Schema.Schema.Type<typeof ReceiptRow>,
+  operation: MailboxAdministrationError["operation"]
+) =>
+  Schema.decodeUnknownEffect(MailboxAdministrationReceiptSchema)({
+    actorUserId: row.actor_user_id,
+    committedAt: row.committed_at,
+    displayName: row.display_name,
+    ...(row.expected_version === null
+      ? {}
+      : { expectedVersion: row.expected_version }),
+    mailboxId: row.mailbox_id,
+    operationId: row.operation_id,
+    operationKind: row.operation_kind,
+    result: {
+      createdAt: row.result_created_at,
+      createdByUserId: row.result_created_by_user_id,
+      displayName: row.result_display_name,
+      id: row.result_mailbox_id,
+      status: row.result_status,
+      updatedAt: row.result_updated_at,
+      version: row.result_version,
+    },
+    schemaVersion: row.schema_version,
+  }).pipe(
+    Effect.mapError(
+      (cause) =>
+        new MailboxAdministrationError({
+          cause,
+          message: "Stored mailbox operation receipt was invalid",
+          operation,
+          reason: "storage",
+        })
+    )
+  );
+
+const receiptMatches = (
+  receipt: MailboxAdministrationReceipt,
+  intent: {
+    readonly displayName: string;
+    readonly expectedVersion?: number;
+    readonly mailboxId: string;
+    readonly operationKind: "bootstrap-owner" | "rename";
+  }
+) =>
+  receipt.operationKind === intent.operationKind &&
+  receipt.mailboxId === intent.mailboxId &&
+  receipt.displayName === intent.displayName &&
+  receipt.expectedVersion === intent.expectedVersion;
+
 /** Transactional mailbox service built from explicit Effect configuration. */
 const MailboxAdministrationTransactionD1Layer = Layer.effect(
   MailboxAdministrationTransaction,
@@ -269,13 +342,128 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
     const { now, randomId } = runtime;
     const ownerEmail = normalizeEmailAddressDomain(configuredOwnerEmail);
 
+    const readReceipt = (
+      operationId: string,
+      actorUserId: string,
+      operation: MailboxAdministrationError["operation"]
+    ) =>
+      database
+        .select({
+          actor_user_id: appMailboxAdministrationReceipt.actorUserId,
+          committed_at: appMailboxAdministrationReceipt.committedAt,
+          display_name: appMailboxAdministrationReceipt.displayName,
+          expected_version: appMailboxAdministrationReceipt.expectedVersion,
+          mailbox_id: appMailboxAdministrationReceipt.mailboxId,
+          operation_id: appMailboxAdministrationReceipt.operationId,
+          operation_kind: appMailboxAdministrationReceipt.operationKind,
+          result_created_at: appMailboxAdministrationReceipt.resultCreatedAt,
+          result_created_by_user_id:
+            appMailboxAdministrationReceipt.resultCreatedByUserId,
+          result_display_name:
+            appMailboxAdministrationReceipt.resultDisplayName,
+          result_mailbox_id: appMailboxAdministrationReceipt.resultMailboxId,
+          result_status: appMailboxAdministrationReceipt.resultStatus,
+          result_updated_at: appMailboxAdministrationReceipt.resultUpdatedAt,
+          result_version: appMailboxAdministrationReceipt.resultVersion,
+          schema_version: appMailboxAdministrationReceipt.schemaVersion,
+        })
+        .from(appMailboxAdministrationReceipt)
+        .where(
+          and(
+            eq(appMailboxAdministrationReceipt.operationId, operationId),
+            eq(appMailboxAdministrationReceipt.actorUserId, actorUserId)
+          )
+        )
+        .limit(1)
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new MailboxAdministrationError({
+                cause,
+                message: "Mailbox operation receipt read failed",
+                operation,
+                reason: "storage",
+              })
+          ),
+          Effect.flatMap(([row]) =>
+            row === undefined
+              ? Effect.succeed(null)
+              : Schema.decodeUnknownEffect(ReceiptRow)(row).pipe(
+                  Effect.mapError(
+                    (cause) =>
+                      new MailboxAdministrationError({
+                        cause,
+                        message: "Stored mailbox operation receipt was invalid",
+                        operation,
+                        reason: "storage",
+                      })
+                  ),
+                  Effect.flatMap((decoded) => decodeReceipt(decoded, operation))
+                )
+          )
+        );
+
+    const receiptReturning = {
+      actor_user_id: appMailboxAdministrationReceipt.actorUserId,
+      committed_at: appMailboxAdministrationReceipt.committedAt,
+      display_name: appMailboxAdministrationReceipt.displayName,
+      expected_version: appMailboxAdministrationReceipt.expectedVersion,
+      mailbox_id: appMailboxAdministrationReceipt.mailboxId,
+      operation_id: appMailboxAdministrationReceipt.operationId,
+      operation_kind: appMailboxAdministrationReceipt.operationKind,
+      result_created_at: appMailboxAdministrationReceipt.resultCreatedAt,
+      result_created_by_user_id:
+        appMailboxAdministrationReceipt.resultCreatedByUserId,
+      result_display_name: appMailboxAdministrationReceipt.resultDisplayName,
+      result_mailbox_id: appMailboxAdministrationReceipt.resultMailboxId,
+      result_status: appMailboxAdministrationReceipt.resultStatus,
+      result_updated_at: appMailboxAdministrationReceipt.resultUpdatedAt,
+      result_version: appMailboxAdministrationReceipt.resultVersion,
+      schema_version: appMailboxAdministrationReceipt.schemaVersion,
+    } as const;
+
     return MailboxAdministrationTransaction.of({
-      bootstrapOwner: (input) =>
+      bootstrapOwner: (untrusted) =>
         Effect.gen(function* () {
+          const input = yield* Schema.decodeUnknownEffect(
+            BootstrapOwnerMailboxCommand
+          )(untrusted).pipe(
+            Effect.mapError(
+              (cause) =>
+                new MailboxAdministrationError({
+                  cause,
+                  message: "Invalid owner bootstrap command",
+                  operation: "bootstrap-owner",
+                  reason: "invalid-input",
+                })
+            )
+          );
           const requestAuth = yield* CurrentRequestAuth;
           const { validated } = requestAuth;
           yield* ensureTrustedAuthInvariant(requestAuth);
           yield* requireUnrestrictedSession(requestAuth, "bootstrap-owner");
+          const mailboxId = Schema.decodeUnknownSync(MailboxId)("primary");
+          const replay = yield* readReceipt(
+            input.operationId,
+            validated.actor.userId,
+            "bootstrap-owner"
+          );
+          if (replay !== null) {
+            if (
+              !receiptMatches(replay, {
+                displayName: input.displayName,
+                mailboxId,
+                operationKind: "bootstrap-owner",
+              })
+            ) {
+              return yield* new MailboxAdministrationError({
+                message: "Operation ID was used for a different intent",
+                operation: "bootstrap-owner",
+                reason: "operation-conflict",
+              });
+            }
+            return replay.result;
+          }
           const stepUpTimestamp = stepUpClock.now();
           yield* requireSensitiveOperationStepUp(
             validated.currentSession,
@@ -296,7 +484,6 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             "bootstrap-owner"
           );
           const timestamp = Schema.decodeUnknownSync(UnixMillis)(now());
-          const mailboxId = Schema.decodeUnknownSync(MailboxId)("primary");
           const nonce = randomId();
           const auditEvent = yield* audit
             .prepare({
@@ -327,6 +514,17 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const mailboxAvailable = notExists(
             database.select({ value: sql`1` }).from(appMailbox)
           );
+          const operationAvailable = notExists(
+            database
+              .select({ value: sql`1` })
+              .from(appMailboxAdministrationReceipt)
+              .where(
+                eq(
+                  appMailboxAdministrationReceipt.operationId,
+                  input.operationId
+                )
+              )
+          );
           const authorized = exists(
             database
               .select({ value: sql`1` })
@@ -350,7 +548,8 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                       where ${trustedSession}
                         and ${ownerRoleActive}
                         and ${ownerIdentityValid}
-                        and ${mailboxAvailable}`
+                        and ${mailboxAvailable}
+                        and ${operationAvailable}`
             ),
             database.all(sql`select cast(${trustedBaseSession} as integer)
                                       as base_session_valid,
@@ -362,6 +561,8 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                                       as owner_eligible,
                                    cast(${mailboxAvailable} as integer)
                                       as mailbox_available,
+                                   cast(${operationAvailable} as integer)
+                                      as operation_available,
                                    cast(${authorized} as integer) as authorized`),
             database
               .insert(appMailbox)
@@ -428,16 +629,74 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                   .where(eq(appAuthorizationGuard.nonce, nonce))
               )
               .onConflictDoNothing(),
+            database
+              .insert(appMailboxAdministrationReceipt)
+              .select(
+                database
+                  .select({
+                    actorUserId: sql`${validated.actor.userId}`.as(
+                      "actor_user_id"
+                    ),
+                    committedAt: appMailbox.updatedAt,
+                    displayName: sql`${displayName}`.as("display_name"),
+                    expectedVersion: sql<null>`null`.as("expected_version"),
+                    mailboxId: sql`${mailboxId}`.as("mailbox_id"),
+                    operationId: sql`${input.operationId}`.as("operation_id"),
+                    operationKind:
+                      sql<"bootstrap-owner">`${"bootstrap-owner"}`.as(
+                        "operation_kind"
+                      ),
+                    resultCreatedAt: appMailbox.createdAt,
+                    resultCreatedByUserId: appMailbox.createdByUserId,
+                    resultDisplayName: appMailbox.displayName,
+                    resultMailboxId: appMailbox.id,
+                    resultStatus: appMailbox.status,
+                    resultUpdatedAt: appMailbox.updatedAt,
+                    resultVersion: appMailbox.version,
+                    schemaVersion: sql<1>`1`.as("schema_version"),
+                  })
+                  .from(appMailbox)
+                  .where(and(createdMailbox, authorized))
+              )
+              .returning(receiptReturning),
             administrativeAuditInsertStatement(database, auditEvent, nonce),
             database
               .delete(appAuthorizationGuard)
               .where(eq(appAuthorizationGuard.nonce, nonce)),
           ];
-          const results = yield* batch
-            .execute(statements)
-            .pipe(
-              Effect.mapError((error) => storageError("bootstrap-owner", error))
-            );
+          const results = yield* batch.execute(statements).pipe(
+            Effect.catchTag("ControlPlaneBatchError", (error) =>
+              error.commitState === "unknown"
+                ? readReceipt(
+                    input.operationId,
+                    validated.actor.userId,
+                    "bootstrap-owner"
+                  ).pipe(
+                    Effect.flatMap((receipt) =>
+                      receipt === null
+                        ? Effect.fail(storageError("bootstrap-owner", error))
+                        : receiptMatches(receipt, {
+                              displayName,
+                              mailboxId,
+                              operationKind: "bootstrap-owner",
+                            })
+                          ? Effect.succeed(receipt)
+                          : Effect.fail(
+                              new MailboxAdministrationError({
+                                message:
+                                  "Operation ID was used for a different intent",
+                                operation: "bootstrap-owner",
+                                reason: "operation-conflict",
+                              })
+                            )
+                    )
+                  )
+                : Effect.fail(storageError("bootstrap-owner", error))
+            )
+          );
+          if (results instanceof MailboxAdministrationReceipt) {
+            return results.result;
+          }
           const [status] = yield* decodeResultRows(
             BootstrapStatusRow,
             results,
@@ -478,6 +737,28 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                 reason: "owner-not-eligible",
               });
             }
+            if (status.operation_available !== 1) {
+              const concurrentReplay = yield* readReceipt(
+                input.operationId,
+                validated.actor.userId,
+                "bootstrap-owner"
+              );
+              if (
+                concurrentReplay !== null &&
+                receiptMatches(concurrentReplay, {
+                  displayName,
+                  mailboxId,
+                  operationKind: "bootstrap-owner",
+                })
+              ) {
+                return concurrentReplay.result;
+              }
+              return yield* new MailboxAdministrationError({
+                message: "Operation ID was used for a different intent",
+                operation: "bootstrap-owner",
+                reason: "operation-conflict",
+              });
+            }
             if (status.mailbox_available !== 1) {
               return yield* new MailboxAdministrationError({
                 message: "Primary mailbox already exists",
@@ -497,33 +778,97 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             });
           }
 
-          return yield* Schema.decodeUnknownEffect(MailboxRecordSchema)({
-            createdAt: timestamp,
-            createdByUserId: validated.actor.userId,
-            displayName,
-            id: mailboxId,
-            status: "active",
-            updatedAt: timestamp,
-            version: 1,
-          }).pipe(
+          const [receiptRow] = yield* decodeResultRows(
+            ReceiptRow,
+            results,
+            6,
+            "bootstrap-owner"
+          );
+          if (receiptRow === undefined) {
+            return yield* new MailboxAdministrationError({
+              commitState: "committed",
+              message: "Created mailbox receipt was missing",
+              operation: "bootstrap-owner",
+              reason: "storage",
+            });
+          }
+          const receipt = yield* decodeReceipt(receiptRow, "bootstrap-owner");
+          return receipt.result;
+        }),
+      readOperation: (untrusted) =>
+        Effect.gen(function* () {
+          const input = yield* Schema.decodeUnknownEffect(
+            ReadMailboxAdministrationOperationQuery
+          )(untrusted).pipe(
             Effect.mapError(
               (cause) =>
                 new MailboxAdministrationError({
                   cause,
-                  commitState: "committed",
-                  message: "Created mailbox data was invalid",
-                  operation: "bootstrap-owner",
-                  reason: "storage",
+                  message: "Invalid mailbox operation query",
+                  operation: "read-operation",
+                  reason: "invalid-input",
                 })
             )
           );
+          const requestAuth = yield* CurrentRequestAuth;
+          const principal = yield* AuthPermission.CurrentPrincipal;
+          yield* ensureTrustedAuthInvariant(requestAuth, principal);
+          yield* requireUnrestrictedSession(requestAuth, "read-operation");
+          const receipt = yield* readReceipt(
+            input.operationId,
+            requestAuth.validated.actor.userId,
+            "read-operation"
+          );
+          if (receipt === null) {
+            return yield* new MailboxAdministrationError({
+              message: "Mailbox operation receipt not found",
+              operation: "read-operation",
+              reason: "not-found",
+            });
+          }
+          return receipt;
         }),
-      rename: (input) =>
+      rename: (untrusted) =>
         Effect.gen(function* () {
+          const input = yield* Schema.decodeUnknownEffect(RenameMailboxCommand)(
+            untrusted
+          ).pipe(
+            Effect.mapError(
+              (cause) =>
+                new MailboxAdministrationError({
+                  cause,
+                  message: "Invalid mailbox rename command",
+                  operation: "rename",
+                  reason: "invalid-input",
+                })
+            )
+          );
           const requestAuth = yield* CurrentRequestAuth;
           const principal = yield* AuthPermission.CurrentPrincipal;
           yield* ensureTrustedAuthInvariant(requestAuth, principal);
           yield* requireUnrestrictedSession(requestAuth, "rename");
+          const replay = yield* readReceipt(
+            input.operationId,
+            requestAuth.validated.actor.userId,
+            "rename"
+          );
+          if (replay !== null) {
+            if (
+              !receiptMatches(replay, {
+                displayName: input.displayName,
+                expectedVersion: input.expectedVersion,
+                mailboxId: input.mailboxId,
+                operationKind: "rename",
+              })
+            ) {
+              return yield* new MailboxAdministrationError({
+                message: "Operation ID was used for a different intent",
+                operation: "rename",
+                reason: "operation-conflict",
+              });
+            }
+            return replay.result;
+          }
           const displayName = yield* validateDisplayName(
             input.displayName,
             "rename"
@@ -579,6 +924,17 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                 )
               )
           );
+          const operationAvailable = notExists(
+            database
+              .select({ value: sql`1` })
+              .from(appMailboxAdministrationReceipt)
+              .where(
+                eq(
+                  appMailboxAdministrationReceipt.operationId,
+                  input.operationId
+                )
+              )
+          );
           const authorized = exists(
             database
               .select({ value: sql`1` })
@@ -590,7 +946,8 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
               sql`select ${nonce}
                       where ${trustedSession}
                         and ${trustedPermission}
-                        and ${mailboxAtVersion}`
+                        and ${mailboxAtVersion}
+                        and ${operationAvailable}`
             ),
             database
               .update(appMailbox)
@@ -615,6 +972,44 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                 updated_at: appMailbox.updatedAt,
                 version: appMailbox.version,
               }),
+            database
+              .insert(appMailboxAdministrationReceipt)
+              .select(
+                database
+                  .select({
+                    actorUserId: sql`${requestAuth.validated.actor.userId}`.as(
+                      "actor_user_id"
+                    ),
+                    committedAt: appMailbox.updatedAt,
+                    displayName: sql`${displayName}`.as("display_name"),
+                    expectedVersion: sql`${input.expectedVersion}`.as(
+                      "expected_version"
+                    ),
+                    mailboxId: sql`${location.mailboxId}`.as("mailbox_id"),
+                    operationId: sql`${input.operationId}`.as("operation_id"),
+                    operationKind: sql<"rename">`${"rename"}`.as(
+                      "operation_kind"
+                    ),
+                    resultCreatedAt: appMailbox.createdAt,
+                    resultCreatedByUserId: appMailbox.createdByUserId,
+                    resultDisplayName: appMailbox.displayName,
+                    resultMailboxId: appMailbox.id,
+                    resultStatus: appMailbox.status,
+                    resultUpdatedAt: appMailbox.updatedAt,
+                    resultVersion: appMailbox.version,
+                    schemaVersion: sql<1>`1`.as("schema_version"),
+                  })
+                  .from(appMailbox)
+                  .where(
+                    and(
+                      eq(appMailbox.id, location.mailboxId),
+                      eq(appMailbox.status, "active"),
+                      eq(appMailbox.version, input.expectedVersion + 1),
+                      authorized
+                    )
+                  )
+              )
+              .returning(receiptReturning),
             administrativeAuditInsertStatement(database, auditEvent, nonce),
             database.all(sql`select cast(${trustedSession} as integer)
                                       as session_valid,
@@ -624,18 +1019,51 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                                       as mailbox_exists,
                                    cast(${mailboxAtVersion} as integer)
                                       as version_valid,
+                                   cast(${operationAvailable} as integer)
+                                      as operation_available,
                                    cast(${authorized} as integer) as authorized`),
             database
               .delete(appAuthorizationGuard)
               .where(eq(appAuthorizationGuard.nonce, nonce)),
           ];
-          const results = yield* batch
-            .execute(statements)
-            .pipe(Effect.mapError((error) => storageError("rename", error)));
+          const results = yield* batch.execute(statements).pipe(
+            Effect.catchTag("ControlPlaneBatchError", (error) =>
+              error.commitState === "unknown"
+                ? readReceipt(
+                    input.operationId,
+                    requestAuth.validated.actor.userId,
+                    "rename"
+                  ).pipe(
+                    Effect.flatMap((receipt) =>
+                      receipt === null
+                        ? Effect.fail(storageError("rename", error))
+                        : receiptMatches(receipt, {
+                              displayName,
+                              expectedVersion: input.expectedVersion,
+                              mailboxId: location.mailboxId,
+                              operationKind: "rename",
+                            })
+                          ? Effect.succeed(receipt)
+                          : Effect.fail(
+                              new MailboxAdministrationError({
+                                message:
+                                  "Operation ID was used for a different intent",
+                                operation: "rename",
+                                reason: "operation-conflict",
+                              })
+                            )
+                    )
+                  )
+                : Effect.fail(storageError("rename", error))
+            )
+          );
+          if (results instanceof MailboxAdministrationReceipt) {
+            return results.result;
+          }
           const [status] = yield* decodeResultRows(
             RenameStatusRow,
             results,
-            3,
+            4,
             "rename"
           );
 
@@ -647,6 +1075,29 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             });
           }
           if (status.permission_valid !== 1 || status.authorized !== 1) {
+            if (status.operation_available !== 1) {
+              const concurrentReplay = yield* readReceipt(
+                input.operationId,
+                requestAuth.validated.actor.userId,
+                "rename"
+              );
+              if (
+                concurrentReplay !== null &&
+                receiptMatches(concurrentReplay, {
+                  displayName,
+                  expectedVersion: input.expectedVersion,
+                  mailboxId: location.mailboxId,
+                  operationKind: "rename",
+                })
+              ) {
+                return concurrentReplay.result;
+              }
+              return yield* new MailboxAdministrationError({
+                message: "Operation ID was used for a different intent",
+                operation: "rename",
+                reason: "operation-conflict",
+              });
+            }
             if (status.mailbox_exists !== 1) {
               return yield* new MailboxAdministrationError({
                 message: "Mailbox not found",
@@ -684,26 +1135,22 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             });
           }
 
-          return yield* Schema.decodeUnknownEffect(MailboxRecordSchema)({
-            createdAt: row.created_at,
-            createdByUserId: row.created_by_user_id,
-            displayName: row.display_name,
-            id: row.id,
-            status: "active",
-            updatedAt: row.updated_at,
-            version: row.version,
-          }).pipe(
-            Effect.mapError(
-              (cause) =>
-                new MailboxAdministrationError({
-                  cause,
-                  commitState: "committed",
-                  message: "Renamed mailbox data was invalid",
-                  operation: "rename",
-                  reason: "storage",
-                })
-            )
+          const [receiptRow] = yield* decodeResultRows(
+            ReceiptRow,
+            results,
+            2,
+            "rename"
           );
+          if (receiptRow === undefined) {
+            return yield* new MailboxAdministrationError({
+              commitState: "committed",
+              message: "Renamed mailbox receipt was missing",
+              operation: "rename",
+              reason: "storage",
+            });
+          }
+          const receipt = yield* decodeReceipt(receiptRow, "rename");
+          return receipt.result;
         }),
     });
   })

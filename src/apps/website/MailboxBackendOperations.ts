@@ -51,8 +51,10 @@ import {
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type {
   BootstrapOwnerMailboxCommand,
+  ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
+import { MailboxAdministrationReceiptSchema } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 
@@ -77,6 +79,15 @@ export type MailboxNavigationServerResult =
   | {
       readonly navigation: Schema.Codec.Encoded<typeof MailboxNavigationResult>;
       readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxAdministrationReceiptServerResult =
+  | {
+      readonly ok: true;
+      readonly receipt: Schema.Codec.Encoded<
+        typeof MailboxAdministrationReceiptSchema
+      >;
     }
   | MailboxServerErrorResult;
 
@@ -371,6 +382,10 @@ export interface MailboxBackendOperationsShape {
     readonly command: RenameMailboxCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxServerResult>;
+  readonly readOperation: (input: {
+    readonly incoming: Request;
+    readonly query: ReadMailboxAdministrationOperationQuery;
+  }) => Effect.Effect<MailboxAdministrationReceiptServerResult>;
   readonly reserveDraftAttachment: (input: {
     readonly command: ReserveDraftAttachmentCommand;
     readonly incoming: Request;
@@ -430,10 +445,17 @@ export const MailboxBackendOperationsLayer = Layer.effect(
           MailboxPublicErrorSchema
         )(decodedError.value).pipe(Effect.orDie);
         const definition = publicErrors[encodedError.code];
+        const administrativeOperation =
+          operation === "website.mailbox.bootstrap" ||
+          operation === "website.mailbox.rename";
         const message =
           encodedError.code === "policy_denied"
             ? policyDeniedMessage(encodedError, operation)
-            : operationErrorMessage(encodedError.code, operation);
+            : encodedError.code === "conflict" &&
+                administrativeOperation &&
+                encodedError.message === "Mailbox operation ID conflict"
+              ? "Mailbox operation ID conflict"
+              : operationErrorMessage(encodedError.code, operation);
         const sanitizedError = yield* Schema.decodeUnknownEffect(
           MailboxPublicErrorSchema
         )({ ...encodedError, message }).pipe(
@@ -896,6 +918,31 @@ export const MailboxBackendOperationsLayer = Layer.effect(
                     decoded.value
                   ),
                   ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        ),
+      readOperation: ({ incoming, query }) =>
+        forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.operation_read",
+          path: `/api/mailboxes/operations/${encodeURIComponent(query.operationId)}`,
+        }).pipe(
+          Effect.map((result): MailboxAdministrationReceiptServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxAdministrationReceiptSchema)
+            )(result.body);
+            return Exit.isSuccess(decoded) &&
+              decoded.value.operationId === query.operationId
+              ? {
+                  ok: true,
+                  receipt: Schema.encodeSync(
+                    MailboxAdministrationReceiptSchema
+                  )(decoded.value),
                 }
               : invalidBackendResponse();
           })

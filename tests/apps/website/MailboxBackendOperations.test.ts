@@ -29,6 +29,7 @@ import {
 import { GetDraftAttachmentInput } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
   BootstrapOwnerMailboxCommand,
+  ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 
@@ -930,6 +931,77 @@ describe("Website mailbox Backend forwarding", () => {
     );
 
     expect(path).toBe("/api/mailboxes/team%2Fprimary%20%3F");
+  });
+
+  it("reads and validates the full mailbox administration receipt", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const receipt = {
+      actorUserId: "user-a",
+      committedAt: 1000,
+      displayName: "Inbox",
+      mailboxId: "primary",
+      operationId: "00000000-0000-4000-8000-000000000010",
+      operationKind: "bootstrap-owner",
+      result: mailbox,
+      schemaVersion: 1,
+    } as const;
+
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(receipt));
+      },
+      (operations) =>
+        operations.readOperation({
+          incoming,
+          query: Schema.decodeUnknownSync(
+            ReadMailboxAdministrationOperationQuery
+          )({ operationId: receipt.operationId }),
+        })
+    );
+
+    expect(result).toStrictEqual({ ok: true, receipt });
+    expect(forwarded?.method).toBe("GET");
+    expect(new URL(forwarded?.url ?? "https://invalid.test").pathname).toBe(
+      `/api/mailboxes/operations/${receipt.operationId}`
+    );
+    expect(forwarded?.headers.get("cookie")).toBe(
+      "__Host-session=session-a.secret"
+    );
+  });
+
+  it("preserves only the sanitized operation-ID conflict message", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json(
+            {
+              _tag: "AuthConflictError",
+              code: "conflict",
+              message: "Mailbox operation ID conflict",
+            },
+            { status: 409 }
+          )
+        ),
+      (operations) =>
+        operations.bootstrapOwner({
+          command: Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+            displayName: "Inbox",
+            operationId: "00000000-0000-4000-8000-000000000010",
+          }),
+          incoming,
+        })
+    );
+
+    expect(result).toMatchObject({
+      error: { code: "conflict", message: "Mailbox operation ID conflict" },
+      ok: false,
+      status: 409,
+    });
   });
 
   it("preserves Backend denial status without retries", async () => {

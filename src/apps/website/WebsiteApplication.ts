@@ -27,6 +27,7 @@ import type {
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type {
   BootstrapOwnerMailboxCommand,
+  ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 
@@ -98,6 +99,16 @@ export const WebsiteApplication = {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.getNavigation(incoming);
+      })
+    ),
+  readMailboxAdministrationOperation: (
+    query: ReadMailboxAdministrationOperationQuery
+  ) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.readOperation({ incoming, query });
       })
     ),
   getMailboxOutboundDelivery: (query: GetMailboxOutboundDeliveryQuery) =>
