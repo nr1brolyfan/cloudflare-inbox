@@ -5,6 +5,8 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { MailboxEmailSendClient } from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
+import { OutboundDraftAttachmentR2ReadClient } from "#/modules/mailbox/adapters/r2/OutboundDraftAttachmentBlobReaderR2";
 import { DeliveryProviderUnavailableError } from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 interface RawMessagesBinding {
@@ -17,7 +19,7 @@ interface MailboxEmailBinding {
   ) => Promise<CloudflareWorkers.EmailSendResult>;
 }
 
-export interface MailboxDoOutboundBindings {
+export interface MailboxDoBindingsShape {
   readonly email: Effect.Effect<
     MailboxEmailBinding,
     DeliveryProviderUnavailableError
@@ -25,10 +27,10 @@ export interface MailboxDoOutboundBindings {
   readonly rawMessages: Effect.Effect<RawMessagesBinding>;
 }
 
-export const MailboxDoOutboundBindings =
-  Context.Service<MailboxDoOutboundBindings>(
-    "cloudflare-inbox/MailboxDoOutboundBindings"
-  );
+export class MailboxDoBindings extends Context.Service<
+  MailboxDoBindings,
+  MailboxDoBindingsShape
+>()("cloudflare-inbox/MailboxDoBindings") {}
 
 const isObject = (value: unknown): value is object =>
   typeof value === "object" && value !== null;
@@ -42,12 +44,12 @@ const isRawMessagesBinding = (value: unknown): value is RawMessagesBinding =>
 const isMailboxEmailBinding = (value: unknown): value is MailboxEmailBinding =>
   hasMethod(value, "send");
 
-/** Validates the raw bindings made available to each MailboxDO activation. */
-export const MailboxDoOutboundBindingsLive = Layer.effect(
-  MailboxDoOutboundBindings,
+/** Captures the Worker environment while keeping optional binding access lazy. */
+export const MailboxDoBindingsLayer = Layer.effect(
+  MailboxDoBindings,
   Effect.gen(function* () {
     const workerEnvironment: unknown = yield* Cloudflare.WorkerEnvironment;
-    return MailboxDoOutboundBindings.of({
+    return MailboxDoBindings.of({
       email: Effect.gen(function* () {
         const environment = yield* Schema.decodeUnknownEffect(
           Schema.Struct({
@@ -96,6 +98,73 @@ export const MailboxDoOutboundBindingsLive = Layer.effect(
         }
         return rawMessages;
       }),
+    });
+  })
+);
+
+export const MailboxDoOutboundAttachmentR2ClientLayer = Layer.effect(
+  OutboundDraftAttachmentR2ReadClient,
+  Effect.gen(function* () {
+    const bindings = yield* MailboxDoBindings;
+
+    return OutboundDraftAttachmentR2ReadClient.of({
+      get: (key) =>
+        bindings.rawMessages.pipe(
+          Effect.flatMap((rawMessages) =>
+            Effect.tryPromise({
+              try: () => rawMessages.get(key),
+              catch: (cause) => cause,
+            })
+          ),
+          Effect.map((object) => {
+            if (object === null) {
+              return null;
+            }
+            const checksum = object.checksums.sha256;
+            return {
+              arrayBuffer: () =>
+                Effect.tryPromise({
+                  try: () => object.arrayBuffer(),
+                  catch: (cause) => cause,
+                }),
+              contentType: object.httpMetadata?.contentType,
+              customMetadata: object.customMetadata ?? {},
+              sha256:
+                checksum === undefined
+                  ? undefined
+                  : [...new Uint8Array(checksum)]
+                      .map((byte) => byte.toString(16).padStart(2, "0"))
+                      .join(""),
+              size: object.size,
+            };
+          })
+        ),
+    });
+  })
+);
+
+export const MailboxDoEmailSendClientLayer = Layer.effect(
+  MailboxEmailSendClient,
+  Effect.gen(function* () {
+    const bindings = yield* MailboxDoBindings;
+
+    return MailboxEmailSendClient.of({
+      send: (message) =>
+        bindings.email.pipe(
+          Effect.flatMap((email) =>
+            Effect.tryPromise({
+              try: () => email.send(message),
+              catch: (cause) =>
+                new Cloudflare.Email.SendEmailError({
+                  cause,
+                  message:
+                    cause instanceof Error
+                      ? cause.message
+                      : "Unknown send_email error",
+                }),
+            })
+          )
+        ),
     });
   })
 );

@@ -5,7 +5,6 @@ import { MailboxOutboundLifecycleStoreSqliteLayer } from "#/modules/mailbox/adap
 import { MailboxOutboundAlarmClockSystemLayer } from "#/modules/mailbox/adapters/system/MailboxOutboundAlarmClockSystem";
 import { MailboxOutboundAlarmDispatch } from "#/modules/mailbox/application/MailboxOutboundAlarmDispatch";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
-import { MailboxOutboundDispatcherLayer } from "#/modules/mailbox/layers/MailboxOutboundDispatcherLayer";
 
 const MailboxOutboundLifecycleStoreLayer =
   MailboxOutboundLifecycleStoreSqliteLayer.pipe(
@@ -28,8 +27,7 @@ const MailboxOutboundAlarmDispatchLayer =
     Layer.provide(
       Layer.mergeAll(
         MailboxOutboundLifecycleStoreLayer,
-        MailboxOutboundAlarmSchedulerLayer,
-        MailboxOutboundDispatcherLayer
+        MailboxOutboundAlarmSchedulerLayer
       )
     )
   );

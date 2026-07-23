@@ -7,8 +7,8 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import AsyncRuleWorkflow from "#/apps/async-rule-workflow/AsyncRuleWorkflow";
+import { MailboxDO } from "#/apps/mailbox-do/MailboxDO";
 import { RawMessagesBucket } from "#/infra/resources";
-import { MailboxDO } from "#/mailboxes/mailbox-do";
 import {
   AsyncRuleWorkflowClient,
   AsyncRuleWorkflowStarterCloudflareLayer,

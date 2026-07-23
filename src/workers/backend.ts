@@ -14,6 +14,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
 
 import InboundWorkflow from "#/apps/inbound-workflow/InboundWorkflow";
+import { MailboxDO } from "#/apps/mailbox-do/MailboxDO";
 import { InboundMailboxResolverD1Layer } from "#/modules/address-routing/adapters/d1/InboundMailboxResolverD1";
 import { handleCloudflareEmailRoutingMessage } from "#/modules/address-routing/adapters/email/CloudflareEmailRouting";
 import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
@@ -68,7 +69,6 @@ import {
   MailboxEmailSender,
   RawMessagesBucket,
 } from "../infra/resources";
-import { MailboxDO } from "../mailboxes/mailbox-do";
 import {
   BackendObservabilityConfig,
   BackendObservabilityLive,

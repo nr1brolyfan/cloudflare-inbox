@@ -14,7 +14,7 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import type { MailboxDoStub } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
+import type { MailboxDONamespace } from "#/apps/mailbox-do/MailboxDO";
 import {
   DirectoryRpcRequest,
   DirectoryRpcResponse,
@@ -35,17 +35,9 @@ type RawMessagesClient = Effect.Success<
   ReturnType<typeof Cloudflare.R2.ReadWriteBucket>
 >;
 
-interface MailboxHealthStub extends MailboxDoStub {
-  readonly sqliteReady: () => Effect.Effect<unknown, unknown, RuntimeContext>;
-}
-
-interface MailboxHealthNamespace {
-  readonly getByName: (name: string) => MailboxHealthStub;
-}
-
 export interface BackendHealthBindingsShape {
   readonly authRateLimit: AlchemyRateLimitDurableObjectNamespace;
-  readonly mailboxDataPlane: MailboxHealthNamespace;
+  readonly mailboxDataPlane: MailboxDONamespace;
   readonly rawMessages: RawMessagesClient;
 }
 
