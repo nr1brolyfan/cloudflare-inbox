@@ -1,9 +1,10 @@
+import { MailboxGroup } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
+
 import { AccountRecoveryGroup } from "./account-recovery-contract";
 import { ApplicationAuthHttpApi } from "./auth-contract";
 import { DevEmailGroup } from "./dev-email-contract";
 import { ExternalRecoveryIdentityGroup } from "./external-recovery-identity-contract";
 import { HealthGroup } from "./health-contract";
-import { MailboxGroup } from "./mailbox-contract";
 import { PasskeyAuthenticationGroup } from "./passkey-authentication-contract";
 import { PasskeyCredentialManagementGroup } from "./passkey-credential-management-contract";
 import { PasskeyEnrollmentGroup } from "./passkey-enrollment-contract";

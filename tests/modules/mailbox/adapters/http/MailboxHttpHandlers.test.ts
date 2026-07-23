@@ -36,9 +36,9 @@ import {
   RequestSessionAuthenticatorLive,
 } from "#/auth/session";
 import { MailResourceResolveError } from "#/authorization/resources";
-import { MailboxGroup } from "#/http/mailbox-contract";
-import { MailboxGroupLive } from "#/http/mailboxes";
 import { HttpApiPlatformLive } from "#/http/platform";
+import { MailboxGroup } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
+import { MailboxHttpHandlersLayer } from "#/modules/mailbox/adapters/http/MailboxHttpHandlers";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import {
@@ -401,7 +401,7 @@ const makeHandler = (
       )
     )
   );
-  const groupLive = MailboxGroupLive.pipe(
+  const groupLive = MailboxHttpHandlersLayer.pipe(
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(MailboxAdministration, administration),

@@ -5,6 +5,8 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
+import type { MailboxPublicError } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
+import { MailboxPublicErrorSchema } from "#/modules/mailbox/adapters/http/MailboxHttpApi";
 import type {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
@@ -54,8 +56,6 @@ import type {
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 
-import type { MailboxPublicError } from "../http/mailbox-contract";
-import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
 import { BackendClient } from "./website-platform";
 
 export type MailboxPublicStatus = 400 | 401 | 403 | 404 | 409 | 500 | 502;

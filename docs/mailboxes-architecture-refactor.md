@@ -86,7 +86,7 @@ The Worker-side Durable Object adapter should depend on focused services such as
 
 - Keep checked `Schema.Class` entities and their commands/queries together by feature, not in individual files.
 - Keep public contracts transport-neutral.
-- Keep HTTP contracts and handlers in `src/http`; HTTP remains an adapter.
+- Keep HTTP contracts and handlers in `src/modules/mailbox/adapters/http`; HTTP remains an adapter.
 - Merge directory and mail-data RPC schemas into one Durable Object protocol.
 - Define each RPC operation, mutation/read classification, request schema, response schema, and domain operation mapping in one place.
 - Use one domain-error DTO codec on both sides of the Durable Object boundary.

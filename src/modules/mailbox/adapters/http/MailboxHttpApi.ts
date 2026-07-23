@@ -17,6 +17,7 @@ import {
   HttpApiSchema,
 } from "effect/unstable/httpapi";
 
+import { CurrentRequestAuthMiddleware } from "#/auth/session";
 import {
   CreateMailboxDraftCommand,
   DraftEditorDraft,
@@ -71,9 +72,7 @@ import {
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
-
-import { CurrentRequestAuthMiddleware } from "../auth/session";
-import { BackendRequestContextMiddleware } from "../observability/request-context-middleware";
+import { BackendRequestContextMiddleware } from "#/observability/request-context-middleware";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });
 const InboundReplayParams = Schema.Struct({
