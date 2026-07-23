@@ -45,11 +45,6 @@ import {
   MailboxAdministrationError,
 } from "#/mailboxes/administration";
 import { MailboxRecordSchema, MimeType } from "#/mailboxes/core";
-import {
-  DraftAttachmentReservationSchema,
-  DraftAttachmentUploadResult,
-  MailboxDraftAttachments,
-} from "#/mailboxes/draft-attachments";
 import { InboundProcessingSchema, InboundReplay } from "#/mailboxes/inbound";
 import { InboundReplayAuthorization } from "#/mailboxes/inbound-replay-authorization-live";
 import {
@@ -68,6 +63,8 @@ import {
   MailboxOutboundSendingError,
   SendMailboxDraftResult,
 } from "#/mailboxes/outbound-sending";
+import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
+import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import {
   DraftEditorDraft,
   MailboxDraftEditing,
@@ -97,6 +94,10 @@ import {
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import type { MailboxMessageReadingService } from "#/modules/mailbox/application/MailboxMessageReading";
+import {
+  DraftAttachmentReservationSchema,
+  DraftAttachmentUploadResult,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
   BackendRequestContextMiddlewareLive,
   backendRequestContext,
@@ -342,10 +343,12 @@ const makeHandler = (
     get: () => Effect.succeed(mailboxDraft),
     update: () => Effect.succeed(mailboxDraft),
   }),
-  draftAttachments: MailboxDraftAttachments = MailboxDraftAttachments.of({
-    reserve: () => Effect.succeed(draftAttachment),
-    upload: () => Effect.succeed(draftAttachmentUpload),
-  }),
+  draftAttachments: MailboxDraftAttachmentsService = MailboxDraftAttachments.of(
+    {
+      reserve: () => Effect.succeed(draftAttachment),
+      upload: () => Effect.succeed(draftAttachmentUpload),
+    }
+  ),
   outboundSending: MailboxOutboundSending = MailboxOutboundSending.of({
     send: () => Effect.succeed(mailboxDraftSend),
     undo: () => Effect.succeed(cancelledDelivery),

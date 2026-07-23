@@ -27,6 +27,16 @@ import {
   MailboxMessageListResult,
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import type {
+  DraftAttachmentReservationSchema,
+  ReserveDraftAttachmentCommand,
+  UploadDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import {
+  DraftAttachmentUploadResult,
+  draftAttachmentMaxBytes,
+  ReservedDraftAttachment,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 import type { MailboxPublicError } from "../http/mailbox-contract";
 import { MailboxPublicErrorSchema } from "../http/mailbox-contract";
@@ -35,16 +45,6 @@ import type {
   RenameMailboxCommand,
 } from "../mailboxes/administration";
 import { MailboxRecordSchema } from "../mailboxes/core";
-import type {
-  DraftAttachmentReservationSchema,
-  ReserveDraftAttachmentCommand,
-  UploadDraftAttachmentCommand,
-} from "../mailboxes/draft-attachments";
-import {
-  DraftAttachmentUploadResult,
-  draftAttachmentMaxBytes,
-  ReservedDraftAttachment,
-} from "../mailboxes/draft-attachments";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
 import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import { GetMailboxOutboundDeliveryResult } from "../mailboxes/outbound-delivery-reading";

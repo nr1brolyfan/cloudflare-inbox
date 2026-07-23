@@ -3,6 +3,16 @@ import type * as Effect from "effect/Effect";
 import type * as Option from "effect/Option";
 
 import type {
+  CompleteDraftAttachmentInput,
+  DraftAttachmentList,
+  DraftAttachmentReservation,
+  DraftAttachmentUploadResult,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+  ReserveDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+
+import type {
   AttachmentId,
   DraftId,
   FolderId,
@@ -26,15 +36,6 @@ import type {
   Folder,
   Label,
 } from "./directory";
-import type {
-  CompleteDraftAttachmentInput,
-  DraftAttachmentList,
-  DraftAttachmentReservation,
-  DraftAttachmentUploadResult,
-  GetDraftAttachmentInput,
-  ListDraftAttachmentsInput,
-  ReserveDraftAttachmentCommand,
-} from "./draft-attachments";
 import type {
   CreateDraftInput,
   DraftPage,

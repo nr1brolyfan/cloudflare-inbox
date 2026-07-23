@@ -3,9 +3,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import type { DraftAttachmentBlobReservation } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
+import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
+
 import { Sha256Digest } from "./core";
-import type { DraftAttachmentReservation } from "./draft-attachments";
-import { DraftAttachmentBlobStore } from "./draft-attachments";
 import { BlobStoreError } from "./errors";
 
 interface DraftAttachmentPutOptions {
@@ -81,7 +82,7 @@ const blobError = (
   });
 
 const metadataFor = (
-  reservation: DraftAttachmentReservation,
+  reservation: DraftAttachmentBlobReservation,
   contentSha256: string
 ) => ({
   "attachment-id": reservation.id,
@@ -96,7 +97,7 @@ const metadataFor = (
 
 const objectMatches = (
   object: DraftAttachmentR2Object,
-  reservation: DraftAttachmentReservation,
+  reservation: DraftAttachmentBlobReservation,
   contentSha256: string,
   customMetadata: Readonly<Record<string, string>>
 ) =>

@@ -16,15 +16,15 @@ import type {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import type {
+  ReserveDraftAttachmentCommand,
+  UploadDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 import type {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
-import type {
-  ReserveDraftAttachmentCommand,
-  UploadDraftAttachmentCommand,
-} from "../mailboxes/draft-attachments";
 import type { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import type {
   SendMailboxDraftCommand,

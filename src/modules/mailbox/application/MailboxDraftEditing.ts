@@ -17,11 +17,11 @@ import {
   UnixMillis,
   Version,
 } from "#/mailboxes/core";
-import type { DraftAttachmentList } from "#/mailboxes/draft-attachments";
-import { StoredDraftAttachment } from "#/mailboxes/draft-attachments";
 import type { Draft as DraftType } from "#/mailboxes/drafts";
 import { MailboxDomainError } from "#/mailboxes/errors";
 import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import type { DraftAttachmentList } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { StoredDraftAttachment } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
 
 const DraftRecipients = Schema.Array(MailAddress).check(

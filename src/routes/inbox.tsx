@@ -34,6 +34,11 @@ import {
   MailboxMessageView,
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import {
+  DraftAttachmentUploadResult,
+  draftAttachmentMaxBytes,
+  ReserveDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 import {
   authClient,
@@ -74,11 +79,6 @@ import {
   SearchQuery,
   ThreadId,
 } from "../mailboxes/core";
-import {
-  DraftAttachmentUploadResult,
-  draftAttachmentMaxBytes,
-  ReserveDraftAttachmentCommand,
-} from "../mailboxes/draft-attachments";
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
 import { SendMailboxDraftCommand } from "../mailboxes/outbound-sending";
 import {

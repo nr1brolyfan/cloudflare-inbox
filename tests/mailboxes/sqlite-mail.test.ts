@@ -15,12 +15,6 @@ import {
 import { MailboxDoHandler, MailboxDoHandlerLive } from "#/mailboxes/do-handler";
 import { MailDataRpcResponse } from "#/mailboxes/do-protocol";
 import {
-  CompleteDraftAttachmentInput,
-  GetDraftAttachmentInput,
-  ListDraftAttachmentsInput,
-  ReserveDraftAttachmentCommand,
-} from "#/mailboxes/draft-attachments";
-import {
   CreateDraftInput,
   GetDraftInput,
   ListDraftsInput,
@@ -65,6 +59,12 @@ import {
   MailboxOutboundStore,
   MailboxRuntime,
 } from "#/mailboxes/sqlite-services";
+import {
+  CompleteDraftAttachmentInput,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+  ReserveDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 import {
   MailboxDatabaseTestLive,

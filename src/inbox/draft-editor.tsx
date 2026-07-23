@@ -12,8 +12,7 @@ import {
 import { useState } from "react";
 
 import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
-
-import type { DraftAttachmentReservation } from "../mailboxes/draft-attachments";
+import type { DraftAttachmentReservation } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 type EditorContent = Schema.Schema.Type<typeof DraftEditorContent>;
 

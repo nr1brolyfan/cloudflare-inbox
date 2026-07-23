@@ -32,6 +32,12 @@ import {
   MailboxMessageListResult,
   MailboxThreadResult,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import {
+  DraftAttachmentUploadResult,
+  ReserveDraftAttachmentCommand,
+  ReservedDraftAttachment,
+  UploadDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 import { CurrentRequestAuthMiddleware } from "../auth/session";
 import {
@@ -52,12 +58,6 @@ import {
   SearchQuery,
   ThreadId,
 } from "../mailboxes/core";
-import {
-  DraftAttachmentUploadResult,
-  ReserveDraftAttachmentCommand,
-  ReservedDraftAttachment,
-  UploadDraftAttachmentCommand,
-} from "../mailboxes/draft-attachments";
 import {
   InboundProcessingResult,
   ReplayInboundInput,

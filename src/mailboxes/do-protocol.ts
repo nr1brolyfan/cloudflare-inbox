@@ -1,5 +1,15 @@
 import * as Schema from "effect/Schema";
 
+import {
+  CompleteDraftAttachmentInput,
+  DraftAttachmentList,
+  DraftAttachmentReservationSchema,
+  DraftAttachmentUploadResult,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+  ReserveDraftAttachmentCommand,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+
 import { Version } from "./core";
 import {
   CreateFolderInput,
@@ -17,15 +27,6 @@ import {
   RenameFolderInput,
   RenameLabelInput,
 } from "./directory";
-import {
-  CompleteDraftAttachmentInput,
-  DraftAttachmentList,
-  DraftAttachmentReservationSchema,
-  DraftAttachmentUploadResult,
-  GetDraftAttachmentInput,
-  ListDraftAttachmentsInput,
-  ReserveDraftAttachmentCommand,
-} from "./draft-attachments";
 import {
   CreateDraftInput,
   DraftPage,

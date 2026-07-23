@@ -67,10 +67,13 @@ const repositoryWith = (
   overrides: Partial<MailboxDraftRepositoryService>
 ): MailboxDraftRepositoryService =>
   MailboxDraftRepository.of({
+    completeDraftAttachment: unused,
     createDraft: unused,
     getDraft: unused,
+    getDraftAttachment: unused,
     listDraftAttachments: () => Effect.succeed({ items: [] }),
     listDrafts: unused,
+    reserveDraftAttachment: unused,
     updateDraft: unused,
     ...overrides,
   });

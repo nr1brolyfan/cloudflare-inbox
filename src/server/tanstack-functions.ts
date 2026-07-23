@@ -12,12 +12,12 @@ import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import { ReserveDraftAttachmentCommand } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
-import { ReserveDraftAttachmentCommand } from "../mailboxes/draft-attachments";
 import { GetMailboxOutboundDeliveryQuery } from "../mailboxes/outbound-delivery-reading";
 import {
   SendMailboxDraftCommand,

@@ -39,10 +39,13 @@ export const MailboxDraftRepositoryDoLayer = Layer.effect(
   Effect.gen(function* () {
     const repository = yield* MailboxRepository;
     return MailboxDraftRepository.of({
+      completeDraftAttachment: repository.completeDraftAttachment,
       createDraft: repository.createDraft,
       getDraft: repository.getDraft,
+      getDraftAttachment: repository.getDraftAttachment,
       listDraftAttachments: repository.listDraftAttachments,
       listDrafts: repository.listDrafts,
+      reserveDraftAttachment: repository.reserveDraftAttachment,
       updateDraft: repository.updateDraft,
     });
   })

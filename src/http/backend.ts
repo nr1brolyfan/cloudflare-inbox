@@ -29,6 +29,7 @@ import {
   MailboxDraftRepositoryDoLayer,
   MailboxMessageRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
+import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxDraftReading } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxInlineAttachmentReading } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
@@ -90,7 +91,6 @@ import { RecoveryCodeAdministrationLive } from "../control-plane/recovery-code-a
 import { RecoverySafeIdentityPolicyLive } from "../control-plane/recovery-safe-identity-live";
 import { MailboxRepositoryDoLive } from "../mailboxes/do-client";
 import { DraftAttachmentBlobStoreR2WithRuntimeLive } from "../mailboxes/draft-attachment-store-r2-live";
-import { MailboxDraftAttachmentsLive } from "../mailboxes/draft-attachments";
 import { InboundAttachmentBlobReaderR2WithRuntimeLive } from "../mailboxes/inbound-attachment-reader-r2-live";
 import { InboundReplayAuthorizationLive } from "../mailboxes/inbound-replay-authorization-live";
 import {
@@ -302,15 +302,16 @@ const BackendRoutesLive = Layer.unwrap(
           )
         )
       );
-    const mailboxDraftAttachmentsLive = MailboxDraftAttachmentsLive.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          mailAuthorizationLive,
-          mailboxRepositoryLive,
-          DraftAttachmentBlobStoreR2WithRuntimeLive
+    const mailboxDraftAttachmentsLive =
+      MailboxDraftAttachments.layerNoDeps.pipe(
+        Layer.provide(
+          Layer.mergeAll(
+            mailAuthorizationLive,
+            mailboxDraftRepositoryDoLayer,
+            DraftAttachmentBlobStoreR2WithRuntimeLive
+          )
         )
-      )
-    );
+      );
     const mailboxMessageHtmlLive = MailboxMessageHtmlReading.layerNoDeps.pipe(
       Layer.provide(
         Layer.merge(mailAuthorizationLive, mailboxMessageRepositoryDoLayer)

@@ -13,6 +13,8 @@ import * as Effect from "effect/Effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import type { MailboxDraftAttachmentError } from "#/modules/mailbox/application/MailboxDraftAttachments";
+import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftEditingError } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type { MailboxDraftReadingError } from "#/modules/mailbox/application/MailboxDraftReading";
@@ -30,8 +32,6 @@ import type { MailAuthorizationError } from "../authorization/mail-authorization
 import type { MailResourceResolveError } from "../authorization/resources";
 import type { MailboxAdministrationError } from "../mailboxes/administration";
 import { MailboxAdministration } from "../mailboxes/administration";
-import type { MailboxDraftAttachmentError } from "../mailboxes/draft-attachments";
-import { MailboxDraftAttachments } from "../mailboxes/draft-attachments";
 import type {
   MailboxDomainError,
   MailboxRepositoryError,

@@ -8,17 +8,18 @@ import { describe, expect, it } from "vitest";
 import type { MailAuthorization as MailAuthorizationService } from "#/authorization/mail-authorization";
 import { MailAuthorization } from "#/authorization/mail-authorization";
 import { Sha256Digest } from "#/mailboxes/core";
+import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
+import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import {
-  DraftAttachmentBlobStore,
   DraftAttachmentReservationSchema,
   DraftAttachmentUploadResult,
-  MailboxDraftAttachments,
-  MailboxDraftAttachmentsLive,
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
-} from "#/mailboxes/draft-attachments";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
+import type { DraftAttachmentBlobStoreService } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
+import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepository";
+import type { MailboxDraftRepositoryService } from "#/modules/mailbox/ports/MailboxDraftRepository";
 
 const digest = "a".repeat(64);
 const reservation = Schema.decodeUnknownSync(DraftAttachmentReservationSchema)({
@@ -46,43 +47,16 @@ const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
 const repositoryWith = (
-  overrides: Partial<MailboxRepositoryService>
-): MailboxRepositoryService =>
-  MailboxRepository.of({
-    addMessageLabel: unused,
-    cancelOutboundDelivery: unused,
+  overrides: Partial<MailboxDraftRepositoryService>
+): MailboxDraftRepositoryService =>
+  MailboxDraftRepository.of({
     completeDraftAttachment: unused,
     createDraft: unused,
-    createFolder: unused,
-    createLabel: unused,
-    deleteFolder: unused,
-    deleteLabel: unused,
-    findAttachmentLocation: unused,
-    findDraftLocation: unused,
-    findFolderLocation: unused,
-    findMessageLocation: unused,
-    findRuleLocation: unused,
-    getAttachmentBlob: unused,
     getDraft: unused,
     getDraftAttachment: unused,
-    getMessage: unused,
-    getOutboundDelivery: unused,
-    getThread: unused,
     listDraftAttachments: unused,
     listDrafts: unused,
-    listFolders: unused,
-    listLabels: unused,
-    listMessages: unused,
-    moveMessage: unused,
-    removeMessageLabel: unused,
-    renameFolder: unused,
-    renameLabel: unused,
     reserveDraftAttachment: unused,
-    resendOutbound: unused,
-    scheduleOutbound: unused,
-    searchMessages: unused,
-    setMessageRead: unused,
-    setMessageStarred: unused,
     updateDraft: unused,
     ...overrides,
   });
@@ -107,21 +81,21 @@ const authorizationWith = (
 
 const runAttachments = <A>(
   authorization: MailAuthorizationService,
-  repository: MailboxRepositoryService,
-  blobs: DraftAttachmentBlobStore,
+  repository: MailboxDraftRepositoryService,
+  blobs: DraftAttachmentBlobStoreService,
   effect: (
-    service: MailboxDraftAttachments
+    service: MailboxDraftAttachmentsService
   ) => Effect.Effect<A, unknown, AuthPermission.CurrentPrincipal>
 ) =>
   Effect.runPromise(
     MailboxDraftAttachments.pipe(
       Effect.flatMap(effect),
       Effect.provide(
-        MailboxDraftAttachmentsLive.pipe(
+        MailboxDraftAttachments.layerNoDeps.pipe(
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(MailAuthorization, authorization),
-              Layer.succeed(MailboxRepository, repository),
+              Layer.succeed(MailboxDraftRepository, repository),
               Layer.succeed(DraftAttachmentBlobStore, blobs)
             )
           )

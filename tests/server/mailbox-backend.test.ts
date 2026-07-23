@@ -7,7 +7,6 @@ import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "#/mailboxes/administration";
-import { GetDraftAttachmentInput } from "#/mailboxes/draft-attachments";
 import { GetMailboxOutboundDeliveryQuery } from "#/mailboxes/outbound-delivery-reading";
 import {
   SendMailboxDraftCommand,
@@ -25,6 +24,7 @@ import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import { GetDraftAttachmentInput } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type { MailboxBackendOperationsShape } from "#/server/mailbox-backend";
 import {
   MailboxBackendOperations,

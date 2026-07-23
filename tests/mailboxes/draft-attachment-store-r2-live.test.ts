@@ -12,10 +12,8 @@ import {
   DraftAttachmentBlobStoreR2Live,
   DraftAttachmentR2Client,
 } from "#/mailboxes/draft-attachment-store-r2-live";
-import {
-  DraftAttachmentBlobStore,
-  DraftAttachmentReservationSchema,
-} from "#/mailboxes/draft-attachments";
+import { DraftAttachmentReservationSchema } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
 
 type PutOptions = Parameters<DraftAttachmentR2ClientShape["put"]>[2];
 

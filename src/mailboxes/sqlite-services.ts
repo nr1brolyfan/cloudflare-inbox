@@ -23,6 +23,22 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import {
+  DraftAttachmentList,
+  DraftAttachmentReservationSchema,
+  DraftAttachmentUploadResult,
+  draftAttachmentMaxCount,
+  draftAttachmentMaxTotalBytes,
+  draftAttachmentReservationTtlMillis,
+  ReserveDraftAttachmentCommand,
+  ReservedDraftAttachment,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import type {
+  CompleteDraftAttachmentInput,
+  GetDraftAttachmentInput,
+  ListDraftAttachmentsInput,
+} from "#/modules/mailbox/domain/MailboxDraftAttachment";
+
 import { AsyncRuleJob, AsyncRulePlanV1 } from "./async-rules";
 import {
   AsyncRuleJobId,
@@ -50,21 +66,6 @@ import {
   RenameFolderInput,
   RenameLabelInput,
 } from "./directory";
-import {
-  DraftAttachmentList,
-  DraftAttachmentReservationSchema,
-  DraftAttachmentUploadResult,
-  draftAttachmentMaxCount,
-  draftAttachmentMaxTotalBytes,
-  draftAttachmentReservationTtlMillis,
-  ReserveDraftAttachmentCommand,
-  ReservedDraftAttachment,
-} from "./draft-attachments";
-import type {
-  CompleteDraftAttachmentInput,
-  GetDraftAttachmentInput,
-  ListDraftAttachmentsInput,
-} from "./draft-attachments";
 import {
   CreateDraftInput,
   DraftPage,
