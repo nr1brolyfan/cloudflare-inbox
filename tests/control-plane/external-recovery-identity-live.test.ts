@@ -19,10 +19,6 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  AdministrativeAuditLive,
-  AdministrativeAuditRuntimeLive,
-} from "#/audit/administrative-audit-live";
-import {
   ExternalRecoveryChallengeSecret,
   EnrollExternalRecoveryIdentityCommand,
   ExternalRecoveryIdentityChallenge,
@@ -43,6 +39,10 @@ import {
   MailboxAdministrationOwnerEmail,
 } from "#/control-plane/mailbox-administration-live";
 import { RecoverySafeIdentityPolicyLive } from "#/control-plane/recovery-safe-identity-live";
+import {
+  AdministrativeAuditLayer,
+  AdministrativeAuditRuntimeLayer,
+} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import {
   BackendRequestContext,
   CurrentBackendRequestContext,
@@ -212,8 +212,8 @@ const managementLive = (
   return ExternalRecoveryIdentityManagementLive.pipe(
     Layer.provide(
       Layer.mergeAll(
-        AdministrativeAuditLive.pipe(
-          Layer.provide(AdministrativeAuditRuntimeLive)
+        AdministrativeAuditLayer.pipe(
+          Layer.provide(AdministrativeAuditRuntimeLayer)
         ),
         challengeLive,
         deliveryLive,

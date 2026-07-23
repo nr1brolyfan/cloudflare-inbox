@@ -1,9 +1,5 @@
 import * as Layer from "effect/Layer";
 
-import {
-  AdministrativeAuditLive,
-  AdministrativeAuditRuntimeLive,
-} from "#/audit/administrative-audit-live";
 import { SensitiveOperationStepUpClockLive } from "#/auth/step-up-policy";
 import { MailAuthorizationLive } from "#/authorization/mail-authorization";
 import { MailResourceResolverLive } from "#/authorization/mail-resource-resolver-live";
@@ -13,6 +9,10 @@ import {
 } from "#/control-plane/mailbox-administration-live";
 import { MailboxNavigationLive } from "#/control-plane/mailbox-navigation-live";
 import { MailboxSenderIdentityLive } from "#/control-plane/mailbox-sender-identity-live";
+import {
+  AdministrativeAuditLayer,
+  AdministrativeAuditRuntimeLayer,
+} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailboxDoClientLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { InboundReplayPreparerDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxInboundRepositoryDo";
 import {
@@ -74,13 +74,13 @@ const MailResourceResolverLayer = MailResourceResolverLive.pipe(
 const MailAuthorizationLayer = MailAuthorizationLive.pipe(
   Layer.provide(MailResourceResolverLayer)
 );
-const AdministrativeAuditLayer = AdministrativeAuditLive.pipe(
-  Layer.provide(AdministrativeAuditRuntimeLive)
+const AdministrativeAuditWithRuntimeLayer = AdministrativeAuditLayer.pipe(
+  Layer.provide(AdministrativeAuditRuntimeLayer)
 );
 const MailboxAdministrationLayer = MailboxAdministrationLive.pipe(
   Layer.provide(
     Layer.mergeAll(
-      AdministrativeAuditLayer,
+      AdministrativeAuditWithRuntimeLayer,
       MailboxAdministrationRuntimeLive,
       MailAuthorizationLayer,
       SensitiveOperationStepUpClockLive

@@ -16,10 +16,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  AdministrativeAuditLive,
-  AdministrativeAuditRuntimeLive,
-} from "#/audit/administrative-audit-live";
 import type { CurrentRequestAuthShape } from "#/auth/session";
 import { CurrentRequestAuth } from "#/auth/session";
 import {
@@ -43,6 +39,10 @@ import {
   MailboxAdministrationOwnerEmail,
   MailboxAdministrationRuntime,
 } from "#/control-plane/mailbox-administration-live";
+import {
+  AdministrativeAuditLayer,
+  AdministrativeAuditRuntimeLayer,
+} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import {
   MailboxDisplayName,
   MailboxId,
@@ -81,8 +81,8 @@ const requestContext = Schema.decodeUnknownSync(BackendRequestContext)({
   correlationId: "00000000-0000-4000-8000-000000000002",
   requestId: "00000000-0000-4000-8000-000000000001",
 });
-const administrativeAuditLive = AdministrativeAuditLive.pipe(
-  Layer.provide(AdministrativeAuditRuntimeLive)
+const administrativeAuditLayer = AdministrativeAuditLayer.pipe(
+  Layer.provide(AdministrativeAuditRuntimeLayer)
 );
 
 const makeValidatedSession = (
@@ -315,7 +315,7 @@ const bootstrap = (
                   )(ownerEmail),
                 })
               ),
-              administrativeAuditLive,
+              administrativeAuditLayer,
               Layer.succeed(
                 MailboxAdministrationRuntime,
                 MailboxAdministrationRuntime.of({
@@ -369,7 +369,7 @@ const rename = (
                   )("user-a@example.test"),
                 })
               ),
-              administrativeAuditLive,
+              administrativeAuditLayer,
               Layer.succeed(
                 MailboxAdministrationRuntime,
                 MailboxAdministrationRuntime.of({

@@ -24,15 +24,15 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import {
+  AdministrativeAuditLayer,
+  AdministrativeAuditRuntimeLayer,
+} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailboxHttpLayer } from "#/modules/mailbox/layers/MailboxHttpLayer";
 
 import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
 import { AiToolRunBudgetLive } from "../ai/tool-run-budget";
-import {
-  AdministrativeAuditLive,
-  AdministrativeAuditRuntimeLive,
-} from "../audit/administrative-audit-live";
 import { AccountRecoveryDeliveryLive } from "../auth/account-recovery-delivery-live";
 import { ExistingPasswordResetLive } from "../auth/existing-password-reset";
 import { ExternalRecoveryIdentityChallengeLive } from "../auth/external-recovery-identity-challenge-live";
@@ -185,8 +185,8 @@ const BackendRoutesLive = Layer.unwrap(
     const currentRequestAuthLive = CurrentRequestAuthMiddlewareLive.pipe(
       Layer.provide(requestSessionAuthenticatorLive)
     );
-    const administrativeAuditLive = AdministrativeAuditLive.pipe(
-      Layer.provide(AdministrativeAuditRuntimeLive)
+    const administrativeAuditLayer = AdministrativeAuditLayer.pipe(
+      Layer.provide(AdministrativeAuditRuntimeLayer)
     );
     const permissionsLive = MailPermissionsLive.pipe(
       Layer.provide(authStorageLive)
@@ -207,7 +207,7 @@ const BackendRoutesLive = Layer.unwrap(
       ExternalRecoveryIdentityManagementLive.pipe(
         Layer.provide(
           Layer.mergeAll(
-            administrativeAuditLive,
+            administrativeAuditLayer,
             ExternalRecoveryIdentityChallengeLive.pipe(
               Layer.provide(authServicesLive)
             ),

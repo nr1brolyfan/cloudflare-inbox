@@ -4,18 +4,18 @@ import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+import { ExternalRecoveryIdentityId } from "#/auth/external-recovery-identity";
+import type { CurrentRequestAuthShape } from "#/auth/session";
 import { MailboxId, Version } from "#/modules/mailbox/domain/Mailbox";
-import { AdministrativeOperationId } from "#/shared/Operation";
-import { UnixMillis } from "#/shared/Temporal";
-
-import { ExternalRecoveryIdentityId } from "../auth/external-recovery-identity";
-import type { CurrentRequestAuthShape } from "../auth/session";
 import {
   BackendCorrelationId,
   BackendRequestId,
-} from "../observability/request-context";
-import type { BackendRequestContext } from "../observability/request-context";
-import type { AdministrativeAuditError } from "./administrative-audit-error";
+} from "#/observability/request-context";
+import type { BackendRequestContext } from "#/observability/request-context";
+import { AdministrativeOperationId } from "#/shared/Operation";
+import { UnixMillis } from "#/shared/Temporal";
+
+import type { AdministrativeAuditError } from "./AdministrativeAuditError";
 
 export const AdministrativeAuditEventId = Schema.String.pipe(
   Schema.check(

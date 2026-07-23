@@ -13,15 +13,15 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { CurrentRequestAuth } from "#/auth/session";
 import {
   AdministrativeAudit,
   AdministrativeAuditEventSchema,
-} from "#/audit/administrative-audit";
+} from "#/modules/administrative-audit/application/AdministrativeAudit";
 import {
-  AdministrativeAuditLive,
-  AdministrativeAuditRuntimeLive,
-} from "#/audit/administrative-audit-live";
-import { CurrentRequestAuth } from "#/auth/session";
+  AdministrativeAuditLayer,
+  AdministrativeAuditRuntimeLayer,
+} from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   BackendRequestContext,
@@ -30,7 +30,7 @@ import {
 import { AdministrativeOperationId } from "#/shared/Operation";
 import { UnixMillis } from "#/shared/Temporal";
 
-import { applyControlPlaneMigrations } from "../support/d1";
+import { applyControlPlaneMigrations } from "../../../support/d1";
 
 const userId = UserId("user-a");
 const sessionId = SessionId("session-a");
@@ -74,8 +74,8 @@ const prepareBootstrap = (principalId = "user-a") =>
     });
   }).pipe(
     Effect.provide(
-      AdministrativeAuditLive.pipe(
-        Layer.provide(AdministrativeAuditRuntimeLive)
+      AdministrativeAuditLayer.pipe(
+        Layer.provide(AdministrativeAuditRuntimeLayer)
       )
     ),
     Effect.provideService(

@@ -1,31 +1,22 @@
 import * as AuthPermission from "@effect-auth/core/Permission";
-import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { CurrentRequestAuth } from "#/auth/session";
 import { Version } from "#/modules/mailbox/domain/Mailbox";
+import { CurrentBackendRequestContext } from "#/observability/request-context";
 
-import { CurrentRequestAuth } from "../auth/session";
-import { CurrentBackendRequestContext } from "../observability/request-context";
 import {
   AdministrativeAudit,
   AdministrativeAuditEventId,
   AdministrativeAuditEventSchema,
-} from "./administrative-audit";
-import type { PrepareAdministrativeAuditEvent } from "./administrative-audit";
-import { AdministrativeAuditError } from "./administrative-audit-error";
+} from "../application/AdministrativeAudit";
+import type { PrepareAdministrativeAuditEvent } from "../application/AdministrativeAudit";
+import { AdministrativeAuditError } from "../application/AdministrativeAuditError";
+import { AdministrativeAuditRuntime } from "../ports/AdministrativeAuditRuntime";
 
-export interface AdministrativeAuditRuntimeShape {
-  readonly digestSha256: (value: string) => Effect.Effect<string, unknown>;
-}
-
-export const AdministrativeAuditRuntime =
-  Context.Service<AdministrativeAuditRuntimeShape>(
-    "cloudflare-inbox/AdministrativeAuditRuntime"
-  );
-
-export const AdministrativeAuditRuntimeLive = Layer.succeed(
+export const AdministrativeAuditRuntimeLayer = Layer.succeed(
   AdministrativeAuditRuntime,
   AdministrativeAuditRuntime.of({
     digestSha256: (value) =>
@@ -125,7 +116,7 @@ const eventDetails = (input: PrepareAdministrativeAuditEvent) => {
   };
 };
 
-export const AdministrativeAuditLive = Layer.effect(
+export const AdministrativeAuditLayer = Layer.effect(
   AdministrativeAudit,
   Effect.gen(function* () {
     const runtime = yield* AdministrativeAuditRuntime;
