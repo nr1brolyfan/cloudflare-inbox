@@ -37,6 +37,12 @@ import {
   GetMailboxOutboundDeliveryResult,
 } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import {
+  SendMailboxDraftCommand,
+  SendMailboxDraftResult,
+  UndoMailboxSendCommand,
+  UndoMailboxSendResult,
+} from "#/modules/mailbox/application/MailboxOutboundSending";
+import {
   DraftAttachmentUploadResult,
   ReserveDraftAttachmentCommand,
   ReservedDraftAttachment,
@@ -67,12 +73,6 @@ import {
   ReplayInboundInput,
 } from "../mailboxes/inbound";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
-import {
-  SendMailboxDraftCommand,
-  SendMailboxDraftResult,
-  UndoMailboxSendCommand,
-  UndoMailboxSendResult,
-} from "../mailboxes/outbound-sending";
 import { BackendRequestContextMiddleware } from "../observability/request-context-middleware";
 
 const MailboxParams = Schema.Struct({ mailboxId: MailboxId });

@@ -29,6 +29,8 @@ import type { MailboxMessageReadingError } from "#/modules/mailbox/application/M
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 import type { MailboxOutboundDeliveryReadingError } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import type { MailboxOutboundSendingError } from "#/modules/mailbox/application/MailboxOutboundSending";
+import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
 
 import type { MailAuthorizationError } from "../authorization/mail-authorization";
 import type { MailResourceResolveError } from "../authorization/resources";
@@ -47,8 +49,6 @@ import {
   CurrentMailboxOperationProvenance,
   ExplicitUserAction,
 } from "../mailboxes/operation-provenance";
-import type { MailboxOutboundSendingError } from "../mailboxes/outbound-sending";
-import { MailboxOutboundSending } from "../mailboxes/outbound-sending";
 import { BackendHttpApi } from "./api";
 
 const internalError = () =>

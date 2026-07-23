@@ -18,6 +18,10 @@ import type {
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import type { GetMailboxOutboundDeliveryQuery } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type {
+  SendMailboxDraftCommand,
+  UndoMailboxSendCommand,
+} from "#/modules/mailbox/application/MailboxOutboundSending";
+import type {
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
@@ -26,10 +30,6 @@ import type {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
-import type {
-  SendMailboxDraftCommand,
-  UndoMailboxSendCommand,
-} from "../mailboxes/outbound-sending";
 import {
   DevEmailOperations,
   DevEmailOperationsLive,

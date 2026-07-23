@@ -54,11 +54,6 @@ import {
 } from "#/mailboxes/navigation";
 import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
 import { OutboundDeliverySchema } from "#/mailboxes/outbound";
-import {
-  MailboxOutboundSending,
-  MailboxOutboundSendingError,
-  SendMailboxDraftResult,
-} from "#/mailboxes/outbound-sending";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import {
@@ -95,6 +90,12 @@ import {
   MailboxOutboundDeliveryReading,
 } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type { MailboxOutboundDeliveryReadingService } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import {
+  MailboxOutboundSending,
+  MailboxOutboundSendingError,
+  SendMailboxDraftResult,
+} from "#/modules/mailbox/application/MailboxOutboundSending";
+import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
 import {
   DraftAttachmentReservationSchema,
   DraftAttachmentUploadResult,
@@ -350,7 +351,7 @@ const makeHandler = (
       upload: () => Effect.succeed(draftAttachmentUpload),
     }
   ),
-  outboundSending: MailboxOutboundSending = MailboxOutboundSending.of({
+  outboundSending: MailboxOutboundSendingService = MailboxOutboundSending.of({
     send: () => Effect.succeed(mailboxDraftSend),
     undo: () => Effect.succeed(cancelledDelivery),
   }),

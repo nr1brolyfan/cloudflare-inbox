@@ -30,6 +30,14 @@ import {
 import type { GetMailboxOutboundDeliveryQuery } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import { GetMailboxOutboundDeliveryResult } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type {
+  SendMailboxDraftCommand,
+  UndoMailboxSendCommand,
+} from "#/modules/mailbox/application/MailboxOutboundSending";
+import {
+  SendMailboxDraftResult,
+  UndoMailboxSendResult,
+} from "#/modules/mailbox/application/MailboxOutboundSending";
+import type {
   DraftAttachmentReservationSchema,
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
@@ -48,14 +56,6 @@ import type {
 } from "../mailboxes/administration";
 import { MailboxRecordSchema } from "../mailboxes/core";
 import { MailboxNavigationResult } from "../mailboxes/navigation";
-import type {
-  SendMailboxDraftCommand,
-  UndoMailboxSendCommand,
-} from "../mailboxes/outbound-sending";
-import {
-  SendMailboxDraftResult,
-  UndoMailboxSendResult,
-} from "../mailboxes/outbound-sending";
 import { BackendClient } from "./website-platform";
 
 export type MailboxPublicStatus = 400 | 401 | 403 | 404 | 409 | 500 | 502;

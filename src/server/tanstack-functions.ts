@@ -13,16 +13,16 @@ import {
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import { GetMailboxOutboundDeliveryQuery } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import {
+  SendMailboxDraftCommand,
+  UndoMailboxSendCommand,
+} from "#/modules/mailbox/application/MailboxOutboundSending";
 import { ReserveDraftAttachmentCommand } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 import {
   BootstrapOwnerMailboxCommand,
   RenameMailboxCommand,
 } from "../mailboxes/administration";
-import {
-  SendMailboxDraftCommand,
-  UndoMailboxSendCommand,
-} from "../mailboxes/outbound-sending";
 import { websiteBackend } from "./backend";
 
 export type { DevEmailInboxResult } from "./dev-email-backend";

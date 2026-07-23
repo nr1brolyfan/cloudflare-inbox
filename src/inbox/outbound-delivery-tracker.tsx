@@ -12,11 +12,12 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
+import { UndoMailboxSendCommand } from "#/modules/mailbox/application/MailboxOutboundSending";
+
 import type {
   OutboundDeliveryStatus,
   OutboundFailureCode,
 } from "../mailboxes/outbound";
-import { UndoMailboxSendCommand } from "../mailboxes/outbound-sending";
 
 type UndoCommand = Schema.Schema.Type<typeof UndoMailboxSendCommand>;
 

@@ -1,3 +1,4 @@
+/* oxlint-disable max-classes-per-file -- Outbound commands, error and service form one cohesive use case. */
 import type { CurrentPrincipal } from "@effect-auth/core/Permission";
 import * as AuthPermission from "@effect-auth/core/Permission";
 import * as Context from "effect/Context";
@@ -6,22 +7,25 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import type { MailAuthorizationError } from "../authorization/mail-authorization";
-import { MailAuthorization } from "../authorization/mail-authorization";
+import type { MailAuthorizationError } from "#/authorization/mail-authorization";
+import { MailAuthorization } from "#/authorization/mail-authorization";
 import {
   DraftId,
   MailboxId,
   OperationId,
   OutboundDeliveryId,
   Version,
-} from "./core";
-import { MailboxDomainError } from "./errors";
-import type { MailboxRepositoryError } from "./errors";
-import { CurrentMailboxOperationProvenance } from "./operation-provenance";
-import { OutboundDeliverySchema, ScheduleOutboundResult } from "./outbound";
-import { MailboxRepository } from "./repository";
-import { MailboxSenderIdentity } from "./sender-identity";
-import type { MailboxSenderIdentityError } from "./sender-identity";
+} from "#/mailboxes/core";
+import { MailboxDomainError } from "#/mailboxes/errors";
+import type { MailboxRepositoryError } from "#/mailboxes/errors";
+import { CurrentMailboxOperationProvenance } from "#/mailboxes/operation-provenance";
+import {
+  OutboundDeliverySchema,
+  ScheduleOutboundResult,
+} from "#/mailboxes/outbound";
+import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
+import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
+import type { MailboxSenderIdentityError } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 
 export const SendMailboxDraftCommand = Schema.Struct({
   mailboxId: MailboxId,
@@ -67,7 +71,7 @@ export class MailboxOutboundSendingError extends Data.TaggedError(
     | "user-action-required";
 }> {}
 
-export interface MailboxOutboundSending {
+export interface MailboxOutboundSendingService {
   readonly send: (
     command: SendMailboxDraftCommand
   ) => Effect.Effect<
@@ -83,10 +87,6 @@ export interface MailboxOutboundSending {
     CurrentPrincipal
   >;
 }
-
-export const MailboxOutboundSending = Context.Service<MailboxOutboundSending>(
-  "cloudflare-inbox/MailboxOutboundSending"
-);
 
 const sendingError = (
   operation: MailboxOutboundSendingError["operation"],
@@ -184,14 +184,16 @@ const requireExplicitSendAction = (command: SendMailboxDraftCommand) =>
     }
   });
 
-export const MailboxOutboundSendingLive = Layer.effect(
+export class MailboxOutboundSending extends Context.Service<
   MailboxOutboundSending,
-  Effect.gen(function* () {
+  MailboxOutboundSendingService
+>()("cloudflare-inbox/MailboxOutboundSending", {
+  make: Effect.gen(function* () {
     const authorization = yield* MailAuthorization;
-    const repository = yield* MailboxRepository;
+    const repository = yield* MailboxOutboundSendingRepository;
     const senderIdentity = yield* MailboxSenderIdentity;
 
-    return MailboxOutboundSending.of({
+    return {
       send: (command) =>
         Effect.gen(function* () {
           yield* requireExplicitSendAction(command);
@@ -246,6 +248,8 @@ export const MailboxOutboundSendingLive = Layer.effect(
           }
           return delivery;
         }),
-    });
-  })
-);
+    } satisfies MailboxOutboundSendingService;
+  }),
+}) {
+  static readonly layerNoDeps = Layer.effect(this, this.make);
+}

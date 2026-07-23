@@ -34,6 +34,7 @@ import {
   MailboxMessageView,
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
+import { SendMailboxDraftCommand } from "#/modules/mailbox/application/MailboxOutboundSending";
 import {
   DraftAttachmentUploadResult,
   draftAttachmentMaxBytes,
@@ -80,7 +81,6 @@ import {
   ThreadId,
 } from "../mailboxes/core";
 import type { MailboxNavigationResult } from "../mailboxes/navigation";
-import { SendMailboxDraftCommand } from "../mailboxes/outbound-sending";
 import {
   getMailboxNavigation,
   getMailboxOutboundDelivery,

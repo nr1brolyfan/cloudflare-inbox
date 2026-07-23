@@ -8,10 +8,6 @@ import {
   RenameMailboxCommand,
 } from "#/mailboxes/administration";
 import {
-  SendMailboxDraftCommand,
-  UndoMailboxSendCommand,
-} from "#/mailboxes/outbound-sending";
-import {
   CreateMailboxDraftCommand,
   GetMailboxDraftQuery,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
@@ -24,6 +20,10 @@ import {
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import { GetMailboxOutboundDeliveryQuery } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import {
+  SendMailboxDraftCommand,
+  UndoMailboxSendCommand,
+} from "#/modules/mailbox/application/MailboxOutboundSending";
 import { GetDraftAttachmentInput } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type { MailboxBackendOperationsShape } from "#/server/mailbox-backend";
 import {

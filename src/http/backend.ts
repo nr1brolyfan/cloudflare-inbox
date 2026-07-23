@@ -29,6 +29,7 @@ import {
   MailboxDraftRepositoryDoLayer,
   MailboxMessageRepositoryDoLayer,
   MailboxOutboundDeliveryRepositoryDoLayer,
+  MailboxOutboundSendingRepositoryDoLayer,
 } from "#/modules/mailbox/adapters/durable-object/MailboxRepositoryDo";
 import { MailboxOutboundDeliveryReadingClockSystemLayer } from "#/modules/mailbox/adapters/system/MailboxOutboundDeliveryReadingClockSystem";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
@@ -39,6 +40,7 @@ import { MailboxMessageActions } from "#/modules/mailbox/application/MailboxMess
 import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
+import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
 
 import { AiToolAuditD1Live } from "../ai/tool-audit";
 import { AiToolExecutorMailInteractiveLive } from "../ai/tool-executor";
@@ -101,7 +103,6 @@ import {
   InboundReplayPreparerDoLive,
 } from "../mailboxes/inbound-replay-do-live";
 import { InboundWorkflowStarterLive } from "../mailboxes/inbound-workflow-starter-live";
-import { MailboxOutboundSendingLive } from "../mailboxes/outbound-sending";
 import { BackendHealthLive } from "../observability/backend-health-live";
 import { BackendRequestContextMiddlewareLive } from "../observability/backend-request-live";
 import { AccountRecoveryApiLayer } from "./account-recovery";
@@ -243,6 +244,10 @@ const BackendRoutesLive = Layer.unwrap(
       MailboxOutboundDeliveryRepositoryDoLayer.pipe(
         Layer.provide(mailboxRepositoryLive)
       );
+    const mailboxOutboundSendingRepositoryDoLayer =
+      MailboxOutboundSendingRepositoryDoLayer.pipe(
+        Layer.provide(mailboxRepositoryLive)
+      );
     const resourceResolverLive = MailResourceResolverLive.pipe(
       Layer.provide(mailboxRepositoryLive)
     );
@@ -286,11 +291,11 @@ const BackendRoutesLive = Layer.unwrap(
         Layer.merge(mailAuthorizationLive, mailboxDraftRepositoryDoLayer)
       )
     );
-    const mailboxOutboundSendingLive = MailboxOutboundSendingLive.pipe(
+    const mailboxOutboundSendingLive = MailboxOutboundSending.layerNoDeps.pipe(
       Layer.provide(
         Layer.mergeAll(
           mailAuthorizationLive,
-          mailboxRepositoryLive,
+          mailboxOutboundSendingRepositoryDoLayer,
           MailboxSenderIdentityLive
         )
       )

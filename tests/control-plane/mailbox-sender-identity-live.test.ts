@@ -11,7 +11,7 @@ import {
 } from "#/control-plane/database";
 import { MailboxSenderIdentityLive } from "#/control-plane/mailbox-sender-identity-live";
 import { MailboxId } from "#/mailboxes/core";
-import { MailboxSenderIdentity } from "#/mailboxes/sender-identity";
+import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 
 import { applyControlPlaneMigrations, makeTestD1Database } from "../support/d1";
 

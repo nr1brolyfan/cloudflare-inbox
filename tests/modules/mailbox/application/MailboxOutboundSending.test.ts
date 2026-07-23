@@ -25,15 +25,15 @@ import type { MailboxOperationProvenance } from "#/mailboxes/operation-provenanc
 import { OutboundDeliverySchema } from "#/mailboxes/outbound";
 import {
   MailboxOutboundSending,
-  MailboxOutboundSendingLive,
   SendMailboxDraftCommand,
   SendMailboxDraftResult,
   UndoMailboxSendCommand,
-} from "#/mailboxes/outbound-sending";
-import type { MailboxRepository as MailboxRepositoryService } from "#/mailboxes/repository";
-import { MailboxRepository } from "#/mailboxes/repository";
-import type { MailboxSenderIdentity as MailboxSenderIdentityService } from "#/mailboxes/sender-identity";
-import { MailboxSenderIdentity } from "#/mailboxes/sender-identity";
+} from "#/modules/mailbox/application/MailboxOutboundSending";
+import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
+import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
+import type { MailboxOutboundSendingRepositoryService } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
+import { MailboxSenderIdentity } from "#/modules/mailbox/ports/MailboxSenderIdentity";
+import type { MailboxSenderIdentityService } from "#/modules/mailbox/ports/MailboxSenderIdentity";
 
 const scheduledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
   attemptCount: 0,
@@ -66,44 +66,11 @@ const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
 
 const repositoryWith = (
-  overrides: Partial<MailboxRepositoryService>
-): MailboxRepositoryService =>
-  MailboxRepository.of({
-    addMessageLabel: unused,
+  overrides: Partial<MailboxOutboundSendingRepositoryService>
+): MailboxOutboundSendingRepositoryService =>
+  MailboxOutboundSendingRepository.of({
     cancelOutboundDelivery: unused,
-    completeDraftAttachment: unused,
-    createDraft: unused,
-    createFolder: unused,
-    createLabel: unused,
-    deleteFolder: unused,
-    deleteLabel: unused,
-    findAttachmentLocation: unused,
-    findDraftLocation: unused,
-    findFolderLocation: unused,
-    findMessageLocation: unused,
-    findRuleLocation: unused,
-    getAttachmentBlob: unused,
-    getDraft: unused,
-    getDraftAttachment: unused,
-    getMessage: unused,
-    getOutboundDelivery: unused,
-    getThread: unused,
-    listDraftAttachments: unused,
-    listDrafts: unused,
-    listFolders: unused,
-    listLabels: unused,
-    listMessages: unused,
-    moveMessage: unused,
-    removeMessageLabel: unused,
-    reserveDraftAttachment: unused,
-    renameFolder: unused,
-    renameLabel: unused,
-    resendOutbound: unused,
     scheduleOutbound: unused,
-    searchMessages: unused,
-    setMessageRead: unused,
-    setMessageStarred: unused,
-    updateDraft: unused,
     ...overrides,
   });
 
@@ -129,21 +96,21 @@ const authorizationWith = (
 const runSending = <A>(
   authorization: MailAuthorizationService,
   senderIdentity: MailboxSenderIdentityService,
-  repository: MailboxRepositoryService,
+  repository: MailboxOutboundSendingRepositoryService,
   use: (
-    service: MailboxOutboundSending
+    service: MailboxOutboundSendingService
   ) => Effect.Effect<A, unknown, AuthPermission.CurrentPrincipal>,
   provenance?: MailboxOperationProvenance
 ) => {
   const effect = MailboxOutboundSending.pipe(
     Effect.flatMap(use),
     Effect.provide(
-      MailboxOutboundSendingLive.pipe(
+      MailboxOutboundSending.layerNoDeps.pipe(
         Layer.provide(
           Layer.mergeAll(
             Layer.succeed(MailAuthorization, authorization),
             Layer.succeed(MailboxSenderIdentity, senderIdentity),
-            Layer.succeed(MailboxRepository, repository)
+            Layer.succeed(MailboxOutboundSendingRepository, repository)
           )
         )
       )
