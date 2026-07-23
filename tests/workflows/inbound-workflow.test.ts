@@ -4,8 +4,6 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { AsyncRuleWorkflowStarter } from "#/mailboxes/async-rules";
-import type { AsyncRuleWorkflowStarter as AsyncRuleWorkflowStarterShape } from "#/mailboxes/async-rules";
 import type {
   InboundAttachmentStore as InboundAttachmentStoreShape,
   InboundMessageCommitter as InboundMessageCommitterShape,
@@ -24,6 +22,8 @@ import {
   ParsedInboundMessageV1,
   InboundProcessingSchema,
 } from "#/mailboxes/inbound";
+import { AsyncRuleWorkflowStarter } from "#/modules/automation/ports/AsyncRuleWorkflowStarter";
+import type { AsyncRuleWorkflowStarterService } from "#/modules/automation/ports/AsyncRuleWorkflowStarter";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MimeParseError } from "#/modules/mailbox/ports/InboundEmailProcessing";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
@@ -118,7 +118,7 @@ const runWorkflow = (
     Effect.succeed(committedProcessing),
   record: InboundProcessingRecorderShape["record"] = recordProcessing,
   taskConfigs: unknown[] = [],
-  startAsyncRules: AsyncRuleWorkflowStarterShape["start"] = () => Effect.void
+  startAsyncRules: AsyncRuleWorkflowStarterService["start"] = () => Effect.void
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {

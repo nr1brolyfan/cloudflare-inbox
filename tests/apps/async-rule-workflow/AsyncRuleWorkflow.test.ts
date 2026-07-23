@@ -4,11 +4,9 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  AiRuleEvaluator,
-  AsyncRuleWorkflowParams,
-} from "#/mailboxes/async-rules";
-import { asyncRuleWorkflowProgram } from "#/workflows/async-rule-workflow";
+import { asyncRuleWorkflowProgram } from "#/apps/async-rule-workflow/AsyncRuleWorkflow";
+import { AiRuleEvaluator } from "#/modules/automation/ports/AiRuleEvaluator";
+import { AsyncRuleWorkflowParams } from "#/modules/automation/ports/AsyncRuleWorkflowStarter";
 
 const params = Schema.decodeUnknownSync(AsyncRuleWorkflowParams)({
   formatVersion: 1,

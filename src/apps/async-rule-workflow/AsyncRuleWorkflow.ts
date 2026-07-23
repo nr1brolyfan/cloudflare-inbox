@@ -2,11 +2,9 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import {
-  AiRuleEvaluator,
-  AiRuleEvaluatorUnavailableLive,
-  AsyncRuleWorkflowParams,
-} from "../mailboxes/async-rules";
+import { AiRuleEvaluatorUnavailableLayer } from "#/modules/automation/adapters/ai/AiRuleEvaluatorUnavailable";
+import { AiRuleEvaluator } from "#/modules/automation/ports/AiRuleEvaluator";
+import { AsyncRuleWorkflowParams } from "#/modules/automation/ports/AsyncRuleWorkflowStarter";
 
 const evaluationTaskConfig = {
   retries: { limit: 5, delay: "30 seconds", backoff: "exponential" },
@@ -38,7 +36,7 @@ export const asyncRuleWorkflowProgram = Effect.succeed((input: unknown) =>
 const asyncRuleWorkflowImplementation = Effect.gen(function* () {
   const program = yield* asyncRuleWorkflowProgram;
   return (input: unknown) =>
-    program(input).pipe(Effect.provide(AiRuleEvaluatorUnavailableLive));
+    program(input).pipe(Effect.provide(AiRuleEvaluatorUnavailableLayer));
 });
 
 export default class AsyncRuleWorkflow extends Cloudflare.Workflow<AsyncRuleWorkflow>()(

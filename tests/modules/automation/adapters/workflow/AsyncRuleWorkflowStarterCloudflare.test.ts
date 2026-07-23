@@ -4,15 +4,15 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import type { AsyncRuleWorkflowClient as AsyncRuleWorkflowClientShape } from "#/mailboxes/async-rule-workflow-starter-live";
 import {
   AsyncRuleWorkflowClient,
-  AsyncRuleWorkflowStarterLive,
-} from "#/mailboxes/async-rule-workflow-starter-live";
+  AsyncRuleWorkflowStarterCloudflareLayer,
+} from "#/modules/automation/adapters/workflow/AsyncRuleWorkflowStarterCloudflare";
+import type { AsyncRuleWorkflowClientService } from "#/modules/automation/adapters/workflow/AsyncRuleWorkflowStarterCloudflare";
 import {
   AsyncRuleWorkflowParams,
   AsyncRuleWorkflowStarter,
-} from "#/mailboxes/async-rules";
+} from "#/modules/automation/ports/AsyncRuleWorkflowStarter";
 
 const params = Schema.decodeUnknownSync(AsyncRuleWorkflowParams)({
   formatVersion: 1,
@@ -20,13 +20,13 @@ const params = Schema.decodeUnknownSync(AsyncRuleWorkflowParams)({
   mailboxId: "primary",
 });
 
-const run = (client: AsyncRuleWorkflowClientShape) =>
+const run = (client: AsyncRuleWorkflowClientService) =>
   Effect.runPromise(
     Effect.result(
       AsyncRuleWorkflowStarter.pipe(
         Effect.flatMap((starter) => starter.start(params)),
         Effect.provide(
-          AsyncRuleWorkflowStarterLive.pipe(
+          AsyncRuleWorkflowStarterCloudflareLayer.pipe(
             Layer.provide(
               Layer.succeed(
                 AsyncRuleWorkflowClient,

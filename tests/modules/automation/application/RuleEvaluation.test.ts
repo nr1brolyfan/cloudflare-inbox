@@ -4,14 +4,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   EvaluateRulesInput,
-  Rule,
-  RuleActions,
-  RuleConditions,
-  RuleSchema,
   evaluateAsyncRuleCandidates,
   evaluateRules,
-} from "#/mailboxes/rules";
-import { RulePriority } from "#/modules/mailbox/domain/Mailbox";
+} from "#/modules/automation/application/RuleEvaluation";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
   schema: S,
@@ -79,115 +74,7 @@ const evaluate = (
     })
   );
 
-describe("mailbox rules", () => {
-  it("decodes and encodes a transport-neutral rule", () => {
-    const rule = Schema.decodeUnknownSync(RuleSchema)(
-      ruleInput({ conditionsJson: "must-not-leak" })
-    );
-
-    expect(rule).toBeInstanceOf(Rule);
-    expect(rule.conditions.items[1]).toMatchObject({ value: "urgent" });
-    expect(Schema.encodeSync(Rule)(rule)).toStrictEqual(
-      ruleInput({
-        conditions: {
-          ...ruleInput().conditions,
-          items: [
-            ruleInput().conditions.items[0],
-            { ...ruleInput().conditions.items[1], value: "urgent" },
-            ruleInput().conditions.items[2],
-          ],
-        },
-      })
-    );
-  });
-
-  it("validates the bounded integer priority", () => {
-    expect([
-      decodeSucceeds(RulePriority, 0),
-      decodeSucceeds(RulePriority, 1_000_000),
-      decodeSucceeds(RulePriority, -1),
-      decodeSucceeds(RulePriority, 1_000_001),
-      decodeSucceeds(RulePriority, 1.5),
-    ]).toStrictEqual([true, true, false, false, false]);
-  });
-
-  it("requires a non-empty bounded all-or-any condition group", () => {
-    const condition = {
-      _tag: "HasAttachment",
-      value: false,
-    };
-
-    expect(
-      decodeSucceeds(RuleConditions, { match: "any", items: [condition] })
-    ).toBeTruthy();
-    expect(
-      decodeSucceeds(RuleConditions, { match: "all", items: [] })
-    ).toBeFalsy();
-    expect(
-      decodeSucceeds(RuleConditions, {
-        match: "any",
-        items: Array.from({ length: 21 }, () => condition),
-      })
-    ).toBeFalsy();
-    expect(
-      decodeSucceeds(RuleConditions, { match: "none", items: [condition] })
-    ).toBeFalsy();
-  });
-
-  it("rejects mismatched fields, operators, and invalid rule timestamps", () => {
-    expect(
-      decodeSucceeds(RuleConditions, {
-        match: "all",
-        items: [
-          {
-            _tag: "Address",
-            field: "subject",
-            operator: "contains",
-            value: "support@example.com",
-          },
-        ],
-      })
-    ).toBeFalsy();
-    expect(
-      decodeSucceeds(RuleConditions, {
-        match: "all",
-        items: [
-          {
-            _tag: "Text",
-            field: "subject",
-            operator: "matchesRegex",
-            value: "urgent",
-          },
-        ],
-      })
-    ).toBeFalsy();
-    expect(
-      decodeSucceeds(RuleSchema, ruleInput({ createdAt: 2000 }))
-    ).toBeFalsy();
-  });
-
-  it("validates folder, label, read, and starred actions", () => {
-    expect([
-      decodeSucceeds(RuleActions, ruleInput().actions),
-      decodeSucceeds(RuleActions, []),
-      decodeSucceeds(RuleActions, [
-        { _tag: "MoveToFolder", folderId: "archive" },
-        { _tag: "MoveToFolder", folderId: "trash" },
-      ]),
-      decodeSucceeds(RuleActions, [
-        { _tag: "AddLabel", labelId: "important" },
-        { _tag: "AddLabel", labelId: "important" },
-      ]),
-      decodeSucceeds(RuleActions, [
-        { _tag: "SetRead", read: true },
-        { _tag: "SetRead", read: false },
-      ]),
-      decodeSucceeds(RuleActions, [
-        { _tag: "MoveToFolder", folderId: " archive " },
-      ]),
-    ]).toStrictEqual([true, false, false, false, false, false]);
-  });
-
+describe("rule evaluation", () => {
   it("plans actions in priority, rule ID, and declaration order", () => {
     const rules = [
       ruleInput({
@@ -297,12 +184,6 @@ describe("mailbox rules", () => {
     ]);
   });
 
-  it("requires stopProcessing to be explicit in the rule contract", () => {
-    const { stopProcessing: _, ...withoutStopProcessing } = ruleInput();
-
-    expect(decodeSucceeds(RuleSchema, withoutStopProcessing)).toBeFalsy();
-  });
-
   it("separates AI candidates from synchronous rule evaluation", () => {
     const aiRule = ruleInput({
       id: "ai-rule",
@@ -318,12 +199,6 @@ describe("mailbox rules", () => {
     expect(
       evaluateAsyncRuleCandidates(input).map((rule) => rule.id)
     ).toStrictEqual(["ai-rule"]);
-    expect(
-      decodeSucceeds(RuleSchema, {
-        ...aiRule,
-        stopProcessing: true,
-      })
-    ).toBeFalsy();
   });
 
   it.each([

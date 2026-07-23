@@ -6,6 +6,11 @@ import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import {
+  AsyncRuleWorkflowClient,
+  AsyncRuleWorkflowStarterCloudflareLayer,
+} from "#/modules/automation/adapters/workflow/AsyncRuleWorkflowStarterCloudflare";
+import { AsyncRuleWorkflowStarter } from "#/modules/automation/ports/AsyncRuleWorkflowStarter";
 import { MailboxDoNamespace } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import type { AsyncRuleJobId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
@@ -17,12 +22,8 @@ import type { MimeParseError } from "#/modules/mailbox/ports/InboundEmailProcess
 import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
+import AsyncRuleWorkflow from "../apps/async-rule-workflow/AsyncRuleWorkflow";
 import { RawMessagesBucket } from "../infra/resources";
-import {
-  AsyncRuleWorkflowClient,
-  AsyncRuleWorkflowStarterLive,
-} from "../mailboxes/async-rule-workflow-starter-live";
-import { AsyncRuleWorkflowStarter } from "../mailboxes/async-rules";
 import type { ParsedInboundMessageV1 as ParsedInboundMessageV1Type } from "../mailboxes/inbound";
 import {
   InboundAttachmentStore,
@@ -52,7 +53,6 @@ import {
   InboundRawMessageReaderR2Live,
 } from "../mailboxes/inbound-raw-message-reader-r2-live";
 import { MailboxDO } from "../mailboxes/mailbox-do";
-import AsyncRuleWorkflow from "./async-rule-workflow";
 
 const encodedManifest = (manifest: ParsedInboundMessageV1Type) =>
   JSON.stringify(Schema.encodeSync(ParsedInboundMessageV1)(manifest));
@@ -552,16 +552,23 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
   const inboundProcessingRecorderLive = InboundProcessingRecorderDoLive.pipe(
     Layer.provide(mailboxDoNamespaceLive)
   );
-  const asyncRuleWorkflowClientLive = Layer.succeed(
+  const asyncRuleWorkflowClientLayer = Layer.succeed(
     AsyncRuleWorkflowClient,
     AsyncRuleWorkflowClient.of({
-      create: (options) => asyncRuleWorkflow.create(options),
-      get: (instanceId) => asyncRuleWorkflow.get(instanceId),
+      create: (options) =>
+        asyncRuleWorkflow
+          .create(options)
+          .pipe(Effect.provide(RuntimeContext.phantom)),
+      get: (instanceId) =>
+        asyncRuleWorkflow
+          .get(instanceId)
+          .pipe(Effect.provide(RuntimeContext.phantom)),
     })
   );
-  const asyncRuleWorkflowStarterLive = AsyncRuleWorkflowStarterLive.pipe(
-    Layer.provide(asyncRuleWorkflowClientLive)
-  );
+  const asyncRuleWorkflowStarterLayer =
+    AsyncRuleWorkflowStarterCloudflareLayer.pipe(
+      Layer.provide(asyncRuleWorkflowClientLayer)
+    );
   const mimeParserLive = InboundMimeParserPostalMimeLive.pipe(
     Layer.provide(InboundMimeParserConfigLive)
   );
@@ -576,7 +583,7 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
     attachmentStoreLive,
     inboundCommitterLive,
     inboundProcessingRecorderLive,
-    asyncRuleWorkflowStarterLive
+    asyncRuleWorkflowStarterLayer
   );
   const program = yield* inboundWorkflowProgram;
 

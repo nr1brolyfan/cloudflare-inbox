@@ -4,12 +4,11 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 
+import type { AsyncRuleWorkflowParams } from "#/modules/automation/ports/AsyncRuleWorkflowStarter";
+import { AsyncRuleWorkflowStarter } from "#/modules/automation/ports/AsyncRuleWorkflowStarter";
 import { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
 
-import type { AsyncRuleWorkflowParams } from "./async-rules";
-import { AsyncRuleWorkflowStarter } from "./async-rules";
-
-export interface AsyncRuleWorkflowClient {
+export interface AsyncRuleWorkflowClientService {
   readonly create: (options: {
     readonly id: string;
     readonly params: AsyncRuleWorkflowParams;
@@ -19,11 +18,13 @@ export interface AsyncRuleWorkflowClient {
   ) => Effect.Effect<{ readonly id: string }, unknown>;
 }
 
-export const AsyncRuleWorkflowClient = Context.Service<AsyncRuleWorkflowClient>(
-  "cloudflare-inbox/AsyncRuleWorkflowClient"
-);
+/** Focused Cloudflare Workflow binding used by the starter adapter. */
+export class AsyncRuleWorkflowClient extends Context.Service<
+  AsyncRuleWorkflowClient,
+  AsyncRuleWorkflowClientService
+>()("cloudflare-inbox/AsyncRuleWorkflowClient") {}
 
-export const AsyncRuleWorkflowStarterLive = Layer.effect(
+export const AsyncRuleWorkflowStarterCloudflareLayer = Layer.effect(
   AsyncRuleWorkflowStarter,
   Effect.gen(function* () {
     const client = yield* AsyncRuleWorkflowClient;

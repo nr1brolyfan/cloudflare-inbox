@@ -24,6 +24,12 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import {
+  EvaluateRulesInput,
+  evaluateAsyncRuleCandidates,
+  evaluateRules,
+} from "#/modules/automation/application/RuleEvaluation";
+import type { RuleEvaluationResult } from "#/modules/automation/application/RuleEvaluation";
+import {
   AsyncRuleJobId,
   Cursor,
   DraftId,
@@ -35,6 +41,10 @@ import {
   Version,
 } from "#/modules/mailbox/domain/Mailbox";
 import type { RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
+import {
+  AsyncRuleJob,
+  AsyncRulePlanV1,
+} from "#/modules/mailbox/domain/MailboxAsyncRuleJob";
 import type {
   CreateFolderInput,
   CreateLabelInput,
@@ -130,8 +140,16 @@ import type {
   MailboxResourceLookup,
   MailboxResourceLookupResult as MailboxResourceLookupResultType,
 } from "#/modules/mailbox/domain/MailboxResource";
+import {
+  RuleAction,
+  RuleActions,
+  RuleApplication,
+  RuleConditions,
+  RuleEvaluationRecord,
+  RuleSchema,
+} from "#/modules/mailbox/domain/MailboxRule";
+import type { RuleApplicationOutcome } from "#/modules/mailbox/domain/MailboxRule";
 
-import { AsyncRuleJob, AsyncRulePlanV1 } from "./async-rules";
 import {
   CommitInboundMessageV1,
   InboundProcessingSchema,
@@ -143,18 +161,6 @@ import type {
   RecordInboundProcessing,
   ReplayInboundInput,
 } from "./inbound";
-import {
-  EvaluateRulesInput,
-  RuleAction,
-  RuleActions,
-  RuleApplication,
-  RuleConditions,
-  RuleEvaluationRecord,
-  RuleSchema,
-  evaluateAsyncRuleCandidates,
-  evaluateRules,
-} from "./rules";
-import type { RuleApplicationOutcome, RuleEvaluationResult } from "./rules";
 import { applyMailboxMigrations } from "./sqlite-migrations";
 import {
   asyncRuleJob,
