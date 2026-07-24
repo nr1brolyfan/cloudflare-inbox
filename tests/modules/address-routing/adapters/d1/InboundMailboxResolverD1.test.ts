@@ -67,9 +67,13 @@ const insertRoute = (
     .run("primary", "active", null);
   if (mailboxId !== "primary") {
     database.exec("drop trigger app_organization_mailbox_creation_provenance");
+    // Deliberately forge a pre-validation corruption that retained ancestry now
+    // prevents in normal operation.
+    database.exec("pragma foreign_keys = off");
     database
       .prepare("update app_mailbox set id = ? where id = 'primary'")
       .run(mailboxId);
+    database.exec("pragma foreign_keys = on");
   }
   if (status !== "active") {
     database

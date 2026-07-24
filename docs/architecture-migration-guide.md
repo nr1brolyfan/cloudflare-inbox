@@ -234,6 +234,7 @@ Preserve throughout moves and refactors:
 - seven system folders, optimistic versions, soft deletion, operation-ID replay/request-key checks and existing transactional semantics;
 - control-plane token-bound session/permission predicates in the same D1 batch as sensitive mutations;
 - trusted resource ancestry from canonical storage, never caller hints as authorization evidence;
+- retained control-plane migration ancestry is not user assignment or authority: before ORG-010, only `app_mailbox_legacy_organization_assignment` may carry the `primary` mailbox's organization backfill provenance, and `app_mailbox` must remain without `organization_id`;
 - current control-plane/data-plane/R2 authority boundaries;
 - request capability visibility for principal/session/actor, request context, operation provenance and AI tool scope;
 - Workflow retry behavior and typed-error-to-retry-defect conversion;
@@ -272,3 +273,5 @@ bun run build
 ```
 
 Also verify import-boundary rules, generated-file checks, raw-SQL policy, stable HTTP/DO/Workflow contracts, migrations, idempotency, authorization ancestry, D1 race protection, Workflow retries, Website forwarding, and resource cleanup/lifetimes.
+
+For additive control-plane cutovers, distinguish first application from reapplication before creating mutable state. Validate exact columns, checks, foreign keys, indexes, owned triggers, sentinels, rows, and bounded parent inventories; drop and recreate only migration-owned triggers in the surrounding migration transaction. Reapplication may validate a retained bridge but must never reconstruct missing or changed provenance from current counts, constants, ordering, users, grants, memberships, domains, or navigation. A temporary rolling trigger must be replaced atomically by the migration that introduces its canonical successor.

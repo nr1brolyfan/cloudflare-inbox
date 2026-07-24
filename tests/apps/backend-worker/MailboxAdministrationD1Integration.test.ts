@@ -576,6 +576,11 @@ describe("mailbox administration", () => {
             .prepare("select * from app_organization_legacy_cutover")
             .get(),
         },
+        organizationAssignment: {
+          ...database
+            .prepare("select * from app_mailbox_legacy_organization_assignment")
+            .get(),
+        },
         receiptV1: countRows(
           database,
           "app_mailbox_bootstrap_receipt_v1_intent"
@@ -603,6 +608,13 @@ describe("mailbox administration", () => {
           schema_version: 1,
           source_created_at: null,
           source_mailbox_id: null,
+        },
+        organizationAssignment: {
+          effective_at: now,
+          mailbox_id: "primary",
+          organization_id: "legacy_default_v1",
+          schema_version: 1,
+          source: "fresh-bootstrap",
         },
         receiptV1: 0,
         receiptV2: 1,
@@ -744,9 +756,23 @@ describe("mailbox administration", () => {
         reason: "invalid-input",
       });
       expect({
+        assignments: countRows(
+          database,
+          "app_mailbox_legacy_organization_assignment"
+        ),
+        grants: countRows(database, "auth_role_grant"),
         mailboxes: countRows(database, "app_mailbox"),
+        members: countRows(database, "app_mailbox_member"),
+        organizations: countRows(database, "app_organization"),
         receipts: countRows(database, "app_mailbox_administration_receipt"),
-      }).toStrictEqual({ mailboxes: 0, receipts: 0 });
+      }).toStrictEqual({
+        assignments: 0,
+        grants: 0,
+        mailboxes: 0,
+        members: 0,
+        organizations: 0,
+        receipts: 0,
+      });
     } finally {
       database.close();
     }

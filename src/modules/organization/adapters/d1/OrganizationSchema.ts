@@ -366,6 +366,73 @@ export const appOrganizationLegacyCutover = sqliteTable(
   ]
 );
 
+export const appMailboxLegacyOrganizationAssignment = sqliteTable(
+  "app_mailbox_legacy_organization_assignment",
+  {
+    mailboxId: text("mailbox_id")
+      .notNull()
+      .primaryKey()
+      .references(() => appMailbox.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => appOrganization.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    effectiveAt: integer("effective_at").notNull(),
+    source: text("source", {
+      enum: ["legacy-cutover", "fresh-bootstrap"],
+    }).notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  () => [
+    check(
+      "app_mailbox_legacy_organization_assignment_mailbox_check",
+      sql`typeof(mailbox_id) = 'text' and mailbox_id = 'primary'`
+    ),
+    check(
+      "app_mailbox_legacy_organization_assignment_organization_check",
+      sql`typeof(organization_id) = 'text'
+        and organization_id = 'legacy_default_v1'`
+    ),
+    check(
+      "app_mailbox_legacy_organization_assignment_effective_check",
+      sql`typeof(effective_at) = 'integer'
+        and effective_at between 0 and 9007199254740991`
+    ),
+    check(
+      "app_mailbox_legacy_organization_assignment_source_check",
+      sql`typeof(source) = 'text'
+        and source in ('legacy-cutover', 'fresh-bootstrap')`
+    ),
+    check(
+      "app_mailbox_legacy_organization_assignment_schema_check",
+      sql`typeof(schema_version) = 'integer' and schema_version = 1`
+    ),
+  ]
+);
+
+export const appMailboxLegacyOrganizationAssignmentCutover = sqliteTable(
+  "app_mailbox_legacy_organization_assignment_cutover",
+  {
+    id: integer("id").primaryKey(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  () => [
+    check(
+      "app_mailbox_legacy_organization_assignment_cutover_id_check",
+      sql`id = 1`
+    ),
+    check(
+      "app_mailbox_legacy_organization_assignment_cutover_schema_check",
+      sql`typeof(schema_version) = 'integer' and schema_version = 1`
+    ),
+  ]
+);
+
 export const appMailboxMember = sqliteTable(
   "app_mailbox_member",
   {

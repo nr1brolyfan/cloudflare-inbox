@@ -157,6 +157,65 @@ const insertMailboxMembership = (
 };
 
 describe("mailbox navigation", () => {
+  it("does not treat exact retained ancestry as discovery or authority", async () => {
+    const database = new DatabaseSync(":memory:");
+    let authorizationCalls = 0;
+
+    try {
+      await applyControlPlaneMigrations(database);
+      insertFreshCutoverOrganization(database, 1000);
+      database.exec(`insert into app_mailbox
+        (id, display_name, status, created_by_user_id, created_at, updated_at)
+        values ('primary', 'Primary Inbox', 'active', 'user-a', 1000, 1000)`);
+
+      await expect(
+        Effect.runPromise(
+          navigationEffect(
+            database,
+            authorizationWith(({ resource }) => {
+              authorizationCalls += 1;
+              return Effect.succeed(resource);
+            }),
+            repositoryWith(
+              () => Effect.succeed(folders),
+              () => Effect.succeed(labels)
+            )
+          )
+        )
+      ).rejects.toMatchObject({
+        _tag: "MailboxNavigationError",
+        reason: "not-found",
+      });
+      expect({
+        ancestry: {
+          ...database
+            .prepare(
+              "select count(*) as count from app_mailbox_legacy_organization_assignment"
+            )
+            .get(),
+        },
+        authorizationCalls,
+        grants: {
+          ...database
+            .prepare("select count(*) as count from auth_role_grant")
+            .get(),
+        },
+        memberships: {
+          ...database
+            .prepare("select count(*) as count from app_mailbox_member")
+            .get(),
+        },
+      }).toStrictEqual({
+        ancestry: { count: 1 },
+        authorizationCalls: 0,
+        grants: { count: 0 },
+        memberships: { count: 0 },
+      });
+    } finally {
+      database.close();
+    }
+  });
+
   it("authorizes and reads both directory projections for the discovered mailbox", async () => {
     const database = new DatabaseSync(":memory:");
     const calls: string[] = [];

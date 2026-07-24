@@ -12,13 +12,14 @@ Current constraints:
 
 - `app_mailbox_singleton_idx` permits at most one global mailbox.
 - `app_organization_legacy_cutover` is sealed migration provenance. `legacy-primary` retains mailbox `primary`, its creation time, and reserved opaque organization ID `legacy_default_v1`; `fresh-empty` remains the recorded outcome only with empty inventories or the exact unique trusted-bootstrap pair with equal creation provenance. Partial pairs, unrelated/additional rows, timestamp disagreement, changed `primary` ID/creation time, deletion, or replacement are corruption and are storage-blocked. Never infer or repair this identity from organization count or order.
+- `app_mailbox_legacy_organization_assignment_cutover` is the sealed ORG-007 completion sentinel. Its retained bridge contains either no row for an unbootstrapped fresh deployment or exactly one `primary` to `legacy_default_v1` row whose `effective_at` equals both parent creation times and whose source matches `legacy-cutover` or `fresh-bootstrap`. A missing, changed, additional, or timestamp-disagreeing row after mailbox creation is corruption; do not reconstruct it from constants, count/order, users, grants, memberships, domains, receipts, audit, or navigation.
 - `app_mailbox_member` is a discovery projection, not authorization. Effect-auth role and permission grants authorize access.
 - Supported mailbox administration is owner bootstrap and rename. There is no supported owner transfer, grant/revoke, route disable, or route reassignment operation.
 - `app_mailbox_address` is both the enabled inbound lookup and the current primary outbound identity. It has no route history or assignment revision.
 - Administrative audit has a closed current taxonomy. It does not contain grant or route mutations.
 - `/api/health` checks dependency readiness for D1, R2, Durable Objects, rate limiting, and authorization storage. It does not validate owner, grant, or route semantics.
 
-The reserved organization row does not yet create organization membership, organization grants, domain ownership, mailbox organization ancestry, or tenant authority. The future model will separate Organization Owner, mailbox ownership, assignments, stable addresses, route revisions, and send identities. Those commands do not exist yet and must not be simulated with direct SQL.
+The reserved organization row and retained ORG-007 bridge do not create organization membership, organization grants, domain ownership, user mailbox assignment, or tenant authority. The bridge is migration-only resource ancestry for ORG-010 and is not consulted by current navigation or authorization. The future model will separate Organization Owner, mailbox ownership, assignments, stable addresses, route revisions, and send identities. Those commands do not exist yet and must not be simulated with direct SQL.
 
 ## Severity
 
@@ -234,6 +235,29 @@ limit 2;
 ```
 
 The expected result is one row. A second row or multiple matching owner grants is a corruption signal.
+
+### Retained Mailbox Ancestry
+
+Bindings: `?1 = mailbox_id`.
+
+```sql
+select
+  assignment.mailbox_id,
+  assignment.organization_id,
+  assignment.effective_at,
+  assignment.source,
+  assignment.schema_version,
+  mailbox.created_at as mailbox_created_at,
+  organization.created_at as organization_created_at
+from app_mailbox_legacy_organization_assignment as assignment
+join app_mailbox as mailbox on mailbox.id = assignment.mailbox_id
+join app_organization as organization
+  on organization.id = assignment.organization_id
+where assignment.mailbox_id = ?1
+limit 2;
+```
+
+For existing `primary`, the expected result is exactly one row with `organization_id = legacy_default_v1`, equal effective and parent creation times, `schema_version = 1`, and the migration-established source. This query is corruption diagnosis only. It does not prove membership, a grant, effective access, or current lifecycle status and does not authorize repair.
 
 ### Recovery Readiness Aggregate
 
