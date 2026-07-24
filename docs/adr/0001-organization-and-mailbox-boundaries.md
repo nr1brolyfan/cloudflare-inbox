@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-22
+- Last updated: 2026-07-24
 - Owners: Product owner and engineering
 
 ## Context
@@ -15,6 +16,8 @@ The first deployment does not need public multi-tenant SaaS onboarding, but addi
 The control plane is tenant-aware from its first multi-mailbox migration:
 
 - An `Organization` owns domains, mailboxes, addresses, and organization memberships.
+- Organization IDs are case-sensitive opaque ASCII values matching `[A-Za-z0-9_-]{1,128}`. They are immutable, never deleted, and never reused; the concrete generator is selected by the legacy migration and bootstrap work before their first insert.
+- An organization starts `active` at version 1 with equal Unix-millisecond creation and update times. Storage admits only `active` and `suspended`, safe-integer times and versions, exact version increments, and nondecreasing update time. Authorized suspend/resume operations and their audit contract remain separate lifecycle work.
 - The first release creates one organization per deployment.
 - Multi-organization SaaS remains deferred, but no new model may depend on a global organization singleton.
 - A `Mailbox` is the storage and authorization boundary.
@@ -33,6 +36,7 @@ The control plane is tenant-aware from its first multi-mailbox migration:
 - Navigation must select an explicit mailbox and cannot use an unordered first membership.
 - Organization administration and mail-content administration remain separate capabilities.
 - Existing `MailboxDO` storage, message processing, rules, search, and outbound state can remain mailbox-oriented.
+- The initial `app_organization` migration is an additive tenant-root schema only. It does not seed a legacy organization, add membership, assign the current mailbox, alter the mailbox singleton, or expose a runtime mutation.
 
 ## Rejected alternatives
 

@@ -12,13 +12,20 @@ const migrationsDirectory = new URL(
   import.meta.url
 );
 
-export const applyControlPlaneMigrations = async (database: DatabaseSync) => {
+const controlPlaneMigrationFiles = async () => {
   const directoryEntries = await readdir(migrationsDirectory);
   const migrationFiles = directoryEntries.filter((file) =>
     file.endsWith(".sql")
   );
   // oxlint-disable-next-line unicorn/no-array-sort -- Migration order is part of the schema contract.
   migrationFiles.sort();
+  return migrationFiles;
+};
+
+const applyMigrationFiles = async (
+  database: DatabaseSync,
+  migrationFiles: readonly string[]
+) => {
   const migrations = await Promise.all(
     migrationFiles.map((file) =>
       readFile(new URL(file, migrationsDirectory), "utf-8")
@@ -29,6 +36,36 @@ export const applyControlPlaneMigrations = async (database: DatabaseSync) => {
   for (const migration of migrations) {
     database.exec(migration);
   }
+};
+
+export const applyControlPlaneMigration = async (
+  database: DatabaseSync,
+  migrationFile: string
+) => {
+  const migrationFiles = await controlPlaneMigrationFiles();
+  if (!migrationFiles.includes(migrationFile)) {
+    throw new Error(`Unknown control-plane migration: ${migrationFile}`);
+  }
+  await applyMigrationFiles(database, [migrationFile]);
+};
+
+export const applyControlPlaneMigrationsThrough = async (
+  database: DatabaseSync,
+  lastMigrationFile: string
+) => {
+  const migrationFiles = await controlPlaneMigrationFiles();
+  const lastMigrationIndex = migrationFiles.indexOf(lastMigrationFile);
+  if (lastMigrationIndex === -1) {
+    throw new Error(`Unknown control-plane migration: ${lastMigrationFile}`);
+  }
+  await applyMigrationFiles(
+    database,
+    migrationFiles.slice(0, lastMigrationIndex + 1)
+  );
+};
+
+export const applyControlPlaneMigrations = async (database: DatabaseSync) => {
+  await applyMigrationFiles(database, await controlPlaneMigrationFiles());
 };
 
 const errorMessage = (error: unknown) =>
