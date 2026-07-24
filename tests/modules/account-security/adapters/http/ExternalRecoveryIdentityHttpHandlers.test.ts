@@ -262,4 +262,38 @@ describe("external recovery identity API", () => {
       await dispose();
     }
   });
+
+  it("maps recovery-policy storage failures to a sanitized internal error", async () => {
+    const { dispose, handler } = makeHandler(
+      makeManagement({
+        enroll: () =>
+          Effect.fail(
+            new ExternalRecoveryIdentityManagementError({
+              cause: new Error("private managed-domain storage detail"),
+              operation: "enroll",
+              reason: "storage",
+            })
+          ),
+      })
+    );
+    try {
+      const response = await handler(
+        request("/auth/external-recovery-identity/enroll", "POST", {
+          address: "person@external.test",
+          operationId,
+        })
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(500);
+      expect(body).toStrictEqual({
+        _tag: "AuthInternalError",
+        code: "internal_error",
+        message: "External recovery identity operation failed",
+      });
+      expect(JSON.stringify(body)).not.toContain("managed-domain");
+    } finally {
+      await dispose();
+    }
+  });
 });

@@ -4,7 +4,7 @@ import { pathToFileURL } from "node:url";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 
-import { checkMailDomainConfig } from "#/modules/organization/application/MailDomainConfigPreflight";
+import { mailDomainConfigPreflight } from "#/modules/organization/application/MailDomainConfigPreflight";
 
 const mailDomainConfigExitMessage = (
   exit: Exit.Exit<
@@ -17,9 +17,7 @@ const mailDomainConfigExitMessage = (
     : "mail-domain-config failed";
 
 const main = async (): Promise<void> => {
-  const exit = await Effect.runPromiseExit(
-    checkMailDomainConfig(process.env.MAILBOX_OWNER_EMAIL)
-  );
+  const exit = await Effect.runPromiseExit(mailDomainConfigPreflight);
   const message = mailDomainConfigExitMessage(exit);
   if (Exit.isSuccess(exit)) {
     console.log(message);

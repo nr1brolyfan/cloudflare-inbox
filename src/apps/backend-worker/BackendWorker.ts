@@ -19,7 +19,6 @@ import {
   AuthRuntimeConfig,
   AuthRuntimeConfigSchema,
 } from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
-import { RecoverySafeIdentityConfig } from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
 import { DevEmailConfig } from "#/modules/account-security/adapters/http/DevEmailHttpHandlers";
 import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
 import {
@@ -52,6 +51,10 @@ import {
 } from "#/modules/mailbox/adapters/workflow/InboundWorkflowStarterCloudflare";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
 import {
+  MailboxBootstrapConfig,
+  mailboxBootstrapConfig,
+} from "#/modules/organization/contracts/MailboxBootstrapConfig";
+import {
   EmailRoutingEventSource,
   EmailRoutingEventSourceCloudflareLayer,
 } from "#/platform/cloudflare/EmailRoutingEventSource";
@@ -81,12 +84,10 @@ import {
   backendRequestContextAnnotations,
   CurrentBackendRequestContext,
 } from "#/platform/observability/BackendRequestContext";
-import { EmailAddress } from "#/shared/EmailAddress";
 
 import { BackendApplicationLayer } from "./BackendApplicationLayer";
 import { BackendHealthBindings } from "./BackendHealthLayer";
 import { handleCloudflareEmailRoutingMessage } from "./CloudflareEmailRoutingIntegration";
-import { MailboxAdministrationConfig } from "./MailboxAdministrationD1Integration";
 
 const r2AttachmentObject = (object: {
   readonly checksums: { readonly sha256?: ArrayBuffer };
@@ -191,9 +192,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       : undefined;
     const publicOrigin = yield* Config.string("PUBLIC_ORIGIN");
     const emailFrom = yield* Config.string("AUTH_EMAIL_FROM");
-    const mailboxOwnerEmail = yield* Schema.decodeUnknownEffect(EmailAddress)(
-      yield* Config.string("MAILBOX_OWNER_EMAIL")
-    ).pipe(Effect.orDie);
+    const bootstrapConfig = yield* mailboxBootstrapConfig.pipe(Effect.orDie);
     const sessionSecret = yield* Config.redacted("AUTH_SESSION_SECRET");
     const challengeSecret = yield* Config.redacted("AUTH_CHALLENGE_SECRET");
     const privacySecret = yield* Config.redacted("AUTH_PRIVACY_SECRET");
@@ -321,12 +320,8 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       MailboxOutboundProviderLayer,
       AiInferenceApplicationLayer,
       Layer.succeed(
-        MailboxAdministrationConfig,
-        MailboxAdministrationConfig.of({ ownerEmail: mailboxOwnerEmail })
-      ),
-      Layer.succeed(
-        RecoverySafeIdentityConfig,
-        RecoverySafeIdentityConfig.of({ ownerEmail: mailboxOwnerEmail })
+        MailboxBootstrapConfig,
+        MailboxBootstrapConfig.of(bootstrapConfig)
       ),
       Layer.succeed(
         MailboxDoNamespace,

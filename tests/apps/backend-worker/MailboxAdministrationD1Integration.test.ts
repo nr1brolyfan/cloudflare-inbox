@@ -17,9 +17,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  MailboxAdministrationConfig,
   MailboxAdministrationD1Layer,
-  MailboxAdministrationOwnerEmail,
   MailboxAdministrationRuntime,
 } from "#/apps/backend-worker/MailboxAdministrationD1Integration";
 import { CONTROL_PLANE_STEP_UP_POLICY } from "#/modules/account-security/domain/StepUpPolicy";
@@ -49,9 +47,14 @@ import {
   MailboxAdministration,
   MailboxAdministrationError,
 } from "#/modules/organization/application/MailboxAdministration";
+import {
+  MailboxBootstrapConfig,
+  MailboxBootstrapConfigValue,
+} from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { NormalizedEmailAddress } from "#/shared/EmailAddress";
 import { AdministrativeOperationId } from "#/shared/Operation";
 import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import {
@@ -61,7 +64,9 @@ import {
 import { Version } from "#/shared/Temporal";
 
 import {
+  applyControlPlaneMigration,
   applyControlPlaneMigrations,
+  applyControlPlaneMigrationsThrough,
   makeTestD1Database,
 } from "../../support/d1";
 
@@ -307,19 +312,30 @@ const provideRequestAuth = <A, E, R>(
     Effect.provideService(CurrentRequestCorrelation, requestContext)
   );
 
+const canonicalTestAddress = (address: string) => {
+  const separator = address.lastIndexOf("@");
+  return `${address.slice(0, separator)}@${address.slice(separator + 1).toLowerCase()}`;
+};
+
 const bootstrap = (
   database: D1EffectQbDatabaseLike,
   validated: ValidatedSession,
   nonce: string,
   ownerEmail = "user-a@example.test",
   operationId = "00000000-0000-4000-8000-000000000010",
-  displayName = "Inbox"
+  displayName = "Inbox",
+  configuredInitialAddress = ownerEmail,
+  configuredOwnerAllowlist = [canonicalTestAddress(ownerEmail)],
+  commandInitialAddress = configuredInitialAddress
 ) =>
   provideRequestAuth(
     Effect.gen(function* () {
       const administration = yield* MailboxAdministration;
       return yield* administration.bootstrapOwner({
         displayName: Schema.decodeUnknownSync(MailboxDisplayName)(displayName),
+        initialAddress: Schema.decodeUnknownSync(NormalizedEmailAddress)(
+          canonicalTestAddress(commandInitialAddress)
+        ),
         operationId: Schema.decodeUnknownSync(AdministrativeOperationId)(
           operationId
         ),
@@ -331,12 +347,15 @@ const bootstrap = (
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(
-                MailboxAdministrationConfig,
-                MailboxAdministrationConfig.of({
-                  ownerEmail: Schema.decodeUnknownSync(
-                    MailboxAdministrationOwnerEmail
-                  )(ownerEmail),
-                })
+                MailboxBootstrapConfig,
+                MailboxBootstrapConfig.of(
+                  Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
+                    initialAddress: canonicalTestAddress(
+                      configuredInitialAddress
+                    ),
+                    ownerEmailAllowlist: configuredOwnerAllowlist,
+                  })
+                )
               ),
               administrativeAuditLayer,
               Layer.succeed(
@@ -385,12 +404,13 @@ const rename = (
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(
-                MailboxAdministrationConfig,
-                MailboxAdministrationConfig.of({
-                  ownerEmail: Schema.decodeUnknownSync(
-                    MailboxAdministrationOwnerEmail
-                  )("user-a@example.test"),
-                })
+                MailboxBootstrapConfig,
+                MailboxBootstrapConfig.of(
+                  Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
+                    initialAddress: "inbox@example.test",
+                    ownerEmailAllowlist: ["user-a@example.test"],
+                  })
+                )
               ),
               administrativeAuditLayer,
               Layer.succeed(
@@ -434,12 +454,13 @@ const readOperation = (
           Layer.provide(
             Layer.mergeAll(
               Layer.succeed(
-                MailboxAdministrationConfig,
-                MailboxAdministrationConfig.of({
-                  ownerEmail: Schema.decodeUnknownSync(
-                    MailboxAdministrationOwnerEmail
-                  )("user-a@example.test"),
-                })
+                MailboxBootstrapConfig,
+                MailboxBootstrapConfig.of(
+                  Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
+                    initialAddress: "inbox@example.test",
+                    ownerEmailAllowlist: ["user-a@example.test"],
+                  })
+                )
               ),
               administrativeAuditLayer,
               Layer.succeed(
@@ -468,6 +489,32 @@ const countRows = (database: DatabaseSync, table: string) =>
       count: number;
     }
   ).count;
+
+const seedHistoricalBootstrapReceipt = (
+  database: DatabaseSync,
+  address = "inbox@example.test",
+  normalizedAddress = "inbox@example.test"
+) => {
+  database.exec(`
+    insert into app_mailbox
+      (id, display_name, status, created_by_user_id, created_at, updated_at,
+       version)
+    values ('primary', 'Inbox', 'active', 'user-a', ${now}, ${now}, 1);
+    insert into app_mailbox_address
+      (mailbox_id, id, address, normalized_address, is_primary, enabled,
+       created_at, updated_at)
+    values ('primary', 'primary', '${address}', '${normalizedAddress}', 1, 1,
+            ${now}, ${now});
+    insert into app_mailbox_administration_receipt
+      (operation_id, operation_kind, actor_user_id, mailbox_id, display_name,
+       expected_version, result_mailbox_id, result_display_name, result_status,
+       result_created_by_user_id, result_created_at, result_updated_at,
+       result_version, committed_at, schema_version)
+    values ('00000000-0000-4000-8000-000000000010', 'bootstrap-owner',
+            'user-a', 'primary', 'Inbox', null, 'primary', 'Inbox', 'active',
+            'user-a', ${now}, ${now}, 1, ${now}, 1);
+  `);
+};
 
 describe("mailbox administration", () => {
   it("atomically creates the mailbox, discovery member, and owner grant", async () => {
@@ -515,6 +562,11 @@ describe("mailbox administration", () => {
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        receiptV1: countRows(
+          database,
+          "app_mailbox_bootstrap_receipt_v1_intent"
+        ),
+        receiptV2: countRows(database, "app_mailbox_bootstrap_receipt_v2"),
         receipts: countRows(database, "app_mailbox_administration_receipt"),
       }).toStrictEqual({
         addresses: 1,
@@ -523,6 +575,8 @@ describe("mailbox administration", () => {
         guards: 0,
         mailboxes: 1,
         members: 1,
+        receiptV1: 0,
+        receiptV2: 1,
         receipts: 1,
       });
       expect(
@@ -588,6 +642,82 @@ describe("mailbox administration", () => {
         scope_id: "primary",
         scope_type: "mailbox",
       });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("keeps owner eligibility separate from the trusted initial address", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "bootstrap-guard",
+          "user-a@example.test",
+          "00000000-0000-4000-8000-000000000010",
+          "Inbox",
+          "team@company.test",
+          ["other@example.test", "user-a@example.test"]
+        )
+      );
+
+      expect(
+        database
+          .prepare(
+            `select address, normalized_address
+               from app_mailbox_address
+              where mailbox_id = 'primary' and is_primary = 1`
+          )
+          .get()
+      ).toMatchObject({
+        address: "team@company.test",
+        normalized_address: "team@company.test",
+      });
+      expect(
+        database.prepare("select * from app_mailbox_bootstrap_receipt_v2").get()
+      ).toMatchObject({ initial_address: "team@company.test" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects a direct trusted-command address mismatch before writes", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      const error = await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "unused-guard",
+          "user-a@example.test",
+          "00000000-0000-4000-8000-000000000010",
+          "Inbox",
+          "inbox@example.test",
+          ["user-a@example.test"],
+          "forged@example.test"
+        ).pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({
+        operation: "bootstrap-owner",
+        reason: "invalid-input",
+      });
+      expect({
+        mailboxes: countRows(database, "app_mailbox"),
+        receipts: countRows(database, "app_mailbox_administration_receipt"),
+      }).toStrictEqual({ mailboxes: 0, receipts: 0 });
     } finally {
       database.close();
     }
@@ -700,6 +830,249 @@ describe("mailbox administration", () => {
     }
   });
 
+  it("expands historical V1 bootstrap replay intent from the retained primary route", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrationsThrough(
+        database,
+        "1021_app_mail_domain.sql"
+      );
+      seedHistoricalBootstrapReceipt(database);
+      await applyControlPlaneMigration(
+        database,
+        "1022_app_mailbox_bootstrap_receipt_v2.sql"
+      );
+      database
+        .prepare(
+          `update app_mailbox_address
+              set address = 'moved@example.test',
+                  normalized_address = 'moved@example.test'
+            where mailbox_id = 'primary' and id = 'primary'`
+        )
+        .run();
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      const receipt = await Effect.runPromise(readOperation(d1, validated));
+      const replay = await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "unused-guard",
+          "user-a@example.test",
+          "00000000-0000-4000-8000-000000000010",
+          "Inbox",
+          "inbox@example.test"
+        )
+      );
+      const changedAddressError = await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "unused-guard",
+          "user-a@example.test",
+          "00000000-0000-4000-8000-000000000010",
+          "Inbox",
+          "changed@example.test"
+        ).pipe(Effect.flip)
+      );
+
+      expect(receipt).toMatchObject({
+        operationKind: "bootstrap-owner",
+        schemaVersion: 1,
+      });
+      expect(replay).toMatchObject({ id: "primary", version: 1 });
+      expect(changedAddressError).toMatchObject({
+        operation: "bootstrap-owner",
+        reason: "operation-conflict",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("bridges an old-writer uppercase-domain bootstrap after cutover", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      seedHistoricalBootstrapReceipt(
+        database,
+        "inbox@EXAMPLE.TEST",
+        "inbox@example.test"
+      );
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      const receipt = await Effect.runPromise(readOperation(d1, validated));
+      const replay = await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "unused-guard",
+          "user-a@example.test",
+          "00000000-0000-4000-8000-000000000010",
+          "Inbox",
+          "inbox@example.test"
+        )
+      );
+
+      expect(receipt).toMatchObject({
+        operationKind: "bootstrap-owner",
+        schemaVersion: 1,
+      });
+      expect(receipt.initialAddress).toBeUndefined();
+      expect(replay).toMatchObject({ id: "primary", version: 1 });
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+          .get()
+      ).toMatchObject({ initial_address: "inbox@example.test" });
+      expect(countRows(database, "app_mailbox_bootstrap_receipt_v2")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each(["missing-both", "both-present"] as const)(
+    "fails historical V1 receipt readback safely for %s intent sources",
+    async (state) => {
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrationsThrough(
+          database,
+          "1021_app_mail_domain.sql"
+        );
+        seedHistoricalBootstrapReceipt(database);
+        await applyControlPlaneMigration(
+          database,
+          "1022_app_mailbox_bootstrap_receipt_v2.sql"
+        );
+        if (state === "missing-both") {
+          database.exec(
+            "drop trigger app_mailbox_bootstrap_receipt_v1_intent_no_delete"
+          );
+          database
+            .prepare("delete from app_mailbox_bootstrap_receipt_v1_intent")
+            .run();
+        } else {
+          database.exec(
+            "drop trigger app_mailbox_bootstrap_receipt_v2_binding"
+          );
+          database.exec(
+            "drop trigger app_mailbox_bootstrap_receipt_v2_promote"
+          );
+          database
+            .prepare(
+              `insert into app_mailbox_bootstrap_receipt_v2
+                (operation_id, initial_address, schema_version)
+               values ('00000000-0000-4000-8000-000000000010',
+                       'inbox@example.test', 2)`
+            )
+            .run();
+        }
+        await expect(
+          applyControlPlaneMigration(
+            database,
+            "1022_app_mailbox_bootstrap_receipt_v2.sql"
+          )
+        ).rejects.toThrow(/constraint/u);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+
+        const error = await Effect.runPromise(
+          readOperation(d1, validated).pipe(Effect.flip)
+        );
+        expect(error).toMatchObject({
+          operation: "read-operation",
+          reason: "storage",
+        });
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it("fails readback when a V2 companion is lost instead of downgrading", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+      database.exec("drop trigger app_mailbox_bootstrap_receipt_v2_no_delete");
+      database.prepare("delete from app_mailbox_bootstrap_receipt_v2").run();
+
+      await expect(
+        applyControlPlaneMigration(
+          database,
+          "1022_app_mailbox_bootstrap_receipt_v2.sql"
+        )
+      ).rejects.toThrow(/constraint/u);
+
+      const error = await Effect.runPromise(
+        readOperation(d1, validated).pipe(Effect.flip)
+      );
+      expect(error).toMatchObject({
+        operation: "read-operation",
+        reason: "storage",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects a forged V1 bootstrap receipt on read and replay", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrationsThrough(
+        database,
+        "1021_app_mail_domain.sql"
+      );
+      seedHistoricalBootstrapReceipt(database);
+      await applyControlPlaneMigration(
+        database,
+        "1022_app_mailbox_bootstrap_receipt_v2.sql"
+      );
+      database.exec(
+        "drop trigger app_mailbox_administration_receipt_no_update"
+      );
+      database
+        .prepare(
+          `update app_mailbox_administration_receipt
+              set result_version = 2
+            where operation_id = '00000000-0000-4000-8000-000000000010'`
+        )
+        .run();
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      const readError = await Effect.runPromise(
+        readOperation(d1, validated).pipe(Effect.flip)
+      );
+      const replayError = await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "unused-guard",
+          "user-a@example.test",
+          "00000000-0000-4000-8000-000000000010",
+          "Inbox",
+          "inbox@example.test"
+        ).pipe(Effect.flip)
+      );
+
+      expect(readError).toMatchObject({ reason: "storage" });
+      expect(replayError).toMatchObject({ reason: "storage" });
+    } finally {
+      database.close();
+    }
+  });
+
   it("rejects changed bootstrap intent reusing an operation ID", async () => {
     const database = new DatabaseSync(":memory:");
     try {
@@ -725,6 +1098,36 @@ describe("mailbox administration", () => {
         reason: "operation-conflict",
       });
       expect(countRows(database, "app_administrative_audit_event")).toBe(1);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("treats the trusted initial address as bootstrap receipt intent", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
+
+      const error = await Effect.runPromise(
+        bootstrap(d1, validated, "unused-guard", "changed@example.test").pipe(
+          Effect.flip
+        )
+      );
+
+      expect(error).toMatchObject({
+        operation: "bootstrap-owner",
+        reason: "operation-conflict",
+      });
+      expect(
+        database.prepare("select * from app_mailbox_bootstrap_receipt_v2").get()
+      ).toMatchObject({
+        initial_address: "user-a@example.test",
+        schema_version: 2,
+      });
     } finally {
       database.close();
     }
@@ -758,7 +1161,8 @@ describe("mailbox administration", () => {
         mailboxId: "primary",
         operationKind: "bootstrap-owner",
         result: { id: "primary", version: 1 },
-        schemaVersion: 1,
+        initialAddress: "user-a@example.test",
+        schemaVersion: 2,
       });
       expect(receipt.expectedVersion).toBeUndefined();
       expect(error).toMatchObject({
@@ -820,7 +1224,7 @@ describe("mailbox administration", () => {
     }
   });
 
-  it("normalizes only the primary address domain during bootstrap", async () => {
+  it("persists the canonical trusted initial address during bootstrap", async () => {
     const database = new DatabaseSync(":memory:");
 
     try {
@@ -842,7 +1246,7 @@ describe("mailbox administration", () => {
           )
           .get()
       ).toMatchObject({
-        address: "user-a@EXAMPLE.TEST",
+        address: "user-a@example.test",
         normalized_address: "user-a@example.test",
       });
     } finally {
@@ -1442,8 +1846,16 @@ describe("mailbox administration", () => {
           "Recruiting"
         )
       );
+      const receipt = await Effect.runPromise(
+        readOperation(d1, validated, "00000000-0000-4000-8000-000000000011")
+      );
 
       expect(replay).toStrictEqual(first);
+      expect(receipt).toMatchObject({
+        operationKind: "rename",
+        schemaVersion: 1,
+      });
+      expect(receipt.initialAddress).toBeUndefined();
       expect(countRows(database, "app_administrative_audit_event")).toBe(2);
       expect(countRows(database, "app_mailbox_administration_receipt")).toBe(2);
     } finally {

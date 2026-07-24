@@ -40,7 +40,11 @@ const publicContractCategories = new Set([
 const approvedContextDependencies: Readonly<
   Record<(typeof requiredContexts)[number], readonly string[]>
 > = {
-  "account-security": ["address-routing", "administrative-audit"],
+  "account-security": [
+    "address-routing",
+    "administrative-audit",
+    "organization",
+  ],
   "address-routing": ["mailbox", "organization"],
   "administrative-audit": ["mailbox"],
   ai: ["mailbox"],

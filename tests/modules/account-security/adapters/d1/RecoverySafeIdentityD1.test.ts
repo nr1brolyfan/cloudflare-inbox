@@ -5,16 +5,16 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import {
-  RecoverySafeIdentityConfig,
-  RecoverySafeIdentityD1Layer,
-  RecoverySafeIdentityOwnerEmail,
-} from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
+import { RecoverySafeIdentityD1Layer } from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
 import { ExternalRecoveryIdentityAddress } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
 import {
   RecoverySafeIdentityPolicy,
   RecoverySafeIdentityRequest,
 } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
+import {
+  MailboxBootstrapConfig,
+  MailboxBootstrapConfigValue,
+} from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
@@ -45,12 +45,13 @@ const policyLive = (database: DatabaseSync) => {
     Layer.provide(databaseLive),
     Layer.provide(
       Layer.succeed(
-        RecoverySafeIdentityConfig,
-        RecoverySafeIdentityConfig.of({
-          ownerEmail: Schema.decodeUnknownSync(RecoverySafeIdentityOwnerEmail)(
-            "owner@company.test"
-          ),
-        })
+        MailboxBootstrapConfig,
+        MailboxBootstrapConfig.of(
+          Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
+            initialAddress: "inbox@company.test",
+            ownerEmailAllowlist: ["owner@company.test"],
+          })
+        )
       )
     )
   );
@@ -123,9 +124,18 @@ const insertMailboxAddress = (
       `insert into app_mailbox_address
         (mailbox_id, id, address, normalized_address, is_primary, enabled,
          created_at, updated_at)
-        values ('primary', 'primary', ?, ?, ?, ?, 1000, 1000)`
+        values ('primary', 'primary', 'inbox@company.test',
+                'inbox@company.test', 1, 1, 1000, 1000)`
     )
-    .run(address, address, enabled ? 1 : 0, enabled ? 1 : 0);
+    .run();
+  database
+    .prepare(
+      `insert into app_mailbox_address
+        (mailbox_id, id, address, normalized_address, is_primary, enabled,
+         created_at, updated_at)
+        values ('primary', 'tested-route', ?, ?, 0, ?, 1000, 1000)`
+    )
+    .run(address, address, enabled ? 1 : 0);
 };
 
 const insertLoginIdentity = (database: DatabaseSync, address: string) => {
@@ -144,6 +154,39 @@ const insertLoginIdentity = (database: DatabaseSync, address: string) => {
                1000, 1000)`
     )
     .run(address, address);
+};
+
+const insertCurrentMailDomain = (
+  database: DatabaseSync,
+  id: string,
+  canonicalDomain: string
+) => {
+  if (
+    (
+      database
+        .prepare(
+          "select count(*) as count from app_organization where id = 'organization-a'"
+        )
+        .get() as { count: number }
+    ).count === 0
+  ) {
+    database
+      .prepare(
+        `insert into app_organization (id, created_at, updated_at)
+         values ('organization-a', 1000, 1000)`
+      )
+      .run();
+  }
+  database
+    .prepare(
+      `insert into app_mail_domain
+        (id, organization_id, canonical_domain, canonicalization_profile_id,
+         canonicalization_version, status, created_at, updated_at, version)
+       values (?, 'organization-a', ?,
+         'mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1',
+         1, 'pending_verification', 1000, 1000, 1)`
+    )
+    .run(id, canonicalDomain);
 };
 
 const insertRecoveryChallenge = (
@@ -255,6 +298,107 @@ describe("recovery-safe identity policy", () => {
       }
     }
   );
+
+  it("uses an agreeing current persisted domain before bootstrap", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertCurrentMailDomain(database, "domain-a", "company.test");
+      await expect(
+        rejectAddress(database, "person@company.test")
+      ).resolves.toMatchObject({ reason: "managed-domain" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("uses the legacy primary route when persisted domain storage is empty", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertMailboxAddress(database, "person@external.test");
+      await expect(
+        rejectAddress(database, "other@company.test")
+      ).resolves.toMatchObject({ reason: "managed-domain" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each([
+    "multiple-current-domains",
+    "persisted-trusted-disagreement",
+    "persisted-legacy-disagreement",
+    "legacy-trusted-disagreement",
+    "malformed-legacy-projection",
+    "multiple-legacy-primary",
+    "existing-mailbox-without-claim",
+    "malformed-persisted-domain",
+  ] as const)("fails closed for %s", async (state) => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      if (state === "multiple-current-domains") {
+        insertCurrentMailDomain(database, "domain-a", "company.test");
+        insertCurrentMailDomain(database, "domain-b", "other.test");
+      } else if (state === "persisted-trusted-disagreement") {
+        insertCurrentMailDomain(database, "domain-a", "other.test");
+      } else if (state === "persisted-legacy-disagreement") {
+        insertMailboxAddress(database, "person@external.test");
+        insertCurrentMailDomain(database, "domain-a", "other.test");
+      } else if (state === "legacy-trusted-disagreement") {
+        insertMailboxAddress(database, "person@external.test");
+        database
+          .prepare(
+            `update app_mailbox_address
+                set address = 'inbox@other.test',
+                    normalized_address = 'inbox@other.test'
+              where mailbox_id = 'primary' and id = 'primary'`
+          )
+          .run();
+      } else if (state === "malformed-legacy-projection") {
+        insertMailboxAddress(database, "person@external.test");
+        database
+          .prepare(
+            `update app_mailbox_address
+                set address = 'Inbox@company.test'
+              where mailbox_id = 'primary' and id = 'primary'`
+          )
+          .run();
+      } else if (state === "multiple-legacy-primary") {
+        insertMailboxAddress(database, "person@external.test");
+        database.exec("drop index app_mailbox_address_primary_idx");
+        database
+          .prepare(
+            `insert into app_mailbox_address
+              (mailbox_id, id, address, normalized_address, is_primary,
+               enabled, created_at, updated_at)
+             values ('primary', 'second-primary', 'second@company.test',
+                     'second@company.test', 1, 1, 1000, 1000)`
+          )
+          .run();
+      } else if (state === "existing-mailbox-without-claim") {
+        database
+          .prepare(
+            `insert into app_mailbox
+              (id, display_name, status, created_by_user_id, created_at,
+               updated_at)
+             values ('primary', 'Inbox', 'active', 'user-a', 1000, 1000)`
+          )
+          .run();
+      } else {
+        database.exec("pragma ignore_check_constraints = on");
+        insertCurrentMailDomain(database, "domain-a", "Company.test");
+        database.exec("pragma ignore_check_constraints = off");
+      }
+
+      await expect(
+        rejectAddress(database, "person@external.test")
+      ).resolves.toMatchObject({ reason: "storage" });
+    } finally {
+      database.close();
+    }
+  });
 
   it.each([externalRecoveryPurpose, loginEmailInitiationPurpose] as const)(
     "rejects a mailbox route for $purpose",
@@ -710,8 +854,8 @@ describe("recovery-safe identity policy", () => {
             `insert into app_mailbox_address
               (mailbox_id, id, address, normalized_address, is_primary,
                enabled, created_at, updated_at)
-             values ('primary', 'primary', 'person@external.test',
-                     'person@external.test', 1, 1, 1000, 1000)`
+             values ('primary', 'released-route', 'person@external.test',
+                     'person@external.test', 0, 1, 1000, 1000)`
           )
           .run()
       ).not.toThrow();

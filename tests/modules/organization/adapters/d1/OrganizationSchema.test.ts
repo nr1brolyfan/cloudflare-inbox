@@ -1,3 +1,4 @@
+/* oxlint-disable vitest/max-expects -- Migration trigger tests assert the complete immutable storage contract together. */
 import { DatabaseSync } from "node:sqlite";
 
 import { getTableName } from "drizzle-orm";
@@ -1277,6 +1278,325 @@ describe("organization D1 schema", () => {
       expect(() =>
         Schema.decodeUnknownSync(MailDomainSchema)(structurallyValidOnly)
       ).toThrow(/canonical mail-domain A-label/u);
+    } finally {
+      database.close();
+    }
+  });
+});
+
+const bootstrapReceiptOperation = "00000000-0000-4000-8000-000000000010";
+const renameReceiptOperation = "00000000-0000-4000-8000-000000000011";
+
+const seedMailboxAdministrationV1Receipts = (
+  database: DatabaseSync,
+  address = "inbox@example.test"
+) => {
+  database.exec(`
+    insert into app_mailbox
+      (id, display_name, status, created_by_user_id, created_at, updated_at,
+       version)
+    values ('primary', 'Inbox', 'active', 'user-a', 1000, 1000, 1);
+    insert into app_mailbox_address
+      (mailbox_id, id, address, normalized_address, is_primary, enabled,
+       created_at, updated_at)
+    values ('primary', 'primary', '${address}', 'inbox@example.test', 1, 1,
+            1000, 1000);
+    insert into app_mailbox_administration_receipt
+      (operation_id, operation_kind, actor_user_id, mailbox_id, display_name,
+       expected_version, result_mailbox_id, result_display_name, result_status,
+       result_created_by_user_id, result_created_at, result_updated_at,
+       result_version, committed_at, schema_version)
+    values
+      ('${bootstrapReceiptOperation}', 'bootstrap-owner', 'user-a', 'primary',
+       'Inbox', null, 'primary', 'Inbox', 'active', 'user-a', 1000, 1000, 1,
+       1000, 1);
+    update app_mailbox
+       set display_name = 'Recruiting', updated_at = 2000, version = 2
+     where id = 'primary';
+    insert into app_mailbox_administration_receipt
+      (operation_id, operation_kind, actor_user_id, mailbox_id, display_name,
+       expected_version, result_mailbox_id, result_display_name, result_status,
+       result_created_by_user_id, result_created_at, result_updated_at,
+       result_version, committed_at, schema_version)
+    values
+      ('${renameReceiptOperation}', 'rename', 'user-a', 'primary', 'Recruiting',
+       1, 'primary', 'Recruiting', 'active', 'user-a', 1000, 2000, 2, 2000, 1);
+  `);
+};
+
+const seedMalformedBootstrapReceipt = (
+  database: DatabaseSync,
+  state: "actor" | "address" | "timestamp" | "version"
+) => {
+  const updatedAt = state === "timestamp" ? 1001 : 1000;
+  const version = state === "version" ? 2 : 1;
+  const actor = state === "actor" ? "user-b" : "user-a";
+  const address =
+    state === "address" ? "Inbox@EXAMPLE.TEST" : "inbox@example.test";
+  database.exec(`
+    insert into app_mailbox
+      (id, display_name, status, created_by_user_id, created_at, updated_at,
+       version)
+    values ('primary', 'Inbox', 'active', 'user-a', 1000, ${updatedAt}, ${version});
+    insert into app_mailbox_address
+      (mailbox_id, id, address, normalized_address, is_primary, enabled,
+       created_at, updated_at, version)
+    values ('primary', 'primary', '${address}', 'inbox@example.test', 1, 1,
+            1000, 1000, 1);
+    insert into app_mailbox_administration_receipt
+      (operation_id, operation_kind, actor_user_id, mailbox_id, display_name,
+       expected_version, result_mailbox_id, result_display_name, result_status,
+       result_created_by_user_id, result_created_at, result_updated_at,
+       result_version, committed_at, schema_version)
+    values ('${bootstrapReceiptOperation}', 'bootstrap-owner', '${actor}',
+            'primary', 'Inbox', null, 'primary', 'Inbox', 'active', 'user-a',
+            1000, ${updatedAt}, ${version}, ${updatedAt}, 1);
+  `);
+};
+
+describe("mailbox bootstrap receipt V2 migration", () => {
+  it.each(["inbox@example.test", "inbox@EXAMPLE.TEST"] as const)(
+    "backfills historical %s bootstrap intent without rewriting parents",
+    async (address) => {
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrationsThrough(
+          database,
+          "1021_app_mail_domain.sql"
+        );
+        seedMailboxAdministrationV1Receipts(database, address);
+        const before = database
+          .prepare(
+            "select * from app_mailbox_administration_receipt order by operation_id"
+          )
+          .all();
+
+        await applyControlPlaneMigration(
+          database,
+          "1022_app_mailbox_bootstrap_receipt_v2.sql"
+        );
+
+        expect(
+          database
+            .prepare(
+              "select * from app_mailbox_administration_receipt order by operation_id"
+            )
+            .all()
+        ).toStrictEqual(before);
+        expect(
+          database
+            .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+            .all()
+            .map((row) => ({ ...row }))
+        ).toStrictEqual([
+          {
+            initial_address: "inbox@example.test",
+            operation_id: bootstrapReceiptOperation,
+          },
+        ]);
+        expect(
+          database
+            .prepare("select * from app_mailbox_bootstrap_receipt_v2")
+            .all()
+        ).toStrictEqual([]);
+        expect(
+          database.prepare("pragma foreign_key_check").all()
+        ).toStrictEqual([]);
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it("applies with no bootstrap history and seals the cutover", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrationsThrough(
+        database,
+        "1021_app_mail_domain.sql"
+      );
+      await applyControlPlaneMigration(
+        database,
+        "1022_app_mailbox_bootstrap_receipt_v2.sql"
+      );
+
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_intent_cutover")
+          .all()
+      ).toMatchObject([{ id: 1, schema_version: 1 }]);
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+          .all()
+      ).toStrictEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("auto-marks an old writer and promotes only an exact V2 intent", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      seedMailboxAdministrationV1Receipts(database);
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+          .get()
+      ).toMatchObject({
+        initial_address: "inbox@example.test",
+        operation_id: bootstrapReceiptOperation,
+      });
+
+      expect(() =>
+        database
+          .prepare(
+            `insert into app_mailbox_bootstrap_receipt_v2
+               (operation_id, initial_address, schema_version)
+             values (?, 'other@example.test', 2)`
+          )
+          .run(bootstrapReceiptOperation)
+      ).toThrow("invalid mailbox bootstrap v2 receipt promotion");
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+          .all()
+      ).toHaveLength(1);
+      expect(
+        database.prepare("select * from app_mailbox_bootstrap_receipt_v2").all()
+      ).toStrictEqual([]);
+
+      database
+        .prepare(
+          `insert into app_mailbox_bootstrap_receipt_v2
+             (operation_id, initial_address, schema_version)
+           values (?, 'inbox@example.test', 2)`
+        )
+        .run(bootstrapReceiptOperation);
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+          .all()
+      ).toStrictEqual([]);
+      expect(
+        database.prepare("select * from app_mailbox_bootstrap_receipt_v2").get()
+      ).toMatchObject({ initial_address: "inbox@example.test" });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects a forged old-writer parent after cutover", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+
+      expect(() => seedMalformedBootstrapReceipt(database, "actor")).toThrow(
+        "old bootstrap receipt could not bind durable intent"
+      );
+      expect(
+        database
+          .prepare("select * from app_mailbox_administration_receipt")
+          .all()
+      ).toStrictEqual([]);
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+          .all()
+      ).toStrictEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each(["actor", "address", "timestamp", "version"] as const)(
+    "rejects malformed historical bootstrap %s state atomically",
+    async (state) => {
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrationsThrough(
+          database,
+          "1021_app_mail_domain.sql"
+        );
+        seedMalformedBootstrapReceipt(database, state);
+
+        await expect(
+          applyControlPlaneMigration(
+            database,
+            "1022_app_mailbox_bootstrap_receipt_v2.sql"
+          )
+        ).rejects.toThrow(/constraint/u);
+        expect(
+          database
+            .prepare(
+              `select count(*) as count
+                 from sqlite_master
+                where type = 'table'
+                  and name = 'app_mailbox_bootstrap_receipt_v1_intent'`
+            )
+            .get()
+        ).toMatchObject({ count: 0 });
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it("seals legacy markers and reapplies without changing the backfill", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrationsThrough(
+        database,
+        "1021_app_mail_domain.sql"
+      );
+      seedMailboxAdministrationV1Receipts(database);
+      await applyControlPlaneMigration(
+        database,
+        "1022_app_mailbox_bootstrap_receipt_v2.sql"
+      );
+      const markerBefore = database
+        .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+        .all();
+      await applyControlPlaneMigration(
+        database,
+        "1022_app_mailbox_bootstrap_receipt_v2.sql"
+      );
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_receipt_v1_intent")
+          .all()
+      ).toStrictEqual(markerBefore);
+      expect(() =>
+        database
+          .prepare(
+            `insert into app_mailbox_bootstrap_receipt_v1_intent
+               (operation_id, initial_address)
+             values (?, 'inbox@example.test')`
+          )
+          .run(renameReceiptOperation)
+      ).toThrow("invalid legacy mailbox bootstrap intent binding");
+      expect(() =>
+        database
+          .prepare(
+            `update app_mailbox_bootstrap_receipt_v1_intent
+                set initial_address = 'changed@example.test'`
+          )
+          .run()
+      ).toThrow("legacy mailbox bootstrap intents are immutable");
+      expect(() =>
+        database
+          .prepare("delete from app_mailbox_bootstrap_receipt_v1_intent")
+          .run()
+      ).toThrow("legacy mailbox bootstrap intents are retained");
+      expect(() =>
+        database
+          .prepare(
+            `insert or replace into app_mailbox_bootstrap_receipt_v1_intent
+             select * from app_mailbox_bootstrap_receipt_v1_intent`
+          )
+          .run()
+      ).toThrow("legacy mailbox bootstrap intents are immutable");
     } finally {
       database.close();
     }

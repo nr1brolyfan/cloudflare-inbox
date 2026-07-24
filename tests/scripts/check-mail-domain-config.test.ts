@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -10,107 +10,153 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import { describe, expect, it } from "vitest";
 
+import { mailDomainConfigPreflight } from "#/modules/organization/application/MailDomainConfigPreflight";
 import {
-  MailDomainConfigError,
-  checkMailDomainConfig,
-  mailDomainConfigPreflight,
-} from "#/modules/organization/application/MailDomainConfigPreflight";
+  MailboxBootstrapConfigError,
+  mailboxBootstrapConfig,
+  parseMailboxBootstrapConfig,
+} from "#/modules/organization/contracts/MailboxBootstrapConfig";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const script = path.join(root, "scripts/check-mail-domain-config.ts");
 
-const runPreflight = (ownerEmail?: string) => {
+const runPreflight = (input?: {
+  readonly allowlist?: string;
+  readonly envFile?: boolean;
+  readonly initialAddress?: string;
+}) => {
   const workingDirectory = mkdtempSync(
     path.join(tmpdir(), "mail-domain-config-")
   );
   try {
-    return spawnSync("bun", [script], {
+    const env = {
+      HOME: process.env.HOME,
+      MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST: input?.envFile
+        ? undefined
+        : input?.allowlist,
+      MAILBOX_INITIAL_ADDRESS: input?.envFile
+        ? undefined
+        : input?.initialAddress,
+      PATH: process.env.PATH,
+    };
+    const args = [script];
+    if (input?.envFile) {
+      const envFile = path.join(workingDirectory, "bootstrap.env");
+      writeFileSync(
+        envFile,
+        `MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST=${input.allowlist ?? ""}\nMAILBOX_INITIAL_ADDRESS=${input.initialAddress ?? ""}\n`
+      );
+      args.unshift(`--env-file=${envFile}`);
+    }
+    return spawnSync("bun", args, {
       cwd: workingDirectory,
       encoding: "utf-8",
-      env: {
-        HOME: process.env.HOME,
-        MAILBOX_OWNER_EMAIL: ownerEmail,
-        PATH: process.env.PATH,
-      },
+      env,
     });
   } finally {
     rmSync(workingDirectory, { recursive: true });
   }
 };
 
-describe("mail domain configuration preflight", () => {
-  it("returns a typed failure for missing and invalid configuration", () => {
-    for (const configured of [
-      undefined,
-      "",
-      "not-an-email",
-      "owner@localhost",
-    ]) {
-      const exit = Effect.runSyncExit(checkMailDomainConfig(configured));
-      expect(Exit.isFailure(exit)).toBeTruthy();
-    }
-    const error = Effect.runSync(
-      Effect.flip(checkMailDomainConfig("owner@example.123"))
+describe("mailbox bootstrap configuration preflight", () => {
+  it("parses a bounded canonical allowlist and distinct initial address", () => {
+    const config = Effect.runSync(
+      parseMailboxBootstrapConfig(
+        '["owner@example.com","admin@example.com"]',
+        "inbox@example.com"
+      )
     );
-    expect(error).toBeInstanceOf(MailDomainConfigError);
-    expect(error).toMatchObject({ reason: "invalid-domain" });
+    expect(config).toMatchObject({
+      initialAddress: "inbox@example.com",
+      ownerEmailAllowlist: ["owner@example.com", "admin@example.com"],
+    });
   });
 
+  it.each([
+    [undefined, "inbox@example.com", "missing"],
+    ["[]", "inbox@example.com", "invalid-owner-allowlist"],
+    ["not-json", "inbox@example.com", "invalid-owner-allowlist"],
+    [
+      '["owner@example.com","owner@example.com"]',
+      "inbox@example.com",
+      "invalid-owner-allowlist",
+    ],
+    ['["owner@EXAMPLE.COM"]', "inbox@example.com", "invalid-owner-allowlist"],
+    ['["owner@example.123"]', "inbox@example.com", "invalid-owner-allowlist"],
+    ['["owner@example.com"]', "inbox@EXAMPLE.COM", "invalid-initial-address"],
+    ['["owner@example.com"]', "inbox@example.123", "invalid-initial-address"],
+  ] as const)(
+    "rejects invalid split config %# without exposing values",
+    (allowlist, initialAddress, reason) => {
+      const error = Effect.runSync(
+        Effect.flip(parseMailboxBootstrapConfig(allowlist, initialAddress))
+      );
+      expect(error).toBeInstanceOf(MailboxBootstrapConfigError);
+      expect(error).toMatchObject({ reason });
+      expect(JSON.stringify(error)).not.toContain(initialAddress);
+      expect(JSON.stringify(error)).not.toContain(allowlist);
+    }
+  );
+
   it("reports only bounded profile metadata on success", () => {
-    const secretEmail = "Sensitive.Owner@EXAMPLE.COM";
-    const result = runPreflight(secretEmail);
+    const allowlist = '["Sensitive.Owner@example.com"]';
+    const initialAddress = "private-inbox@example.com";
+    const result = runPreflight({ allowlist, initialAddress });
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout.trim()).toBe(
       "mail-domain-config ok profile=mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1 version=1"
     );
-    expect(`${result.stdout}${result.stderr}`).not.toContain(secretEmail);
-    expect(`${result.stdout}${result.stderr}`).not.toContain("example.com");
+    expect(`${result.stdout}${result.stderr}`).not.toContain(allowlist);
+    expect(`${result.stdout}${result.stderr}`).not.toContain(initialAddress);
   });
 
-  it("fails without leaking missing or invalid configured values", () => {
-    for (const configured of [undefined, "Private.Owner@example.123"]) {
-      const result = runPreflight(configured);
-      expect(result.status).toBe(1);
-      expect(result.stdout).toBe("");
-      expect(result.stderr.trim()).toBe("mail-domain-config failed");
-      expect(result.stderr).not.toContain(configured ?? "MAILBOX_OWNER_EMAIL");
-      expect(result.stderr).not.toContain("example.123");
-    }
-  });
-
-  it("keeps the deploy gate separate from generic checks", () => {
-    const packageJson = JSON.parse(
-      readFileSync(path.join(root, "package.json"), "utf-8")
-    ) as { readonly scripts: Readonly<Record<string, string>> };
-    expect(packageJson.scripts["check:mail-domain-config"]).toBe(
-      "bun scripts/check-mail-domain-config.ts"
+  it("rejects oversized allowlists and provides no old-name fallback", () => {
+    const oversized = JSON.stringify(
+      Array.from({ length: 33 }, (_, index) => `owner-${index}@example.com`)
     );
-    expect(packageJson.scripts.deploy).toBe("alchemy deploy");
-    expect(packageJson.scripts.check).not.toContain("mail-domain-config");
-    expect(packageJson.scripts.dev).toBe("ALCHEMY_STATE=local alchemy dev");
+    expect(
+      Effect.runSync(
+        Effect.flip(parseMailboxBootstrapConfig(oversized, "inbox@example.com"))
+      )
+    ).toMatchObject({ reason: "invalid-owner-allowlist" });
+
+    const oldNameOnly = Effect.runSyncExit(
+      mailboxBootstrapConfig.pipe(
+        Effect.provide(
+          ConfigProvider.layer(
+            ConfigProvider.fromUnknown({
+              MAILBOX_INITIAL_ADDRESS: "inbox@example.com",
+              MAILBOX_OWNER_EMAIL: "owner@example.com",
+            })
+          )
+        )
+      )
+    );
+    expect(Exit.isFailure(oldNameOnly)).toBeTruthy();
   });
 
-  it("validates the documented example through the same preflight", () => {
-    const source = readFileSync(path.join(root, ".env.example"), "utf-8");
-    const ownerLine = source
-      .split(/\r?\n/u)
-      .find((line) => line.startsWith("MAILBOX_OWNER_EMAIL="));
-    expect(ownerLine).toBeDefined();
-    const configured = ownerLine?.slice("MAILBOX_OWNER_EMAIL=".length);
-    const exit = Effect.runSyncExit(checkMailDomainConfig(configured));
-    expect(Exit.isSuccess(exit)).toBeTruthy();
+  it("loads the same contract through Bun --env-file", () => {
+    const result = runPreflight({
+      allowlist: '["owner@example.com"]',
+      envFile: true,
+      initialAddress: "inbox@example.com",
+    });
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("mail-domain-config ok");
   });
 
-  it("uses the Alchemy ConfigProvider precedence and sanitizes defects", () => {
+  it("uses provider precedence and sanitizes config defects", () => {
     const primary = ConfigProvider.fromUnknown({
-      MAILBOX_OWNER_EMAIL: "Primary.Owner@EXAMPLE.COM",
+      MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST: '["owner@example.com"]',
+      MAILBOX_INITIAL_ADDRESS: "inbox@example.com",
     });
     const fallback = ConfigProvider.fromUnknown({
-      MAILBOX_OWNER_EMAIL: "Fallback.Owner@example.123",
+      MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST: '["fallback@example.com"]',
+      MAILBOX_INITIAL_ADDRESS: "fallback@example.123",
     });
     const success = Effect.runSyncExit(
-      mailDomainConfigPreflight.pipe(
+      mailboxBootstrapConfig.pipe(
         Effect.provide(
           ConfigProvider.layer(ConfigProvider.orElse(primary, fallback))
         )
@@ -123,12 +169,10 @@ describe("mail domain configuration preflight", () => {
       mailDomainConfigPreflight.pipe(
         Effect.provide(
           ConfigProvider.layer(
-            ConfigProvider.orElse(
-              ConfigProvider.fromUnknown({ MAILBOX_OWNER_EMAIL: secret }),
-              ConfigProvider.fromUnknown({
-                MAILBOX_OWNER_EMAIL: "Fallback.Owner@example.com",
-              })
-            )
+            ConfigProvider.fromUnknown({
+              MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST: `["${secret}"]`,
+              MAILBOX_INITIAL_ADDRESS: "inbox@example.com",
+            })
           )
         )
       )
@@ -139,13 +183,32 @@ describe("mail domain configuration preflight", () => {
     expect(rendered).not.toContain("example.123");
   });
 
-  it("runs the preflight before either Alchemy resource effect", () => {
-    const source = readFileSync(path.join(root, "alchemy.run.ts"), "utf-8");
-    const preflight = source.indexOf("yield* mailDomainConfigPreflight");
-    const backend = source.indexOf("yield* Backend");
-    const website = source.indexOf("yield* Website");
+  it("validates the documented example and preflights before resources", () => {
+    const source = readFileSync(path.join(root, ".env.example"), "utf-8");
+    const values = Object.fromEntries(
+      source
+        .split(/\r?\n/u)
+        .filter((line) => line.includes("=") && !line.startsWith("#"))
+        .map((line) => {
+          const separator = line.indexOf("=");
+          return [line.slice(0, separator), line.slice(separator + 1)];
+        })
+    );
+    expect(
+      Exit.isSuccess(
+        Effect.runSyncExit(
+          parseMailboxBootstrapConfig(
+            values.MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST,
+            values.MAILBOX_INITIAL_ADDRESS
+          )
+        )
+      )
+    ).toBeTruthy();
+
+    const alchemy = readFileSync(path.join(root, "alchemy.run.ts"), "utf-8");
+    const preflight = alchemy.indexOf("yield* mailDomainConfigPreflight");
     expect(preflight).toBeGreaterThan(-1);
-    expect(preflight).toBeLessThan(backend);
-    expect(preflight).toBeLessThan(website);
+    expect(preflight).toBeLessThan(alchemy.indexOf("yield* Backend"));
+    expect(preflight).toBeLessThan(alchemy.indexOf("yield* Website"));
   });
 });

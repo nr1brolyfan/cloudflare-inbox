@@ -1,4 +1,4 @@
-import { and, eq, notExists, sql } from "drizzle-orm";
+import { and, asc, eq, notExists, sql } from "drizzle-orm";
 import type { SQL } from "drizzle-orm";
 
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
@@ -31,6 +31,21 @@ export const mailboxAddressLookupStatement = (
       eq(sql`lower(${appMailboxAddress.normalizedAddress})`, comparisonKey)
     )
     .limit(1);
+
+/** Bounded retained primary routes used as legacy managed-domain anchors. */
+export const legacyPrimaryMailboxAddressClaimsStatement = (
+  database: ControlPlaneDatabase
+) =>
+  database
+    .select({
+      address: appMailboxAddress.address,
+      mailboxId: appMailboxAddress.mailboxId,
+      normalizedAddress: appMailboxAddress.normalizedAddress,
+    })
+    .from(appMailboxAddress)
+    .where(eq(appMailboxAddress.isPrimary, true))
+    .orderBy(asc(appMailboxAddress.mailboxId), asc(appMailboxAddress.id))
+    .limit(2);
 
 export interface PrimaryMailboxAddressInsert {
   readonly address: string;

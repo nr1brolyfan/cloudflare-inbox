@@ -1,3 +1,4 @@
+/* oxlint-disable vitest/max-expects -- Receipt tests cover the closed bootstrap and rename invariant matrix together. */
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
@@ -116,5 +117,56 @@ describe("organization mailbox contracts", () => {
         result: { ...receipt.result, displayName: "Other" },
       })
     ).toBeFalsy();
+
+    const bootstrapReceipt = {
+      actorUserId: "user-a",
+      committedAt: 1000,
+      displayName: "Inbox",
+      mailboxId: "primary",
+      operationId: "00000000-0000-4000-8000-000000000010",
+      operationKind: "bootstrap-owner",
+      result: {
+        createdAt: 1000,
+        createdByUserId: "user-a",
+        displayName: "Inbox",
+        id: "primary",
+        status: "active",
+        updatedAt: 1000,
+        version: 1,
+      },
+      schemaVersion: 1,
+    } as const;
+    expect(
+      decodeSucceeds(MailboxAdministrationReceiptSchema, bootstrapReceipt)
+    ).toBeTruthy();
+    expect(
+      decodeSucceeds(MailboxAdministrationReceiptSchema, {
+        ...bootstrapReceipt,
+        initialAddress: "inbox@example.test",
+        schemaVersion: 2,
+      })
+    ).toBeTruthy();
+    for (const forged of [
+      {
+        ...bootstrapReceipt,
+        result: { ...bootstrapReceipt.result, version: 2 },
+      },
+      {
+        ...bootstrapReceipt,
+        actorUserId: "user-b",
+      },
+      {
+        ...bootstrapReceipt,
+        committedAt: 1001,
+      },
+      {
+        ...bootstrapReceipt,
+        result: { ...bootstrapReceipt.result, updatedAt: 1001 },
+      },
+    ]) {
+      expect(
+        decodeSucceeds(MailboxAdministrationReceiptSchema, forged)
+      ).toBeFalsy();
+    }
   });
 });

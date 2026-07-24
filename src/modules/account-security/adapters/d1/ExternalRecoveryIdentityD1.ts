@@ -32,6 +32,7 @@ import {
   ExternalRecoveryIdentityId,
   ExternalRecoveryIdentitySchema,
 } from "#/modules/account-security/domain/ExternalRecoveryIdentity";
+import type { RecoverySafeIdentityRejected } from "#/modules/account-security/domain/RecoverySafeIdentityError";
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
 import {
   sensitiveSessionPredicate,
@@ -392,6 +393,16 @@ function managementError(
   });
 }
 
+const recoveryPolicyError = (
+  operation: "enroll" | "verify",
+  cause: RecoverySafeIdentityRejected
+) =>
+  managementError(
+    operation,
+    cause.reason === "storage" ? "storage" : "policy-denied",
+    cause
+  );
+
 const storageError = (
   operation: ExternalRecoveryIdentityManagementOperation,
   error: ControlPlane.ControlPlaneBatchError
@@ -509,9 +520,7 @@ const ExternalRecoveryIdentityTransactionD1Layer = Layer.effect(
               userId: requestAuth.validated.actor.userId,
             })
             .pipe(
-              Effect.mapError((cause) =>
-                managementError("enroll", "policy-denied", cause)
-              )
+              Effect.mapError((cause) => recoveryPolicyError("enroll", cause))
             );
 
           const timestamp = Schema.decodeUnknownSync(UnixMillis)(runtime.now());
@@ -874,9 +883,7 @@ const ExternalRecoveryIdentityTransactionD1Layer = Layer.effect(
               userId: requestAuth.validated.actor.userId,
             })
             .pipe(
-              Effect.mapError((cause) =>
-                managementError("verify", "policy-denied", cause)
-              )
+              Effect.mapError((cause) => recoveryPolicyError("verify", cause))
             );
 
           const timestamp = Schema.decodeUnknownSync(UnixMillis)(runtime.now());

@@ -66,7 +66,7 @@ A healthy `/api/health` response does not rule out owner loss.
 
 Run the current owner-chain and recovery-readiness templates below. Determine whether the failure is the account state, login identity, missing recovery prerequisites, discovery membership, or exact owner grant.
 
-`MAILBOX_OWNER_EMAIL` is only the transitional bootstrap allowlist, initial address source, and managed-domain recovery heuristic. Changing it or redeploying does not transfer an existing mailbox, change its creator user ID, or recreate its owner grant.
+`MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST` controls only which verified identities may bootstrap. `MAILBOX_INITIAL_ADDRESS` supplies the trusted initial route and the pre-bootstrap managed-domain claim. After bootstrap, persisted `MailDomain` and the retained legacy primary route are continuity authorities and must agree with trusted configuration; changing configuration does not transfer an existing mailbox, change its creator user ID, or recreate its owner grant, and disagreement fails closed as storage failure.
 
 ### Currently Supported Remediation
 
@@ -81,7 +81,7 @@ Recovery must preserve the same `auth_user.id`; the mailbox membership and grant
 
 ### Unsupported Branch And Escalation
 
-There is no supported recovery when the user is disabled, the verified external recovery identity or unused code is absent, the membership is missing, or the owner grant is missing. Do not change `MAILBOX_OWNER_EMAIL`, rerun bootstrap, create a replacement user, or edit D1. Keep containment active and escalate to security and application engineering for a reviewed forward-fix. Production break-glass is currently refused by the gate below.
+There is no supported recovery when the user is disabled, the verified external recovery identity or unused code is absent, the membership is missing, or the owner grant is missing. Do not change bootstrap configuration, rerun bootstrap, create a replacement user, or edit D1. Keep containment active and escalate to security and application engineering for a reviewed forward-fix. Production break-glass is currently refused by the gate below.
 
 ### Verification
 

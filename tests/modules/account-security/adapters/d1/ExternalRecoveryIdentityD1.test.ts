@@ -22,11 +22,7 @@ import {
   ExternalRecoveryIdentityD1Layer,
   ExternalRecoveryIdentityRuntime,
 } from "#/modules/account-security/adapters/d1/ExternalRecoveryIdentityD1";
-import {
-  RecoverySafeIdentityConfig,
-  RecoverySafeIdentityD1Layer,
-  RecoverySafeIdentityOwnerEmail,
-} from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
+import { RecoverySafeIdentityD1Layer } from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
 import {
   ExternalRecoveryChallengeSecret,
   EnrollExternalRecoveryIdentityCommand,
@@ -35,13 +31,20 @@ import {
   ReadExternalRecoveryIdentityOperationQuery,
   VerifyExternalRecoveryIdentityCommand,
 } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
+import { RecoverySafeIdentityRejected } from "#/modules/account-security/domain/RecoverySafeIdentityError";
 import { ExternalRecoveryIdentityChallenge } from "#/modules/account-security/ports/ExternalRecoveryIdentityChallenge";
 import { ExternalRecoveryIdentityDelivery } from "#/modules/account-security/ports/ExternalRecoveryIdentityDelivery";
+import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
 import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
+import {
+  MailboxBootstrapConfig,
+  MailboxBootstrapConfigValue,
+} from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import {
   CurrentRequestCorrelation,
@@ -166,7 +169,12 @@ const insertSession = (database: DatabaseSync, session: ValidatedSession) => {
 const managementLive = (
   database: DatabaseSync,
   d1: D1EffectQbDatabaseLike,
-  delivered: string[]
+  delivered: string[],
+  recoveryPolicyLive: Layer.Layer<
+    RecoverySafeIdentityPolicy,
+    never,
+    ControlPlaneDatabase | MailboxBootstrapConfig
+  > = RecoverySafeIdentityD1Layer
 ) => {
   const challengeLive = Layer.succeed(
     ExternalRecoveryIdentityChallenge,
@@ -270,7 +278,7 @@ const managementLive = (
             })(),
           })
         ),
-        RecoverySafeIdentityD1Layer,
+        recoveryPolicyLive,
         Layer.succeed(
           SensitiveOperationStepUpClock,
           SensitiveOperationStepUpClock.of({ now: () => now })
@@ -280,12 +288,13 @@ const managementLive = (
     Layer.provide(controlPlaneLive),
     Layer.provide(
       Layer.succeed(
-        RecoverySafeIdentityConfig,
-        RecoverySafeIdentityConfig.of({
-          ownerEmail: Schema.decodeUnknownSync(RecoverySafeIdentityOwnerEmail)(
-            "owner@company.test"
-          ),
-        })
+        MailboxBootstrapConfig,
+        MailboxBootstrapConfig.of(
+          Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
+            initialAddress: "inbox@company.test",
+            ownerEmailAllowlist: ["owner@company.test"],
+          })
+        )
       )
     )
   );
@@ -301,6 +310,26 @@ const beforeBatch = (
   },
   prepare: database.prepare,
 });
+
+const countRows = (database: DatabaseSync, table: string) =>
+  (
+    database.prepare(`select count(*) as count from ${table}`).get() as {
+      count: number;
+    }
+  ).count;
+
+const RecoveryPolicyStorageFailureLayer = Layer.succeed(
+  RecoverySafeIdentityPolicy,
+  RecoverySafeIdentityPolicy.of({
+    requireSafeAddress: () =>
+      Effect.fail(
+        new RecoverySafeIdentityRejected({
+          cause: new Error("managed-domain storage unavailable"),
+          reason: "storage",
+        })
+      ),
+  })
+);
 
 const loseResponseAfterCommit = (
   database: D1EffectQbDatabaseLike
@@ -345,6 +374,84 @@ const runAuthenticated = <A, E, R>(
   );
 
 describe("external recovery identity management", () => {
+  it("preserves recovery-policy storage classification for enrollment", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      const live = managementLive(
+        database,
+        d1,
+        [],
+        RecoveryPolicyStorageFailureLayer
+      );
+
+      const error = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management
+              .enroll(enrollmentCommand())
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(live)),
+          session
+        )
+      );
+
+      expect(error).toMatchObject({ operation: "enroll", reason: "storage" });
+      expect(countRows(database, "app_external_recovery_identity")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves recovery-policy storage classification for verification", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const session = validatedSession();
+      insertSession(database, session);
+      await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management.enroll(enrollmentCommand());
+          }).pipe(Effect.provide(managementLive(database, d1, []))),
+          session
+        )
+      );
+      const storageFailureLive = managementLive(
+        database,
+        d1,
+        [],
+        RecoveryPolicyStorageFailureLayer
+      );
+
+      const error = await Effect.runPromise(
+        runAuthenticated(
+          Effect.gen(function* () {
+            const management = yield* ExternalRecoveryIdentityManagement;
+            return yield* management
+              .verify(verificationCommand())
+              .pipe(Effect.flip);
+          }).pipe(Effect.provide(storageFailureLive)),
+          session
+        )
+      );
+
+      expect(error).toMatchObject({ operation: "verify", reason: "storage" });
+      expect(
+        database
+          .prepare("select status, version from app_external_recovery_identity")
+          .get()
+      ).toMatchObject({ status: "pending", version: 1 });
+    } finally {
+      database.close();
+    }
+  });
   it("enrolls and verifies without creating login authority", async () => {
     const database = new DatabaseSync(":memory:");
     try {

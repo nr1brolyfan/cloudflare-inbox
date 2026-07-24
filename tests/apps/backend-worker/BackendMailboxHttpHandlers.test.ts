@@ -111,6 +111,10 @@ import {
   MailboxNavigationResult,
 } from "#/modules/organization/application/MailboxNavigation";
 import type { MailboxNavigationService } from "#/modules/organization/application/MailboxNavigation";
+import {
+  MailboxBootstrapConfig,
+  MailboxBootstrapConfigValue,
+} from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
 import {
@@ -430,6 +434,19 @@ const makeHandler = (
     Layer.provide(
       Layer.mergeAll(
         Layer.succeed(MailboxAdministration, administration),
+        Layer.succeed(
+          MailboxBootstrapConfig,
+          MailboxBootstrapConfig.of(
+            new MailboxBootstrapConfigValue({
+              initialAddress: Schema.decodeUnknownSync(
+                MailboxBootstrapConfigValue.fields.initialAddress
+              )("inbox@example.test"),
+              ownerEmailAllowlist: Schema.decodeUnknownSync(
+                MailboxBootstrapConfigValue.fields.ownerEmailAllowlist
+              )(["user-a@example.test"]),
+            })
+          )
+        ),
         Layer.succeed(MailboxNavigation, navigation),
         Layer.succeed(MailboxMessageReading, messageReading),
         Layer.succeed(MailboxMessageActions, messageActions),
@@ -1553,6 +1570,35 @@ describe("protected mailbox API", () => {
         status: "active",
       });
       expect(validations).toBe(1);
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("injects the trusted initial address instead of accepting a public choice", async () => {
+    let initialAddress: string | undefined;
+    const { dispose, handler } = makeHandler(
+      makeAdministration({
+        bootstrapOwner: (command) => {
+          const { initialAddress: trustedInitialAddress } = command;
+          initialAddress = trustedInitialAddress;
+          return Effect.succeed(mailbox);
+        },
+      })
+    );
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/bootstrap-owner", "POST", {
+          body: {
+            displayName: "Inbox",
+            initialAddress: "attacker@external.test",
+            operationId: "00000000-0000-4000-8000-000000000010",
+          },
+        })
+      );
+
+      expect(response.status).toBe(201);
+      expect(initialAddress).toBe("inbox@example.test");
     } finally {
       await dispose();
     }

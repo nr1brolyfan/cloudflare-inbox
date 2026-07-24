@@ -40,6 +40,8 @@ import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorizati
 import {
   appMailbox,
   appMailboxAdministrationReceipt,
+  appMailboxBootstrapReceiptV1Intent,
+  appMailboxBootstrapReceiptV2,
   appMailboxMember,
 } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import {
@@ -47,10 +49,11 @@ import {
   MailboxAdministrationError,
   MailboxAdministrationReceipt,
   MailboxAdministrationReceiptSchema,
-  BootstrapOwnerMailboxCommand,
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
+  TrustedBootstrapOwnerMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
+import { MailboxBootstrapConfig } from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
@@ -58,27 +61,12 @@ import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import { permissionPredicate } from "#/platform/control-plane-d1/PermissionGuard";
 import {
-  EmailAddress,
+  NormalizedEmailAddress,
   normalizeEmailAddressDomain,
 } from "#/shared/EmailAddress";
 import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 import { UnixMillis } from "#/shared/Temporal";
-
-export const MailboxAdministrationOwnerEmail = EmailAddress;
-export type MailboxAdministrationOwnerEmail = Schema.Schema.Type<
-  typeof MailboxAdministrationOwnerEmail
->;
-
-export interface MailboxAdministrationConfigShape {
-  readonly ownerEmail: MailboxAdministrationOwnerEmail;
-}
-
-/** Stable dependencies used by transactional mailbox administration. */
-export const MailboxAdministrationConfig =
-  Context.Service<MailboxAdministrationConfigShape>(
-    "cloudflare-inbox/MailboxAdministrationConfig"
-  );
 
 export interface MailboxAdministrationRuntime {
   readonly now: () => number;
@@ -116,7 +104,7 @@ const activeOwnerRolePredicate = (database: ControlPlaneDatabase) =>
 const ownerIdentityPredicate = (
   database: ControlPlaneDatabase,
   userId: string,
-  normalizedEmail: string
+  normalizedEmails: readonly string[]
 ) =>
   exists(
     database
@@ -128,7 +116,7 @@ const ownerIdentityPredicate = (
           eq(authUserIdentity.scopeType, "global"),
           inArray(authUserIdentity.scopeId, ["", "global"]),
           eq(authUserIdentity.kind, "email"),
-          eq(authUserIdentity.normalizedValue, normalizedEmail),
+          inArray(authUserIdentity.normalizedValue, normalizedEmails),
           isNotNull(authUserIdentity.verifiedAt),
           isNull(authUserIdentity.revokedAt),
           isNull(authUserIdentity.replacedById)
@@ -183,6 +171,20 @@ const validateDisplayName = (
         })
     )
   );
+
+const requireConfiguredBootstrapAddress = (
+  initialAddress: string,
+  configuredInitialAddress: string
+) =>
+  initialAddress === configuredInitialAddress
+    ? Effect.void
+    : Effect.fail(
+        new MailboxAdministrationError({
+          message: "Trusted bootstrap address does not match configuration",
+          operation: "bootstrap-owner",
+          reason: "invalid-input",
+        })
+      );
 
 const storageError = (
   operation: "bootstrap-owner" | "rename",
@@ -277,9 +279,36 @@ const ReceiptRow = Schema.Struct({
   schema_version: Schema.Literal(1),
 });
 
+const ReadReceiptRow = Schema.Struct({
+  ...ReceiptRow.fields,
+  bootstrap_initial_address: Schema.NullOr(Schema.String),
+  bootstrap_schema_version: Schema.NullOr(Schema.Literal(2)),
+  legacy_initial_address: Schema.NullOr(Schema.String),
+}).check(
+  Schema.makeFilter((row) => {
+    const hasLegacyIntent = row.legacy_initial_address !== null;
+    const hasV2Intent = row.bootstrap_initial_address !== null;
+    const v2PairValid = hasV2Intent === (row.bootstrap_schema_version !== null);
+    const intentSourcesValid =
+      row.operation_kind === "bootstrap-owner"
+        ? hasLegacyIntent !== hasV2Intent
+        : !hasLegacyIntent && !hasV2Intent;
+    return v2PairValid && intentSourcesValid
+      ? undefined
+      : "mailbox bootstrap receipt intent source is inconsistent";
+  })
+);
+
+const BootstrapReceiptV2Row = Schema.Struct({
+  initial_address: Schema.String,
+  operation_id: Schema.String,
+  schema_version: Schema.Literal(2),
+});
+
 const decodeReceipt = (
   row: Schema.Schema.Type<typeof ReceiptRow>,
-  operation: MailboxAdministrationError["operation"]
+  operation: MailboxAdministrationError["operation"],
+  initialAddress?: string
 ) =>
   Schema.decodeUnknownEffect(MailboxAdministrationReceiptSchema)({
     actorUserId: row.actor_user_id,
@@ -291,6 +320,7 @@ const decodeReceipt = (
     mailboxId: row.mailbox_id,
     operationId: row.operation_id,
     operationKind: row.operation_kind,
+    ...(initialAddress === undefined ? {} : { initialAddress }),
     result: {
       createdAt: row.result_created_at,
       createdByUserId: row.result_created_by_user_id,
@@ -300,7 +330,7 @@ const decodeReceipt = (
       updatedAt: row.result_updated_at,
       version: row.result_version,
     },
-    schemaVersion: row.schema_version,
+    schemaVersion: initialAddress === undefined ? row.schema_version : 2,
   }).pipe(
     Effect.mapError(
       (cause) =>
@@ -318,6 +348,7 @@ const receiptMatches = (
   intent: {
     readonly displayName: string;
     readonly expectedVersion?: number;
+    readonly initialAddress?: string;
     readonly mailboxId: string;
     readonly operationKind: "bootstrap-owner" | "rename";
   }
@@ -325,22 +356,74 @@ const receiptMatches = (
   receipt.operationKind === intent.operationKind &&
   receipt.mailboxId === intent.mailboxId &&
   receipt.displayName === intent.displayName &&
-  receipt.expectedVersion === intent.expectedVersion;
+  receipt.expectedVersion === intent.expectedVersion &&
+  (receipt.schemaVersion === 1 ||
+    receipt.initialAddress === intent.initialAddress);
 
 /** Transactional mailbox service built from explicit Effect configuration. */
 const MailboxAdministrationTransactionD1Layer = Layer.effect(
   MailboxAdministrationTransaction,
   Effect.gen(function* () {
-    const options = yield* MailboxAdministrationConfig;
+    const bootstrapConfig = yield* MailboxBootstrapConfig;
     const runtime = yield* MailboxAdministrationRuntime;
     const stepUpClock = yield* SensitiveOperationStepUpClock;
     const batch = yield* ControlPlane.ControlPlaneBatch;
     const database = yield* ControlPlaneDatabase;
     const authorization = yield* MailboxAuthorization;
     const audit = yield* AdministrativeAudit;
-    const { ownerEmail: configuredOwnerEmail } = options;
     const { now, randomId } = runtime;
-    const ownerEmail = normalizeEmailAddressDomain(configuredOwnerEmail);
+
+    const readHistoricalBootstrapIntent = (
+      operationId: string,
+      operation: MailboxAdministrationError["operation"]
+    ) =>
+      database
+        .select({
+          initialAddress: appMailboxBootstrapReceiptV1Intent.initialAddress,
+        })
+        .from(appMailboxBootstrapReceiptV1Intent)
+        .where(eq(appMailboxBootstrapReceiptV1Intent.operationId, operationId))
+        .limit(2)
+        .pipe(
+          Effect.mapError(
+            (cause) =>
+              new MailboxAdministrationError({
+                cause,
+                message: "Historical bootstrap intent read failed",
+                operation,
+                reason: "storage",
+              })
+          ),
+          Effect.flatMap((rows) => {
+            if (rows.length !== 1) {
+              return Effect.fail(
+                new MailboxAdministrationError({
+                  message: "Historical bootstrap intent marker is missing",
+                  operation,
+                  reason: "storage",
+                })
+              );
+            }
+            const [row] = rows;
+            return Schema.decodeUnknownEffect(NormalizedEmailAddress)(
+              row?.initialAddress
+            ).pipe(
+              Effect.filterOrFail(
+                (initialAddress) => initialAddress === row?.initialAddress,
+                () => new Error("Historical bootstrap intent is malformed")
+              ),
+              Effect.mapError(
+                (cause) =>
+                  new MailboxAdministrationError({
+                    cause,
+                    message: "Historical bootstrap intent marker is invalid",
+                    operation,
+                    reason: "storage",
+                  })
+              )
+            );
+          })
+        );
 
     const readReceipt = (
       operationId: string,
@@ -366,8 +449,37 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           result_updated_at: appMailboxAdministrationReceipt.resultUpdatedAt,
           result_version: appMailboxAdministrationReceipt.resultVersion,
           schema_version: appMailboxAdministrationReceipt.schemaVersion,
+          bootstrap_initial_address: sql<
+            string | null
+          >`${appMailboxBootstrapReceiptV2.initialAddress}`.as(
+            "bootstrap_initial_address"
+          ),
+          bootstrap_schema_version: sql<
+            2 | null
+          >`${appMailboxBootstrapReceiptV2.schemaVersion}`.as(
+            "bootstrap_schema_version"
+          ),
+          legacy_initial_address: sql<
+            string | null
+          >`${appMailboxBootstrapReceiptV1Intent.initialAddress}`.as(
+            "legacy_initial_address"
+          ),
         })
         .from(appMailboxAdministrationReceipt)
+        .leftJoin(
+          appMailboxBootstrapReceiptV1Intent,
+          eq(
+            appMailboxBootstrapReceiptV1Intent.operationId,
+            appMailboxAdministrationReceipt.operationId
+          )
+        )
+        .leftJoin(
+          appMailboxBootstrapReceiptV2,
+          eq(
+            appMailboxBootstrapReceiptV2.operationId,
+            appMailboxAdministrationReceipt.operationId
+          )
+        )
         .where(
           and(
             eq(appMailboxAdministrationReceipt.operationId, operationId),
@@ -388,7 +500,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           Effect.flatMap(([row]) =>
             row === undefined
               ? Effect.succeed(null)
-              : Schema.decodeUnknownEffect(ReceiptRow)(row).pipe(
+              : Schema.decodeUnknownEffect(ReadReceiptRow)(row).pipe(
                   Effect.mapError(
                     (cause) =>
                       new MailboxAdministrationError({
@@ -398,10 +510,33 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                         reason: "storage",
                       })
                   ),
-                  Effect.flatMap((decoded) => decodeReceipt(decoded, operation))
+                  Effect.flatMap((decoded) =>
+                    decodeReceipt(
+                      decoded,
+                      operation,
+                      decoded.bootstrap_initial_address ?? undefined
+                    )
+                  )
                 )
           )
         );
+
+    const receiptMatchesIntent = (
+      receipt: MailboxAdministrationReceipt,
+      intent: Parameters<typeof receiptMatches>[1],
+      operation: MailboxAdministrationError["operation"]
+    ) =>
+      receipt.schemaVersion === 1 &&
+      receipt.operationKind === "bootstrap-owner" &&
+      intent.operationKind === "bootstrap-owner"
+        ? readHistoricalBootstrapIntent(receipt.operationId, operation).pipe(
+            Effect.map(
+              (historicalInitialAddress) =>
+                receiptMatches(receipt, intent) &&
+                historicalInitialAddress === intent.initialAddress
+            )
+          )
+        : Effect.succeed(receiptMatches(receipt, intent));
 
     const receiptReturning = {
       actor_user_id: appMailboxAdministrationReceipt.actorUserId,
@@ -426,7 +561,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
       bootstrapOwner: (untrusted) =>
         Effect.gen(function* () {
           const input = yield* Schema.decodeUnknownEffect(
-            BootstrapOwnerMailboxCommand
+            TrustedBootstrapOwnerMailboxCommand
           )(untrusted).pipe(
             Effect.mapError(
               (cause) =>
@@ -437,6 +572,10 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                   reason: "invalid-input",
                 })
             )
+          );
+          yield* requireConfiguredBootstrapAddress(
+            input.initialAddress,
+            bootstrapConfig.initialAddress
           );
           const requestAuth = yield* CurrentRequestAuth;
           const { validated } = requestAuth;
@@ -449,13 +588,17 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             "bootstrap-owner"
           );
           if (replay !== null) {
-            if (
-              !receiptMatches(replay, {
+            const matches = yield* receiptMatchesIntent(
+              replay,
+              {
                 displayName: input.displayName,
+                initialAddress: input.initialAddress,
                 mailboxId,
                 operationKind: "bootstrap-owner",
-              })
-            ) {
+              },
+              "bootstrap-owner"
+            );
+            if (!matches) {
               return yield* new MailboxAdministrationError({
                 message: "Operation ID was used for a different intent",
                 operation: "bootstrap-owner",
@@ -509,7 +652,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const ownerIdentityValid = ownerIdentityPredicate(
             database,
             validated.actor.userId,
-            ownerEmail
+            bootstrapConfig.ownerEmailAllowlist
           );
           const mailboxAvailable = notExists(
             database.select({ value: sql`1` }).from(appMailbox)
@@ -587,12 +730,14 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
               )
               .returning({ id: appMailbox.id }),
             primaryMailboxAddressInsertStatement(database, {
-              address: configuredOwnerEmail,
+              address: input.initialAddress,
               authorizationGuardNonce: nonce,
               createdAt: timestamp,
               mailboxId,
               mailboxCreated,
-              normalizedAddress: ownerEmail,
+              normalizedAddress: normalizeEmailAddressDomain(
+                input.initialAddress
+              ),
             }),
             database
               .insert(appMailboxMember)
@@ -659,6 +804,33 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                   .where(and(createdMailbox, authorized))
               )
               .returning(receiptReturning),
+            database
+              .insert(appMailboxBootstrapReceiptV2)
+              .select(
+                database
+                  .select({
+                    initialAddress: sql`${input.initialAddress}`.as(
+                      "initial_address"
+                    ),
+                    operationId: sql`${input.operationId}`.as("operation_id"),
+                    schemaVersion: sql<2>`2`.as("schema_version"),
+                  })
+                  .from(appMailboxAdministrationReceipt)
+                  .where(
+                    and(
+                      eq(
+                        appMailboxAdministrationReceipt.operationId,
+                        input.operationId
+                      ),
+                      authorized
+                    )
+                  )
+              )
+              .returning({
+                initial_address: appMailboxBootstrapReceiptV2.initialAddress,
+                operation_id: appMailboxBootstrapReceiptV2.operationId,
+                schema_version: appMailboxBootstrapReceiptV2.schemaVersion,
+              }),
             administrativeAuditInsertStatement(database, auditEvent, nonce),
             database
               .delete(appAuthorizationGuard)
@@ -675,20 +847,29 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                     Effect.flatMap((receipt) =>
                       receipt === null
                         ? Effect.fail(storageError("bootstrap-owner", error))
-                        : receiptMatches(receipt, {
+                        : receiptMatchesIntent(
+                            receipt,
+                            {
                               displayName,
+                              initialAddress: input.initialAddress,
                               mailboxId,
                               operationKind: "bootstrap-owner",
-                            })
-                          ? Effect.succeed(receipt)
-                          : Effect.fail(
-                              new MailboxAdministrationError({
-                                message:
-                                  "Operation ID was used for a different intent",
-                                operation: "bootstrap-owner",
-                                reason: "operation-conflict",
-                              })
+                            },
+                            "bootstrap-owner"
+                          ).pipe(
+                            Effect.flatMap((matches) =>
+                              matches
+                                ? Effect.succeed(receipt)
+                                : Effect.fail(
+                                    new MailboxAdministrationError({
+                                      message:
+                                        "Operation ID was used for a different intent",
+                                      operation: "bootstrap-owner",
+                                      reason: "operation-conflict",
+                                    })
+                                  )
                             )
+                          )
                     )
                   )
                 : Effect.fail(storageError("bootstrap-owner", error))
@@ -745,11 +926,16 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
               );
               if (
                 concurrentReplay !== null &&
-                receiptMatches(concurrentReplay, {
-                  displayName,
-                  mailboxId,
-                  operationKind: "bootstrap-owner",
-                })
+                (yield* receiptMatchesIntent(
+                  concurrentReplay,
+                  {
+                    displayName,
+                    initialAddress: input.initialAddress,
+                    mailboxId,
+                    operationKind: "bootstrap-owner",
+                  },
+                  "bootstrap-owner"
+                ))
               ) {
                 return concurrentReplay.result;
               }
@@ -778,21 +964,37 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             });
           }
 
-          const [receiptRow] = yield* decodeResultRows(
-            ReceiptRow,
+          const [receiptV2Row] = yield* decodeResultRows(
+            BootstrapReceiptV2Row,
             results,
-            6,
+            7,
             "bootstrap-owner"
           );
-          if (receiptRow === undefined) {
+          if (
+            receiptV2Row === undefined ||
+            receiptV2Row.operation_id !== input.operationId ||
+            receiptV2Row.initial_address !== input.initialAddress
+          ) {
             return yield* new MailboxAdministrationError({
               commitState: "committed",
-              message: "Created mailbox receipt was missing",
+              message: "Created mailbox bootstrap receipt was missing",
               operation: "bootstrap-owner",
               reason: "storage",
             });
           }
-          const receipt = yield* decodeReceipt(receiptRow, "bootstrap-owner");
+          const receipt = yield* readReceipt(
+            input.operationId,
+            validated.actor.userId,
+            "bootstrap-owner"
+          );
+          if (receipt === null) {
+            return yield* new MailboxAdministrationError({
+              commitState: "committed",
+              message: "Created mailbox receipt readback was missing",
+              operation: "bootstrap-owner",
+              reason: "storage",
+            });
+          }
           return receipt.result;
         }),
       readOperation: (untrusted) =>

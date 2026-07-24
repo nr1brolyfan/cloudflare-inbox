@@ -15,6 +15,7 @@ import {
 } from "#/modules/organization/domain/Mailbox";
 import type { MailboxRecord } from "#/modules/organization/domain/Mailbox";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
+import { NormalizedEmailAddress } from "#/shared/EmailAddress";
 import { AdministrativeOperationId } from "#/shared/Operation";
 import type { CurrentRequestAuth } from "#/shared/RequestAuth";
 import type { RequestCorrelation } from "#/shared/RequestCorrelation";
@@ -26,6 +27,14 @@ export const BootstrapOwnerMailboxCommand = Schema.Struct({
 });
 export type BootstrapOwnerMailboxCommand = Schema.Schema.Type<
   typeof BootstrapOwnerMailboxCommand
+>;
+
+export const TrustedBootstrapOwnerMailboxCommand = Schema.Struct({
+  ...BootstrapOwnerMailboxCommand.fields,
+  initialAddress: NormalizedEmailAddress,
+});
+export type TrustedBootstrapOwnerMailboxCommand = Schema.Schema.Type<
+  typeof TrustedBootstrapOwnerMailboxCommand
 >;
 
 export const RenameMailboxCommand = Schema.Struct({
@@ -52,21 +61,32 @@ export class MailboxAdministrationReceipt extends Schema.Class<MailboxAdministra
   committedAt: UnixMillis,
   displayName: MailboxDisplayName,
   expectedVersion: Schema.optional(Version),
+  initialAddress: Schema.optional(NormalizedEmailAddress),
   mailboxId: MailboxId,
   operationId: AdministrativeOperationId,
   operationKind: Schema.Literals(["bootstrap-owner", "rename"]),
   result: MailboxRecordSchema,
-  schemaVersion: Schema.Literal(1),
+  schemaVersion: Schema.Literals([1, 2]),
 }) {}
 
 export const MailboxAdministrationReceiptSchema =
   MailboxAdministrationReceipt.check(
     Schema.makeFilter((receipt) => {
-      const expectedVersionValid =
+      const operationValid =
         receipt.operationKind === "bootstrap-owner"
-          ? receipt.expectedVersion === undefined
-          : receipt.expectedVersion !== undefined;
-      return expectedVersionValid &&
+          ? receipt.expectedVersion === undefined &&
+            ((receipt.schemaVersion === 1 &&
+              receipt.initialAddress === undefined) ||
+              (receipt.schemaVersion === 2 &&
+                receipt.initialAddress !== undefined)) &&
+            receipt.result.version === 1 &&
+            receipt.actorUserId === receipt.result.createdByUserId &&
+            receipt.result.createdAt === receipt.result.updatedAt &&
+            receipt.committedAt === receipt.result.createdAt
+          : receipt.expectedVersion !== undefined &&
+            receipt.schemaVersion === 1 &&
+            receipt.initialAddress === undefined;
+      return operationValid &&
         receipt.result.id === receipt.mailboxId &&
         receipt.result.displayName === receipt.displayName &&
         receipt.result.updatedAt === receipt.committedAt
@@ -106,7 +126,7 @@ export interface MailboxAdministrationService {
   // Trusted auth and authorization capabilities are application dependencies;
   // HTTP middleware is only one adapter that supplies them.
   readonly bootstrapOwner: (
-    input: BootstrapOwnerMailboxCommand
+    input: TrustedBootstrapOwnerMailboxCommand
   ) => Effect.Effect<
     MailboxRecord,
     MailboxAdministrationError,

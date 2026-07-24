@@ -54,6 +54,7 @@ import {
 } from "#/modules/organization/application/MailboxAdministration";
 import type { MailboxNavigationError } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
+import { MailboxBootstrapConfig } from "#/modules/organization/contracts/MailboxBootstrapConfig";
 
 import { MailboxHttpApi } from "./BackendMailboxHttpApi";
 
@@ -479,6 +480,7 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
   "mailboxes",
   Effect.fn("backend.http.mailbox_group")(function* (handlers) {
     const administration = yield* MailboxAdministration;
+    const bootstrapConfig = yield* MailboxBootstrapConfig;
     const navigation = yield* MailboxNavigation;
     const messageReading = yield* MailboxMessageReading;
     const messageActions = yield* MailboxMessageActions;
@@ -503,7 +505,12 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
           .pipe(mapHttpErrors)
       )
       .handle("bootstrapOwner", ({ payload }) =>
-        administration.bootstrapOwner(payload).pipe(mapHttpErrors)
+        administration
+          .bootstrapOwner({
+            ...payload,
+            initialAddress: bootstrapConfig.initialAddress,
+          })
+          .pipe(mapHttpErrors)
       )
       .handle("createDraft", ({ params, payload }) =>
         draftEditing

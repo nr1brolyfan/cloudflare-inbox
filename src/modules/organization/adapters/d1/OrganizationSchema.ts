@@ -425,6 +425,76 @@ export const appMailboxAdministrationReceipt = sqliteTable(
   ]
 );
 
+export const appMailboxBootstrapReceiptV1Intent = sqliteTable(
+  "app_mailbox_bootstrap_receipt_v1_intent",
+  {
+    operationId: text("operation_id")
+      .primaryKey()
+      .references(() => appMailboxAdministrationReceipt.operationId, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    initialAddress: text("initial_address").notNull(),
+  },
+  () => [
+    check(
+      "app_mailbox_bootstrap_receipt_v1_intent_address_check",
+      sql`typeof(initial_address) = 'text'
+        and length(initial_address) between 3 and 320
+        and initial_address = trim(initial_address)
+        and instr(initial_address, '@') between 2 and length(initial_address) - 2
+        and instr(substr(initial_address, instr(initial_address, '@') + 1), '@') = 0
+        and substr(initial_address, instr(initial_address, '@') + 1)
+          = lower(substr(initial_address, instr(initial_address, '@') + 1))`
+    ),
+  ]
+);
+
+export const appMailboxBootstrapIntentCutover = sqliteTable(
+  "app_mailbox_bootstrap_intent_cutover",
+  {
+    id: integer("id").primaryKey(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  () => [
+    check("app_mailbox_bootstrap_intent_cutover_id_check", sql`id = 1`),
+    check(
+      "app_mailbox_bootstrap_intent_cutover_schema_check",
+      sql`schema_version = 1`
+    ),
+  ]
+);
+
+export const appMailboxBootstrapReceiptV2 = sqliteTable(
+  "app_mailbox_bootstrap_receipt_v2",
+  {
+    operationId: text("operation_id")
+      .primaryKey()
+      .references(() => appMailboxAdministrationReceipt.operationId, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    initialAddress: text("initial_address").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  () => [
+    check(
+      "app_mailbox_bootstrap_receipt_v2_address_check",
+      sql`typeof(initial_address) = 'text'
+        and length(initial_address) between 3 and 320
+        and initial_address = trim(initial_address)
+        and instr(initial_address, '@') between 2 and length(initial_address) - 2
+        and instr(substr(initial_address, instr(initial_address, '@') + 1), '@') = 0
+        and substr(initial_address, instr(initial_address, '@') + 1)
+          = lower(substr(initial_address, instr(initial_address, '@') + 1))`
+    ),
+    check(
+      "app_mailbox_bootstrap_receipt_v2_schema_check",
+      sql`typeof(schema_version) = 'integer' and schema_version = 2`
+    ),
+  ]
+);
+
 export const appUserPreference = sqliteTable(
   "app_user_preference",
   {
