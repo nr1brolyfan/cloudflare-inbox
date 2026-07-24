@@ -289,7 +289,7 @@ const makeFixture = async (options: FixtureOptions = {}) => {
         send: () => Effect.die("delivery is not used"),
       }),
       Layer.mock(RecoverySafeIdentityPolicy, {
-        requireExternalRecoveryAddress: () => Effect.void,
+        requireSafeAddress: () => Effect.void,
       }),
       Layer.mock(RecoveryCodeManagement, {
         identifyForUser: () =>
@@ -445,7 +445,7 @@ const makeStartFixture = async (options: StartFixtureOptions = {}) => {
         },
       }),
       Layer.mock(RecoverySafeIdentityPolicy, {
-        requireExternalRecoveryAddress: () =>
+        requireSafeAddress: () =>
           options.policyFailure === undefined
             ? Effect.void
             : Effect.fail(

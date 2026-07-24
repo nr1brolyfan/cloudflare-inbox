@@ -283,9 +283,10 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
               Effect.mapError((cause) => failure("start", "storage", cause))
             );
             const safe = yield* recoverySafeIdentity
-              .requireExternalRecoveryAddress({
+              .requireSafeAddress({
                 address: recoveryAddress,
                 excludeRecoveryIdentityId: identityId,
+                purpose: "external-recovery",
               })
               .pipe(
                 Effect.as(true),

@@ -1,3 +1,4 @@
+import { BotProtectionNoopLive } from "@effect-auth/core/AbuseProtection";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import type { PasswordHttpOperationsService } from "@effect-auth/core/HttpApi";
@@ -8,12 +9,18 @@ import {
 } from "@effect-auth/core/HttpApi";
 import {
   CredentialId,
+  Email,
   SessionId,
   SessionToken,
   UnixMillis,
   UserId,
 } from "@effect-auth/core/Identifiers";
-import { PasswordHasher } from "@effect-auth/core/Password";
+import type { PasswordResetService } from "@effect-auth/core/Password";
+import {
+  PasswordHasher,
+  PasswordReset,
+  PasswordResetStartError,
+} from "@effect-auth/core/Password";
 import { PermissionSubject } from "@effect-auth/core/Permission";
 import type {
   CurrentSessionShape,
@@ -23,7 +30,7 @@ import type {
 } from "@effect-auth/core/Sessions";
 import { SessionCookie, Sessions } from "@effect-auth/core/Sessions";
 import type { CredentialStoreService } from "@effect-auth/core/Storage";
-import { CredentialStore } from "@effect-auth/core/Storage";
+import { CredentialStore, StorageError } from "@effect-auth/core/Storage";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -34,6 +41,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiTest } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
+import { RecoverySafeEmailInitiationDenied } from "#/modules/account-security/adapters/effect-auth/RecoverySafeEmailInitiationEffectAuth";
 import { ApplicationAuthHttpApi } from "#/modules/account-security/adapters/http/AccountSecurityAuthHttpApi";
 import { PasswordEnrollmentUnavailableHttpHandlersLayer } from "#/modules/account-security/adapters/http/AccountSecurityAuthHttpHandlers";
 import {
@@ -107,8 +115,10 @@ const unusedPasswordOperation = () => Effect.die("operation is not used");
 const runRestrictedPasswordClient = <A, E>(
   use: (client: Effect.Success<typeof PasswordClient>) => Effect.Effect<A, E>,
   options: {
+    readonly onGuard?: (operation: string) => void;
     readonly onResetStart?: () => void;
     readonly onSet?: () => void;
+    readonly resetStart?: PasswordResetService["start"];
   } = {}
 ) => {
   const operations: PasswordHttpOperationsService = {
@@ -127,6 +137,19 @@ const runRestrictedPasswordClient = <A, E>(
     signIn: unusedPasswordOperation,
     signUp: unusedPasswordOperation,
   };
+  const passwordReset: PasswordResetService = {
+    start:
+      options.resetStart ??
+      (() =>
+        Effect.sync(() => {
+          options.onResetStart?.();
+          return {
+            email: Email("person@example.test"),
+            expiresAt: UnixMillis(1000),
+          };
+        })),
+    verify: () => Effect.die("reset verify is not used"),
+  };
 
   return Effect.runPromise(
     Effect.scoped(
@@ -135,7 +158,18 @@ const runRestrictedPasswordClient = <A, E>(
         return yield* use(client);
       }).pipe(
         Effect.provide(PasswordEnrollmentUnavailableHttpHandlersLayer),
+        Effect.provide(BotProtectionNoopLive),
         Effect.provide(Layer.succeed(PasswordHttpOperations, operations)),
+        Effect.provide(Layer.succeed(PasswordReset, passwordReset)),
+        Effect.provide(
+          Layer.succeed(
+            AuthRateLimit,
+            AuthRateLimit.of({
+              require: (input) =>
+                Effect.sync(() => options.onGuard?.(input.operation)),
+            })
+          )
+        ),
         Effect.provide(
           AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
         ),
@@ -490,5 +524,82 @@ describe("password enrollment guard", () => {
     );
 
     expect(starts).toBe(1);
+  });
+
+  it("rejects caller-provided reset secrets before start", async () => {
+    const guardedOperations: string[] = [];
+    let starts = 0;
+    const error = await runRestrictedPasswordClient(
+      (client) =>
+        client.password
+          .resetStart({
+            payload: {
+              identity: {
+                kind: "email",
+                scope: { type: "global" },
+                value: "person@example.test",
+              },
+              secret: "attacker-secret",
+            },
+          })
+          .pipe(Effect.flip),
+      {
+        onGuard: (operation) => {
+          guardedOperations.push(operation);
+        },
+        onResetStart: () => {
+          starts += 1;
+        },
+      }
+    );
+
+    expect(error).toMatchObject({
+      _tag: "AuthBadRequestError",
+      code: "bad_request",
+      message: "Invalid password reset request",
+    });
+    expect(guardedOperations).toStrictEqual(["auth.password.reset_start"]);
+    expect(starts).toBe(0);
+  });
+
+  it.each([
+    [
+      "policy denial",
+      new PasswordResetStartError({
+        cause: new RecoverySafeEmailInitiationDenied(),
+        message: "Email initiation denied",
+      }),
+      { _tag: "AuthPolicyDeniedError", code: "policy_denied" },
+    ],
+    [
+      "storage failure",
+      new PasswordResetStartError({
+        cause: new StorageError({
+          entity: "verification",
+          message: "database unavailable",
+          operation: "insert",
+        }),
+        message: "Failed to evaluate email initiation policy",
+      }),
+      { _tag: "AuthInternalError", code: "internal_error" },
+    ],
+  ] as const)("maps reset %s", async (_, failure, expected) => {
+    const error = await runRestrictedPasswordClient(
+      (client) =>
+        client.password
+          .resetStart({
+            payload: {
+              identity: {
+                kind: "email",
+                scope: { type: "global" },
+                value: "person@example.test",
+              },
+            },
+          })
+          .pipe(Effect.flip),
+      { resetStart: () => Effect.fail(failure) }
+    );
+
+    expect(error).toMatchObject(expected);
   });
 });

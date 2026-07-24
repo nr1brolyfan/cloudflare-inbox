@@ -110,11 +110,3 @@ export const ExternalRecoveryIdentitySchema = ExternalRecoveryIdentity.check(
       : "recovery revocation must occur after creation and verification";
   })
 );
-
-export const RequireExternalRecoveryAddressInput = Schema.Struct({
-  address: EmailAddress,
-  excludeRecoveryIdentityId: Schema.optional(ExternalRecoveryIdentityId),
-});
-export type RequireExternalRecoveryAddressInput = Schema.Schema.Type<
-  typeof RequireExternalRecoveryAddressInput
->;

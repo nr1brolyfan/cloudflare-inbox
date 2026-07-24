@@ -79,7 +79,7 @@ Produkcyjne catch-all i Email Service są śledzone w `PLAN-FIRMOWEJ-POCZTY.md` 
 - [x] Usunąć bearer credentials z query stringów auth completion links.
 - [ ] Domknąć bazowy password sign-up wraz z utworzeniem login identity i wysłaniem verification. Publiczny endpoint pozostaje jawnie policy-denied, dopóki ten flow nie ma recovery-safe, niezależnego kanału weryfikacji i nie może użyć hosted/shared mailbox address jako samodzielnego proof.
 
-Firmowa polityka recovery-safe dla enrollment oraz login/recovery initiation jest śledzona jako `SAFE-013`; public recovery z external link plus recovery code jest już zintegrowane, ale pełna powierzchnia generic initiation nadal blokuje zamknięcie zadania. Invitation acceptance należy do `INV-010`, shared address/route mutations do `ADDR-022`, ukończone passkey i recovery codes do `SAFE-002`, a ukończony step-up dla operacji wrażliwych do `SAFE-001` w `PLAN-FIRMOWEJ-POCZTY.md`.
+Firmowa polityka recovery-safe dla enrollment oraz login/recovery initiation została ukończona w `SAFE-013`: email OTP, magic link, email verification i password reset używają wspólnego purpose-aware guardu, a D1 rozstrzyga wyścigi ich challenge z mailbox routes. Invitation acceptance należy do `INV-010`, pełne shared address/route mutations do `ADDR-022`, ukończone passkey i recovery codes do `SAFE-002`, a ukończony step-up dla operacji wrażliwych do `SAFE-001` w `PLAN-FIRMOWEJ-POCZTY.md`.
 
 - [ ] Dodać harmonogram czyszczenia wygasłych sessions i challenges.
 

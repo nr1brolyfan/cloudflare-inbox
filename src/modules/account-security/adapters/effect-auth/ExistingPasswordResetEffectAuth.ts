@@ -13,7 +13,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { RecoverySafeEmailInitiationDenied } from "#/modules/account-security/adapters/effect-auth/RecoverySafeEmailInitiationEffectAuth";
 import { PasswordResetEligibility } from "#/modules/account-security/application/PasswordResetEligibility";
+import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 /** Refuses legacy or raced reset challenges that would create a first password. */
 export const ExistingPasswordResetEffectAuthLayer = Layer.effect(
@@ -22,6 +25,7 @@ export const ExistingPasswordResetEffectAuthLayer = Layer.effect(
     const challenge = yield* Challenge;
     const eligibility = yield* PasswordResetEligibility;
     const passwordReset = yield* PasswordReset;
+    const policy = yield* RecoverySafeIdentityPolicy;
 
     return PasswordReset.of({
       start: (input) =>
@@ -38,6 +42,37 @@ export const ExistingPasswordResetEffectAuthLayer = Layer.effect(
               )
             );
           if (eligible) {
+            const address = yield* Schema.decodeUnknownEffect(EmailAddress)(
+              input.identity.value
+            ).pipe(
+              Effect.mapError(
+                () =>
+                  new PasswordResetStartError({
+                    cause: new RecoverySafeEmailInitiationDenied(),
+                    message: "Email initiation denied",
+                  })
+              )
+            );
+            yield* policy
+              .requireSafeAddress({
+                address,
+                purpose: "login-email-initiation",
+              })
+              .pipe(
+                Effect.mapError(
+                  (cause) =>
+                    new PasswordResetStartError({
+                      cause:
+                        cause.reason === "storage"
+                          ? cause
+                          : new RecoverySafeEmailInitiationDenied(),
+                      message:
+                        cause.reason === "storage"
+                          ? "Failed to evaluate email initiation policy"
+                          : "Email initiation denied",
+                    })
+                )
+              );
             return yield* passwordReset.start(input);
           }
           const email = yield* Schema.decodeUnknownEffect(EmailSchema)(

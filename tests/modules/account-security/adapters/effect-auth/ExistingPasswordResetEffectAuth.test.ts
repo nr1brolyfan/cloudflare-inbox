@@ -14,7 +14,10 @@ import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 
 import { ExistingPasswordResetEffectAuthLayer } from "#/modules/account-security/adapters/effect-auth/ExistingPasswordResetEffectAuth";
+import { isRecoverySafeEmailInitiationDenied } from "#/modules/account-security/adapters/effect-auth/RecoverySafeEmailInitiationEffectAuth";
 import { PasswordResetEligibility } from "#/modules/account-security/application/PasswordResetEligibility";
+import { RecoverySafeIdentityRejected } from "#/modules/account-security/domain/RecoverySafeIdentityError";
+import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 
 const userId = UserId("user-a");
 const verifyInput = {
@@ -36,6 +39,8 @@ const runPasswordReset = <A, E>(
   callbacks: {
     readonly onStart?: () => void;
     readonly onVerify?: () => void;
+    readonly onPolicy?: () => void;
+    readonly policyFailure?: RecoverySafeIdentityRejected;
   } = {}
 ) => {
   const challenge: ChallengeService = {
@@ -70,6 +75,21 @@ const runPasswordReset = <A, E>(
         PasswordResetEligibility.of({
           hasActivePassword: () => Effect.succeed(eligible),
           hasActivePasswordForUserId: () => Effect.succeed(eligible),
+        })
+      )
+    ),
+    Layer.provide(
+      Layer.succeed(
+        RecoverySafeIdentityPolicy,
+        RecoverySafeIdentityPolicy.of({
+          requireSafeAddress: () =>
+            Effect.sync(() => callbacks.onPolicy?.()).pipe(
+              Effect.flatMap(() =>
+                callbacks.policyFailure === undefined
+                  ? Effect.void
+                  : Effect.fail(callbacks.policyFailure)
+              )
+            ),
         })
       )
     ),
@@ -124,6 +144,7 @@ describe("existing password reset", () => {
   });
 
   it("suppresses reset start after the standard guard for passwordless users", async () => {
+    let policies = 0;
     let starts = 0;
 
     const result = await Effect.runPromise(
@@ -134,16 +155,20 @@ describe("existing password reset", () => {
           onStart: () => {
             starts += 1;
           },
+          onPolicy: () => {
+            policies += 1;
+          },
         }
       )
     );
 
     expect(result.expiresAt).toBe(0);
+    expect(policies).toBe(0);
     expect(starts).toBe(0);
   });
 
   it("delegates reset start for an existing active password", async () => {
-    let starts = 0;
+    const events: string[] = [];
 
     const result = await Effect.runPromise(
       runPasswordReset(
@@ -151,13 +176,59 @@ describe("existing password reset", () => {
         (passwordReset) => passwordReset.start(startInput),
         {
           onStart: () => {
-            starts += 1;
+            events.push("start");
           },
+          onPolicy: () => events.push("policy"),
         }
       )
     );
 
     expect(result.expiresAt).toBe(10_000);
-    expect(starts).toBe(1);
+    expect(events).toStrictEqual(["policy", "start"]);
+  });
+
+  it("denies reset start by policy without delegating", async () => {
+    let starts = 0;
+    const error = await Effect.runPromise(
+      runPasswordReset(
+        true,
+        (passwordReset) => passwordReset.start(startInput).pipe(Effect.flip),
+        {
+          onStart: () => {
+            starts += 1;
+          },
+          policyFailure: new RecoverySafeIdentityRejected({
+            reason: "recovery-identity",
+          }),
+        }
+      )
+    );
+
+    expect(error.message).toBe("Email initiation denied");
+    expect(isRecoverySafeEmailInitiationDenied(error)).toBeTruthy();
+    expect(starts).toBe(0);
+  });
+
+  it("keeps policy storage failure internal without delegating", async () => {
+    let starts = 0;
+    const error = await Effect.runPromise(
+      runPasswordReset(
+        true,
+        (passwordReset) => passwordReset.start(startInput).pipe(Effect.flip),
+        {
+          onStart: () => {
+            starts += 1;
+          },
+          policyFailure: new RecoverySafeIdentityRejected({
+            cause: new Error("database unavailable"),
+            reason: "storage",
+          }),
+        }
+      )
+    );
+
+    expect(error.message).toBe("Failed to evaluate email initiation policy");
+    expect(isRecoverySafeEmailInitiationDenied(error)).toBeFalsy();
+    expect(starts).toBe(0);
   });
 });

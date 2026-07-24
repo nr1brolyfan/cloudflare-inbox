@@ -4,10 +4,8 @@ import {
   AuthOriginCheckMiddlewareLive,
   AuthRequestMetadataMiddlewareLive,
   AuthSchemaErrorMiddlewareLive,
-  CoreAuthEmailVerificationGroupLive,
   CoreAuthLoginApprovalGroupLive,
   CoreAuthLoginNotificationGroupLive,
-  CoreAuthMagicLinkGroupLive,
   CoreAuthSessionGroupLive,
   EmailOtpHttpOperationsLive,
   EmailVerificationHttpOperationsLive,
@@ -25,6 +23,8 @@ import { AccountRecoveryHttpHandlersLayer } from "#/modules/account-security/ada
 import {
   PasswordEnrollmentUnavailableHttpHandlersLayer,
   RestrictedEmailOtpHttpHandlersLayer,
+  RestrictedEmailVerificationHttpHandlersLayer,
+  RestrictedMagicLinkHttpHandlersLayer,
 } from "#/modules/account-security/adapters/http/AccountSecurityAuthHttpHandlers";
 import { ApplicationSessionHttpOperationsLayer } from "#/modules/account-security/adapters/http/AuthSessionHttpOperations";
 import {
@@ -87,9 +87,9 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
     const coreHandlersLayer = Layer.mergeAll(
       PasswordEnrollmentUnavailableHttpHandlersLayer,
       CoreAuthSessionGroupLive,
-      CoreAuthEmailVerificationGroupLive,
+      RestrictedEmailVerificationHttpHandlersLayer,
       RestrictedEmailOtpHttpHandlersLayer,
-      CoreAuthMagicLinkGroupLive,
+      RestrictedMagicLinkHttpHandlersLayer,
       CoreAuthLoginApprovalGroupLive,
       CoreAuthLoginNotificationGroupLive,
       AuthStepUpHttpHandlersLayer

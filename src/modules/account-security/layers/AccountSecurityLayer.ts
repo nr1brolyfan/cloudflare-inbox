@@ -1,7 +1,13 @@
+import type { Challenge } from "@effect-auth/core/Challenge";
+import type { EmailOtpLogin } from "@effect-auth/core/EmailOtp";
+import type { EmailVerificationFlow } from "@effect-auth/core/EmailVerification";
+import type { MagicLinkLogin } from "@effect-auth/core/MagicLink";
+import type { PasswordReset } from "@effect-auth/core/Password";
 import {
   RecoveryCodeManagementLive,
   RecoveryCodesLive,
 } from "@effect-auth/core/RecoveryCode";
+import type { IdentityStore } from "@effect-auth/core/Storage";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -31,11 +37,74 @@ import { AccountSecurityEffectAuthLayer } from "#/modules/account-security/adapt
 import { ExistingPasswordResetEffectAuthLayer } from "#/modules/account-security/adapters/effect-auth/ExistingPasswordResetEffectAuth";
 import { ExternalRecoveryIdentityChallengeEffectAuthLayer } from "#/modules/account-security/adapters/effect-auth/ExternalRecoveryIdentityChallengeEffectAuth";
 import { PasskeyRuntimeConfigEffectAuthLayer } from "#/modules/account-security/adapters/effect-auth/PasskeyConfigEffectAuth";
+import { RecoverySafeEmailInitiationEffectAuthLayer } from "#/modules/account-security/adapters/effect-auth/RecoverySafeEmailInitiationEffectAuth";
 import { AccountRecoveryDeliveryEmailLayer } from "#/modules/account-security/adapters/email/AccountRecoveryDeliveryEmail";
 import { ExternalRecoveryIdentityDeliveryEmailLayer } from "#/modules/account-security/adapters/email/ExternalRecoveryIdentityDeliveryEmail";
 import { RequestSessionAuthenticatorEffectAuthLayer } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import { PasskeyAuthentication } from "#/modules/account-security/application/PasskeyAuthentication";
 import { PasswordResetEligibility } from "#/modules/account-security/application/PasswordResetEligibility";
+import type { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
+
+type RecoverySafeRawEffectAuthServices =
+  | Challenge
+  | EmailOtpLogin
+  | EmailVerificationFlow
+  | MagicLinkLogin
+  | PasswordReset;
+
+export const makeRecoverySafeAccountSecurityEffectAuthLayer = <
+  RawServices,
+  RawError,
+  RawRequirements,
+  PolicyServices,
+  PolicyError,
+  PolicyRequirements,
+  StorageServices,
+  StorageError,
+  StorageRequirements,
+  EligibilityServices,
+  EligibilityError,
+  EligibilityRequirements,
+>(layers: {
+  readonly rawEffectAuth: Layer.Layer<
+    RecoverySafeRawEffectAuthServices | RawServices,
+    RawError,
+    RawRequirements
+  >;
+  readonly recoverySafeIdentity: Layer.Layer<
+    RecoverySafeIdentityPolicy | PolicyServices,
+    PolicyError,
+    PolicyRequirements
+  >;
+  readonly authStorage: Layer.Layer<
+    IdentityStore | StorageServices,
+    StorageError,
+    StorageRequirements
+  >;
+  readonly passwordResetEligibility: Layer.Layer<
+    PasswordResetEligibility | EligibilityServices,
+    EligibilityError,
+    EligibilityRequirements
+  >;
+}) => {
+  const recoverySafeEmailInitiation =
+    RecoverySafeEmailInitiationEffectAuthLayer.pipe(
+      Layer.provide(layers.recoverySafeIdentity),
+      Layer.provide(layers.authStorage),
+      Layer.provide(layers.rawEffectAuth)
+    );
+  const existingPasswordReset = ExistingPasswordResetEffectAuthLayer.pipe(
+    Layer.provide(layers.passwordResetEligibility),
+    Layer.provide(layers.recoverySafeIdentity),
+    Layer.provide(layers.rawEffectAuth)
+  );
+
+  return Layer.mergeAll(
+    layers.rawEffectAuth,
+    recoverySafeEmailInitiation,
+    existingPasswordReset
+  );
+};
 
 /** Account-security use cases with concrete persistence and auth adapters selected. */
 export const AccountSecurityLayer = Layer.unwrap(
@@ -47,18 +116,19 @@ export const AccountSecurityLayer = Layer.unwrap(
     );
     const authStorageLayer = EffectAuthStorageD1Layer;
     const devEmailStoreLayer = DevEmailStoreD1Layer;
-    const effectAuthLayer = AccountSecurityEffectAuthLayer.pipe(
+    const rawEffectAuthLayer = AccountSecurityEffectAuthLayer.pipe(
       Layer.provide(runtimeConfigLayer),
       Layer.provide(authStorageLayer),
       Layer.provide(devEmailStoreLayer)
     );
+    const recoverySafeIdentityLayer = RecoverySafeIdentityD1Layer;
     const passkeyConfigLayer = PasskeyRuntimeConfigEffectAuthLayer.pipe(
       Layer.provide(runtimeConfigLayer)
     );
     const passkeyAuthenticationLayer = PasskeyAuthentication.layerNoDeps.pipe(
       Layer.provide(
         Layer.mergeAll(
-          effectAuthLayer,
+          rawEffectAuthLayer,
           authStorageLayer,
           PasskeyAuthenticationIdentityD1Layer,
           passkeyConfigLayer,
@@ -68,18 +138,19 @@ export const AccountSecurityLayer = Layer.unwrap(
     );
     const requestSessionAuthenticatorLayer =
       RequestSessionAuthenticatorEffectAuthLayer.pipe(
-        Layer.provide(effectAuthLayer)
+        Layer.provide(rawEffectAuthLayer)
       );
     const passwordResetEligibilityLayer =
       PasswordResetEligibility.layerNoDeps.pipe(
-        Layer.provide(effectAuthLayer),
+        Layer.provide(rawEffectAuthLayer),
         Layer.provide(authStorageLayer)
       );
-    const existingPasswordResetLayer =
-      ExistingPasswordResetEffectAuthLayer.pipe(
-        Layer.provide(passwordResetEligibilityLayer),
-        Layer.provide(effectAuthLayer)
-      );
+    const effectAuthLayer = makeRecoverySafeAccountSecurityEffectAuthLayer({
+      authStorage: authStorageLayer,
+      passwordResetEligibility: passwordResetEligibilityLayer,
+      rawEffectAuth: rawEffectAuthLayer,
+      recoverySafeIdentity: recoverySafeIdentityLayer,
+    });
     const recoveryIdentityLayer = ExternalRecoveryIdentityD1Layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -91,7 +162,7 @@ export const AccountSecurityLayer = Layer.unwrap(
             Layer.provide(devEmailStoreLayer)
           ),
           ExternalRecoveryIdentityRuntimeLayer,
-          RecoverySafeIdentityD1Layer,
+          recoverySafeIdentityLayer,
           SensitiveOperationStepUpClockCloudflareLayer
         )
       )
@@ -139,7 +210,7 @@ export const AccountSecurityLayer = Layer.unwrap(
           authStorageLayer,
           recoveryCodeCoreLayer,
           RecoveryCodesLive.pipe(Layer.provide(effectAuthLayer)),
-          RecoverySafeIdentityD1Layer,
+          recoverySafeIdentityLayer,
           AccountRecoveryDeliveryEmailLayer.pipe(
             Layer.provide(runtimeConfigLayer),
             Layer.provide(devEmailStoreLayer)
@@ -156,7 +227,6 @@ export const AccountSecurityLayer = Layer.unwrap(
       passkeyAuthenticationLayer,
       requestSessionAuthenticatorLayer,
       passwordResetEligibilityLayer,
-      existingPasswordResetLayer,
       recoveryIdentityLayer,
       passkeyEnrollmentLayer,
       passkeyCredentialAdministrationLayer,

@@ -503,7 +503,11 @@ const ExternalRecoveryIdentityTransactionD1Layer = Layer.effect(
             Effect.mapError(() => managementError("enroll", "step-up-required"))
           );
           yield* policy
-            .requireExternalRecoveryAddress({ address: command.address })
+            .requireSafeAddress({
+              address: command.address,
+              purpose: "external-recovery",
+              userId: requestAuth.validated.actor.userId,
+            })
             .pipe(
               Effect.mapError((cause) =>
                 managementError("enroll", "policy-denied", cause)
@@ -863,9 +867,11 @@ const ExternalRecoveryIdentityTransactionD1Layer = Layer.effect(
             )
           );
           yield* policy
-            .requireExternalRecoveryAddress({
+            .requireSafeAddress({
               address: storedAddress,
               excludeRecoveryIdentityId: identityId,
+              purpose: "external-recovery",
+              userId: requestAuth.validated.actor.userId,
             })
             .pipe(
               Effect.mapError((cause) =>

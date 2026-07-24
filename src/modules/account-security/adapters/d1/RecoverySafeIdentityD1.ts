@@ -1,4 +1,4 @@
-import { and, eq, ne, sql } from "drizzle-orm";
+import { and, eq, ne, or, sql } from "drizzle-orm";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -42,7 +42,7 @@ export const RecoverySafeIdentityD1Layer = Layer.effect(
       .toLowerCase();
 
     return RecoverySafeIdentityPolicy.of({
-      requireExternalRecoveryAddress: (input) =>
+      requireSafeAddress: (input) =>
         Effect.gen(function* () {
           const comparisonKey = externalRecoveryAddressComparisonKey(
             input.address
@@ -57,12 +57,18 @@ export const RecoverySafeIdentityD1Layer = Layer.effect(
           }
 
           const recoveryPredicate = and(
-            eq(appExternalRecoveryIdentity.comparisonKey, comparisonKey),
+            input.purpose === "external-recovery" && input.userId !== undefined
+              ? or(
+                  eq(appExternalRecoveryIdentity.comparisonKey, comparisonKey),
+                  eq(appExternalRecoveryIdentity.userId, input.userId)
+                )
+              : eq(appExternalRecoveryIdentity.comparisonKey, comparisonKey),
             sql`(${appExternalRecoveryIdentity.status} = 'verified'
               or (${appExternalRecoveryIdentity.status} = 'pending'
                 and ${appExternalRecoveryIdentity.challengeExpiresAt}
                   > cast(unixepoch('subsec') * 1000 as integer)))`,
-            input.excludeRecoveryIdentityId === undefined
+            input.purpose === "login-email-initiation" ||
+              input.excludeRecoveryIdentityId === undefined
               ? undefined
               : ne(
                   appExternalRecoveryIdentity.id,
@@ -101,7 +107,10 @@ export const RecoverySafeIdentityD1Layer = Layer.effect(
               reason: "mailbox-address",
             });
           }
-          if (loginIdentities.length > 0) {
+          if (
+            input.purpose === "external-recovery" &&
+            loginIdentities.length > 0
+          ) {
             return yield* new RecoverySafeIdentityRejected({
               reason: "login-identity",
             });
