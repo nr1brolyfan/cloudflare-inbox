@@ -98,6 +98,8 @@ Organization address allocation and transfer require Organization Owner/Admin. M
 
 Global mail-role and mail-permission grants are forbidden. Membership supports discovery and lifecycle but never replaces exact authorization.
 
+Migration 1025 retains the legacy `owner` mailbox grant and adds one exact `organization.owner` grant scoped to `legacy_default_v1`, with canonical membership provenance. The grant maps only to the eight organization permissions above and confers no mailbox, message, draft, attachment, folder, rule, or send authority. No organization-sensitive endpoint may treat it as sufficient before ACL-003 also enforces active organization membership and resource ancestry. The immutable ORG-008 assignment receipt, not a fabricated `mailbox.owner-bootstrap` event, records the migration; fresh state links that receipt to the real existing mailbox bootstrap audit. A future typed organization audit taxonomy is required before organization owner lifecycle commands exist.
+
 ## Consequences
 
 - Existing role definitions and grants require a coordinated namespace migration.

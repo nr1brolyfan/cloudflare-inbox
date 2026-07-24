@@ -19,6 +19,10 @@ export type OrganizationMemberId = Schema.Schema.Type<
   typeof OrganizationMemberId
 >;
 
+/** Fixed retained membership identity created by the ORG-008 cutover. */
+export const LEGACY_DEFAULT_OWNER_MEMBERSHIP_ID: OrganizationMemberId =
+  Schema.decodeUnknownSync(OrganizationMemberId)("legacy_default_v1_owner_v1");
+
 export const OrganizationMemberStatus = Schema.Literals([
   "active",
   "suspended",

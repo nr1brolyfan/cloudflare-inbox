@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  foreignKey,
   index,
   integer,
   primaryKey,
@@ -10,6 +11,8 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 import { authUser } from "#/auth/schema/modules/core";
+import { authRoleGrant } from "#/auth/schema/modules/permissions";
+import { administrativeAuditEventIdReference } from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
 import type { CanonicalMailDomain } from "#/modules/organization/domain/MailDomain";
 
 export const appOrganization = sqliteTable(
@@ -433,6 +436,21 @@ export const appMailboxLegacyOrganizationAssignmentCutover = sqliteTable(
   ]
 );
 
+export const appOrganizationOwnerAssignmentCutover = sqliteTable(
+  "app_organization_owner_assignment_cutover",
+  {
+    id: integer("id").primaryKey(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  () => [
+    check("app_organization_owner_assignment_cutover_id_check", sql`id = 1`),
+    check(
+      "app_organization_owner_assignment_cutover_schema_check",
+      sql`typeof(schema_version) = 'integer' and schema_version = 1`
+    ),
+  ]
+);
+
 export const appMailboxMember = sqliteTable(
   "app_mailbox_member",
   {
@@ -601,6 +619,156 @@ export const appMailboxBootstrapReceiptV2 = sqliteTable(
     check(
       "app_mailbox_bootstrap_receipt_v2_schema_check",
       sql`typeof(schema_version) = 'integer' and schema_version = 2`
+    ),
+  ]
+);
+
+export const appOrganizationOwnerAssignmentReceipt = sqliteTable(
+  "app_organization_owner_assignment_receipt",
+  {
+    organizationId: text("organization_id")
+      .primaryKey()
+      .references(() => appOrganization.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    mailboxId: text("mailbox_id")
+      .notNull()
+      .references(() => appMailbox.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUser.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    membershipId: text("membership_id")
+      .notNull()
+      .unique()
+      .references(() => appOrganizationMember.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    assignedAt: integer("assigned_at").notNull(),
+    source: text("source", {
+      enum: ["legacy-cutover", "fresh-bootstrap"],
+    }).notNull(),
+    legacySubjectType: text("legacy_subject_type").notNull(),
+    legacySubjectId: text("legacy_subject_id").notNull(),
+    legacyRoleId: text("legacy_role_id").notNull(),
+    legacyScopeType: text("legacy_scope_type").notNull(),
+    legacyScopeIdPresent: integer("legacy_scope_id_present").notNull(),
+    legacyScopeId: text("legacy_scope_id").notNull(),
+    organizationSubjectType: text("organization_subject_type").notNull(),
+    organizationSubjectId: text("organization_subject_id").notNull(),
+    organizationRoleId: text("organization_role_id").notNull(),
+    organizationScopeType: text("organization_scope_type").notNull(),
+    organizationScopeIdPresent: integer(
+      "organization_scope_id_present"
+    ).notNull(),
+    organizationScopeId: text("organization_scope_id").notNull(),
+    sourceBootstrapOperationId: text(
+      "source_bootstrap_operation_id"
+    ).references(() => appMailboxAdministrationReceipt.operationId, {
+      onDelete: "restrict",
+      onUpdate: "restrict",
+    }),
+    sourceAuditEventId: text("source_audit_event_id").references(
+      administrativeAuditEventIdReference,
+      { onDelete: "restrict", onUpdate: "restrict" }
+    ),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [
+        t.legacySubjectType,
+        t.legacySubjectId,
+        t.legacyRoleId,
+        t.legacyScopeType,
+        t.legacyScopeIdPresent,
+        t.legacyScopeId,
+      ],
+      foreignColumns: [
+        authRoleGrant.subjectType,
+        authRoleGrant.subjectId,
+        authRoleGrant.roleId,
+        authRoleGrant.scopeType,
+        authRoleGrant.scopeIdPresent,
+        authRoleGrant.scopeId,
+      ],
+      name: "app_organization_owner_assignment_receipt_legacy_grant_fk",
+    })
+      .onUpdate("restrict")
+      .onDelete("restrict"),
+    foreignKey({
+      columns: [
+        t.organizationSubjectType,
+        t.organizationSubjectId,
+        t.organizationRoleId,
+        t.organizationScopeType,
+        t.organizationScopeIdPresent,
+        t.organizationScopeId,
+      ],
+      foreignColumns: [
+        authRoleGrant.subjectType,
+        authRoleGrant.subjectId,
+        authRoleGrant.roleId,
+        authRoleGrant.scopeType,
+        authRoleGrant.scopeIdPresent,
+        authRoleGrant.scopeId,
+      ],
+      name: "app_organization_owner_assignment_receipt_organization_grant_fk",
+    })
+      .onUpdate("restrict")
+      .onDelete("restrict"),
+    check(
+      "app_organization_owner_assignment_receipt_identity_check",
+      sql`organization_id = 'legacy_default_v1'
+        and mailbox_id = 'primary'
+        and membership_id = 'legacy_default_v1_owner_v1'
+        and user_id = legacy_subject_id
+        and user_id = organization_subject_id`
+    ),
+    check(
+      "app_organization_owner_assignment_receipt_time_check",
+      sql`typeof(assigned_at) = 'integer'
+        and assigned_at between 0 and 9007199254740991`
+    ),
+    check(
+      "app_organization_owner_assignment_receipt_source_check",
+      sql`(source = 'fresh-bootstrap'
+          and source_bootstrap_operation_id is not null
+          and source_audit_event_id is not null)
+        or (source = 'legacy-cutover' and (
+          (source_bootstrap_operation_id is null
+            and source_audit_event_id is null)
+          or (source_bootstrap_operation_id is null
+            and source_audit_event_id is not null)
+          or (source_bootstrap_operation_id is not null
+            and source_audit_event_id is not null)))`
+    ),
+    check(
+      "app_organization_owner_assignment_receipt_legacy_check",
+      sql`legacy_subject_type = 'user'
+        and legacy_role_id = 'owner'
+        and legacy_scope_type = 'mailbox'
+        and legacy_scope_id_present = 1
+        and legacy_scope_id = 'primary'`
+    ),
+    check(
+      "app_organization_owner_assignment_receipt_organization_grant_check",
+      sql`organization_subject_type = 'user'
+        and organization_role_id = 'organization.owner'
+        and organization_scope_type = 'organization'
+        and organization_scope_id_present = 1
+        and organization_scope_id = 'legacy_default_v1'`
+    ),
+    check(
+      "app_organization_owner_assignment_receipt_schema_check",
+      sql`typeof(schema_version) = 'integer' and schema_version = 1`
     ),
   ]
 );

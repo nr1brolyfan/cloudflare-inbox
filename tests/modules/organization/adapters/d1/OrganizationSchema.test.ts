@@ -6,7 +6,10 @@ import { getTableConfig } from "drizzle-orm/sqlite-core";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
-import { appMailDomain } from "#/modules/organization/adapters/d1/OrganizationSchema";
+import {
+  appMailDomain,
+  appOrganizationOwnerAssignmentReceipt,
+} from "#/modules/organization/adapters/d1/OrganizationSchema";
 import type { appOrganization } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import {
   MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
@@ -1356,6 +1359,141 @@ const seedMalformedBootstrapReceipt = (
             1000, ${updatedAt}, ${version}, ${updatedAt}, 1);
   `);
 };
+
+describe("organization owner assignment schema parity", () => {
+  it("matches all migration receipt foreign keys and checks", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const config = getTableConfig(appOrganizationOwnerAssignmentReceipt);
+      const foreignKeys = config.foreignKeys.map((key) => ({
+        columns: key.reference().columns.map((column) => column.name),
+        foreignColumns: key
+          .reference()
+          .foreignColumns.map((column) => column.name),
+        foreignTable: getTableName(key.reference().foreignTable),
+        onDelete: key.onDelete,
+        onUpdate: key.onUpdate,
+      }));
+      // oxlint-disable-next-line unicorn/no-array-sort -- Stable assertion ordering.
+      foreignKeys.sort((left, right) =>
+        left.columns.join(",").localeCompare(right.columns.join(","))
+      );
+      const expectedForeignKeys = [
+        {
+          columns: [
+            "legacy_subject_type",
+            "legacy_subject_id",
+            "legacy_role_id",
+            "legacy_scope_type",
+            "legacy_scope_id_present",
+            "legacy_scope_id",
+          ],
+          foreignColumns: [
+            "subject_type",
+            "subject_id",
+            "role_id",
+            "scope_type",
+            "scope_id_present",
+            "scope_id",
+          ],
+          foreignTable: "auth_role_grant",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+        {
+          columns: ["mailbox_id"],
+          foreignColumns: ["id"],
+          foreignTable: "app_mailbox",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+        {
+          columns: ["membership_id"],
+          foreignColumns: ["id"],
+          foreignTable: "app_organization_member",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+        {
+          columns: [
+            "organization_subject_type",
+            "organization_subject_id",
+            "organization_role_id",
+            "organization_scope_type",
+            "organization_scope_id_present",
+            "organization_scope_id",
+          ],
+          foreignColumns: [
+            "subject_type",
+            "subject_id",
+            "role_id",
+            "scope_type",
+            "scope_id_present",
+            "scope_id",
+          ],
+          foreignTable: "auth_role_grant",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+        {
+          columns: ["organization_id"],
+          foreignColumns: ["id"],
+          foreignTable: "app_organization",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+        {
+          columns: ["source_audit_event_id"],
+          foreignColumns: ["event_id"],
+          foreignTable: "app_administrative_audit_event",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+        {
+          columns: ["source_bootstrap_operation_id"],
+          foreignColumns: ["operation_id"],
+          foreignTable: "app_mailbox_administration_receipt",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+        {
+          columns: ["user_id"],
+          foreignColumns: ["id"],
+          foreignTable: "auth_user",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+      ];
+      // oxlint-disable-next-line unicorn/no-array-sort -- Stable assertion ordering.
+      expectedForeignKeys.sort((left, right) =>
+        left.columns.join(",").localeCompare(right.columns.join(","))
+      );
+
+      expect(foreignKeys).toStrictEqual(expectedForeignKeys);
+      const checkNames = config.checks.map((check) => check.name);
+      // oxlint-disable-next-line unicorn/no-array-sort -- Stable assertion ordering.
+      checkNames.sort();
+      expect(checkNames).toStrictEqual([
+        "app_organization_owner_assignment_receipt_identity_check",
+        "app_organization_owner_assignment_receipt_legacy_check",
+        "app_organization_owner_assignment_receipt_organization_grant_check",
+        "app_organization_owner_assignment_receipt_schema_check",
+        "app_organization_owner_assignment_receipt_source_check",
+        "app_organization_owner_assignment_receipt_time_check",
+      ]);
+      expect(
+        database
+          .prepare(
+            "pragma foreign_key_list(app_organization_owner_assignment_receipt)"
+          )
+          .all()
+      ).toHaveLength(18);
+    } finally {
+      database.close();
+    }
+  });
+});
 
 describe("mailbox bootstrap receipt V2 migration", () => {
   it.each(["inbox@example.test", "inbox@EXAMPLE.TEST"] as const)(

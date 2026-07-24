@@ -6,6 +6,10 @@ import { appAuthorizationGuard } from "#/platform/control-plane-d1/Authorization
 import type { ControlPlaneStatement } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
+/** Stable foreign-key target for collaborating control-plane schemas. */
+export const administrativeAuditEventIdReference = () =>
+  appAdministrativeAuditEvent.eventId;
+
 const resourceVersionBefore = (event: AdministrativeAuditEvent) =>
   "beforeVersion" in event.change ? event.change.beforeVersion : null;
 

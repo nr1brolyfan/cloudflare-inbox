@@ -51,7 +51,7 @@ const approvedContextDependencies: Readonly<
   authorization: ["mailbox"],
   automation: ["mailbox"],
   mailbox: [],
-  organization: ["mailbox"],
+  organization: ["administrative-audit", "mailbox"],
 };
 const approvedAppDependencies: Readonly<
   Record<(typeof requiredApps)[number], readonly string[]>
@@ -76,6 +76,7 @@ const integrationTestFiles = new Set([
   "tests/integration/organization/mailbox-legacy-organization-assignment-d1.test.ts",
   "tests/integration/organization/organization-legacy-cutover-d1.test.ts",
   "tests/integration/organization/organization-member-schema-d1.test.ts",
+  "tests/integration/organization/organization-owner-assignment-d1.test.ts",
 ]);
 const allowedTestRoots = new Set([
   ...managedRoots,

@@ -674,8 +674,8 @@ describe("mailbox administration", () => {
         database
           .prepare(
             `select role_id, scope_type, scope_id
-               from auth_role_grant
-              where subject_id = ?`
+                from auth_role_grant
+               where subject_id = ? and role_id = 'owner'`
           )
           .get("user-a")
       ).toMatchObject({
@@ -1446,6 +1446,70 @@ describe("mailbox administration", () => {
       database.close();
     }
   });
+
+  it.each([
+    ["organization member", "app_organization_member", "1"],
+    [
+      "organization owner grant",
+      "auth_role_grant",
+      "new.role_id = 'organization.owner'",
+    ],
+    [
+      "organization owner receipt",
+      "app_organization_owner_assignment_receipt",
+      "1",
+    ],
+  ] as const)(
+    "rolls back the full bootstrap batch when the %s insert fails",
+    async (_, table, condition) => {
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        database.exec(`create trigger fail_org008_target
+          before insert on ${table}
+          when ${condition}
+          begin
+            select raise(abort, 'ORG-008 target insert failed');
+          end`);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+
+        const error = await Effect.runPromise(
+          bootstrap(d1, validated, "bootstrap-guard").pipe(Effect.flip)
+        );
+
+        expect(error).toMatchObject({
+          commitState: "unknown",
+          reason: "storage",
+        });
+        expect({
+          addresses: countRows(database, "app_mailbox_address"),
+          audits: countRows(database, "app_administrative_audit_event"),
+          grants: countRows(database, "auth_role_grant"),
+          mailboxMembers: countRows(database, "app_mailbox_member"),
+          mailboxes: countRows(database, "app_mailbox"),
+          organizationMembers: countRows(database, "app_organization_member"),
+          organizations: countRows(database, "app_organization"),
+          ownerReceipts: countRows(
+            database,
+            "app_organization_owner_assignment_receipt"
+          ),
+        }).toStrictEqual({
+          addresses: 0,
+          audits: 0,
+          grants: 0,
+          mailboxMembers: 0,
+          mailboxes: 0,
+          organizationMembers: 0,
+          organizations: 0,
+          ownerReceipts: 0,
+        });
+      } finally {
+        database.close();
+      }
+    }
+  );
 
   it("accepts semantically equivalent authentication event JSON", async () => {
     const database = new DatabaseSync(":memory:");
@@ -2534,7 +2598,7 @@ describe("mailbox administration", () => {
         organizations: countRows(database, "app_organization"),
       }).toStrictEqual({
         addresses: 1,
-        grants: 1,
+        grants: 2,
         guards: 0,
         mailboxes: 1,
         members: 1,
@@ -2623,7 +2687,7 @@ describe("mailbox administration", () => {
         grants: countRows(database, "auth_role_grant"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
-      }).toStrictEqual({ addresses: 1, grants: 1, mailboxes: 1, members: 1 });
+      }).toStrictEqual({ addresses: 1, grants: 2, mailboxes: 1, members: 1 });
     } finally {
       database.close();
     }

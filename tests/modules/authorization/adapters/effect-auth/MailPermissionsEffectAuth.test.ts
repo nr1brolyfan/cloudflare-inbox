@@ -954,6 +954,56 @@ describe("D1 authorization catalog", () => {
     }
   });
 
+  it("grants no authority from organization membership alone", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`
+        insert into auth_user (id, created_at, updated_at)
+        values ('membership-only-user', 1, 1);
+        insert into app_organization (id, created_at, updated_at)
+        values ('org-a', 1, 1);
+        insert into app_organization_member
+          (id, organization_id, user_id, created_at, updated_at)
+        values ('membership-only', 'org-a', 'membership-only-user', 1, 1);
+      `);
+      const result = await Effect.runPromise(
+        Effect.gen(function* () {
+          const permissions = yield* Permissions;
+          const subject = PermissionSubject.make(
+            "user",
+            "membership-only-user"
+          );
+          return {
+            mailbox: yield* permissions.hasPermission({
+              permission: AuthorizationPermission.messageRead,
+              scope: mailboxScope(makeMailboxScopeId("primary")),
+              subject,
+            }),
+            organization: yield* permissions.hasPermission({
+              permission: AuthorizationPermission.organizationRead,
+              scope: organizationScope(makeOrganizationScopeId("org-a")),
+              subject,
+            }),
+          };
+        }).pipe(
+          Effect.provide(
+            MailPermissionsEffectAuthLayer.pipe(
+              Layer.provide(
+                D1EffectQbSqliteAuthStorageLive(makeTestD1Database(database))
+              )
+            )
+          )
+        )
+      );
+
+      expect(result).toStrictEqual({ mailbox: false, organization: false });
+      expect(grantCounts(database)).toStrictEqual({ permissions: 0, roles: 0 });
+    } finally {
+      database.close();
+    }
+  });
+
   it("keeps role-to-folder mappings as an internal exact-folder primitive", async () => {
     const database = new DatabaseSync(":memory:");
 

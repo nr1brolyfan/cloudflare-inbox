@@ -166,10 +166,10 @@ describe("administrative audit storage", () => {
              reason_code, change_type, resource_version_before,
              resource_version_after, occurred_at)
            values (?, 1, 1, '00000000-0000-4000-8000-000000000010',
-                   'mailbox.owner-bootstrap',
-                   'succeeded', 'user', 'user-a', 'legacy-mailbox', 'primary',
-                   'mailbox', 'primary', ?, ?, 'owner-bootstrap',
-                   'mailbox-bootstrapped', null, 1, 2000)`
+                    'mailbox.rename',
+                    'succeeded', 'user', 'user-a', 'legacy-mailbox', 'primary',
+                    'mailbox', 'primary', ?, ?, 'mailbox-renamed',
+                    'mailbox-renamed', 1, 2, 2000)`
         )
         .run(
           `admin-audit-sha256:${"a".repeat(64)}`,
