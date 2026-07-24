@@ -68,6 +68,10 @@ OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:27686 bun run dev
 
 The Backend builds OTLP log and trace exporters in the request scope. Alchemy closes that scope through `ctx.waitUntil`, ensuring buffered telemetry is flushed without delaying the response. Effect metrics are intentionally not exported per request; production infrastructure metrics come from Cloudflare.
 
+## Operations
+
+- [Owner, grant, and routing recovery](docs/runbooks/owner-grant-routing-recovery.md)
+
 ## Commands
 
 ```bash
