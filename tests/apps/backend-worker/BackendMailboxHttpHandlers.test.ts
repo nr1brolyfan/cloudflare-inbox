@@ -441,6 +441,9 @@ const makeHandler = (
               initialAddress: Schema.decodeUnknownSync(
                 MailboxBootstrapConfigValue.fields.initialAddress
               )("inbox@example.test"),
+              initialDomain: Schema.decodeUnknownSync(
+                MailboxBootstrapConfigValue.fields.initialDomain
+              )("example.test"),
               ownerEmailAllowlist: Schema.decodeUnknownSync(
                 MailboxBootstrapConfigValue.fields.ownerEmailAllowlist
               )(["user-a@example.test"]),

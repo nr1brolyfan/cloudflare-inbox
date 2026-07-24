@@ -50,6 +50,7 @@ import {
   InboundWorkflowStarterCloudflareLayer,
 } from "#/modules/mailbox/adapters/workflow/InboundWorkflowStarterCloudflare";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
+import { LegacyMailDomainClaimReconciler } from "#/modules/organization/application/LegacyMailDomainClaimReconciliation";
 import {
   MailboxBootstrapConfig,
   mailboxBootstrapConfig,
@@ -65,6 +66,7 @@ import {
   MailboxEmailSender,
   RawMessagesBucket,
 } from "#/platform/cloudflare/Resources";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
@@ -88,6 +90,8 @@ import {
 import { BackendApplicationLayer } from "./BackendApplicationLayer";
 import { BackendHealthBindings } from "./BackendHealthLayer";
 import { handleCloudflareEmailRoutingMessage } from "./CloudflareEmailRoutingIntegration";
+import { LegacyMailDomainClaimStoreD1Layer } from "./LegacyMailDomainClaimD1Integration";
+import { cacheSuccessfulInitialization } from "./SuccessfulInitialization";
 
 const r2AttachmentObject = (object: {
   readonly checksums: { readonly sha256?: ArrayBuffer };
@@ -337,6 +341,29 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       ),
       Layer.succeed(DevEmailConfig, DevEmailConfig.of({ isDevelopment }))
     );
+    const initializeLegacyMailDomainClaim =
+      yield* cacheSuccessfulInitialization(
+        Effect.gen(function* () {
+          const controlPlaneDatabase = yield* controlPlane.raw.pipe(
+            Effect.provide(RuntimeContext.phantom)
+          );
+          const databaseBinding = Layer.succeed(
+            ControlPlaneD1Binding,
+            ControlPlaneD1Binding.of({ database: controlPlaneDatabase })
+          );
+          const reconciliationLayer =
+            LegacyMailDomainClaimReconciler.layerNoDeps.pipe(
+              Layer.provide(LegacyMailDomainClaimStoreD1Layer),
+              Layer.provide(ControlPlaneD1Layer),
+              Layer.provide(databaseBinding),
+              Layer.provide(BackendBindingsLayer)
+            );
+          const reconciler = yield* LegacyMailDomainClaimReconciler.pipe(
+            Effect.provide(reconciliationLayer)
+          );
+          yield* reconciler.initialize.pipe(Effect.orDie);
+        })
+      );
     const BackendRequestCompletionContext = yield* Layer.build(
       BackendRequestCompletionLayer
     );
@@ -350,6 +377,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     );
     yield* emailRouting.listen((message) =>
       Effect.gen(function* () {
+        yield* initializeLegacyMailDomainClaim;
         const controlPlaneDatabase = yield* controlPlane.raw;
         const EmailControlPlaneDatabaseLayer = ControlPlaneDatabaseLayer.pipe(
           Layer.provide(
@@ -411,6 +439,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     );
     return {
       fetch: Effect.gen(function* () {
+        yield* initializeLegacyMailDomainClaim;
         const startedAtNanos = yield* Clock.currentTimeNanos;
         const request = yield* HttpServerRequest.HttpServerRequest;
         const requestUrl = new URL(request.url, authRuntimeConfig.publicOrigin);

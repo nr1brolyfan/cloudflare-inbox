@@ -139,9 +139,7 @@ export const RecoverySafeIdentityD1Layer = Layer.effect(
   Effect.gen(function* () {
     const config = yield* MailboxBootstrapConfig;
     const database = yield* ControlPlaneDatabase;
-    const trustedDomain = yield* canonicalizeMailDomainV1(
-      domainOfAddress(config.initialAddress)
-    ).pipe(Effect.orDie);
+    const trustedDomain = config.initialDomain;
 
     return RecoverySafeIdentityPolicy.of({
       requireSafeAddress: (input) =>

@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   appMailDomain,
+  appMailDomainClaimReceipt,
   appOrganizationOwnerAssignmentReceipt,
 } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import type { appOrganization } from "#/modules/organization/adapters/d1/OrganizationSchema";
@@ -1282,6 +1283,67 @@ describe("organization D1 schema", () => {
       expect(() =>
         Schema.decodeUnknownSync(MailDomainSchema)(structurallyValidOnly)
       ).toThrow(/canonical mail-domain A-label/u);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("matches the claim receipt composite address FK in Drizzle and D1", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const config = getTableConfig(appMailDomainClaimReceipt);
+      expect(
+        config.foreignKeys.map((foreignKey) => ({
+          columns: foreignKey.reference().columns.map((column) => column.name),
+          foreignColumns: foreignKey
+            .reference()
+            .foreignColumns.map((column) => column.name),
+          foreignTable: getTableName(foreignKey.reference().foreignTable),
+          onDelete: foreignKey.onDelete,
+          onUpdate: foreignKey.onUpdate,
+        }))
+      ).toContainEqual({
+        columns: ["mailbox_id", "primary_address_id"],
+        foreignColumns: ["mailbox_id", "id"],
+        foreignTable: "app_mailbox_address",
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      });
+      const foreignKeys = database
+        .prepare("pragma foreign_key_list(app_mail_domain_claim_receipt)")
+        .all() as readonly Record<string, unknown>[];
+      const addressForeignKeyId = foreignKeys.find(
+        (row) => row.table === "app_mailbox_address"
+      )?.id;
+      const addressForeignKeys = foreignKeys.filter(
+        (row) => row.id === addressForeignKeyId
+      );
+      // oxlint-disable-next-line unicorn/no-array-sort -- Ordered FK sequence is the assertion target.
+      addressForeignKeys.sort(
+        (left, right) => Number(left.seq) - Number(right.seq)
+      );
+      expect(
+        addressForeignKeys.map((row) => ({
+          from: row.from,
+          onDelete: row.on_delete,
+          onUpdate: row.on_update,
+          to: row.to,
+        }))
+      ).toStrictEqual([
+        {
+          from: "mailbox_id",
+          onDelete: "RESTRICT",
+          onUpdate: "RESTRICT",
+          to: "mailbox_id",
+        },
+        {
+          from: "primary_address_id",
+          onDelete: "RESTRICT",
+          onUpdate: "RESTRICT",
+          to: "id",
+        },
+      ]);
     } finally {
       database.close();
     }

@@ -37,6 +37,10 @@ export const MailDomainId = ResourceId.pipe(
 );
 export type MailDomainId = Schema.Schema.Type<typeof MailDomainId>;
 
+export const LEGACY_DEFAULT_MAIL_DOMAIN_ID = Schema.decodeUnknownSync(
+  MailDomainId
+)("legacy_default_v1_domain_v1");
+
 export type MailDomainCanonicalizationErrorReason =
   | "empty"
   | "forbidden-syntax"
@@ -257,3 +261,27 @@ export const MailDomainSchema = MailDomain.check(
       : "mail domain version is unreachable for its status";
   })
 );
+
+export const MailDomainClaimSource = Schema.Literals([
+  "legacy-reconciliation",
+  "fresh-bootstrap",
+]);
+
+export class MailDomainClaimReceipt extends Schema.Class<MailDomainClaimReceipt>(
+  "cloudflare-inbox/MailDomainClaimReceipt"
+)({
+  canonicalDomain: CanonicalMailDomain,
+  canonicalizationProfileId: MailDomainCanonicalizationProfileId,
+  canonicalizationVersion: Schema.Literal(MAIL_DOMAIN_CANONICALIZATION_VERSION),
+  domainId: MailDomainId,
+  effectiveAt: UnixMillis,
+  mailboxId: Schema.Literal("primary"),
+  normalizedAddressSnapshot: Schema.String,
+  organizationId: Schema.Literal("legacy_default_v1"),
+  primaryAddressId: Schema.Literal("primary"),
+  rawAddressSnapshot: Schema.String,
+  schemaVersion: Schema.Literal(1),
+  source: MailDomainClaimSource,
+  sourceAuditEventId: Schema.optional(Schema.String),
+  sourceBootstrapOperationId: Schema.optional(Schema.String),
+}) {}

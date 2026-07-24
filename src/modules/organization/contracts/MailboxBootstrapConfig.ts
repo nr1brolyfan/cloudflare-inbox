@@ -5,7 +5,10 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
-import { canonicalizeMailDomainV1 } from "#/modules/organization/domain/MailDomain";
+import {
+  CanonicalMailDomain,
+  canonicalizeMailDomainV1,
+} from "#/modules/organization/domain/MailDomain";
 import {
   NormalizedEmailAddress,
   normalizeEmailAddressDomain,
@@ -38,6 +41,7 @@ export class MailboxBootstrapConfigValue extends Schema.Class<MailboxBootstrapCo
   "cloudflare-inbox/MailboxBootstrapConfigValue"
 )({
   initialAddress: NormalizedEmailAddress,
+  initialDomain: CanonicalMailDomain,
   ownerEmailAllowlist: MailboxBootstrapOwnerEmailAllowlist,
 }) {}
 
@@ -132,7 +136,7 @@ export const parseMailboxBootstrapConfig = (
         reason: "invalid-initial-address",
       });
     }
-    yield* canonicalDomain(initialAddress).pipe(
+    const initialDomain = yield* canonicalDomain(initialAddress).pipe(
       Effect.mapError(
         () =>
           new MailboxBootstrapConfigError({
@@ -143,6 +147,7 @@ export const parseMailboxBootstrapConfig = (
 
     return new MailboxBootstrapConfigValue({
       initialAddress,
+      initialDomain,
       ownerEmailAllowlist,
     });
   });

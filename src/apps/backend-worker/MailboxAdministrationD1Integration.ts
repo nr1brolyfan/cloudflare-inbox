@@ -40,6 +40,7 @@ import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorizati
 import {
   appMailbox,
   appMailboxAdministrationReceipt,
+  appMailboxBootstrapDomainIntent,
   appMailboxBootstrapReceiptV1Intent,
   appMailboxBootstrapReceiptV2,
   appMailboxMember,
@@ -55,6 +56,10 @@ import {
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxBootstrapConfig } from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import {
+  MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
+  MAIL_DOMAIN_CANONICALIZATION_VERSION,
+} from "#/modules/organization/domain/MailDomain";
 import { legacyDefaultOrganizationBootstrapInsertStatement } from "#/modules/organization/integration/OrganizationD1Statements";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
@@ -836,6 +841,35 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                 operation_id: appMailboxBootstrapReceiptV2.operationId,
                 schema_version: appMailboxBootstrapReceiptV2.schemaVersion,
               }),
+            database.insert(appMailboxBootstrapDomainIntent).select(
+              database
+                .select({
+                  canonicalDomain: sql`${bootstrapConfig.initialDomain}`.as(
+                    "canonical_domain"
+                  ),
+                  canonicalizationProfileId:
+                    sql`${MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID}`.as(
+                      "canonicalization_profile_id"
+                    ),
+                  canonicalizationVersion:
+                    sql<1>`${MAIL_DOMAIN_CANONICALIZATION_VERSION}`.as(
+                      "canonicalization_version"
+                    ),
+                  operationId: appMailboxAdministrationReceipt.operationId,
+                  schemaVersion: sql<1>`1`.as("schema_version"),
+                })
+                .from(appMailboxAdministrationReceipt)
+                .innerJoin(
+                  appAuthorizationGuard,
+                  eq(appAuthorizationGuard.nonce, nonce)
+                )
+                .where(
+                  eq(
+                    appMailboxAdministrationReceipt.operationId,
+                    input.operationId
+                  )
+                )
+            ),
             administrativeAuditInsertStatement(database, auditEvent, nonce),
             database
               .delete(appAuthorizationGuard)

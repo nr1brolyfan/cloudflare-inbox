@@ -354,6 +354,9 @@ const bootstrap = (
                     initialAddress: canonicalTestAddress(
                       configuredInitialAddress
                     ),
+                    initialDomain: canonicalTestAddress(
+                      configuredInitialAddress
+                    ).slice(configuredInitialAddress.lastIndexOf("@") + 1),
                     ownerEmailAllowlist: configuredOwnerAllowlist,
                   })
                 )
@@ -409,6 +412,7 @@ const rename = (
                 MailboxBootstrapConfig.of(
                   Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
                     initialAddress: "inbox@example.test",
+                    initialDomain: "example.test",
                     ownerEmailAllowlist: ["user-a@example.test"],
                   })
                 )
@@ -459,6 +463,7 @@ const readOperation = (
                 MailboxBootstrapConfig.of(
                   Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
                     initialAddress: "inbox@example.test",
+                    initialDomain: "example.test",
                     ownerEmailAllowlist: ["user-a@example.test"],
                   })
                 )
@@ -568,6 +573,14 @@ describe("mailbox administration", () => {
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        domain: {
+          ...database.prepare("select * from app_mail_domain").get(),
+        },
+        domainClaimReceipt: {
+          ...database
+            .prepare("select * from app_mail_domain_claim_receipt")
+            .get(),
+        },
         organization: {
           ...database.prepare("select * from app_organization").get(),
         },
@@ -594,6 +607,35 @@ describe("mailbox administration", () => {
         guards: 0,
         mailboxes: 1,
         members: 1,
+        domain: {
+          canonical_domain: "example.test",
+          canonicalization_profile_id:
+            "mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1",
+          canonicalization_version: 1,
+          created_at: now,
+          id: "legacy_default_v1_domain_v1",
+          organization_id: "legacy_default_v1",
+          status: "pending_verification",
+          updated_at: now,
+          version: 1,
+        },
+        domainClaimReceipt: {
+          canonical_domain: "example.test",
+          canonicalization_profile_id:
+            "mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1",
+          canonicalization_version: 1,
+          domain_id: "legacy_default_v1_domain_v1",
+          effective_at: now,
+          mailbox_id: "primary",
+          normalized_address_snapshot: "user-a@example.test",
+          organization_id: "legacy_default_v1",
+          primary_address_id: "primary",
+          raw_address_snapshot: "user-a@example.test",
+          schema_version: 1,
+          source: "fresh-bootstrap",
+          source_audit_event_id: expect.any(String),
+          source_bootstrap_operation_id: "00000000-0000-4000-8000-000000000010",
+        },
         organization: {
           created_at: now,
           id: "legacy_default_v1",
@@ -682,6 +724,47 @@ describe("mailbox administration", () => {
         role_id: LegacyMailboxRole.owner,
         scope_id: "primary",
         scope_type: "mailbox",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("materializes a staged canonical A-label domain", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "bootstrap-guard",
+          "user-a@example.test",
+          "00000000-0000-4000-8000-000000000010",
+          "Inbox",
+          "inbox@xn--bcher-kva.example"
+        )
+      );
+
+      expect(
+        database.prepare("select * from app_mail_domain").get()
+      ).toMatchObject({
+        canonical_domain: "xn--bcher-kva.example",
+        id: "legacy_default_v1_domain_v1",
+        status: "pending_verification",
+        version: 1,
+      });
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_domain_intent")
+          .get()
+      ).toMatchObject({
+        canonical_domain: "xn--bcher-kva.example",
+        schema_version: 1,
       });
     } finally {
       database.close();
@@ -1441,6 +1524,45 @@ describe("mailbox administration", () => {
         members: 0,
         organizations: 0,
         receipts: 0,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each([
+    "app_mailbox_bootstrap_domain_intent",
+    "app_mail_domain",
+    "app_mail_domain_claim_receipt",
+  ] as const)("rolls back bootstrap when ORG-009 %s fails", async (table) => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`create trigger fail_org009_materialization
+        before insert on ${table}
+        begin
+          select raise(abort, 'ORG-009 failure injection');
+        end`);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      await Effect.runPromise(
+        bootstrap(d1, validated, "bootstrap-guard").pipe(Effect.flip)
+      );
+
+      expect({
+        audit: countRows(database, "app_administrative_audit_event"),
+        claim: countRows(database, "app_mail_domain"),
+        intent: countRows(database, "app_mailbox_bootstrap_domain_intent"),
+        mailbox: countRows(database, "app_mailbox"),
+        receipt: countRows(database, "app_mail_domain_claim_receipt"),
+      }).toStrictEqual({
+        audit: 0,
+        claim: 0,
+        intent: 0,
+        mailbox: 0,
+        receipt: 0,
       });
     } finally {
       database.close();

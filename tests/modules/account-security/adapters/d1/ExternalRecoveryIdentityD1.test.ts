@@ -292,6 +292,7 @@ const managementLive = (
         MailboxBootstrapConfig.of(
           Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
             initialAddress: "inbox@company.test",
+            initialDomain: "company.test",
             ownerEmailAllowlist: ["owner@company.test"],
           })
         )

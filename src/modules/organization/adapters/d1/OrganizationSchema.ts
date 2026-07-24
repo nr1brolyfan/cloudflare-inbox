@@ -623,6 +623,220 @@ export const appMailboxBootstrapReceiptV2 = sqliteTable(
   ]
 );
 
+export const appMailboxBootstrapDomainIntent = sqliteTable(
+  "app_mailbox_bootstrap_domain_intent",
+  {
+    operationId: text("operation_id")
+      .primaryKey()
+      .references(() => appMailboxAdministrationReceipt.operationId, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    canonicalDomain: text("canonical_domain")
+      .notNull()
+      .$type<CanonicalMailDomain>(),
+    canonicalizationProfileId: text("canonicalization_profile_id", {
+      enum: [
+        "mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1",
+      ],
+    }).notNull(),
+    canonicalizationVersion: integer("canonicalization_version").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  () => [
+    check(
+      "app_mailbox_bootstrap_domain_intent_domain_check",
+      sql`typeof(canonical_domain) = 'text'
+        and length(canonical_domain) between 3 and 253
+        and length(cast(canonical_domain as blob)) = length(canonical_domain)
+        and canonical_domain = lower(canonical_domain)
+        and canonical_domain not glob '*[^a-z0-9.-]*'
+        and canonical_domain glob '*.*'
+        and canonical_domain not like '.%'
+        and canonical_domain not like '%.'
+        and canonical_domain not like '%..%'
+        and canonical_domain not like '-%'
+        and canonical_domain not like '%-'
+        and canonical_domain not like '%.-%'
+        and canonical_domain not like '%-.%'`
+    ),
+    check(
+      "app_mailbox_bootstrap_domain_intent_profile_check",
+      sql`canonicalization_profile_id = 'mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1'
+        and canonicalization_version = 1
+        and schema_version = 1`
+    ),
+  ]
+);
+
+export const appMailDomainClaimCutover = sqliteTable(
+  "app_mail_domain_claim_cutover",
+  {
+    id: integer("id").primaryKey(),
+    schemaVersion: integer("schema_version").notNull(),
+    initialOutcome: text("initial_outcome", {
+      enum: [
+        "fresh-empty",
+        "legacy-awaiting-reconciliation",
+        "already-bootstrapped-awaiting-reconciliation",
+        "complete-pair",
+      ],
+    }).notNull(),
+    initialStatus: text("initial_status", {
+      enum: ["awaiting-bootstrap", "awaiting-reconciliation", "complete"],
+    }).notNull(),
+  },
+  () => [
+    check("app_mail_domain_claim_cutover_id_check", sql`id = 1`),
+    check(
+      "app_mail_domain_claim_cutover_schema_check",
+      sql`typeof(schema_version) = 'integer' and schema_version = 1`
+    ),
+    check(
+      "app_mail_domain_claim_cutover_outcome_check",
+      sql`typeof(initial_outcome) = 'text'
+        and initial_outcome in (
+          'fresh-empty', 'legacy-awaiting-reconciliation',
+          'already-bootstrapped-awaiting-reconciliation', 'complete-pair'
+        )`
+    ),
+    check(
+      "app_mail_domain_claim_cutover_status_check",
+      sql`(initial_outcome = 'fresh-empty'
+          and initial_status = 'awaiting-bootstrap')
+        or (initial_outcome in (
+          'legacy-awaiting-reconciliation',
+          'already-bootstrapped-awaiting-reconciliation'
+        ) and initial_status = 'awaiting-reconciliation')
+        or (initial_outcome = 'complete-pair'
+          and initial_status = 'complete')`
+    ),
+  ]
+);
+
+const appMailboxAddressClaimReference = sqliteTable(
+  "app_mailbox_address",
+  {
+    mailboxId: text("mailbox_id").notNull(),
+    id: text("id").notNull(),
+  },
+  (t) => [primaryKey({ columns: [t.mailboxId, t.id] })]
+);
+
+export const appMailDomainClaimReceipt = sqliteTable(
+  "app_mail_domain_claim_receipt",
+  {
+    domainId: text("domain_id")
+      .primaryKey()
+      .references(() => appMailDomain.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => appOrganization.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    mailboxId: text("mailbox_id").notNull(),
+    primaryAddressId: text("primary_address_id").notNull(),
+    rawAddressSnapshot: text("raw_address_snapshot").notNull(),
+    normalizedAddressSnapshot: text("normalized_address_snapshot").notNull(),
+    canonicalDomain: text("canonical_domain")
+      .notNull()
+      .$type<CanonicalMailDomain>(),
+    canonicalizationProfileId: text("canonicalization_profile_id", {
+      enum: [
+        "mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1",
+      ],
+    }).notNull(),
+    canonicalizationVersion: integer("canonicalization_version").notNull(),
+    source: text("source", {
+      enum: ["legacy-reconciliation", "fresh-bootstrap"],
+    }).notNull(),
+    effectiveAt: integer("effective_at").notNull(),
+    sourceBootstrapOperationId: text(
+      "source_bootstrap_operation_id"
+    ).references(() => appMailboxAdministrationReceipt.operationId, {
+      onDelete: "restrict",
+      onUpdate: "restrict",
+    }),
+    sourceAuditEventId: text("source_audit_event_id").references(
+      administrativeAuditEventIdReference,
+      { onDelete: "restrict", onUpdate: "restrict" }
+    ),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.mailboxId, t.primaryAddressId],
+      foreignColumns: [
+        appMailboxAddressClaimReference.mailboxId,
+        appMailboxAddressClaimReference.id,
+      ],
+      name: "app_mail_domain_claim_receipt_address_fk",
+    })
+      .onUpdate("restrict")
+      .onDelete("restrict"),
+    check(
+      "app_mail_domain_claim_receipt_identity_check",
+      sql`domain_id = 'legacy_default_v1_domain_v1'
+        and organization_id = 'legacy_default_v1'
+        and mailbox_id = 'primary'
+        and primary_address_id = 'primary'`
+    ),
+    check(
+      "app_mail_domain_claim_receipt_snapshot_check",
+      sql`typeof(raw_address_snapshot) = 'text'
+        and length(raw_address_snapshot) between 3 and 320
+        and typeof(normalized_address_snapshot) = 'text'
+        and length(normalized_address_snapshot) between 3 and 320
+        and instr(raw_address_snapshot, '@') between 2
+          and length(raw_address_snapshot) - 2
+        and instr(substr(raw_address_snapshot,
+          instr(raw_address_snapshot, '@') + 1), '@') = 0
+        and instr(normalized_address_snapshot, '@') between 2
+          and length(normalized_address_snapshot) - 2
+        and instr(substr(normalized_address_snapshot,
+          instr(normalized_address_snapshot, '@') + 1), '@') = 0`
+    ),
+    check(
+      "app_mail_domain_claim_receipt_domain_check",
+      sql`typeof(canonical_domain) = 'text'
+        and canonical_domain = lower(canonical_domain)
+        and canonical_domain not glob '*[^a-z0-9.-]*'
+        and canonicalization_profile_id = 'mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1'
+        and canonicalization_version = 1`
+    ),
+    check(
+      "app_mail_domain_claim_receipt_source_check",
+      sql`(source = 'fresh-bootstrap'
+          and source_bootstrap_operation_id is not null
+          and source_audit_event_id is not null)
+        or (source = 'legacy-reconciliation' and (
+          (source_bootstrap_operation_id is null
+            and source_audit_event_id is null)
+          or (source_bootstrap_operation_id is null
+            and source_audit_event_id is not null)
+          or (source_bootstrap_operation_id is not null
+            and source_audit_event_id is not null)))`
+    ),
+    check(
+      "app_mail_domain_claim_receipt_time_check",
+      sql`typeof(effective_at) = 'integer'
+        and effective_at between 0 and 9007199254740991`
+    ),
+    check(
+      "app_mail_domain_claim_receipt_schema_check",
+      sql`typeof(schema_version) = 'integer' and schema_version = 1`
+    ),
+    uniqueIndex("app_mail_domain_claim_receipt_address_idx").on(
+      t.mailboxId,
+      t.primaryAddressId
+    ),
+  ]
+);
+
 export const appOrganizationOwnerAssignmentReceipt = sqliteTable(
   "app_organization_owner_assignment_receipt",
   {

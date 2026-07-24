@@ -39,8 +39,14 @@ export const legacyPrimaryMailboxAddressClaimsStatement = (
   database
     .select({
       address: appMailboxAddress.address,
+      addressId: appMailboxAddress.id,
+      createdAt: appMailboxAddress.createdAt,
+      enabled: appMailboxAddress.enabled,
+      isPrimary: appMailboxAddress.isPrimary,
       mailboxId: appMailboxAddress.mailboxId,
       normalizedAddress: appMailboxAddress.normalizedAddress,
+      updatedAt: appMailboxAddress.updatedAt,
+      version: appMailboxAddress.version,
     })
     .from(appMailboxAddress)
     .where(eq(appMailboxAddress.isPrimary, true))

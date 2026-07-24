@@ -35,6 +35,8 @@ Domains use versioned IDNA ASCII canonicalization. Profile V1 is `mail-domain/as
 
 SQLite enforces the structural ASCII/DNS subset and globally reserves every non-retired canonical claim. Full Punycode validation is an application boundary because stock D1 cannot execute the pinned Unicode profile: every future writer must accept `CanonicalMailDomain`, and every reader must decode `MailDomainSchema`. Profile upgrades require collision preflight and a reviewed data migration. The server reserves system-managed local-parts including `postmaster`, `abuse`, `security`, `auth`, `noreply`, `mailer-daemon`, and technical bounce addresses.
 
+ORG-009 materializes only the domain already required to agree between trusted configuration and the retained primary route. Its fixed claim remains pending and managed, but does not establish DNS ownership or routing readiness. The receipt retains the exact route epoch for the future stable-address migration and resolver handoff; the first-release resolver remains intentionally single-domain. ORG-016's future domain writer/handoff must add reciprocal serialization between domain changes and recovery/live-proof writes before admitting any new domain. This bounds the existing policy-read/auth-write residual because ORG-009 introduces no new effective managed domain.
+
 Existing case-sensitive addresses require a preflight. Canonical collisions are quarantined for operator resolution before a lowercase unique index is enabled.
 
 ### Routing changes
