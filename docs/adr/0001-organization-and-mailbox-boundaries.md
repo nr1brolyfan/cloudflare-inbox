@@ -18,6 +18,8 @@ The control plane is tenant-aware from its first multi-mailbox migration:
 - An `Organization` owns domains, mailboxes, addresses, and organization memberships.
 - Organization IDs are case-sensitive opaque ASCII values matching `[A-Za-z0-9_-]{1,128}`. They are immutable, never deleted, and never reused; the concrete generator is selected by the legacy migration and bootstrap work before their first insert.
 - An organization starts `active` at version 1 with equal Unix-millisecond creation and update times. Storage admits only `active` and `suspended`, safe-integer times and versions, exact version increments, and nondecreasing update time. Authorized suspend/resume operations and their audit contract remain separate lifecycle work.
+- Organization membership uses stable, never-reused membership IDs and retained epochs. At most one `active` or `suspended` epoch exists for an organization/user pair; revocation is terminal, and a later rejoin creates a new ID after the prior revocation time.
+- Membership lifecycle is `active -> suspended|revoked` and `suspended -> active|revoked`. Membership does not contain a role and never constitutes permission by itself.
 - The first release creates one organization per deployment.
 - Multi-organization SaaS remains deferred, but no new model may depend on a global organization singleton.
 - A `Mailbox` is the storage and authorization boundary.

@@ -9,6 +9,8 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import { authUser } from "#/auth/schema/modules/core";
+
 export const appOrganization = sqliteTable(
   "app_organization",
   {
@@ -49,6 +51,110 @@ export const appOrganization = sqliteTable(
         and version between 1 and 9007199254740991`
     ),
     index("app_organization_status_idx").on(t.status, t.id),
+  ]
+);
+
+export const appOrganizationMember = sqliteTable(
+  "app_organization_member",
+  {
+    id: text("id").notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => appOrganization.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUser.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    status: text("status", { enum: ["active", "suspended", "revoked"] })
+      .notNull()
+      .default("active"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    suspendedAt: integer("suspended_at"),
+    revokedAt: integer("revoked_at"),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    primaryKey({ name: "app_organization_member_pkey", columns: [t.id] }),
+    check(
+      "app_organization_member_id_check",
+      sql`typeof(id) = 'text'
+        and length(id) between 1 and 128
+        and length(cast(id as blob)) = length(id)
+        and id not glob '*[^A-Za-z0-9_-]*'`
+    ),
+    check(
+      "app_organization_member_organization_id_check",
+      sql`typeof(organization_id) = 'text' and length(organization_id) > 0`
+    ),
+    check(
+      "app_organization_member_user_id_check",
+      sql`typeof(user_id) = 'text' and length(user_id) > 0`
+    ),
+    check(
+      "app_organization_member_status_check",
+      sql`typeof(status) = 'text'
+        and status in ('active', 'suspended', 'revoked')`
+    ),
+    check(
+      "app_organization_member_created_at_check",
+      sql`typeof(created_at) = 'integer'
+        and created_at between 0 and 9007199254740991`
+    ),
+    check(
+      "app_organization_member_updated_at_check",
+      sql`typeof(updated_at) = 'integer'
+        and updated_at between created_at and 9007199254740991`
+    ),
+    check(
+      "app_organization_member_suspended_at_check",
+      sql`suspended_at is null
+        or (typeof(suspended_at) = 'integer'
+          and suspended_at between created_at and 9007199254740991)`
+    ),
+    check(
+      "app_organization_member_revoked_at_check",
+      sql`revoked_at is null
+        or (typeof(revoked_at) = 'integer'
+          and revoked_at between created_at and 9007199254740991)`
+    ),
+    check(
+      "app_organization_member_version_check",
+      sql`typeof(version) = 'integer'
+        and version between 1 and 9007199254740991`
+    ),
+    check(
+      "app_organization_member_lifecycle_check",
+      sql`(status = 'active'
+          and suspended_at is null
+          and revoked_at is null)
+        or (status = 'suspended'
+          and suspended_at is updated_at
+          and revoked_at is null)
+        or (status = 'revoked'
+          and revoked_at is updated_at
+          and (suspended_at is null
+            or suspended_at between created_at and revoked_at))`
+    ),
+    uniqueIndex("app_organization_member_current_pair_idx")
+      .on(t.organizationId, t.userId)
+      .where(sql`status in ('active', 'suspended')`),
+    index("app_organization_member_user_status_org_idx").on(
+      t.userId,
+      t.status,
+      t.organizationId,
+      t.id
+    ),
+    index("app_organization_member_org_status_idx").on(
+      t.organizationId,
+      t.status,
+      t.id
+    ),
   ]
 );
 
