@@ -30,10 +30,11 @@ import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/Ad
 import type { AdministrativeAuditError } from "#/modules/administrative-audit/contracts/AdministrativeAuditError";
 import { administrativeAuditInsertStatement } from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
 import {
-  MailPermission,
-  MailRole,
+  AuthorizationPermission,
+  LegacyMailboxRole,
+  makeMailboxScopeId,
   mailboxScope,
-} from "#/modules/authorization/domain/MailPermissionCatalog";
+} from "#/modules/authorization/contracts/AuthorizationCatalog";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
@@ -105,7 +106,7 @@ const activeOwnerRolePredicate = (database: ControlPlaneDatabase) =>
       .from(authRoleDefinition)
       .where(
         and(
-          eq(authRoleDefinition.id, MailRole.owner),
+          eq(authRoleDefinition.id, LegacyMailboxRole.owner),
           isNull(authRoleDefinition.disabledAt),
           isNull(authRoleDefinition.deletedAt)
         )
@@ -616,7 +617,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                     expiresAt: sql<null>`null`.as("expires_at"),
                     metadata: sql<null>`null`.as("metadata"),
                     revokedAt: sql<null>`null`.as("revoked_at"),
-                    roleId: sql`${MailRole.owner}`.as("role_id"),
+                    roleId: sql`${LegacyMailboxRole.owner}`.as("role_id"),
                     scopeId: sql`${mailboxId}`.as("scope_id"),
                     scopeIdPresent: sql<number>`1`.as("scope_id_present"),
                     scopeType: sql`${"mailbox"}`.as("scope_type"),
@@ -878,7 +879,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           });
           const timestamp = Schema.decodeUnknownSync(UnixMillis)(now());
           const nonce = randomId();
-          const scope = mailboxScope(location.mailboxId);
+          const scope = mailboxScope(makeMailboxScopeId(location.mailboxId));
           const trustedSession = transactionalSessionPredicate(
             database,
             requestAuth,
@@ -887,7 +888,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const trustedPermission = permissionPredicate(
             database,
             principal,
-            MailPermission.mailboxManageSettings,
+            AuthorizationPermission.mailboxManageSettings,
             scope
           );
           const auditEvent = yield* audit
@@ -1113,7 +1114,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             return yield* new MailboxAdministrationError({
               message: "Permission changed before mailbox mutation",
               operation: "rename",
-              permission: MailPermission.mailboxManageSettings,
+              permission: AuthorizationPermission.mailboxManageSettings,
               reason: "authorization-recheck",
               scope,
             });

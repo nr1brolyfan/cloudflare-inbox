@@ -16,9 +16,10 @@ import * as Schema from "effect/Schema";
 
 import type { MailboxDONamespace } from "#/apps/mailbox-do/MailboxDO";
 import {
-  MailPermission,
+  AuthorizationPermission,
+  makeMailboxScopeId,
   mailboxScope,
-} from "#/modules/authorization/domain/MailPermissionCatalog";
+} from "#/modules/authorization/contracts/AuthorizationCatalog";
 import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
@@ -59,7 +60,7 @@ export const BackendHealthLayer = Layer.effect(
     const permissions = yield* Permissions;
     const probeAuthorization = Effect.gen(function* () {
       const definition = yield* administration.getPermissionDefinition(
-        MailPermission.mailboxRead
+        AuthorizationPermission.mailboxRead
       );
 
       if (Option.isNone(definition)) {
@@ -69,8 +70,8 @@ export const BackendHealthLayer = Layer.effect(
       }
 
       yield* permissions.hasPermission({
-        permission: MailPermission.mailboxRead,
-        scope: mailboxScope("__health__"),
+        permission: AuthorizationPermission.mailboxRead,
+        scope: mailboxScope(makeMailboxScopeId("__health__")),
         subject: PermissionSubject.make("health", "backend"),
       });
     });

@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { MailboxAuthorizationApplicationLayer } from "#/modules/authorization/application/MailboxAuthorization";
-import { MailPermission } from "#/modules/authorization/domain/MailPermissionCatalog";
+import { AuthorizationPermission as MailPermission } from "#/modules/authorization/contracts/AuthorizationCatalog";
 import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
 import type { TrustedMailResourceResolverService } from "#/modules/authorization/ports/TrustedMailResourceResolver";
 import {

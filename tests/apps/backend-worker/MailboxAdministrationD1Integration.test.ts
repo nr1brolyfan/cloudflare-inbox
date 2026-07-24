@@ -29,10 +29,11 @@ import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/
 import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
 import { MailboxAuthorizationApplicationLayer } from "#/modules/authorization/application/MailboxAuthorization";
 import {
-  MailPermission,
-  MailRole,
+  AuthorizationPermission as MailPermission,
+  LegacyMailboxRole,
+  makeMailboxScopeId,
   mailboxScope,
-} from "#/modules/authorization/domain/MailPermissionCatalog";
+} from "#/modules/authorization/contracts/AuthorizationCatalog";
 import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
@@ -486,7 +487,7 @@ describe("mailbox administration", () => {
           const permissions = yield* AuthPermission.Permissions;
           return yield* permissions.hasPermission({
             permission: MailPermission.mailboxManageSettings,
-            scope: mailboxScope(mailbox.id),
+            scope: mailboxScope(makeMailboxScopeId(mailbox.id)),
             subject: AuthPermission.PermissionSubject.user(
               validated.actor.userId
             ),
@@ -583,7 +584,7 @@ describe("mailbox administration", () => {
           )
           .get("user-a")
       ).toMatchObject({
-        role_id: MailRole.owner,
+        role_id: LegacyMailboxRole.owner,
         scope_id: "primary",
         scope_type: "mailbox",
       });
@@ -635,7 +636,7 @@ describe("mailbox administration", () => {
                 where role_id = ? and scope_type = 'mailbox'
                   and scope_id = 'primary' and subject_id = 'user-a'`
             )
-            .get(MailRole.owner) as { count: number }
+            .get(LegacyMailboxRole.owner) as { count: number }
         ).count,
         primaryAddresses: (
           database
@@ -1660,7 +1661,7 @@ describe("mailbox administration", () => {
                 set revoked_at = ?
               where subject_id = ? and role_id = ?`
           )
-          .run(now + 500, "user-a", MailRole.owner);
+          .run(now + 500, "user-a", LegacyMailboxRole.owner);
       });
 
       const error = await Effect.runPromise(
@@ -1704,7 +1705,7 @@ describe("mailbox administration", () => {
                 set expires_at = ?
               where subject_id = ? and role_id = ?`
           )
-          .run(Date.now() - 1, "user-a", MailRole.owner);
+          .run(Date.now() - 1, "user-a", LegacyMailboxRole.owner);
       });
 
       const error = await Effect.runPromise(
@@ -1832,7 +1833,7 @@ describe("mailbox administration", () => {
               set expires_at = ?
             where subject_id = ? and role_id = ?`
         )
-        .run(expiresAt, "user-a", MailRole.owner);
+        .run(expiresAt, "user-a", LegacyMailboxRole.owner);
       const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
           Layer.merge(

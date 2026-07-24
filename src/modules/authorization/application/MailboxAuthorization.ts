@@ -4,22 +4,33 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import {
-  MailPermission,
+  AuthorizationPermission,
   folderScope,
+  makeFolderId,
+  makeMailboxScopeId,
   mailboxScope,
-} from "#/modules/authorization/domain/MailPermissionCatalog";
+} from "#/modules/authorization/contracts/AuthorizationCatalog";
 import { TrustedMailResourceResolver } from "#/modules/authorization/ports/TrustedMailResourceResolver";
+import type {
+  FolderId as MailboxFolderId,
+  MailboxId,
+} from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxMessageReadAccess } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type * as MailboxPort from "#/modules/mailbox/ports/MailboxAuthorization";
 
 const mailboxPermissionByAction = {
-  "manage-members": MailPermission.mailboxManageMembers,
-  "manage-settings": MailPermission.mailboxManageSettings,
-  modify: MailPermission.mailboxModify,
-  read: MailPermission.mailboxRead,
-  send: MailPermission.mailboxSend,
+  "manage-members": AuthorizationPermission.mailboxManageMembers,
+  "manage-settings": AuthorizationPermission.mailboxManageSettings,
+  modify: AuthorizationPermission.mailboxModify,
+  read: AuthorizationPermission.mailboxRead,
+  send: AuthorizationPermission.mailboxSend,
 } as const;
+
+const mailboxResourceScope = (mailboxId: MailboxId) =>
+  mailboxScope(makeMailboxScopeId(mailboxId));
+const folderResourceScope = (mailboxId: MailboxId, folderId: MailboxFolderId) =>
+  folderScope(makeMailboxScopeId(mailboxId), makeFolderId(folderId));
 
 const ensureResolverInvariant = (
   valid: boolean,
@@ -47,10 +58,10 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
     const requireMailboxDraftSendPermissions = (
       mailboxId: MailboxPort.TrustedMailboxLocation["mailboxId"]
     ) => {
-      const scope = mailboxScope(mailboxId);
+      const scope = mailboxResourceScope(mailboxId);
       return AuthPolicy.all(
-        requirePermission(MailPermission.draftSend, scope),
-        requirePermission(MailPermission.mailboxSend, scope)
+        requirePermission(AuthorizationPermission.draftSend, scope),
+        requirePermission(AuthorizationPermission.mailboxSend, scope)
       );
     };
     const resolveFolder = (resource: MailboxPort.FolderRef) =>
@@ -121,17 +132,17 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
             AuthPolicy.any(
               AuthPolicy.all(
                 requirePermission(
-                  MailPermission.messageRead,
-                  mailboxScope(location.mailboxId)
+                  AuthorizationPermission.messageRead,
+                  mailboxResourceScope(location.mailboxId)
                 ),
                 requirePermission(
-                  MailPermission.attachmentRead,
-                  mailboxScope(location.mailboxId)
+                  AuthorizationPermission.attachmentRead,
+                  mailboxResourceScope(location.mailboxId)
                 )
               ),
               requirePermission(
-                MailPermission.folderRead,
-                folderScope(location.mailboxId, location.folderId)
+                AuthorizationPermission.folderRead,
+                folderResourceScope(location.mailboxId, location.folderId)
               )
             ).pipe(Effect.as(location))
           )
@@ -141,12 +152,12 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
           Effect.flatMap((location) =>
             AuthPolicy.all(
               requirePermission(
-                MailPermission.draftCreate,
-                mailboxScope(location.mailboxId)
+                AuthorizationPermission.draftCreate,
+                mailboxResourceScope(location.mailboxId)
               ),
               requirePermission(
-                MailPermission.attachmentUpload,
-                mailboxScope(location.mailboxId)
+                AuthorizationPermission.attachmentUpload,
+                mailboxResourceScope(location.mailboxId)
               )
             ).pipe(Effect.as(location))
           )
@@ -154,10 +165,10 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
       requireDraft: ({ action, resource }) =>
         resolveDraft(resource).pipe(
           Effect.flatMap((location) => {
-            const scope = mailboxScope(location.mailboxId);
+            const scope = mailboxResourceScope(location.mailboxId);
             const policy =
               action === "edit"
-                ? requirePermission(MailPermission.draftCreate, scope)
+                ? requirePermission(AuthorizationPermission.draftCreate, scope)
                 : requireMailboxDraftSendPermissions(location.mailboxId);
 
             return policy.pipe(Effect.as(location));
@@ -166,15 +177,15 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
       requireDraftCreate: ({ resource }) => {
         const location = resource;
         return requirePermission(
-          MailPermission.draftCreate,
-          mailboxScope(location.mailboxId)
+          AuthorizationPermission.draftCreate,
+          mailboxResourceScope(location.mailboxId)
         ).pipe(Effect.as(location));
       },
       requireExport: ({ resource }) => {
         const location = resource;
         return requirePermission(
-          MailPermission.mailboxExport,
-          mailboxScope(location.mailboxId)
+          AuthorizationPermission.mailboxExport,
+          mailboxResourceScope(location.mailboxId)
         ).pipe(Effect.as(location));
       },
       requireFolder: ({ action, resource }) =>
@@ -183,15 +194,15 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
             AuthPolicy.any(
               requirePermission(
                 action === "read"
-                  ? MailPermission.folderRead
-                  : MailPermission.folderModify,
-                folderScope(location.mailboxId, location.folderId)
+                  ? AuthorizationPermission.folderRead
+                  : AuthorizationPermission.folderModify,
+                folderResourceScope(location.mailboxId, location.folderId)
               ),
               requirePermission(
                 action === "read"
-                  ? MailPermission.mailboxRead
-                  : MailPermission.mailboxModify,
-                mailboxScope(location.mailboxId)
+                  ? AuthorizationPermission.mailboxRead
+                  : AuthorizationPermission.mailboxModify,
+                mailboxResourceScope(location.mailboxId)
               )
             ).pipe(Effect.as(location))
           )
@@ -209,14 +220,14 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
               mailboxId: location.mailboxId,
             };
             return requirePermission(
-              MailPermission.messageRead,
-              mailboxScope(location.mailboxId)
+              AuthorizationPermission.messageRead,
+              mailboxResourceScope(location.mailboxId)
             ).pipe(
               Effect.as(mailboxAccess),
               Effect.catchTag("AuthorizationError", () =>
                 requirePermission(
-                  MailPermission.folderRead,
-                  folderScope(location.mailboxId, location.folderId)
+                  AuthorizationPermission.folderRead,
+                  folderResourceScope(location.mailboxId, location.folderId)
                 ).pipe(Effect.as(folderAccess))
               )
             );
@@ -226,7 +237,7 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
         const location = resource;
         return requirePermission(
           mailboxPermissionByAction[action],
-          mailboxScope(location.mailboxId)
+          mailboxResourceScope(location.mailboxId)
         ).pipe(Effect.as(location));
       },
       requireMailboxDraftSend: ({ resource }) =>
@@ -235,8 +246,8 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
         ),
       requireMailboxMessageRead: ({ resource }) =>
         requirePermission(
-          MailPermission.messageRead,
-          mailboxScope(resource.mailboxId)
+          AuthorizationPermission.messageRead,
+          mailboxResourceScope(resource.mailboxId)
         ).pipe(Effect.as(resource)),
       requireMessage: ({ action, resource }) =>
         resolveMessage(resource).pipe(
@@ -244,15 +255,15 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
             AuthPolicy.any(
               requirePermission(
                 action === "read"
-                  ? MailPermission.messageRead
-                  : MailPermission.messageModify,
-                mailboxScope(location.mailboxId)
+                  ? AuthorizationPermission.messageRead
+                  : AuthorizationPermission.messageModify,
+                mailboxResourceScope(location.mailboxId)
               ),
               requirePermission(
                 action === "read"
-                  ? MailPermission.folderRead
-                  : MailPermission.folderModify,
-                folderScope(location.mailboxId, location.folderId)
+                  ? AuthorizationPermission.folderRead
+                  : AuthorizationPermission.folderModify,
+                folderResourceScope(location.mailboxId, location.folderId)
               )
             ).pipe(Effect.as(location))
           )
@@ -261,8 +272,8 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
         resolveRule(resource).pipe(
           Effect.flatMap((location) =>
             requirePermission(
-              MailPermission.ruleManage,
-              mailboxScope(location.mailboxId)
+              AuthorizationPermission.ruleManage,
+              mailboxResourceScope(location.mailboxId)
             ).pipe(Effect.as(location))
           )
         ),

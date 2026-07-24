@@ -34,7 +34,22 @@ const applyMigrationFiles = async (
 
   database.exec("pragma foreign_keys = on");
   for (const migration of migrations) {
-    database.exec(migration);
+    if (
+      /^\s*(?:begin(?:\s+(?:deferred|exclusive|immediate|transaction))?|commit|rollback)\s*;/imu.test(
+        migration
+      )
+    ) {
+      throw new Error("Control-plane migrations must not manage transactions");
+    }
+
+    database.exec("begin immediate");
+    try {
+      database.exec(migration);
+      database.exec("commit");
+    } catch (error) {
+      database.exec("rollback");
+      throw error;
+    }
   }
 };
 
