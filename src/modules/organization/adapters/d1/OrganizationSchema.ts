@@ -10,6 +10,7 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 import { authUser } from "#/auth/schema/modules/core";
+import type { CanonicalMailDomain } from "#/modules/organization/domain/MailDomain";
 
 export const appOrganization = sqliteTable(
   "app_organization",
@@ -51,6 +52,119 @@ export const appOrganization = sqliteTable(
         and version between 1 and 9007199254740991`
     ),
     index("app_organization_status_idx").on(t.status, t.id),
+  ]
+);
+
+export const appMailDomain = sqliteTable(
+  "app_mail_domain",
+  {
+    id: text("id").notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => appOrganization.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    canonicalDomain: text("canonical_domain")
+      .notNull()
+      .$type<CanonicalMailDomain>(),
+    canonicalizationProfileId: text("canonicalization_profile_id", {
+      enum: [
+        "mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1",
+      ],
+    }).notNull(),
+    canonicalizationVersion: integer("canonicalization_version")
+      .notNull()
+      .default(1),
+    status: text("status", {
+      enum: [
+        "pending_verification",
+        "verified",
+        "active",
+        "suspended",
+        "retired",
+      ],
+    })
+      .notNull()
+      .default("pending_verification"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    primaryKey({ name: "app_mail_domain_pkey", columns: [t.id] }),
+    check(
+      "app_mail_domain_id_check",
+      sql`typeof(id) = 'text'
+        and length(id) between 1 and 128
+        and length(cast(id as blob)) = length(id)
+        and id not glob '*[^A-Za-z0-9_-]*'`
+    ),
+    check(
+      "app_mail_domain_organization_id_check",
+      sql`typeof(organization_id) = 'text' and length(organization_id) > 0`
+    ),
+    check(
+      "app_mail_domain_canonical_domain_check",
+      sql`typeof(canonical_domain) = 'text'
+        and length(canonical_domain) between 3 and 253
+        and length(cast(canonical_domain as blob)) = length(canonical_domain)
+        and canonical_domain = lower(canonical_domain)
+        and canonical_domain not glob '*[^a-z0-9.-]*'
+        and canonical_domain glob '*.*'
+        and canonical_domain not like '.%'
+        and canonical_domain not like '%.'
+        and canonical_domain not like '%..%'
+        and canonical_domain not like '-%'
+        and canonical_domain not like '%-'
+        and canonical_domain not like '%.-%'
+        and canonical_domain not like '%-.%'
+        and substr(canonical_domain, instr(canonical_domain, '.') + 1) <> ''`
+    ),
+    check(
+      "app_mail_domain_profile_check",
+      sql`typeof(canonicalization_profile_id) = 'text'
+        and canonicalization_profile_id = 'mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1'`
+    ),
+    check(
+      "app_mail_domain_canonicalization_version_check",
+      sql`typeof(canonicalization_version) = 'integer'
+        and canonicalization_version = 1`
+    ),
+    check(
+      "app_mail_domain_status_check",
+      sql`typeof(status) = 'text'
+        and status in ('pending_verification', 'verified', 'active', 'suspended', 'retired')`
+    ),
+    check(
+      "app_mail_domain_created_at_check",
+      sql`typeof(created_at) = 'integer'
+        and created_at between 0 and 9007199254740991`
+    ),
+    check(
+      "app_mail_domain_updated_at_check",
+      sql`typeof(updated_at) = 'integer'
+        and updated_at between created_at and 9007199254740991`
+    ),
+    check(
+      "app_mail_domain_version_check",
+      sql`typeof(version) = 'integer'
+        and version between 1 and 9007199254740991`
+    ),
+    uniqueIndex("app_mail_domain_current_canonical_idx")
+      .on(t.canonicalDomain)
+      .where(sql`status <> 'retired'`),
+    index("app_mail_domain_organization_status_idx").on(
+      t.organizationId,
+      t.status,
+      t.id
+    ),
+    index("app_mail_domain_canonical_history_idx").on(
+      t.canonicalDomain,
+      t.status,
+      t.updatedAt,
+      t.id
+    ),
   ]
 );
 

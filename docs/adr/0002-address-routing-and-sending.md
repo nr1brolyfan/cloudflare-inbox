@@ -2,6 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-22
+- Last updated: 2026-07-24
 - Owners: Product owner and engineering
 
 ## Context
@@ -30,7 +31,9 @@ pattern: [a-z0-9]+(?:[._-][a-z0-9]+)*
 canonical form: lowercase
 ```
 
-Domains use versioned IDNA ASCII canonicalization. The server reserves system-managed local-parts including `postmaster`, `abuse`, `security`, `auth`, `noreply`, `mailer-daemon`, and technical bounce addresses.
+Domains use versioned IDNA ASCII canonicalization. Profile V1 is `mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1`: it accepts only ASCII domain or A-label input, canonicalizes case, and validates every `xn--` label with exact Punycode round-trip, pinned Unicode 17 NFC, and non-transitional UTS #46 STD3/Bidi/Joiner checks. Unicode U-label input requires a future profile ID rather than silently inheriting the host runtime's Unicode normalization. The canonical lowercase A-label is the ownership key; raw Unicode input is not authority.
+
+SQLite enforces the structural ASCII/DNS subset and globally reserves every non-retired canonical claim. Full Punycode validation is an application boundary because stock D1 cannot execute the pinned Unicode profile: every future writer must accept `CanonicalMailDomain`, and every reader must decode `MailDomainSchema`. Profile upgrades require collision preflight and a reviewed data migration. The server reserves system-managed local-parts including `postmaster`, `abuse`, `security`, `auth`, `noreply`, `mailer-daemon`, and technical bounce addresses.
 
 Existing case-sensitive addresses require a preflight. Canonical collisions are quarantined for operator resolution before a lowercase unique index is enabled.
 

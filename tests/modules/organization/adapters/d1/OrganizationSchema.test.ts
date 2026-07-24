@@ -1,9 +1,16 @@
 import { DatabaseSync } from "node:sqlite";
 
+import { getTableName } from "drizzle-orm";
+import { getTableConfig } from "drizzle-orm/sqlite-core";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { appMailDomain } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import type { appOrganization } from "#/modules/organization/adapters/d1/OrganizationSchema";
+import {
+  MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
+  MailDomainSchema,
+} from "#/modules/organization/domain/MailDomain";
 import { OrganizationSchema } from "#/modules/organization/domain/Organization";
 
 import {
@@ -35,6 +42,44 @@ const insertOrganization = (
       organization.updatedAt,
       organization.version
     );
+
+const insertMailDomain = (
+  database: DatabaseSync,
+  domain: {
+    readonly canonicalDomain: string;
+    readonly createdAt: number;
+    readonly id: string | Buffer;
+    readonly organizationId: string;
+    readonly profileId?: string | Buffer;
+    readonly status?: string;
+    readonly updatedAt: number;
+    readonly version?: number;
+  }
+) =>
+  database
+    .prepare(
+      `insert into app_mail_domain
+        (id, organization_id, canonical_domain, canonicalization_profile_id,
+         canonicalization_version, status, created_at, updated_at, version)
+       values (?, ?, ?, ?, 1, ?, ?, ?, ?)`
+    )
+    .run(
+      domain.id,
+      domain.organizationId,
+      domain.canonicalDomain,
+      domain.profileId ?? MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
+      domain.status ?? "pending_verification",
+      domain.createdAt,
+      domain.updatedAt,
+      domain.version ?? 1
+    );
+
+const mailDomainRow = (database: DatabaseSync, id: string) => {
+  const row = database
+    .prepare("select * from app_mail_domain where id = ?")
+    .get(id);
+  return row === undefined ? undefined : { ...row };
+};
 
 const organizationRow = (database: DatabaseSync, id: string) => {
   const row = database
@@ -101,6 +146,48 @@ const makeOrganizationDatabase = async () => {
     .run();
   return database;
 };
+
+const makeMailDomainDatabase = async () => {
+  const database = await makeOrganizationDatabase();
+  insertMailDomain(database, {
+    canonicalDomain: "example.com",
+    createdAt: 1000,
+    id: "domain-a",
+    organizationId: "organization-a",
+    updatedAt: 1000,
+  });
+  return database;
+};
+
+const persistentState = (database: DatabaseSync) => {
+  const tables = database
+    .prepare(
+      `select name
+         from sqlite_master
+        where type = 'table'
+          and name not like 'sqlite_%'
+          and name <> 'app_mail_domain'
+        order by name`
+    )
+    .all() as { readonly name: string }[];
+  return Object.fromEntries(
+    tables.map(({ name }) => [
+      name,
+      database.prepare(`select * from "${name}"`).all(),
+    ])
+  );
+};
+
+const schemaWithoutMailDomain = (database: DatabaseSync) =>
+  database
+    .prepare(
+      `select type, name, tbl_name, sql
+         from sqlite_master
+        where tbl_name <> 'app_mail_domain'
+          and name not like 'app_mail_domain_%'
+        order by type, name`
+    )
+    .all();
 
 const integrityState = (database: DatabaseSync) => ({
   foreignKeys: database.prepare("pragma foreign_key_check").all(),
@@ -520,6 +607,676 @@ describe("organization D1 schema", () => {
         foreignKeys: [],
         integrity: [{ integrity_check: "ok" }],
       });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("upgrades real 1020 state additively and leaves the domain table empty", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrationsThrough(
+        database,
+        "1020_app_authorization_catalog_v2.sql"
+      );
+      seedLegacyMailboxState(database);
+      database.exec(`
+        insert into app_organization (id, created_at, updated_at)
+        values ('organization-a', 1000, 1000);
+      `);
+
+      const stateBefore = persistentState(database);
+      const schemaBefore = schemaWithoutMailDomain(database);
+      const singletonBefore = database
+        .prepare(
+          `select type, name, tbl_name, sql
+             from sqlite_master
+            where name = 'app_mailbox_singleton_idx'`
+        )
+        .get();
+
+      await applyControlPlaneMigration(database, "1021_app_mail_domain.sql");
+
+      expect(
+        database.prepare("select * from app_mail_domain").all()
+      ).toStrictEqual([]);
+      expect(persistentState(database)).toStrictEqual(stateBefore);
+      expect(schemaWithoutMailDomain(database)).toStrictEqual(schemaBefore);
+      expect(
+        database
+          .prepare(
+            `select type, name, tbl_name, sql
+               from sqlite_master
+              where name = 'app_mailbox_singleton_idx'`
+          )
+          .get()
+      ).toStrictEqual(singletonBefore);
+      expect(integrityState(database)).toStrictEqual({
+        foreignKeys: [],
+        integrity: [{ integrity_check: "ok" }],
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("matches the fresh Drizzle column contract and restricted organization FK", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const columns = database
+        .prepare("pragma table_xinfo(app_mail_domain)")
+        .all()
+        .map((row) => {
+          const column = row as {
+            dflt_value: string | null;
+            hidden: number;
+            name: string;
+            notnull: number;
+          };
+          return {
+            defaultValue: column.dflt_value,
+            hidden: column.hidden,
+            name: column.name,
+            notNull: column.notnull,
+          };
+        });
+      expect(columns).toStrictEqual([
+        { defaultValue: null, hidden: 0, name: "id", notNull: 1 },
+        {
+          defaultValue: null,
+          hidden: 0,
+          name: "organization_id",
+          notNull: 1,
+        },
+        {
+          defaultValue: null,
+          hidden: 0,
+          name: "canonical_domain",
+          notNull: 1,
+        },
+        {
+          defaultValue: null,
+          hidden: 0,
+          name: "canonicalization_profile_id",
+          notNull: 1,
+        },
+        {
+          defaultValue: "1",
+          hidden: 0,
+          name: "canonicalization_version",
+          notNull: 1,
+        },
+        {
+          defaultValue: "'pending_verification'",
+          hidden: 0,
+          name: "status",
+          notNull: 1,
+        },
+        { defaultValue: null, hidden: 0, name: "created_at", notNull: 1 },
+        { defaultValue: null, hidden: 0, name: "updated_at", notNull: 1 },
+        { defaultValue: "1", hidden: 0, name: "version", notNull: 1 },
+      ]);
+      const config = getTableConfig(appMailDomain);
+      expect({
+        columns: config.columns.map((column) => column.name),
+        indexes: config.indexes.map((index) => index.config.name),
+      }).toStrictEqual({
+        columns: columns.map((column) => column.name),
+        indexes: [
+          "app_mail_domain_current_canonical_idx",
+          "app_mail_domain_organization_status_idx",
+          "app_mail_domain_canonical_history_idx",
+        ],
+      });
+      expect(
+        config.foreignKeys.map((foreignKey) => ({
+          columns: foreignKey.reference().columns.map((column) => column.name),
+          foreignColumns: foreignKey
+            .reference()
+            .foreignColumns.map((column) => column.name),
+          foreignTable: getTableName(foreignKey.reference().foreignTable),
+          onDelete: foreignKey.onDelete,
+          onUpdate: foreignKey.onUpdate,
+        }))
+      ).toStrictEqual([
+        {
+          columns: ["organization_id"],
+          foreignColumns: ["id"],
+          foreignTable: "app_organization",
+          onDelete: "restrict",
+          onUpdate: "restrict",
+        },
+      ]);
+      expect(
+        database.prepare("pragma foreign_key_list(app_mail_domain)").all()
+      ).toMatchObject([
+        {
+          from: "organization_id",
+          on_delete: "RESTRICT",
+          on_update: "RESTRICT",
+          table: "app_organization",
+          to: "id",
+        },
+      ]);
+      const indexes = database
+        .prepare("pragma index_list(app_mail_domain)")
+        .all()
+        .map((row) => {
+          const index = row as {
+            name: string;
+            partial: number;
+            unique: number;
+          };
+          return {
+            name: index.name,
+            partial: index.partial,
+            unique: index.unique,
+          };
+        });
+      expect(indexes).toStrictEqual(
+        expect.arrayContaining([
+          {
+            name: "app_mail_domain_current_canonical_idx",
+            partial: 1,
+            unique: 1,
+          },
+          {
+            name: "app_mail_domain_organization_status_idx",
+            partial: 0,
+            unique: 0,
+          },
+          {
+            name: "app_mail_domain_canonical_history_idx",
+            partial: 0,
+            unique: 0,
+          },
+        ])
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("allows many domains per organization without a singleton", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`
+        insert into app_organization (id, created_at, updated_at)
+        values ('organization-a', 1000, 1000), ('organization-b', 1000, 1000);
+      `);
+      for (const [id, organizationId, canonicalDomain] of [
+        ["domain-a", "organization-a", "alpha.example"],
+        ["domain-b", "organization-a", "beta.example"],
+        ["domain-c", "organization-b", "gamma.example"],
+      ] as const) {
+        insertMailDomain(database, {
+          canonicalDomain,
+          createdAt: 1000,
+          id,
+          organizationId,
+          updatedAt: 1000,
+        });
+      }
+      expect(
+        database
+          .prepare(
+            `select organization_id, count(*) as count
+               from app_mail_domain
+              group by organization_id
+              order by organization_id`
+          )
+          .all()
+          .map((row) => ({ ...row }))
+      ).toStrictEqual([
+        { count: 2, organization_id: "organization-a" },
+        { count: 1, organization_id: "organization-b" },
+      ]);
+      expect(() =>
+        insertMailDomain(database, {
+          canonicalDomain: "missing.example",
+          createdAt: 1000,
+          id: "domain-missing",
+          organizationId: "organization-missing",
+          updatedAt: 1000,
+        })
+      ).toThrow(/foreign key/iu);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("enforces the complete lifecycle transition matrix", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`
+        insert into app_organization (id, created_at, updated_at)
+        values ('organization-a', 1000, 1000);
+      `);
+      const statuses = [
+        "pending_verification",
+        "verified",
+        "active",
+        "suspended",
+        "retired",
+      ] as const;
+      const paths = {
+        active: ["verified", "active"],
+        pending_verification: [],
+        retired: ["retired"],
+        suspended: ["verified", "active", "suspended"],
+        verified: ["verified"],
+      } as const;
+      const allowed = new Set([
+        "pending_verification>verified",
+        "pending_verification>retired",
+        "verified>active",
+        "verified>pending_verification",
+        "verified>retired",
+        "active>suspended",
+        "active>pending_verification",
+        "active>retired",
+        "suspended>active",
+        "suspended>pending_verification",
+        "suspended>retired",
+      ]);
+
+      for (const [sourceIndex, source] of statuses.entries()) {
+        for (const [targetIndex, target] of statuses.entries()) {
+          const id = `matrix-${sourceIndex}-${targetIndex}`;
+          insertMailDomain(database, {
+            canonicalDomain: `matrix-${sourceIndex}-${targetIndex}.example`,
+            createdAt: 1000,
+            id,
+            organizationId: "organization-a",
+            updatedAt: 1000,
+          });
+          let version = 1;
+          let updatedAt = 1000;
+          for (const pathStatus of paths[source]) {
+            version += 1;
+            updatedAt += 1;
+            database
+              .prepare(
+                `update app_mail_domain
+                    set status = ?, updated_at = ?, version = ?
+                  where id = ?`
+              )
+              .run(pathStatus, updatedAt, version, id);
+          }
+          let transitionError: unknown;
+          try {
+            database
+              .prepare(
+                `update app_mail_domain
+                    set status = ?, updated_at = ?, version = ?
+                  where id = ?`
+              )
+              .run(target, updatedAt + 1, version + 1, id);
+          } catch (error) {
+            transitionError = error;
+          }
+          const transitionAllowed = allowed.has(`${source}>${target}`);
+          const after = mailDomainRow(database, id);
+          expect({
+            lifecycleError:
+              transitionError instanceof Error &&
+              /lifecycle/u.test(transitionError.message),
+            status: after?.status,
+            succeeded: transitionError === undefined,
+            updatedAt: after?.updated_at,
+            version: after?.version,
+          }).toStrictEqual({
+            lifecycleError: !transitionAllowed,
+            status: transitionAllowed ? target : source,
+            succeeded: transitionAllowed,
+            updatedAt: transitionAllowed ? updatedAt + 1 : updatedAt,
+            version: transitionAllowed ? version + 1 : version,
+          });
+        }
+      }
+    } finally {
+      database.close();
+    }
+  });
+
+  it("owns one global current claim and orders retired epochs", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`
+        pragma recursive_triggers = off;
+        insert into app_organization (id, created_at, updated_at)
+        values ('organization-a', 1000, 1000), ('organization-b', 1000, 1000);
+      `);
+      insertMailDomain(database, {
+        canonicalDomain: "example.com",
+        createdAt: 1000,
+        id: "domain-a",
+        organizationId: "organization-a",
+        updatedAt: 1000,
+      });
+
+      const collidingInserts = [
+        `insert into app_mail_domain
+          (id, organization_id, canonical_domain, canonicalization_profile_id,
+           created_at, updated_at)
+         values ('domain-b', 'organization-b', 'example.com',
+           '${MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID}', 1000, 1000)`,
+        `insert or replace into app_mail_domain
+          (id, organization_id, canonical_domain, canonicalization_profile_id,
+           created_at, updated_at)
+         values ('domain-b', 'organization-b', 'example.com',
+           '${MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID}', 1000, 1000)`,
+        `insert into app_mail_domain
+          (id, organization_id, canonical_domain, canonicalization_profile_id,
+           created_at, updated_at)
+         values ('domain-b', 'organization-b', 'example.com',
+           '${MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID}', 1000, 1000)
+         on conflict do update set updated_at = excluded.updated_at`,
+      ];
+      for (const statement of collidingInserts) {
+        expect(() => database.exec(statement)).toThrow(/current claim/u);
+        expect({
+          ...database
+            .prepare("select count(*) as count from app_mail_domain")
+            .get(),
+        }).toStrictEqual({ count: 1 });
+      }
+
+      database.exec(`
+        update app_mail_domain
+           set status = 'retired', updated_at = 1100, version = 2
+         where id = 'domain-a';
+      `);
+      expect(() =>
+        insertMailDomain(database, {
+          canonicalDomain: "example.com",
+          createdAt: 1099,
+          id: "domain-b",
+          organizationId: "organization-b",
+          updatedAt: 1099,
+        })
+      ).toThrow(/predates/u);
+      insertMailDomain(database, {
+        canonicalDomain: "example.com",
+        createdAt: 1100,
+        id: "domain-b",
+        organizationId: "organization-b",
+        updatedAt: 1100,
+      });
+      database.exec(`
+        update app_mail_domain
+           set status = 'retired', updated_at = 1200, version = 2
+         where id = 'domain-b';
+      `);
+      insertMailDomain(database, {
+        canonicalDomain: "example.com",
+        createdAt: 1200,
+        id: "domain-c",
+        organizationId: "organization-a",
+        updatedAt: 1200,
+      });
+      expect(
+        database
+          .prepare(
+            `select id, status, created_at, updated_at
+               from app_mail_domain
+              where canonical_domain = 'example.com'
+              order by created_at, id`
+          )
+          .all()
+          .map((row) => ({ ...row }))
+      ).toStrictEqual([
+        {
+          created_at: 1000,
+          id: "domain-a",
+          status: "retired",
+          updated_at: 1100,
+        },
+        {
+          created_at: 1100,
+          id: "domain-b",
+          status: "retired",
+          updated_at: 1200,
+        },
+        {
+          created_at: 1200,
+          id: "domain-c",
+          status: "pending_verification",
+          updated_at: 1200,
+        },
+      ]);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects noncanonical direct SQL and unsafe storage values", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`
+        insert into app_organization (id, created_at, updated_at)
+        values ('organization-a', 1000, 1000);
+      `);
+      const invalidDomains = [
+        "EXAMPLE.COM",
+        "bücher.example",
+        "example.com.",
+        "example..com",
+        "-example.com",
+        "example-.com",
+        "ab--cd.example",
+        "foo_bar.example",
+        "example.123",
+        "localhost",
+        `${"a".repeat(64)}.example`,
+        `${"a".repeat(63)}.${"b".repeat(63)}.${"c".repeat(63)}.${"d".repeat(62)}`,
+      ];
+      for (const [index, canonicalDomain] of invalidDomains.entries()) {
+        expect(() =>
+          insertMailDomain(database, {
+            canonicalDomain,
+            createdAt: 1000,
+            id: `invalid-${index}`,
+            organizationId: "organization-a",
+            updatedAt: 1000,
+          })
+        ).toThrow(/constraint|grammar/u);
+      }
+
+      const invalidRecords = [
+        {
+          canonicalDomain: "blob-id.example",
+          createdAt: 1000,
+          id: Buffer.from("blob-id"),
+          organizationId: "organization-a",
+          updatedAt: 1000,
+        },
+        {
+          canonicalDomain: "bad-profile.example",
+          createdAt: 1000,
+          id: "bad-profile",
+          organizationId: "organization-a",
+          profileId: "unicode-current",
+          updatedAt: 1000,
+        },
+        {
+          canonicalDomain: "float-time.example",
+          createdAt: 1.5,
+          id: "float-time",
+          organizationId: "organization-a",
+          updatedAt: 1.5,
+        },
+        {
+          canonicalDomain: "large-time.example",
+          createdAt: 9_007_199_254_740_992,
+          id: "large-time",
+          organizationId: "organization-a",
+          updatedAt: 9_007_199_254_740_992,
+        },
+        {
+          canonicalDomain: "bad-status.example",
+          createdAt: 1000,
+          id: "bad-status",
+          organizationId: "organization-a",
+          status: "active",
+          updatedAt: 1000,
+        },
+        {
+          canonicalDomain: "bad-version.example",
+          createdAt: 1000,
+          id: "bad-version",
+          organizationId: "organization-a",
+          updatedAt: 1000,
+          version: 2,
+        },
+      ];
+      for (const record of invalidRecords) {
+        expect(() => insertMailDomain(database, record)).toThrow(
+          /constraint|pending/u
+        );
+      }
+      expect(() =>
+        database
+          .prepare(
+            `insert into app_mail_domain
+              (id, organization_id, canonical_domain,
+               canonicalization_profile_id, created_at, updated_at)
+             values ('blob-domain', 'organization-a', ?, ?, 1000, 1000)`
+          )
+          .run(
+            Buffer.from("blob-domain.example"),
+            MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID
+          )
+      ).toThrow(/constraint/u);
+      expect(() =>
+        database
+          .prepare(
+            `insert into app_mail_domain
+              (id, organization_id, canonical_domain,
+               canonicalization_profile_id, created_at, updated_at)
+             values ('blob-profile', 'organization-a', 'blob-profile.example',
+                     ?, 1000, 1000)`
+          )
+          .run(Buffer.from(MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID))
+      ).toThrow(/constraint|pending/u);
+
+      insertMailDomain(database, {
+        canonicalDomain: "maximum.example",
+        createdAt: Number.MAX_SAFE_INTEGER,
+        id: "maximum",
+        organizationId: "organization-a",
+        updatedAt: Number.MAX_SAFE_INTEGER,
+      });
+      expect(mailDomainRow(database, "maximum")).toMatchObject({
+        created_at: Number.MAX_SAFE_INTEGER,
+        updated_at: Number.MAX_SAFE_INTEGER,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("retains identity and rejects immutable fields, delete, replace, and upsert", async () => {
+    const database = await makeMailDomainDatabase();
+    try {
+      database.exec("pragma recursive_triggers = off");
+      const original = mailDomainRow(database, "domain-a");
+      const attempts = [
+        `update app_mail_domain set id = 'renamed', version = 2 where id = 'domain-a'`,
+        `update app_mail_domain set organization_id = 'other', version = 2 where id = 'domain-a'`,
+        `update app_mail_domain set canonical_domain = 'other.example', version = 2 where id = 'domain-a'`,
+        `update app_mail_domain set canonicalization_profile_id = 'other', version = 2 where id = 'domain-a'`,
+        `update app_mail_domain set canonicalization_version = 2, version = 2 where id = 'domain-a'`,
+        `update app_mail_domain set created_at = 999, version = 2 where id = 'domain-a'`,
+        `update app_mail_domain set updated_at = 1001, version = 2 where id = 'domain-a'`,
+        `update app_mail_domain set status = 'verified', updated_at = 999, version = 2 where id = 'domain-a'`,
+        `update app_mail_domain set status = 'verified', updated_at = 1001, version = 3 where id = 'domain-a'`,
+        `delete from app_mail_domain where id = 'domain-a'`,
+        `insert into app_mail_domain
+          (id, organization_id, canonical_domain, canonicalization_profile_id,
+           created_at, updated_at)
+         values ('domain-a', 'organization-a', 'replacement.example',
+           '${MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID}', 2000, 2000)`,
+        `replace into app_mail_domain
+          (id, organization_id, canonical_domain, canonicalization_profile_id,
+           created_at, updated_at)
+         values ('domain-a', 'organization-a', 'replacement.example',
+           '${MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID}', 2000, 2000)`,
+        `insert into app_mail_domain
+          (id, organization_id, canonical_domain, canonicalization_profile_id,
+           created_at, updated_at)
+         values ('domain-a', 'organization-a', 'replacement.example',
+           '${MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID}', 2000, 2000)
+         on conflict (id) do update set status = 'retired', updated_at = 2000,
+           version = 2`,
+      ];
+      for (const statement of attempts) {
+        expect(() => database.exec(statement)).toThrow(
+          /immutable|lifecycle|retained/u
+        );
+        expect(mailDomainRow(database, "domain-a")).toStrictEqual(original);
+      }
+    } finally {
+      database.close();
+    }
+  });
+
+  it("decodes persisted storage rows through the domain entity", async () => {
+    const database = await makeMailDomainDatabase();
+    try {
+      const persisted = database
+        .prepare(
+          `select id, organization_id as organizationId,
+                  canonical_domain as canonicalDomain,
+                  canonicalization_profile_id as canonicalizationProfileId,
+                  canonicalization_version as canonicalizationVersion,
+                  status, created_at as createdAt, updated_at as updatedAt,
+                  version
+             from app_mail_domain
+            where id = 'domain-a'`
+        )
+        .get() as typeof appMailDomain.$inferSelect;
+      expect(
+        Schema.decodeUnknownSync(MailDomainSchema)(persisted)
+      ).toMatchObject({
+        canonicalDomain: "example.com",
+        canonicalizationProfileId: MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
+        canonicalizationVersion: 1,
+        createdAt: 1000,
+        id: "domain-a",
+        organizationId: "organization-a",
+        status: "pending_verification",
+        updatedAt: 1000,
+        version: 1,
+      });
+
+      insertMailDomain(database, {
+        canonicalDomain: "xn--a.example",
+        createdAt: 1000,
+        id: "structurally-valid-only",
+        organizationId: "organization-a",
+        updatedAt: 1000,
+      });
+      const structurallyValidOnly = database
+        .prepare(
+          `select id, organization_id as organizationId,
+                  canonical_domain as canonicalDomain,
+                  canonicalization_profile_id as canonicalizationProfileId,
+                  canonicalization_version as canonicalizationVersion,
+                  status, created_at as createdAt, updated_at as updatedAt,
+                  version
+             from app_mail_domain
+            where id = 'structurally-valid-only'`
+        )
+        .get();
+      expect(() =>
+        Schema.decodeUnknownSync(MailDomainSchema)(structurallyValidOnly)
+      ).toThrow(/canonical mail-domain A-label/u);
     } finally {
       database.close();
     }

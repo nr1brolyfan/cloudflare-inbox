@@ -4,6 +4,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 
 import Backend from "./src/apps/backend-worker/BackendWorker.ts";
+import { mailDomainConfigPreflight } from "./src/modules/organization/application/MailDomainConfigPreflight.ts";
 
 export class Website extends Cloudflare.Website.Vite<Website>()("Website", {
   compatibility: {
@@ -51,6 +52,7 @@ export default Alchemy.Stack(
     state: stackState,
   },
   Effect.gen(function* () {
+    yield* mailDomainConfigPreflight;
     const backend = yield* Backend;
     const website = yield* Website;
 

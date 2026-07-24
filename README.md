@@ -83,6 +83,7 @@ bun run typecheck
 bun run test
 bun run test:mailbox-restore
 bun run check
+bun run check:mail-domain-config
 bun run format
 bun run generate:auth-migrations
 bun run deploy
@@ -90,6 +91,8 @@ bun run destroy
 ```
 
 Run `bun run generate:auth-migrations` after changing `@effect-auth/core`. Committed migrations are verified automatically by `bun run check`. Because migration 1017 recognizes the vendor's credential-bearing challenge types and metadata keys, every effect-auth upgrade also requires an explicit compatibility review of that interlock.
+
+Alchemy runs the mail-domain configuration preflight through its own `ConfigProvider` before provisioning, including deployments using `--env-file`. V1 accepts ASCII domains and canonical A-labels only; Unicode U-label input requires a future versioned profile. This check does not yet compare configuration with the persisted primary domain; that remains part of `ORG-009`.
 
 Production deployment uses Alchemy's Cloudflare state store. Local development sets `ALCHEMY_STATE=local` and keeps generated state under the ignored `.alchemy` directory.
 
