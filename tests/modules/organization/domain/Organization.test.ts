@@ -3,6 +3,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
+  LEGACY_DEFAULT_ORGANIZATION_ID,
   OrganizationId,
   OrganizationSchema,
   OrganizationStatus,
@@ -14,6 +15,13 @@ const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
 ) => Exit.isSuccess(Schema.decodeUnknownExit(schema)(input));
 
 describe("organization domain", () => {
+  it("exposes the reserved legacy migration identity as an OrganizationId", () => {
+    expect(LEGACY_DEFAULT_ORGANIZATION_ID).toBe("legacy_default_v1");
+    expect(
+      Schema.decodeUnknownSync(OrganizationId)(LEGACY_DEFAULT_ORGANIZATION_ID)
+    ).toBe(LEGACY_DEFAULT_ORGANIZATION_ID);
+  });
+
   it("brands opaque ASCII resource identifiers", () => {
     for (const id of ["A", "a", "Az09_-", "x".repeat(128)]) {
       expect(Schema.decodeUnknownSync(OrganizationId)(id)).toBe(id);

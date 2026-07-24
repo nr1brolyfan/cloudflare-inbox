@@ -26,6 +26,7 @@ import {
 
 import {
   applyControlPlaneMigrations,
+  insertFreshCutoverOrganization,
   makeTestD1Database,
 } from "../../../../support/d1";
 
@@ -112,6 +113,7 @@ const insertMailboxAddress = (
   address: string,
   enabled = true
 ) => {
+  insertFreshCutoverOrganization(database, 1000);
   database
     .prepare(
       `insert into app_mailbox
@@ -378,6 +380,7 @@ describe("recovery-safe identity policy", () => {
           )
           .run();
       } else if (state === "existing-mailbox-without-claim") {
+        insertFreshCutoverOrganization(database, 1000);
         database
           .prepare(
             `insert into app_mailbox
@@ -996,10 +999,12 @@ const challengeBindings = [
 
 const futureChallengeExpiry = 4_000_000_000_000;
 
-const insertInterlockMailbox = (database: DatabaseSync) =>
+const insertInterlockMailbox = (database: DatabaseSync) => {
+  insertFreshCutoverOrganization(database, 1000);
   database.exec(`insert into app_mailbox
     (id, display_name, status, created_by_user_id, created_at, updated_at)
-    values ('mailbox-a', 'Inbox', 'active', 'user-a', 1000, 1000)`);
+    values ('primary', 'Inbox', 'active', 'user-a', 1000, 1000)`);
+};
 
 const insertInterlockRoute = (
   database: DatabaseSync,
@@ -1011,7 +1016,7 @@ const insertInterlockRoute = (
       `insert into app_mailbox_address
         (mailbox_id, id, address, normalized_address, is_primary, enabled,
          created_at, updated_at)
-       values ('mailbox-a', ?, ?, ?, 1, 1, 1000, 1000)`
+        values ('primary', ?, ?, ?, 1, 1, 1000, 1000)`
     )
     .run(id, address, address);
 

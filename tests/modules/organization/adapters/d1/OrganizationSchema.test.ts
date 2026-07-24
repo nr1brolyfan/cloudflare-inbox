@@ -18,6 +18,7 @@ import {
   applyControlPlaneMigration,
   applyControlPlaneMigrations,
   applyControlPlaneMigrationsThrough,
+  insertFreshCutoverOrganization,
 } from "../../../../support/d1";
 
 const insertOrganization = (
@@ -1291,6 +1292,7 @@ const seedMailboxAdministrationV1Receipts = (
   database: DatabaseSync,
   address = "inbox@example.test"
 ) => {
+  insertFreshCutoverOrganization(database, 1000);
   database.exec(`
     insert into app_mailbox
       (id, display_name, status, created_by_user_id, created_at, updated_at,
@@ -1333,6 +1335,7 @@ const seedMalformedBootstrapReceipt = (
   const actor = state === "actor" ? "user-b" : "user-a";
   const address =
     state === "address" ? "Inbox@EXAMPLE.TEST" : "inbox@example.test";
+  insertFreshCutoverOrganization(database, 1000);
   database.exec(`
     insert into app_mailbox
       (id, display_name, status, created_by_user_id, created_at, updated_at,

@@ -15,6 +15,10 @@ export const OrganizationId = ResourceId.pipe(
 );
 export type OrganizationId = Schema.Schema.Type<typeof OrganizationId>;
 
+/** Reserved migration identity for the first deployment organization. */
+export const LEGACY_DEFAULT_ORGANIZATION_ID: OrganizationId =
+  Schema.decodeUnknownSync(OrganizationId)("legacy_default_v1");
+
 export const OrganizationStatus = Schema.Literals(["active", "suspended"]);
 export type OrganizationStatus = Schema.Schema.Type<typeof OrganizationStatus>;
 

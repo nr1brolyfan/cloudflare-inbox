@@ -55,6 +55,7 @@ import {
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxBootstrapConfig } from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import { legacyDefaultOrganizationBootstrapInsertStatement } from "#/modules/organization/integration/OrganizationD1Statements";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
@@ -704,9 +705,13 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                                       as owner_eligible,
                                    cast(${mailboxAvailable} as integer)
                                       as mailbox_available,
-                                   cast(${operationAvailable} as integer)
-                                      as operation_available,
-                                   cast(${authorized} as integer) as authorized`),
+                                    cast(${operationAvailable} as integer)
+                                       as operation_available,
+                                    cast(${authorized} as integer) as authorized`),
+            legacyDefaultOrganizationBootstrapInsertStatement(database, {
+              authorizationGuardNonce: nonce,
+              createdAt: timestamp,
+            }),
             database
               .insert(appMailbox)
               .select(
@@ -887,7 +892,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const created = yield* decodeResultRows(
             CreatedMailboxRow,
             results,
-            2,
+            3,
             "bootstrap-owner"
           );
 
@@ -967,7 +972,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const [receiptV2Row] = yield* decodeResultRows(
             BootstrapReceiptV2Row,
             results,
-            7,
+            8,
             "bootstrap-owner"
           );
           if (

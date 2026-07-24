@@ -73,6 +73,7 @@ const integrationTestFiles = new Set([
   "tests/integration/mailbox/mailbox-inbound-repository-do-recorder.test.ts",
   "tests/integration/mailbox/mailbox-mail-data-sqlite.test.ts",
   "tests/integration/mailbox/mailbox-restore-rehearsal.test.ts",
+  "tests/integration/organization/organization-legacy-cutover-d1.test.ts",
   "tests/integration/organization/organization-member-schema-d1.test.ts",
 ]);
 const allowedTestRoots = new Set([

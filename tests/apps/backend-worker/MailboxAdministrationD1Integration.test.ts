@@ -67,6 +67,7 @@ import {
   applyControlPlaneMigration,
   applyControlPlaneMigrations,
   applyControlPlaneMigrationsThrough,
+  insertFreshCutoverOrganization,
   makeTestD1Database,
 } from "../../support/d1";
 
@@ -495,6 +496,7 @@ const seedHistoricalBootstrapReceipt = (
   address = "inbox@example.test",
   normalizedAddress = "inbox@example.test"
 ) => {
+  insertFreshCutoverOrganization(database, now);
   database.exec(`
     insert into app_mailbox
       (id, display_name, status, created_by_user_id, created_at, updated_at,
@@ -547,6 +549,10 @@ describe("mailbox administration", () => {
           )
         )
       );
+      await applyControlPlaneMigration(
+        database,
+        "1023_app_organization_legacy_cutover.sql"
+      );
 
       expect(mailbox).toMatchObject({
         createdByUserId: "user-a",
@@ -562,6 +568,14 @@ describe("mailbox administration", () => {
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        organization: {
+          ...database.prepare("select * from app_organization").get(),
+        },
+        organizationCutover: {
+          ...database
+            .prepare("select * from app_organization_legacy_cutover")
+            .get(),
+        },
         receiptV1: countRows(
           database,
           "app_mailbox_bootstrap_receipt_v1_intent"
@@ -575,6 +589,21 @@ describe("mailbox administration", () => {
         guards: 0,
         mailboxes: 1,
         members: 1,
+        organization: {
+          created_at: now,
+          id: "legacy_default_v1",
+          status: "active",
+          updated_at: now,
+          version: 1,
+        },
+        organizationCutover: {
+          id: 1,
+          organization_id: null,
+          outcome: "fresh-empty",
+          schema_version: 1,
+          source_created_at: null,
+          source_mailbox_id: null,
+        },
         receiptV1: 0,
         receiptV2: 1,
         receipts: 1,
@@ -830,6 +859,45 @@ describe("mailbox administration", () => {
     }
   });
 
+  it("serializes concurrent exact bootstrap attempts into one organization and receipt", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const baseD1 = makeTestD1Database(database);
+      let priorBatch: Promise<unknown> = Promise.resolve();
+      const serializedD1: D1EffectQbDatabaseLike = {
+        batch: (statements) => {
+          const result = priorBatch.then(() => baseD1.batch(statements));
+          priorBatch = result.catch(() => null);
+          return result;
+        },
+        prepare: baseD1.prepare,
+      };
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      const [first, second] = await Promise.all([
+        Effect.runPromise(bootstrap(serializedD1, validated, "guard-a")),
+        Effect.runPromise(bootstrap(serializedD1, validated, "guard-b")),
+      ]);
+
+      expect(second).toStrictEqual(first);
+      expect({
+        audits: countRows(database, "app_administrative_audit_event"),
+        mailboxes: countRows(database, "app_mailbox"),
+        organizations: countRows(database, "app_organization"),
+        receipts: countRows(database, "app_mailbox_administration_receipt"),
+      }).toStrictEqual({
+        audits: 1,
+        mailboxes: 1,
+        organizations: 1,
+        receipts: 1,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
   it("expands historical V1 bootstrap replay intent from the retained primary route", async () => {
     const database = new DatabaseSync(":memory:");
     try {
@@ -842,6 +910,13 @@ describe("mailbox administration", () => {
         database,
         "1022_app_mailbox_bootstrap_receipt_v2.sql"
       );
+      await applyControlPlaneMigration(
+        database,
+        "1023_app_organization_legacy_cutover.sql"
+      );
+      const organizationBefore = {
+        ...database.prepare("select * from app_organization").get(),
+      };
       database
         .prepare(
           `update app_mailbox_address
@@ -887,6 +962,9 @@ describe("mailbox administration", () => {
         operation: "bootstrap-owner",
         reason: "operation-conflict",
       });
+      expect({
+        ...database.prepare("select * from app_organization").get(),
+      }).toStrictEqual(organizationBefore);
     } finally {
       database.close();
     }
@@ -1283,6 +1361,7 @@ describe("mailbox administration", () => {
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        organizations: countRows(database, "app_organization"),
         receipts: countRows(database, "app_mailbox_administration_receipt"),
       }).toStrictEqual({
         addresses: 0,
@@ -1290,6 +1369,7 @@ describe("mailbox administration", () => {
         guards: 0,
         mailboxes: 0,
         members: 0,
+        organizations: 0,
         receipts: 0,
       });
     } finally {
@@ -1325,6 +1405,7 @@ describe("mailbox administration", () => {
         grants: countRows(database, "auth_role_grant"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        organizations: countRows(database, "app_organization"),
         receipts: countRows(database, "app_mailbox_administration_receipt"),
       }).toStrictEqual({
         addresses: 0,
@@ -1332,6 +1413,7 @@ describe("mailbox administration", () => {
         grants: 0,
         mailboxes: 0,
         members: 0,
+        organizations: 0,
         receipts: 0,
       });
     } finally {
@@ -1435,7 +1517,13 @@ describe("mailbox administration", () => {
         grants: countRows(database, "auth_role_grant"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
-      }).toStrictEqual({ grants: 0, mailboxes: 0, members: 0 });
+        organizations: countRows(database, "app_organization"),
+      }).toStrictEqual({
+        grants: 0,
+        mailboxes: 0,
+        members: 0,
+        organizations: 0,
+      });
     } finally {
       database.close();
     }
@@ -2417,12 +2505,14 @@ describe("mailbox administration", () => {
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        organizations: countRows(database, "app_organization"),
       }).toStrictEqual({
         addresses: 1,
         grants: 1,
         guards: 0,
         mailboxes: 1,
         members: 1,
+        organizations: 1,
       });
     } finally {
       database.close();

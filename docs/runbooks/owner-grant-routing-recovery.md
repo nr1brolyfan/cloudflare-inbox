@@ -11,13 +11,14 @@ This runbook covers the current global singleton and identifies future organizat
 Current constraints:
 
 - `app_mailbox_singleton_idx` permits at most one global mailbox.
+- `app_organization_legacy_cutover` is sealed migration provenance. `legacy-primary` retains mailbox `primary`, its creation time, and reserved opaque organization ID `legacy_default_v1`; `fresh-empty` remains the recorded outcome only with empty inventories or the exact unique trusted-bootstrap pair with equal creation provenance. Partial pairs, unrelated/additional rows, timestamp disagreement, changed `primary` ID/creation time, deletion, or replacement are corruption and are storage-blocked. Never infer or repair this identity from organization count or order.
 - `app_mailbox_member` is a discovery projection, not authorization. Effect-auth role and permission grants authorize access.
 - Supported mailbox administration is owner bootstrap and rename. There is no supported owner transfer, grant/revoke, route disable, or route reassignment operation.
 - `app_mailbox_address` is both the enabled inbound lookup and the current primary outbound identity. It has no route history or assignment revision.
 - Administrative audit has a closed current taxonomy. It does not contain grant or route mutations.
 - `/api/health` checks dependency readiness for D1, R2, Durable Objects, rate limiting, and authorization storage. It does not validate owner, grant, or route semantics.
 
-The future model will separate Organization Owner, mailbox ownership, assignments, stable addresses, route revisions, and send identities. Those commands do not exist yet and must not be simulated with direct SQL.
+The reserved organization row does not yet create organization membership, organization grants, domain ownership, mailbox organization ancestry, or tenant authority. The future model will separate Organization Owner, mailbox ownership, assignments, stable addresses, route revisions, and send identities. Those commands do not exist yet and must not be simulated with direct SQL.
 
 ## Severity
 

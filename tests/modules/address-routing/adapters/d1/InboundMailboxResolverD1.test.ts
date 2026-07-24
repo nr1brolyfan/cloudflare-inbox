@@ -15,6 +15,7 @@ import { EmailAddress } from "#/shared/EmailAddress";
 
 import {
   applyControlPlaneMigrations,
+  insertFreshCutoverOrganization,
   makeTestD1Database,
 } from "../../../../support/d1";
 
@@ -55,6 +56,7 @@ const insertRoute = (
 ) => {
   const mailboxId = options.mailboxId ?? "primary";
   const status = options.status ?? "active";
+  insertFreshCutoverOrganization(database, 1000);
   database
     .prepare(
       `insert into app_mailbox
@@ -62,7 +64,22 @@ const insertRoute = (
          deleted_at)
        values (?, 'Inbox', ?, 'user-a', 1000, 1000, ?)`
     )
-    .run(mailboxId, status, status === "deleted" ? 1000 : null);
+    .run("primary", "active", null);
+  if (mailboxId !== "primary") {
+    database.exec("drop trigger app_organization_mailbox_creation_provenance");
+    database
+      .prepare("update app_mailbox set id = ? where id = 'primary'")
+      .run(mailboxId);
+  }
+  if (status !== "active") {
+    database
+      .prepare(
+        `update app_mailbox
+            set status = ?, deleted_at = ?
+          where id = ?`
+      )
+      .run(status, status === "deleted" ? 1000 : null, mailboxId);
+  }
   database
     .prepare(
       `insert into app_mailbox_address
@@ -109,8 +126,14 @@ describe("inbound mailbox resolver", () => {
         resolve(database, "Owner@example.test")
       ).rejects.toMatchObject({ reason: "unknown-recipient" });
 
-      database.exec("delete from app_mailbox");
-      insertRoute(database, { status: "suspended" });
+      database.exec(`
+        update app_mailbox_address
+           set enabled = 1, is_primary = 1
+         where mailbox_id = 'primary';
+        update app_mailbox
+           set status = 'suspended', updated_at = 2000, version = 2
+         where id = 'primary';
+      `);
 
       await expect(
         resolve(database, "Owner@example.test")

@@ -7,6 +7,8 @@ import type {
   D1EffectQbResult,
 } from "@effect-auth/core/EffectQbSqliteStorage";
 
+import { LEGACY_DEFAULT_ORGANIZATION_ID } from "#/modules/organization/domain/Organization";
+
 const migrationsDirectory = new URL(
   "../../migrations/control-plane/",
   import.meta.url
@@ -81,6 +83,47 @@ export const applyControlPlaneMigrationsThrough = async (
 
 export const applyControlPlaneMigrations = async (database: DatabaseSync) => {
   await applyMigrationFiles(database, await controlPlaneMigrationFiles());
+};
+
+/** Test setup for direct first-mailbox inserts after the fresh ORG-006 cutover. */
+export const insertFreshCutoverOrganization = (
+  database: DatabaseSync,
+  createdAt: number
+) => {
+  const hasCutoverTable = database
+    .prepare(
+      `select 1
+         from sqlite_master
+        where type = 'table'
+          and name = 'app_organization_legacy_cutover'`
+    )
+    .get();
+  if (hasCutoverTable === undefined) {
+    return;
+  }
+  const freshCutover = database
+    .prepare(
+      `select 1
+         from app_organization_legacy_cutover
+        where id = 1
+          and schema_version = 1
+          and outcome = 'fresh-empty'
+          and source_mailbox_id is null
+          and source_created_at is null
+          and organization_id is null`
+    )
+    .get();
+  const organization = database
+    .prepare("select 1 from app_organization where id = ?")
+    .get(LEGACY_DEFAULT_ORGANIZATION_ID);
+  if (freshCutover !== undefined && organization === undefined) {
+    database
+      .prepare(
+        `insert into app_organization (id, created_at, updated_at)
+         values (?, ?, ?)`
+      )
+      .run(LEGACY_DEFAULT_ORGANIZATION_ID, createdAt, createdAt);
+  }
 };
 
 const errorMessage = (error: unknown) =>

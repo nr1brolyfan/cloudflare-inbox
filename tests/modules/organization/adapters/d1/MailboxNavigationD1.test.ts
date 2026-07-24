@@ -29,6 +29,7 @@ import {
 
 import {
   applyControlPlaneMigrations,
+  insertFreshCutoverOrganization,
   makeTestD1Database,
 } from "../../../../support/d1";
 
@@ -138,6 +139,7 @@ const insertMailboxMembership = (
   database: DatabaseSync,
   options: { readonly revoked?: boolean } = {}
 ) => {
+  insertFreshCutoverOrganization(database, 1000);
   database
     .prepare(
       `insert into app_mailbox

@@ -323,6 +323,49 @@ export const appMailbox = sqliteTable(
   ]
 );
 
+export const appOrganizationLegacyCutover = sqliteTable(
+  "app_organization_legacy_cutover",
+  {
+    id: integer("id").primaryKey(),
+    schemaVersion: integer("schema_version").notNull(),
+    outcome: text("outcome", {
+      enum: ["legacy-primary", "fresh-empty"],
+    }).notNull(),
+    sourceMailboxId: text("source_mailbox_id").references(() => appMailbox.id, {
+      onDelete: "restrict",
+      onUpdate: "restrict",
+    }),
+    sourceCreatedAt: integer("source_created_at"),
+    organizationId: text("organization_id").references(
+      () => appOrganization.id,
+      { onDelete: "restrict", onUpdate: "restrict" }
+    ),
+  },
+  () => [
+    check("app_organization_legacy_cutover_id_check", sql`id = 1`),
+    check(
+      "app_organization_legacy_cutover_schema_check",
+      sql`typeof(schema_version) = 'integer' and schema_version = 1`
+    ),
+    check(
+      "app_organization_legacy_cutover_outcome_check",
+      sql`(outcome = 'legacy-primary'
+          and typeof(outcome) = 'text'
+          and source_mailbox_id = 'primary'
+          and typeof(source_mailbox_id) = 'text'
+          and typeof(source_created_at) = 'integer'
+          and source_created_at between 0 and 9007199254740991
+          and organization_id = 'legacy_default_v1'
+          and typeof(organization_id) = 'text')
+        or (outcome = 'fresh-empty'
+          and typeof(outcome) = 'text'
+          and source_mailbox_id is null
+          and source_created_at is null
+          and organization_id is null)`
+    ),
+  ]
+);
+
 export const appMailboxMember = sqliteTable(
   "app_mailbox_member",
   {
