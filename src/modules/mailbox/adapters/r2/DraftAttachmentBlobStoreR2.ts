@@ -4,7 +4,10 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
-import { draftAttachmentObjectKey } from "#/modules/mailbox/adapters/r2/DraftAttachmentR2Object";
+import {
+  draftAttachmentCustomMetadata,
+  draftAttachmentObjectKey,
+} from "#/modules/mailbox/adapters/r2/DraftAttachmentR2Object";
 import { Sha256Digest } from "#/modules/mailbox/domain/Mailbox";
 import type { DraftAttachmentBlobReservation } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
 import { DraftAttachmentBlobStore } from "#/modules/mailbox/ports/DraftAttachmentBlobStore";
@@ -80,20 +83,6 @@ const blobError = (
     retryable,
   });
 
-const metadataFor = (
-  reservation: DraftAttachmentBlobReservation,
-  contentSha256: string
-) => ({
-  "attachment-id": reservation.id,
-  "attachment-size": String(reservation.size),
-  "content-sha256": contentSha256,
-  "draft-id": reservation.draftId,
-  "format-version": "1",
-  "mailbox-id": reservation.mailboxId,
-  "object-type": "draft-attachment",
-  "reservation-expires-at": String(reservation.expiresAt),
-});
-
 const objectMatches = (
   object: DraftAttachmentR2Object,
   reservation: DraftAttachmentBlobReservation,
@@ -128,7 +117,14 @@ export const DraftAttachmentBlobStoreR2Layer = Layer.effect(
             encodedHash
           ).pipe(Effect.mapError((cause) => blobError("write", cause, false)));
           const key = draftAttachmentObjectKey(reservation.id);
-          const customMetadata = metadataFor(reservation, contentSha256);
+          const customMetadata = draftAttachmentCustomMetadata({
+            attachmentId: reservation.id,
+            contentSha256,
+            draftId: reservation.draftId,
+            expiresAt: reservation.expiresAt,
+            mailboxId: reservation.mailboxId,
+            size: reservation.size,
+          });
           const stored = yield* client
             .put(key, content, {
               contentLength: reservation.size,

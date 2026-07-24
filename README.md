@@ -71,6 +71,9 @@ The Backend builds OTLP log and trace exporters in the request scope. Alchemy cl
 ## Operations
 
 - [Owner, grant, and routing recovery](docs/runbooks/owner-grant-routing-recovery.md)
+- [Mailbox backup and identity-preserving restore](docs/runbooks/mailbox-backup-restore.md)
+
+`bun run test:mailbox-restore` runs the `SAFE-015` local-only mailbox restore rehearsal. It does not exercise Cloudflare or authorize a live restore; `SAFE-005` remains the required gate for live backup, same-ID restore, maintenance controls, reconciliation, and dated staging evidence.
 
 ## Commands
 
@@ -78,6 +81,7 @@ The Backend builds OTLP log and trace exporters in the request scope. Alchemy cl
 bun run build
 bun run typecheck
 bun run test
+bun run test:mailbox-restore
 bun run check
 bun run format
 bun run generate:auth-migrations

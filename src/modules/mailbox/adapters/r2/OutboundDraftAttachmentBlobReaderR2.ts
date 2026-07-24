@@ -6,7 +6,10 @@ import * as Layer from "effect/Layer";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";
 
-import { draftAttachmentObjectKey } from "./DraftAttachmentR2Object";
+import {
+  draftAttachmentObjectKey,
+  draftAttachmentRequiredMetadata,
+} from "./DraftAttachmentR2Object";
 
 export interface OutboundDraftAttachmentR2ReadObject {
   readonly arrayBuffer: () => Effect.Effect<ArrayBuffer, unknown>;
@@ -84,14 +87,12 @@ export const OutboundDraftAttachmentBlobReaderR2Layer = Layer.effect(
             );
           }
 
-          const expectedMetadata = {
-            "attachment-id": location.draftAttachmentId,
-            "attachment-size": String(location.size),
-            "content-sha256": location.contentSha256,
-            "format-version": "1",
-            "mailbox-id": location.mailboxId,
-            "object-type": "draft-attachment",
-          };
+          const expectedMetadata = draftAttachmentRequiredMetadata({
+            attachmentId: location.draftAttachmentId,
+            contentSha256: location.contentSha256,
+            mailboxId: location.mailboxId,
+            size: location.size,
+          });
           const metadataMatches = Object.entries(expectedMetadata).every(
             ([key, value]) => object.customMetadata[key] === value
           );

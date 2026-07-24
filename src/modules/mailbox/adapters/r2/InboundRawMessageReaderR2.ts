@@ -5,6 +5,11 @@ import * as Layer from "effect/Layer";
 import { InboundRawMessageReader } from "#/modules/mailbox/ports/InboundRawMessageReader";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 
+import {
+  inboundRawMessageObjectKey,
+  inboundRawMessageRequiredMetadata,
+} from "./InboundRawMessageR2Object";
+
 export interface InboundRawMessageR2Object {
   readonly size: number;
   readonly customMetadata: Readonly<Record<string, string>>;
@@ -42,7 +47,7 @@ export const InboundRawMessageReaderR2Layer = Layer.effect(
       read: (input) =>
         Effect.gen(function* () {
           const object = yield* client
-            .get(`inbound/${input.inboundIngestId}/raw.eml`)
+            .get(inboundRawMessageObjectKey(input.inboundIngestId))
             .pipe(
               Effect.mapError((cause) => readError(cause, true)),
               Effect.catchDefect((cause) => Effect.fail(readError(cause, true)))
@@ -53,14 +58,7 @@ export const InboundRawMessageReaderR2Layer = Layer.effect(
             );
           }
 
-          const expectedMetadata = {
-            "format-version": "1",
-            "inbound-ingest-id": input.inboundIngestId,
-            "mailbox-id": input.mailboxId,
-            "object-type": "raw-message",
-            "raw-size": String(input.rawSize),
-            "received-at": String(input.receivedAt),
-          };
+          const expectedMetadata = inboundRawMessageRequiredMetadata(input);
           const metadataMatches = Object.entries(expectedMetadata).every(
             ([key, value]) => object.customMetadata[key] === value
           );

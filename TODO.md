@@ -4,7 +4,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 
 ## Status
 
-- Ostatnia aktualizacja: 2026-07-23
+- Ostatnia aktualizacja: 2026-07-24
 - Postęp zadań: **94/97 (97%)**
 - Ukończone etapy: **9/11**
 - Aktualny etap: **11. Hardening i produkcja**
@@ -167,7 +167,7 @@ Firmowa polityka recovery-safe dla enrollment oraz login/recovery initiation zos
 - Reconciliation: kanoniczne checkboxy `OBS-011` do `OBS-016` w `PLAN-FIRMOWEJ-POCZTY.md`.
 - Observability: kanoniczne checkboxy `OBS-005` do `OBS-010`.
 - Administracyjny audit trail: kanoniczny checkbox `SAFE-004`.
-- Backup i identity-preserving restore: kanoniczne checkboxy `SAFE-005` oraz `SAFE-015`.
+- Backup i identity-preserving restore: lokalny rehearsal `SAFE-015` jest ukończony; live backup/restore `SAFE-005` pozostaje otwartą bramą. Kanoniczne checkboxy są w `PLAN-FIRMOWEJ-POCZTY.md`.
 - Eksport mailboxa: kanoniczny checkbox `MBX-020`.
 - Recovery runbook: kanoniczny checkbox `SAFE-010`.
 - [ ] CURRENT Dodać CD i kontrolę środowisk; CI gate jest śledzony przez `SAFE-011`.

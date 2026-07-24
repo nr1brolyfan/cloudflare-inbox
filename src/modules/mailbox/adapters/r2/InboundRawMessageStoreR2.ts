@@ -6,6 +6,11 @@ import * as Layer from "effect/Layer";
 import { InboundRawMessageStore } from "#/modules/mailbox/ports/InboundRawMessageStore";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 
+import {
+  inboundRawMessageCustomMetadata,
+  inboundRawMessageObjectKey,
+} from "./InboundRawMessageR2Object";
+
 interface RawMessagePutOptions {
   readonly contentLength: number;
   readonly customMetadata: Readonly<Record<string, string>>;
@@ -79,19 +84,15 @@ export const InboundRawMessageStoreR2Layer = Layer.effect(
     return InboundRawMessageStore.of({
       store: (input) =>
         Effect.gen(function* () {
-          const key = `inbound/${input.inboundIngestId}/raw.eml`;
-          const customMetadata = {
-            "format-version": "1",
-            "inbound-ingest-id": input.inboundIngestId,
-            "mailbox-id": input.mailboxId,
-            "object-type": "raw-message",
-            "raw-size": String(input.envelope.rawSize),
-            "received-at": String(input.receivedAt),
-            "envelope-to": input.envelope.envelopeTo,
-            ...(input.envelope.envelopeFrom === undefined
-              ? {}
-              : { "envelope-from": input.envelope.envelopeFrom }),
-          };
+          const key = inboundRawMessageObjectKey(input.inboundIngestId);
+          const customMetadata = inboundRawMessageCustomMetadata({
+            envelopeFrom: input.envelope.envelopeFrom,
+            envelopeTo: input.envelope.envelopeTo,
+            inboundIngestId: input.inboundIngestId,
+            mailboxId: input.mailboxId,
+            rawSize: input.envelope.rawSize,
+            receivedAt: input.receivedAt,
+          });
           const raw = yield* Effect.try({
             try: () => runtime.enforceLength(input.raw, input.envelope.rawSize),
             catch: storageError,

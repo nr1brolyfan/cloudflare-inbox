@@ -12,6 +12,12 @@ import type {
 import { InboundAttachmentStore } from "#/modules/mailbox/ports/InboundAttachmentStore";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 
+import {
+  inboundAttachmentCustomMetadata,
+  inboundAttachmentMetadataBytes,
+  inboundAttachmentObjectKey,
+} from "./InboundAttachmentR2Object";
+
 interface AttachmentPutOptions {
   readonly contentLength: number;
   readonly customMetadata: Readonly<Record<string, string>>;
@@ -97,24 +103,6 @@ const storeError = (
     retryable,
   });
 
-const metadataBytes = (attachment: ExtractedInboundAttachmentV1) =>
-  new TextEncoder().encode(
-    JSON.stringify(
-      Schema.encodeSync(ParsedInboundAttachmentV1)(
-        Schema.decodeUnknownSync(ParsedInboundAttachmentV1)({
-          ...attachment.metadata,
-          fileName: attachment.metadata.fileName ?? "attachment",
-        })
-      )
-    )
-  );
-
-export const inboundAttachmentObjectKey = (
-  inboundIngestId: string,
-  sourceIndex: number
-) =>
-  `inbound/${inboundIngestId}/attachments/${String(sourceIndex).padStart(6, "0")}.bin`;
-
 const objectMatches = (
   object: InboundAttachmentR2Object,
   attachment: ExtractedInboundAttachmentV1,
@@ -141,8 +129,12 @@ const storeAttachment = (
       Effect.mapError((cause) => storeError("write", cause)),
       Effect.catchDefect((cause) => Effect.fail(storeError("write", cause)))
     );
+    const parsedMetadata = Schema.decodeUnknownSync(ParsedInboundAttachmentV1)({
+      ...attachment.metadata,
+      fileName: attachment.metadata.fileName ?? "attachment",
+    });
     const metadataSha256 = yield* runtime
-      .sha256(metadataBytes(attachment))
+      .sha256(inboundAttachmentMetadataBytes(parsedMetadata))
       .pipe(
         Effect.mapError((cause) => storeError("write", cause)),
         Effect.catchDefect((cause) => Effect.fail(storeError("write", cause)))
@@ -151,17 +143,15 @@ const storeAttachment = (
       input.inboundIngestId,
       attachment.metadata.index
     );
-    const customMetadata = {
-      "attachment-index": String(attachment.metadata.index),
-      "attachment-metadata-sha256": metadataSha256,
-      "attachment-size": String(attachment.metadata.size),
-      "content-sha256": contentSha256,
-      "format-version": "1",
-      "inbound-ingest-id": input.inboundIngestId,
-      "mailbox-id": input.mailboxId,
-      "object-type": "attachment",
-      "received-at": String(input.receivedAt),
-    };
+    const customMetadata = inboundAttachmentCustomMetadata({
+      contentSha256,
+      inboundIngestId: input.inboundIngestId,
+      mailboxId: input.mailboxId,
+      metadataSha256,
+      receivedAt: input.receivedAt,
+      size: attachment.metadata.size,
+      sourceIndex: attachment.metadata.index,
+    });
     const stored = yield* client
       .put(key, attachment.content, {
         contentLength: attachment.metadata.size,

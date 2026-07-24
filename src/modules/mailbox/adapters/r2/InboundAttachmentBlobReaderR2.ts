@@ -1,16 +1,18 @@
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Schema from "effect/Schema";
 
-import { ParsedInboundAttachmentV1 } from "#/modules/mailbox/domain/MailboxInbound";
 import { InboundAttachmentBlobReader } from "#/modules/mailbox/ports/InboundAttachmentBlobReader";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 
 import {
+  inboundAttachmentCustomMetadata,
+  inboundAttachmentMetadataBytes,
+  inboundAttachmentObjectKey,
+} from "./InboundAttachmentR2Object";
+import {
   InboundAttachmentStoreRuntime,
   InboundAttachmentStoreRuntimeSystemLayer,
-  inboundAttachmentObjectKey,
 } from "./InboundAttachmentStoreR2";
 
 export interface InboundAttachmentR2ReadObject {
@@ -71,33 +73,28 @@ export const InboundAttachmentBlobReaderR2Layer = Layer.effect(
           const contentSha256 = object.customMetadata["content-sha256"];
           const metadataSha256 = yield* runtime
             .sha256(
-              new TextEncoder().encode(
-                JSON.stringify(
-                  Schema.encodeSync(ParsedInboundAttachmentV1)({
-                    contentId: location.contentId,
-                    disposition: location.disposition,
-                    fileName: location.fileName,
-                    index: location.sourceIndex,
-                    mimeType: location.mimeType,
-                    size: location.size,
-                  })
-                )
-              )
+              inboundAttachmentMetadataBytes({
+                contentId: location.contentId,
+                disposition: location.disposition,
+                fileName: location.fileName,
+                index: location.sourceIndex,
+                mimeType: location.mimeType,
+                size: location.size,
+              })
             )
             .pipe(
               Effect.mapError((cause) => readError(cause, true)),
               Effect.catchDefect((cause) => Effect.fail(readError(cause, true)))
             );
-          const expectedMetadata = {
-            "attachment-index": String(location.sourceIndex),
-            "attachment-metadata-sha256": metadataSha256,
-            "attachment-size": String(location.size),
-            "format-version": "1",
-            "inbound-ingest-id": location.inboundIngestId,
-            "mailbox-id": location.mailboxId,
-            "object-type": "attachment",
-            "received-at": String(location.receivedAt),
-          };
+          const expectedMetadata = inboundAttachmentCustomMetadata({
+            contentSha256: contentSha256 ?? "",
+            inboundIngestId: location.inboundIngestId,
+            mailboxId: location.mailboxId,
+            metadataSha256,
+            receivedAt: location.receivedAt,
+            size: location.size,
+            sourceIndex: location.sourceIndex,
+          });
           const metadataMatches = Object.entries(expectedMetadata).every(
             ([key, value]) => object.customMetadata[key] === value
           );
