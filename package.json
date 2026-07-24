@@ -19,7 +19,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run tests --passWithNoTests",
+    "test": "vitest run tests --maxWorkers=4",
     "format": "oxfmt --write .",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
@@ -73,7 +73,8 @@
     "typescript": "^6.0.2",
     "ultracite": "7.9.4",
     "vite": "^8.0.0",
-    "vitest": "^4.1.5"
+    "vitest": "^4.1.5",
+    "yaml": "2.9.0"
   },
   "overrides": {
     "@effect/platform-node-shared": "4.0.0-beta.98",
