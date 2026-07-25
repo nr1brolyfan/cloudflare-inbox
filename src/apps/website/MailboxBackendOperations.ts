@@ -301,7 +301,8 @@ const policyDeniedMessage = (body: object, operation: string) => {
 // oxlint-disable-next-line eslint/complexity -- Operation-specific public messages are an explicit sanitization boundary.
 const operationErrorMessage = (
   code: keyof typeof publicErrors,
-  operation: string
+  operation: string,
+  backendMessage?: string
 ) => {
   if (operation === "website.mailbox.reply_draft_create") {
     if (code === "bad_request") {
@@ -317,6 +318,12 @@ const operationErrorMessage = (
   if (operation === "website.mailbox.draft_list") {
     return code === "bad_request"
       ? "Invalid mailbox draft query"
+      : publicErrors[code].message;
+  }
+  if (operation === "website.mailbox.draft_send") {
+    return code === "bad_request" &&
+      backendMessage === "Message is too large for the email provider"
+      ? backendMessage
       : publicErrors[code].message;
   }
   if (operation.startsWith("website.mailbox.draft")) {
@@ -489,7 +496,11 @@ export const MailboxBackendOperationsLayer = Layer.effect(
                 administrativeOperation &&
                 encodedError.message === "Mailbox operation ID conflict"
               ? "Mailbox operation ID conflict"
-              : operationErrorMessage(encodedError.code, operation);
+              : operationErrorMessage(
+                  encodedError.code,
+                  operation,
+                  encodedError.message
+                );
         const sanitizedError = yield* Schema.decodeUnknownEffect(
           MailboxPublicErrorSchema
         )({ ...encodedError, message }).pipe(

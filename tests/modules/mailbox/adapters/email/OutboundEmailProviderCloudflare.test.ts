@@ -183,6 +183,36 @@ describe("Cloudflare outbound email provider", () => {
     expect(sends).toBe(0);
   });
 
+  it("re-estimates actual attachment bytes and rejects before transport", async () => {
+    let sends = 0;
+    const actualMessage = Schema.decodeUnknownSync(OutboundEmailMessage)({
+      ...baseMessage,
+      attachments: [
+        {
+          content: new Uint8Array(5 * 1024 * 1024),
+          disposition: "attachment",
+          fileName: "actual-bytes.bin",
+          mimeType: "application/octet-stream",
+        },
+      ],
+    });
+    const error = await runProvider(
+      MailboxEmailSendClient.of({
+        send: () => {
+          sends += 1;
+          return Effect.succeed({ messageId: "provider-message-1" });
+        },
+      }),
+      (provider) => provider.send(actualMessage).pipe(Effect.flip)
+    );
+
+    expect(error).toMatchObject({
+      _tag: "DeliveryRejectedError",
+      reason: "message-too-large",
+    });
+    expect(sends).toBe(0);
+  });
+
   it("supports a message whose only recipients are CC", async () => {
     let builder: CloudflareWorkers.EmailMessageBuilder | undefined;
     const message = Schema.decodeUnknownSync(OutboundEmailMessage)({

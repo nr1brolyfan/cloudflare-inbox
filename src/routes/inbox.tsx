@@ -51,7 +51,10 @@ import {
   replyCommandsHaveSameTarget,
   retainReplyOperationForStatus,
 } from "#/modules/mailbox/adapters/browser/ReplyDraftOperationStorage";
-import { DraftEditor } from "#/modules/mailbox/adapters/react/DraftEditor";
+import {
+  DraftEditor,
+  draftSendErrorText,
+} from "#/modules/mailbox/adapters/react/DraftEditor";
 import { DraftList } from "#/modules/mailbox/adapters/react/DraftList";
 import {
   mailboxMessageActionMutationKey,
@@ -1363,16 +1366,7 @@ function DraftWorkspace({
         }
         setSendFailure({
           command,
-          message:
-            result.status === 400
-              ? "Add at least one recipient and save the draft before sending."
-              : result.status === 403
-                ? "You do not have permission to send from this mailbox."
-                : result.status === 404
-                  ? "This draft no longer exists."
-                  : result.status === 409
-                    ? "This draft changed elsewhere. Close and reopen it before sending."
-                    : "The send result could not be confirmed. Retry safely.",
+          message: draftSendErrorText(result.status, result.error.message),
           retryable: result.status >= 500,
         });
         return;

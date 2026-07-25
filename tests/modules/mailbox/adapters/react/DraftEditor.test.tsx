@@ -4,7 +4,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import * as Schema from "effect/Schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { DraftEditor } from "#/modules/mailbox/adapters/react/DraftEditor";
+import {
+  DraftEditor,
+  draftSendErrorText,
+} from "#/modules/mailbox/adapters/react/DraftEditor";
 import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { DraftAttachmentReservationSchema } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
@@ -297,6 +300,37 @@ describe(DraftEditor, () => {
     expect(
       screen.getByText(
         "Sending is unavailable while another draft action is pending."
+      )
+    ).toBeTruthy();
+  });
+
+  it("renders the specific non-retryable oversized-message send guidance", () => {
+    const error = draftSendErrorText(
+      400,
+      "Message is too large for the email provider"
+    );
+    render(
+      <DraftEditor
+        attachments={[]}
+        attachmentUploads={[]}
+        error={error}
+        initial={initial}
+        isNew={false}
+        isSaving={false}
+        isSending={false}
+        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
+        onClose={vi.fn<() => void>()}
+        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
+        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
+        onSave={vi.fn<(content: typeof initial) => void>()}
+        onSend={vi.fn<() => void>()}
+        saved
+      />
+    );
+
+    expect(
+      screen.getByText(
+        "This message is too large for the email provider. Remove attachments or shorten the content."
       )
     ).toBeTruthy();
   });

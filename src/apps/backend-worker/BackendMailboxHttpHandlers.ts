@@ -408,6 +408,14 @@ const mapOutboundSendingError = (
       })
     );
   }
+  if (error.reason === "message-too-large") {
+    return Effect.fail(
+      new AuthBadRequestError({
+        code: "bad_request",
+        message: "Message is too large for the email provider",
+      })
+    );
+  }
   if (error.reason === "not-found") {
     return Effect.fail(
       new AuthNotFoundError({

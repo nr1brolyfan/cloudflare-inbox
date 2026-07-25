@@ -5,7 +5,19 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
-import { DraftId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import {
+  estimateCloudflareStructuredEmailWireSize,
+  isCloudflareStructuredEmailSizeAccepted,
+} from "#/modules/mailbox/domain/CloudflareStructuredEmailSize";
+import {
+  ByteSize,
+  ContentId,
+  DraftId,
+  FileName,
+  MailboxId,
+  MessageSubject,
+  MimeType,
+} from "#/modules/mailbox/domain/Mailbox";
 import type { RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
@@ -27,6 +39,7 @@ import type {
 import {
   isProviderSafeRfcMessageId,
   maximumThreadingHeaderBytes,
+  OutboundThreadingMetadata,
   serializeThreadingReferences,
 } from "#/modules/mailbox/domain/MailboxThreading";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
@@ -148,12 +161,59 @@ const invalidReplyParent = (draftId: string, errorMessage: string) =>
     resourceId: draftId,
   });
 
+const outboundMessageTooLarge = (
+  operation: "resend-outbound" | "schedule-outbound",
+  resourceId: string
+) =>
+  new MailboxDomainError({
+    operation,
+    reason: "message-too-large",
+    message: "Message is too large for the email provider",
+    resourceType: operation === "schedule-outbound" ? "draft" : "outbound",
+    resourceId,
+  });
+
+const invalidOutboundSnapshot = (resourceId: string) =>
+  new MailboxDomainError({
+    operation: "resend-outbound",
+    reason: "invalid-state",
+    message: "Outbound source snapshot is corrupt",
+    resourceType: "outbound",
+    resourceId,
+  });
+
+const ResendAttachmentSizeMetadata = Schema.Struct({
+  byteLength: ByteSize,
+  contentId: Schema.optional(ContentId),
+  disposition: Schema.Literals(["attachment", "inline"]),
+  fileName: FileName,
+  mimeType: MimeType,
+}).check(
+  Schema.makeFilter((item) =>
+    (item.disposition === "inline") === (item.contentId !== undefined)
+      ? undefined
+      : "contentId must be present exactly for inline attachments"
+  )
+);
+
+const ResendSizeMetadata = Schema.Struct({
+  attachments: Schema.Array(ResendAttachmentSizeMetadata),
+  bcc: AddressList,
+  cc: AddressList,
+  html: Schema.optional(Schema.String),
+  sender: MailAddress,
+  subject: MessageSubject,
+  text: Schema.optional(Schema.String),
+  threading: Schema.optional(OutboundThreadingMetadata),
+  to: AddressList,
+});
+
 const deriveReplyThreading = (
   sourceDraft: typeof draft.$inferSelect,
   parent: typeof message.$inferSelect | undefined
 ) => {
   if (sourceDraft.inReplyToMessageId === null) {
-    return { inReplyTo: null, referencesJson: "[]" };
+    return { inReplyTo: null, references: [], referencesJson: "[]" };
   }
   if (parent === undefined) {
     throw invalidReplyParent(
@@ -229,6 +289,7 @@ const deriveReplyThreading = (
   }
   return {
     inReplyTo: parentId,
+    references,
     referencesJson: encodeJson(StringList, references),
   };
 };
@@ -242,6 +303,7 @@ const scheduleOutbound = (
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     return yield* db.transaction((tx) =>
+      // oxlint-disable-next-line eslint/complexity -- One transaction validates and freezes the complete outbound snapshot.
       Effect.gen(function* () {
         if (input.confirmation !== "explicit-user-action") {
           return yield* new MailboxDomainError({
@@ -325,11 +387,10 @@ const scheduleOutbound = (
                   "Reply parent threading metadata is corrupt"
                 ),
         });
-        const recipients = [
-          ...decodeJson(AddressList, sourceDraft.toJson),
-          ...decodeJson(AddressList, sourceDraft.ccJson),
-          ...decodeJson(AddressList, sourceDraft.bccJson),
-        ];
+        const to = decodeJson(AddressList, sourceDraft.toJson);
+        const cc = decodeJson(AddressList, sourceDraft.ccJson);
+        const bcc = decodeJson(AddressList, sourceDraft.bccJson);
+        const recipients = [...to, ...cc, ...bcc];
         if (recipients.length === 0) {
           return yield* new MailboxDomainError({
             operation: "schedule-outbound",
@@ -383,6 +444,40 @@ const scheduleOutbound = (
             resourceType: "draft",
             resourceId: input.draftId,
           });
+        }
+
+        const sizeEstimate = estimateCloudflareStructuredEmailWireSize({
+          attachments: storedAttachments.map((item) => ({
+            byteLength: item.size,
+            disposition: "attachment",
+            fileName: item.fileName,
+            mimeType: item.mimeType,
+          })),
+          bcc,
+          cc,
+          ...(sourceDraft.htmlBody === null
+            ? {}
+            : { html: sourceDraft.htmlBody }),
+          sender: input.sender,
+          subject: sourceDraft.subject,
+          ...(sourceDraft.textBody === null
+            ? {}
+            : { text: sourceDraft.textBody }),
+          ...(threading.inReplyTo === null
+            ? {}
+            : {
+                threading: {
+                  inReplyTo: threading.inReplyTo,
+                  references: threading.references,
+                },
+              }),
+          to,
+        });
+        if (!isCloudflareStructuredEmailSizeAccepted(sizeEstimate)) {
+          return yield* outboundMessageTooLarge(
+            "schedule-outbound",
+            input.draftId
+          );
         }
 
         const messageId = runtime.randomId();
@@ -680,7 +775,7 @@ const resendOutbound = (
           )
           .limit(1);
         if (sourceMessage === undefined) {
-          return yield* Effect.die("Outbound source message is missing");
+          return yield* invalidOutboundSnapshot(input.outboundDeliveryId);
         }
         const sourceAttachments = yield* tx
           .select()
@@ -714,6 +809,53 @@ const resendOutbound = (
             resourceType: "outbound",
             resourceId: input.outboundDeliveryId,
           });
+        }
+
+        const sourceMetadata = yield* Effect.try({
+          try: () => {
+            const references = decodeJson(
+              StringList,
+              sourceMessage.referencesJson
+            );
+            if (sourceMessage.inReplyTo === null && references.length > 0) {
+              throw new Error("References exist without In-Reply-To");
+            }
+            return Schema.decodeUnknownSync(ResendSizeMetadata)({
+              attachments: sourceAttachments.map((sourceAttachment) => ({
+                byteLength: sourceAttachment.size,
+                contentId: sourceAttachment.contentId ?? undefined,
+                disposition: sourceAttachment.disposition,
+                fileName: sourceAttachment.fileName,
+                mimeType: sourceAttachment.mimeType,
+              })),
+              bcc: decodeJson(AddressList, sourceMessage.bccJson),
+              cc: decodeJson(AddressList, sourceMessage.ccJson),
+              html: sourceMessage.htmlBody ?? undefined,
+              sender:
+                sourceMessage.senderJson === null
+                  ? undefined
+                  : decodeJson(MailAddress, sourceMessage.senderJson),
+              subject: sourceMessage.subject,
+              text: sourceMessage.textBody ?? undefined,
+              threading:
+                sourceMessage.inReplyTo === null
+                  ? undefined
+                  : {
+                      inReplyTo: sourceMessage.inReplyTo,
+                      references,
+                    },
+              to: decodeJson(AddressList, sourceMessage.toJson),
+            });
+          },
+          catch: () => invalidOutboundSnapshot(input.outboundDeliveryId),
+        });
+        const sizeEstimate =
+          estimateCloudflareStructuredEmailWireSize(sourceMetadata);
+        if (!isCloudflareStructuredEmailSizeAccepted(sizeEstimate)) {
+          return yield* outboundMessageTooLarge(
+            "resend-outbound",
+            input.outboundDeliveryId
+          );
         }
 
         const now = runtime.now();

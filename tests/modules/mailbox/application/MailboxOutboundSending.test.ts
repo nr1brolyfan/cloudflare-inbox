@@ -430,4 +430,39 @@ describe("mailbox outbound sending", () => {
       reason: "storage",
     });
   });
+
+  it("preserves the typed message-too-large scheduling rejection", async () => {
+    const command = Schema.decodeUnknownSync(SendMailboxDraftCommand)({
+      draftId: "draft-1",
+      expectedVersion: 1,
+      mailboxId: "primary",
+      operationId: "oversized-send",
+    });
+    const error = await runSending(
+      authorizationWith({
+        requireDraft: ({ resource }) => Effect.succeed(resource),
+      }),
+      MailboxSenderIdentity.of({ resolve: () => Effect.succeed(sender) }),
+      repositoryWith({
+        scheduleOutbound: () =>
+          Effect.fail(
+            new MailboxDomainError({
+              message: "Message is too large for the email provider",
+              operation: "schedule-outbound",
+              reason: "message-too-large",
+              resourceId: "draft-1",
+              resourceType: "draft",
+            })
+          ),
+      }),
+      (service) => service.send(command).pipe(Effect.flip),
+      explicitSend(command)
+    );
+
+    expect(error).toMatchObject({
+      _tag: "MailboxOutboundSendingError",
+      operation: "send",
+      reason: "message-too-large",
+    });
+  });
 });

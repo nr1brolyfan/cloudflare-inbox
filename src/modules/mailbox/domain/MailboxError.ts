@@ -39,6 +39,7 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "replay-inbound";
   readonly reason:
     | "validation"
+    | "message-too-large"
     | "not-found"
     | "version-conflict"
     | "idempotency-conflict"

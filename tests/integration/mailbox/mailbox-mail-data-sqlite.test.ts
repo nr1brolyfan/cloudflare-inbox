@@ -29,6 +29,7 @@ import {
   draftAttachment,
   folder,
   label,
+  mailboxOperation,
   message,
   messageLabel,
   outboundDelivery,
@@ -2668,6 +2669,416 @@ describe("Mailbox mail data SQLite", () => {
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
   });
+
+  it("rejects an oversized ordinary draft before immutable snapshot writes", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const db = yield* MailboxDatabase;
+        const created = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "oversized-ordinary-draft",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              subject: "Oversized ordinary message",
+              textBody: "a".repeat(1_700_000),
+              to: [{ address: "recipient@example.com" }],
+            },
+          })
+        );
+        const error = failure(
+          yield* Effect.result(
+            scheduleOutbound(
+              Schema.decodeUnknownSync(ScheduleOutboundInput)({
+                ...explicitConfirmation,
+                draftId: created.id,
+                expectedVersion: created.version,
+                mailboxId,
+                operationId: "oversized-ordinary-schedule",
+                sender,
+              })
+            )
+          )
+        );
+        const operations = yield* db
+          .select({ id: mailboxOperation.operationId })
+          .from(mailboxOperation);
+        const [unchangedDraft] = yield* db
+          .select({ deletedAt: draft.deletedAt, version: draft.version })
+          .from(draft)
+          .where(eq(draft.id, created.id));
+        const messages = yield* db.select({ id: message.id }).from(message);
+        const deliveries = yield* db
+          .select({ id: outboundDelivery.id })
+          .from(outboundDelivery);
+
+        expect({ error, unchangedDraft, messages, deliveries }).toMatchObject({
+          error: {
+            operation: "schedule-outbound",
+            reason: "message-too-large",
+          },
+          unchangedDraft: { deletedAt: null, version: 1 },
+          messages: [],
+          deliveries: [],
+        });
+        expect(operations).toStrictEqual([{ id: "oversized-ordinary-draft" }]);
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("rejects an oversized Reply before changing its draft or message rows", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        const reply = yield* createReplyDraft(
+          Schema.decodeUnknownSync(CreateReplyDraftInput)({
+            _tag: "Folder",
+            folderId: "inbox",
+            mailboxId,
+            messageId: "m1",
+            operationId: "oversized-reply-draft",
+            threadId: "thread-1",
+          })
+        );
+        yield* db
+          .update(draft)
+          .set({ textBody: "😀".repeat(500_000) })
+          .where(eq(draft.id, reply.id));
+        const messagesBefore = yield* db
+          .select({ id: message.id })
+          .from(message);
+        const operationsBefore = yield* db
+          .select({ id: mailboxOperation.operationId })
+          .from(mailboxOperation);
+        const error = failure(
+          yield* Effect.result(
+            scheduleOutbound(
+              Schema.decodeUnknownSync(ScheduleOutboundInput)({
+                ...explicitConfirmation,
+                draftId: reply.id,
+                expectedVersion: reply.version,
+                mailboxId,
+                operationId: "oversized-reply-schedule",
+                sender,
+              })
+            )
+          )
+        );
+        const [unchangedDraft] = yield* db
+          .select({ deletedAt: draft.deletedAt, version: draft.version })
+          .from(draft)
+          .where(eq(draft.id, reply.id));
+        const messagesAfter = yield* db
+          .select({ id: message.id })
+          .from(message);
+        const deliveries = yield* db
+          .select({ id: outboundDelivery.id })
+          .from(outboundDelivery);
+        const operationsAfter = yield* db
+          .select({ id: mailboxOperation.operationId })
+          .from(mailboxOperation);
+
+        expect(error).toMatchObject({
+          operation: "schedule-outbound",
+          reason: "message-too-large",
+        });
+        expect(unchangedDraft).toStrictEqual({ deletedAt: null, version: 1 });
+        expect(messagesAfter).toStrictEqual(messagesBefore);
+        expect(deliveries).toStrictEqual([]);
+        expect(operationsAfter).toStrictEqual(operationsBefore);
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("replays an old scheduled result but rejects a new resend of its oversized snapshot", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const db = yield* MailboxDatabase;
+        const created = yield* createDraft(
+          Schema.decodeUnknownSync(CreateDraftInput)({
+            mailboxId,
+            operationId: "legacy-size-draft",
+            content: {
+              attachmentIds: [],
+              bcc: [],
+              cc: [],
+              subject: "Legacy snapshot",
+              textBody: "Originally accepted",
+              to: [{ address: "recipient@example.com" }],
+            },
+          })
+        );
+        const scheduleInput = Schema.decodeUnknownSync(ScheduleOutboundInput)({
+          ...explicitConfirmation,
+          draftId: created.id,
+          expectedVersion: created.version,
+          mailboxId,
+          operationId: "legacy-size-schedule",
+          sender,
+        });
+        const scheduled = yield* scheduleOutbound(scheduleInput);
+        yield* db
+          .update(message)
+          .set({ textBody: "a".repeat(1_700_000) })
+          .where(eq(message.id, scheduled.delivery.messageId));
+        const replay = yield* scheduleOutbound(scheduleInput);
+        yield* db
+          .update(outboundDelivery)
+          .set({
+            failureAt: 1000,
+            failureCode: "provider_rejected",
+            status: "failed",
+          })
+          .where(eq(outboundDelivery.id, scheduled.delivery.id));
+        const rowsBefore = {
+          deliveries: yield* db
+            .select({ id: outboundDelivery.id })
+            .from(outboundDelivery),
+          messages: yield* db.select({ id: message.id }).from(message),
+          operations: yield* db
+            .select({ id: mailboxOperation.operationId })
+            .from(mailboxOperation),
+        };
+        const resendError = failure(
+          yield* Effect.result(
+            resendOutbound(
+              Schema.decodeUnknownSync(ResendOutboundInput)({
+                ...explicitConfirmation,
+                acknowledgeDuplicateRisk: true,
+                expectedVersion: scheduled.delivery.version,
+                mailboxId,
+                operationId: "legacy-size-resend",
+                outboundDeliveryId: scheduled.delivery.id,
+              })
+            )
+          )
+        );
+        const rowsAfter = {
+          deliveries: yield* db
+            .select({ id: outboundDelivery.id })
+            .from(outboundDelivery),
+          messages: yield* db.select({ id: message.id }).from(message),
+          operations: yield* db
+            .select({ id: mailboxOperation.operationId })
+            .from(mailboxOperation),
+        };
+
+        expect(replay.delivery.id).toBe(scheduled.delivery.id);
+        expect(resendError).toMatchObject({
+          operation: "resend-outbound",
+          reason: "message-too-large",
+        });
+        expect(rowsAfter).toStrictEqual(rowsBefore);
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it.each([
+    [3_037_962, true],
+    [3_037_963, false],
+  ] as const)(
+    "applies the exact attachment-driven schedule boundary at %i raw bytes",
+    async (attachmentSize, accepted) => {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          yield* setup;
+          const db = yield* MailboxDatabase;
+          const attachmentId = `boundary-${attachmentSize}`;
+          const created = yield* createDraft(
+            Schema.decodeUnknownSync(CreateDraftInput)({
+              mailboxId,
+              operationId: `boundary-draft-${attachmentSize}`,
+              content: {
+                attachmentIds: [attachmentId],
+                bcc: [],
+                cc: [],
+                subject: "",
+                textBody: "body",
+                to: [{ address: "recipient@example.com" }],
+              },
+            })
+          );
+          yield* db.insert(draftAttachment).values({
+            contentSha256: "a".repeat(64),
+            createdAt: 100,
+            draftId: created.id,
+            expiresAt: 10_000,
+            fileName: "boundary.pdf",
+            id: attachmentId,
+            mimeType: "application/pdf",
+            size: attachmentSize,
+            status: "stored",
+            storedAt: 100,
+          });
+          const before = {
+            deliveries: yield* db
+              .select({ id: outboundDelivery.id })
+              .from(outboundDelivery),
+            messages: yield* db.select({ id: message.id }).from(message),
+            operations: yield* db
+              .select({ id: mailboxOperation.operationId })
+              .from(mailboxOperation),
+          };
+          const result = yield* Effect.result(
+            scheduleOutbound(
+              Schema.decodeUnknownSync(ScheduleOutboundInput)({
+                ...explicitConfirmation,
+                draftId: created.id,
+                expectedVersion: created.version,
+                mailboxId,
+                operationId: `boundary-schedule-${attachmentSize}`,
+                sender,
+              })
+            )
+          );
+          const after = {
+            deliveries: yield* db
+              .select({ id: outboundDelivery.id })
+              .from(outboundDelivery),
+            messages: yield* db.select({ id: message.id }).from(message),
+            operations: yield* db
+              .select({ id: mailboxOperation.operationId })
+              .from(mailboxOperation),
+          };
+
+          if (accepted) {
+            expect(Result.isSuccess(result)).toBeTruthy();
+            expect(after.deliveries).toHaveLength(before.deliveries.length + 1);
+            expect(after.messages).toHaveLength(before.messages.length + 1);
+            expect(after.operations).toHaveLength(before.operations.length + 1);
+          } else {
+            expect(failure(result)).toMatchObject({
+              operation: "schedule-outbound",
+              reason: "message-too-large",
+            });
+            expect(after).toStrictEqual(before);
+          }
+        }).pipe(Effect.provide(mailboxSqliteTestLive()))
+      );
+    }
+  );
+
+  it.each(["sender", "recipient", "references", "attachment"] as const)(
+    "classifies corrupt resend %s metadata as invalid-state without writes",
+    async (corruption) => {
+      await Effect.runPromise(
+        Effect.gen(function* () {
+          yield* setup;
+          const db = yield* MailboxDatabase;
+          const attachmentId = `corrupt-${corruption}-attachment`;
+          const created = yield* createDraft(
+            Schema.decodeUnknownSync(CreateDraftInput)({
+              mailboxId,
+              operationId: `corrupt-${corruption}-draft`,
+              content: {
+                attachmentIds: [attachmentId],
+                bcc: [],
+                cc: [],
+                subject: "Corruption classification",
+                textBody: "body",
+                to: [{ address: "recipient@example.com" }],
+              },
+            })
+          );
+          yield* db.insert(draftAttachment).values({
+            contentSha256: "a".repeat(64),
+            createdAt: 100,
+            draftId: created.id,
+            expiresAt: 10_000,
+            fileName: "source.txt",
+            id: attachmentId,
+            mimeType: "text/plain",
+            size: 10,
+            status: "stored",
+            storedAt: 100,
+          });
+          const scheduled = yield* scheduleOutbound(
+            Schema.decodeUnknownSync(ScheduleOutboundInput)({
+              ...explicitConfirmation,
+              draftId: created.id,
+              expectedVersion: created.version,
+              mailboxId,
+              operationId: `corrupt-${corruption}-schedule`,
+              sender,
+            })
+          );
+          yield* db
+            .update(outboundDelivery)
+            .set({
+              failureAt: 1000,
+              failureCode: "provider_rejected",
+              status: "failed",
+            })
+            .where(eq(outboundDelivery.id, scheduled.delivery.id));
+          if (corruption === "sender") {
+            yield* db
+              .update(message)
+              .set({ senderJson: "{}" })
+              .where(eq(message.id, scheduled.delivery.messageId));
+          } else if (corruption === "recipient") {
+            yield* db
+              .update(message)
+              .set({ toJson: '[{"address":"invalid"}]' })
+              .where(eq(message.id, scheduled.delivery.messageId));
+          } else if (corruption === "references") {
+            yield* db
+              .update(message)
+              .set({ referencesJson: '["not-a-message-id"]' })
+              .where(eq(message.id, scheduled.delivery.messageId));
+          } else {
+            yield* db
+              .update(attachment)
+              .set({ contentId: "unexpected-content-id" })
+              .where(eq(attachment.messageId, scheduled.delivery.messageId));
+          }
+          const before = {
+            deliveries: yield* db
+              .select({ id: outboundDelivery.id })
+              .from(outboundDelivery),
+            messages: yield* db.select({ id: message.id }).from(message),
+            operations: yield* db
+              .select({ id: mailboxOperation.operationId })
+              .from(mailboxOperation),
+          };
+          const error = failure(
+            yield* Effect.result(
+              resendOutbound(
+                Schema.decodeUnknownSync(ResendOutboundInput)({
+                  ...explicitConfirmation,
+                  acknowledgeDuplicateRisk: true,
+                  expectedVersion: scheduled.delivery.version,
+                  mailboxId,
+                  operationId: `corrupt-${corruption}-resend`,
+                  outboundDeliveryId: scheduled.delivery.id,
+                })
+              )
+            )
+          );
+          const after = {
+            deliveries: yield* db
+              .select({ id: outboundDelivery.id })
+              .from(outboundDelivery),
+            messages: yield* db.select({ id: message.id }).from(message),
+            operations: yield* db
+              .select({ id: mailboxOperation.operationId })
+              .from(mailboxOperation),
+          };
+
+          expect(error).toMatchObject({
+            operation: "resend-outbound",
+            reason: "invalid-state",
+          });
+          expect(after).toStrictEqual(before);
+        }).pipe(Effect.provide(mailboxSqliteTestLive()))
+      );
+    }
+  );
 
   it("rolls back scheduling when the operation ledger write fails", async () => {
     const runtime = makeRuntime();

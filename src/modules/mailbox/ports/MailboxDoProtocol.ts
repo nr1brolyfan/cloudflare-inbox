@@ -108,6 +108,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
   ]),
   reason: Schema.Literals([
     "validation",
+    "message-too-large",
     "not-found",
     "version-conflict",
     "idempotency-conflict",

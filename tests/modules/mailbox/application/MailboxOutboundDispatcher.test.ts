@@ -3,6 +3,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import {
+  MailboxEmailSendClient,
+  OutboundEmailProviderCloudflareLayer,
+} from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import type { MailboxOutboundDispatcherService } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import { MailboxOperationalStatus } from "#/modules/mailbox/ports/MailboxOperationalStatus";
@@ -188,5 +192,74 @@ describe("mailbox outbound dispatcher", () => {
       sends: 1,
     });
     expect(failure).toBe(providerFailure);
+  });
+
+  it("defends at the full dispatch/provider boundary when actual bytes exceed snapshot metadata", async () => {
+    let attachmentReads = 0;
+    let clientSends = 0;
+    const providerLayer = OutboundEmailProviderCloudflareLayer.pipe(
+      Layer.provide(
+        Layer.succeed(
+          MailboxEmailSendClient,
+          MailboxEmailSendClient.of({
+            send: () => {
+              clientSends += 1;
+              return Effect.succeed({ messageId: "provider-message-1" });
+            },
+          })
+        )
+      )
+    );
+    const error = await Effect.runPromise(
+      MailboxOutboundDispatcher.pipe(
+        Effect.flatMap((dispatcher) =>
+          dispatcher.dispatch(snapshot.outboundDeliveryId)
+        ),
+        Effect.flip,
+        Effect.provide(
+          MailboxOutboundDispatcher.layerNoDeps.pipe(
+            Layer.provide(
+              Layer.mergeAll(
+                Layer.succeed(
+                  MailboxOutboundDispatchStore,
+                  MailboxOutboundDispatchStore.of({
+                    load: () => Effect.succeed(snapshot),
+                  })
+                ),
+                Layer.succeed(
+                  OutboundDraftAttachmentBlobReader,
+                  OutboundDraftAttachmentBlobReader.of({
+                    read: () => {
+                      attachmentReads += 1;
+                      // Production R2 reading rejects this size drift first. The
+                      // synthetic seam proves the provider remains fail-closed.
+                      return Effect.succeed(new Uint8Array(5 * 1024 * 1024));
+                    },
+                  })
+                ),
+                providerLayer,
+                Layer.succeed(
+                  MailboxOperationalStatus,
+                  MailboxOperationalStatus.of({
+                    acquire: () => Effect.succeed("holder-a"),
+                    isActive: () => Effect.succeed(true),
+                    release: () => Effect.void,
+                  })
+                )
+              )
+            )
+          )
+        )
+      )
+    );
+
+    expect(error).toMatchObject({
+      _tag: "DeliveryRejectedError",
+      reason: "message-too-large",
+    });
+    expect({ attachmentReads, clientSends }).toStrictEqual({
+      attachmentReads: 1,
+      clientSends: 0,
+    });
   });
 });

@@ -8,6 +8,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import {
+  estimateCloudflareStructuredEmailWireSize,
+  isCloudflareStructuredEmailSizeAccepted,
+} from "#/modules/mailbox/domain/CloudflareStructuredEmailSize";
+import {
   DeliveryIndeterminateError,
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
@@ -234,6 +238,13 @@ const invalidOutboundMessage = (cause: unknown) =>
     reason: "invalid-message",
   });
 
+const oversizedOutboundMessage = (cause: unknown) =>
+  new DeliveryRejectedError({
+    cause,
+    message: "Email provider rejected a message that is too large",
+    reason: "message-too-large",
+  });
+
 export const OutboundEmailProviderCloudflareLayer = Layer.effect(
   OutboundEmailProvider,
   Effect.gen(function* () {
@@ -243,11 +254,23 @@ export const OutboundEmailProviderCloudflareLayer = Layer.effect(
       send: (message) =>
         Schema.decodeUnknownEffect(OutboundEmailMessage)(message).pipe(
           Effect.mapError(invalidOutboundMessage),
-          Effect.flatMap((validated) =>
-            client
-              .send(emailMessageBuilder(validated))
-              .pipe(Effect.mapError(providerError))
-          ),
+          Effect.flatMap((validated) => {
+            const estimate = estimateCloudflareStructuredEmailWireSize({
+              ...validated,
+              attachments: validated.attachments.map((item) => ({
+                byteLength: item.content.byteLength,
+                contentId: item.contentId,
+                disposition: item.disposition,
+                fileName: item.fileName,
+                mimeType: item.mimeType,
+              })),
+            });
+            return isCloudflareStructuredEmailSizeAccepted(estimate)
+              ? client
+                  .send(emailMessageBuilder(validated))
+                  .pipe(Effect.mapError(providerError))
+              : Effect.fail(oversizedOutboundMessage(estimate));
+          }),
           Effect.flatMap((result) =>
             Schema.decodeUnknownEffect(OutboundProviderAcceptance)({
               providerMessageId: result.messageId,

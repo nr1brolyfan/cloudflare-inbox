@@ -6,8 +6,8 @@ Minimalny plan uruchomienia prywatnej skrzynki `szymon@szymondlugolecki.com` do 
 
 - Ostatnia aktualizacja: 2026-07-25
 - Stan: `IN PROGRESS`
-- Aktualne zadanie: `JOB-SEND-001` conservative pre-schedule Cloudflare size gate
-- Następne zadanie: `JOB-ARCH-001` private verified archive recipient configuration
+- Aktualne zadanie: `JOB-ARCH-001` private verified archive recipient configuration
+- Następne zadanie: `JOB-ARCH-002` dual-path inbound archive delivery
 - Docelowy tryb: private single-owner beta
 - Adres pocztowy: `szymon@szymondlugolecki.com`
 - Website origin: `https://mail.szymondlugolecki.com`
@@ -28,7 +28,7 @@ Launch gate jest spełniony, gdy z produkcyjnej aplikacji można:
 7. Zachować niezależną kopię przychodzącej i wychodzącej korespondencji w Gmailu.
 8. Przejść datowany live smoke test z Gmail i Outlook oraz sprawdzenie SPF, DKIM i DMARC.
 
-Launch gate pozostaje zablokowany przez `JOB-SEND-001` oraz live część `JOB-REPLY-004`: lokalna Phase A nie dowodzi jeszcze exact equality zwróconego provider `messageId` z dostarczonym RFC `Message-ID` ani poprawnego grupowania `In-Reply-To`/`References` w Gmailu i Outlooku.
+Launch gate pozostaje zablokowany przez live część `JOB-REPLY-004` oraz zadania archiwum i Cloudflare: lokalna Phase A nie dowodzi jeszcze exact equality zwróconego provider `messageId` z dostarczonym RFC `Message-ID` ani poprawnego grupowania `In-Reply-To`/`References` w Gmailu i Outlooku.
 
 Do przejścia całego gate'a nie wysyłamy prawdziwych aplikacji o pracę z tej skrzynki.
 
@@ -105,7 +105,11 @@ Lokalny, niecommitted review gate: wcześniejszy pełny `bun run test` przeszed�
 
 ### Limit wysyłki Cloudflare
 
-- [ ] JOB-SEND-001 Przed utworzeniem snapshotu i wywołaniem providera wymusić konserwatywny limit 5 MiB oszacowanego całego outbound message dla Cloudflare Email Sending. Estymator ma failować przed schedule dla sumy UTF-8 bodies, base64 expansion i line folding załączników, zakodowanych filenames/MIME metadata, recipients/threading headers oraz stałego bezpiecznego overheadu. Istniejące limity upload/storage 10/20 MiB mogą pozostać limitami przechowywania, ale nie mogą pozwolić utworzyć niewysyłalnego snapshotu.
+- [x] JOB-SEND-001 Local-complete heuristic: przed utworzeniem snapshotu i wywołaniem providera wymusić konserwatywny limit 5 MiB oszacowanego całego outbound message dla Cloudflare Email Sending. Estymator ma failować przed schedule dla sumy UTF-8 bodies, base64 expansion i line folding załączników, zakodowanych filenames/MIME metadata, recipients/threading headers oraz stałego bezpiecznego overheadu. Istniejące limity upload/storage 10/20 MiB mogą pozostać limitami przechowywania, ale nie mogą pozwolić utworzyć niewysyłalnego snapshotu. Local-complete oznacza ukończoną implementację i testy lokalne, nie dowód zgodności rozmiaru finalnej serializacji Cloudflare.
+
+Formuła `JOB-SEND-001` używa jednego czystego kontraktu dla admission i adaptera Cloudflare: każdy tekst jest liczony z rzeczywistych bajtów UTF-8, a następnie z pesymistycznym trzykrotnym Q-encoding, małymi encoded-word chunks i foldingiem; body dolicza quoted-printable soft breaks; każdy załącznik dolicza `4 * ceil(bytes / 3)` oraz CRLF co 76 znaków; osobno liczone są zakodowane filenames w obu parametrach MIME, content type, disposition, Content-ID, wszystkie adresy/display names, recipients, subject, `In-Reply-To` i `References`. Każde dodawanie, mnożenie i ceil division używa checked safe-integer arithmetic; malformed length lub overflow failuje closed. Znane provider-generated składniki są estymowane i checked osobno: `Date`, `Message-ID`, DKIM, liczba MIME boundaries oraz stała struktura wiadomości. Ponad nimi w limicie 5 MiB zawsze pozostaje dodatkowa stała rezerwa 1 MiB na nieznane różnice serializacji. To celowo restrykcyjna heurystyka, ponieważ Cloudflare nie publikuje dokładnych granic ani formuły swojego serializera. Atomic schedule i explicit resend odrzucają typed `message-too-large` przed message/delivery/operation writes, ale exact replay wcześniej zatwierdzonego operation result pozostaje niezmieniony; stary oversized snapshot nie może utworzyć nowego resendu. Korupcja sendera, recipients, threading albo attachment metadata starego snapshotu jest `invalid-state`, nie `message-too-large`. Adapter ponownie liczy rzeczywiste `Uint8Array.byteLength` i dokładne outgoing fields bezpośrednio przed `client.send`, bez transportu przy lokalnym odrzuceniu. To jest konserwatywna bramka lokalna, nie zamiennik walidacji i nie może dowieść rozmiaru finalnej serializacji: live Cloudflare nadal autorytatywnie waliduje wiadomość.
+
+Lokalne evidence `JOB-SEND-001` po korektach review z 2026-07-25 na bazie `e0a6293`: focused matrix przeszła `145/145`; pełny `bun run test` przeszedł `157/157` files i `1885/1885` tests; restore rehearsal przeszedł `20/20`; `bun run typecheck`, `bun run check`, `bun run build` i `git diff --check` zakończyły się powodzeniem. Macierz obejmuje sąsiednie wartości body oraz attachment-driven tuż pod/nad limitem, exact base64/folding i praktyczne przyrosty filename/Content-ID/threading, Unicode, wiele załączników, overflow i malformed lengths, ordinary i Reply schedule, resend starego oversized snapshotu, exact replay starego accepted result, klasyfikację corrupt sender/recipients/references/attachment metadata jako `invalid-state`, brak `mailbox_operation`/message/delivery write'ów i provider invocation przy odrzuceniu, publiczne mapowanie błędu i renderowany komunikat UI. Produkcyjny reader R2 wcześniej odrzuca metadata/size/hash drift; dodatkowy syntetyczny full dispatch/provider test omija ten integrity guard i potwierdza, że actual-byte mismatch nadal kończy się lokalnym `message-too-large` bez wywołania klienta Cloudflare. To evidence lokalne potwierdza implementację heurystyki, lecz nie może dowieść finalnego rozmiaru serializacji Cloudflare; wymagane live evidence pozostaje w `JOB-LIVE-008`.
 
 ### Niezależne archiwum Gmail
 
@@ -131,6 +135,7 @@ Lokalny, niecommitted review gate: wcześniejszy pełny `bun run test` przeszed�
 - [ ] JOB-LIVE-005 Sprawdzić Gmail/Outlook Authentication-Results dla SPF, DKIM i DMARC oraz zapisać datowane, content-free evidence z deployment version.
 - [ ] JOB-LIVE-006 Sprawdzić unknown recipient, inbound >10 MiB, outbound failed, `indeterminate`, Workflow retry, auth denial i brak automatycznego resend przy nieznanym provider outcome.
 - [ ] JOB-LIVE-007 Uruchomić końcowy pełny gate, niezależne security/reliability review i dopiero wtedy oznaczyć private beta jako gotową do wysyłania CV.
+- [ ] JOB-LIVE-008 Wykonać datowany live Cloudflare size smoke z reprezentatywnym tekstem/PDF i kontrolowanymi wartościami blisko lokalnego progu po obu stronach. Zapisać content-free evidence rozmiarów wejściowych, decyzji lokalnej i wyniku providera; potwierdzić bezpieczny margines albo skorygować heurystykę przed private beta. Lokalne testy estymatora nie zamykają tego wymagania.
 
 ## Tryb po uruchomieniu
 

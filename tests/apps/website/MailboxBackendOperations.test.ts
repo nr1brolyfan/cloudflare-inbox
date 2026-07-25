@@ -499,6 +499,40 @@ describe("Website mailbox Backend forwarding", () => {
     expect(undo).toMatchObject({ ok: false, status: 502 });
   });
 
+  it("preserves only the allowlisted oversized-message send error", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const command = Schema.decodeUnknownSync(SendMailboxDraftCommand)({
+      draftId: "draft-1",
+      expectedVersion: 1,
+      mailboxId: "primary",
+      operationId: "oversized-send",
+    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json(
+            {
+              _tag: "AuthBadRequestError",
+              code: "bad_request",
+              message: "Message is too large for the email provider",
+            },
+            { status: 400 }
+          )
+        ),
+      (operations) => operations.sendDraft({ command, incoming })
+    );
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "AuthBadRequestError",
+        code: "bad_request",
+        message: "Message is too large for the email provider",
+      },
+      ok: false,
+      status: 400,
+    });
+  });
+
   it("forwards an outbound status GET without a body and preserves auth context", async () => {
     let forwarded: Request | undefined;
     const incoming = new Request("https://inbox.test/_server", {

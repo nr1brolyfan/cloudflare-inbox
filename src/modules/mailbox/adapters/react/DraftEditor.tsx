@@ -16,6 +16,23 @@ import type { DraftAttachmentReservation } from "#/modules/mailbox/domain/Mailbo
 
 type EditorContent = Schema.Schema.Type<typeof DraftEditorContent>;
 
+export const draftSendErrorText = (status: number, backendMessage?: string) => {
+  if (status === 400) {
+    return backendMessage === "Message is too large for the email provider"
+      ? "This message is too large for the email provider. Remove attachments or shorten the content."
+      : "Add at least one recipient and save the draft before sending.";
+  }
+  if (status === 403) {
+    return "You do not have permission to send from this mailbox.";
+  }
+  if (status === 404) {
+    return "This draft no longer exists.";
+  }
+  return status === 409
+    ? "This draft changed elsewhere. Close and reopen it before sending."
+    : "The send result could not be confirmed. Retry safely.";
+};
+
 interface DraftEditorProps {
   readonly attachments: readonly DraftAttachmentReservation[];
   readonly attachmentUploads: readonly DraftAttachmentUploadView[];

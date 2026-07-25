@@ -66,6 +66,7 @@ export class MailboxOutboundSendingError extends Data.TaggedError(
   readonly reason:
     | "conflict"
     | "invalid-input"
+    | "message-too-large"
     | "not-found"
     | "storage"
     | "user-action-required";
@@ -104,11 +105,13 @@ const sendingError = (
           ? "Explicit user action is required for outbound delivery"
           : reason === "invalid-input"
             ? "Outbound request is invalid"
-            : reason === "not-found"
-              ? operation === "send"
-                ? "Draft was not found"
-                : "Outbound delivery was not found"
-              : "Outbound operation failed",
+            : reason === "message-too-large"
+              ? "Message is too large for the email provider"
+              : reason === "not-found"
+                ? operation === "send"
+                  ? "Draft was not found"
+                  : "Outbound delivery was not found"
+                : "Outbound operation failed",
     operation,
     reason,
   });
@@ -125,6 +128,9 @@ const mapRepositoryError = (
   }
   if (error.reason === "validation") {
     return sendingError(operation, "invalid-input");
+  }
+  if (error.reason === "message-too-large") {
+    return sendingError(operation, "message-too-large");
   }
   return error.reason === "version-conflict" ||
     error.reason === "idempotency-conflict" ||
