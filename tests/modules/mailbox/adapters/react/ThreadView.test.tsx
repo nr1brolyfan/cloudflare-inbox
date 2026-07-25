@@ -69,9 +69,20 @@ describe(ThreadView, () => {
       />
     );
 
-    expect(screen.getByText(maliciousText)).toBeTruthy();
-    expect(screen.getByText('<img src=x onerror="pwn()">.txt')).toBeTruthy();
+    expect([
+      Boolean(screen.getByText(maliciousText)),
+      Boolean(screen.getByText('<img src=x onerror="pwn()">.txt')),
+    ]).toStrictEqual([true, true]);
     expect(container.querySelector("script, img")).toBeNull();
+    expect(
+      screen
+        .getByRole("link", {
+          name: 'Download <img src=x onerror="pwn()">.txt',
+        })
+        .getAttribute("href")
+    ).toBe(
+      "/api/mailboxes/primary/messages/message-1/attachments/attachment-1/download?label=work"
+    );
     const iframe = screen.getByTitle(
       "Sandboxed HTML message from sender@example.test"
     );

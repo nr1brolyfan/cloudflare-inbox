@@ -9,6 +9,7 @@ import type {
   UpdateMailboxDraftCommand,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
+import type { MailboxInboundAttachmentInput } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import type { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
@@ -135,6 +136,17 @@ export const WebsiteApplication = {
       MailboxBackendOperations.pipe(
         Effect.flatMap((operations) =>
           operations.getInlineAttachment({ incoming, query })
+        )
+      )
+    ),
+  getMailboxInboundAttachment: (
+    query: MailboxInboundAttachmentInput,
+    incoming: Request
+  ) =>
+    WebsiteRuntime.runPromise(
+      MailboxBackendOperations.pipe(
+        Effect.flatMap((operations) =>
+          operations.getInboundAttachment({ incoming, query })
         )
       )
     ),

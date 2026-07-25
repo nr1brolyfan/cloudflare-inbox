@@ -47,6 +47,7 @@ import {
   GetAttachmentBlobInput,
   GetMessageInput,
   GetMessageResult,
+  InboundAttachmentBlobLocation,
   GetThreadInput,
   GetThreadResult,
   ListMessagesInput,
@@ -228,6 +229,10 @@ export const MailDataRpcRequest = Schema.Union([
     _tag: Schema.Literal("GetAttachmentBlob"),
     input: GetAttachmentBlobInput,
   }),
+  Schema.Struct({
+    _tag: Schema.Literal("GetInboundAttachmentBlob"),
+    input: GetAttachmentBlobInput,
+  }),
   Schema.Struct({ _tag: Schema.Literal("GetThread"), input: GetThreadInput }),
   Schema.Struct({
     _tag: Schema.Literal("SetMessageRead"),
@@ -319,6 +324,10 @@ export const MailDataRpcResponse = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("AttachmentBlobFound"),
     value: AttachmentBlobLocation,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("InboundAttachmentBlobFound"),
+    value: InboundAttachmentBlobLocation,
   }),
   Schema.Struct({
     _tag: Schema.Literal("ThreadFound"),
@@ -454,6 +463,11 @@ export const mailDataRequestMetadataByTag = {
     operation: "get-attachment",
     kind: "read",
     responseTag: "AttachmentBlobFound",
+  },
+  GetInboundAttachmentBlob: {
+    operation: "get-attachment",
+    kind: "read",
+    responseTag: "InboundAttachmentBlobFound",
   },
   GetThread: {
     operation: "get-thread",

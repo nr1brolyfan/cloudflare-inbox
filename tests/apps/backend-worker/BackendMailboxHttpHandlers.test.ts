@@ -55,6 +55,8 @@ import {
   MailboxDraftReading,
 } from "#/modules/mailbox/application/MailboxDraftReading";
 import type { MailboxDraftReadingService } from "#/modules/mailbox/application/MailboxDraftReading";
+import { MailboxInboundAttachmentReading } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
+import type { MailboxInboundAttachmentReadingService } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import {
   MailboxInboundReplay,
   MailboxInboundReplayAuthorization,
@@ -411,7 +413,17 @@ const makeHandler = (
   }),
   inboundReplay: MailboxInboundReplayService = MailboxInboundReplay.of({
     replay: () => Effect.succeed(replayedProcessing),
-  })
+  }),
+  inboundAttachments: MailboxInboundAttachmentReadingService = MailboxInboundAttachmentReading.of(
+    {
+      get: () =>
+        Effect.succeed({
+          bytes: new Uint8Array([1, 2, 3]),
+          fileName: "brief.pdf",
+          mimeType: Schema.decodeUnknownSync(MimeType)("application/pdf"),
+        }),
+    }
+  )
 ) => {
   const requestAuthLive = Layer.mergeAll(
     Layer.succeed(SessionCookie, makeSessionCookie()),
@@ -462,6 +474,7 @@ const makeHandler = (
         Layer.succeed(MailboxMessageActions, messageActions),
         Layer.succeed(MailboxMessageHtmlReading, messageHtml),
         Layer.succeed(MailboxInlineAttachmentReading, inlineAttachments),
+        Layer.succeed(MailboxInboundAttachmentReading, inboundAttachments),
         Layer.succeed(MailboxDraftEditing, draftEditing),
         Layer.succeed(MailboxDraftReading, draftReading),
         Layer.succeed(MailboxDraftAttachments, draftAttachments),
@@ -597,6 +610,15 @@ const mailboxOperationCases: readonly MailboxOperationCase[] = [
     request: () =>
       mailboxRequest(
         "/api/mailboxes/primary/messages/message-1/attachments/attachment-1/inline?folder=inbox",
+        "GET"
+      ),
+    successStatus: 200,
+  },
+  {
+    operation: MailboxOperation.getInboundAttachment,
+    request: () =>
+      mailboxRequest(
+        "/api/mailboxes/primary/messages/message-1/attachments/attachment-1/download?folder=inbox",
         "GET"
       ),
     successStatus: 200,
@@ -802,6 +824,14 @@ const makeCountingHandler = (session: ValidatedSession) => {
       MailboxInboundReplay.of({
         replay: () =>
           counted(MailboxOperation.replayInbound, replayedProcessing),
+      }),
+      MailboxInboundAttachmentReading.of({
+        get: () =>
+          counted(MailboxOperation.getInboundAttachment, {
+            bytes: new Uint8Array([1, 2, 3]),
+            fileName: "brief.pdf",
+            mimeType: Schema.decodeUnknownSync(MimeType)("application/pdf"),
+          }),
       })
     ),
   };
@@ -1162,6 +1192,61 @@ describe("protected mailbox API", () => {
       await expect(response.arrayBuffer()).resolves.toStrictEqual(
         new Uint8Array([1, 2, 3]).buffer
       );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("returns an independently authorized ordinary attachment download", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/messages/message-1/attachments/attachment-1/download?folder=inbox",
+          "GET"
+        )
+      );
+
+      expect({
+        cache: response.headers.get("cache-control"),
+        contentDisposition: response.headers.get("content-disposition"),
+        contentLength: response.headers.get("content-length"),
+        contentType: response.headers.get("content-type"),
+        nosniff: response.headers.get("x-content-type-options"),
+        status: response.status,
+      }).toStrictEqual({
+        cache: "private, no-store",
+        contentDisposition:
+          "attachment; filename=\"brief.pdf\"; filename*=UTF-8''brief.pdf",
+        contentLength: "3",
+        contentType: "application/pdf",
+        nosniff: "nosniff",
+        status: 200,
+      });
+      await expect(response.arrayBuffer()).resolves.toStrictEqual(
+        new Uint8Array([1, 2, 3]).buffer
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("rejects the ordinary attachment Backend endpoint without a session", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const response = await handler(
+        new Request(
+          "https://backend.test/api/mailboxes/primary/messages/message-1/attachments/attachment-1/download?folder=inbox",
+          { headers: { origin: publicOrigin } }
+        )
+      );
+
+      expect(response.status).toBe(401);
+      await expect(response.json()).resolves.toMatchObject({
+        code: "unauthenticated",
+      });
     } finally {
       await dispose();
     }

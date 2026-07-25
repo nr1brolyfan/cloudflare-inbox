@@ -21,6 +21,7 @@ import {
   AddMessageLabelInput,
   AttachmentBlobLocation,
   AttachmentMetadata,
+  InboundAttachmentBlobLocation,
   MoveMessageInput,
   MessageDetailSchema,
   MessageFilters as MessageFiltersSchema,
@@ -565,6 +566,67 @@ const getAttachmentBlob = (
     });
   });
 
+const getInboundAttachmentBlob = (
+  mailboxId: MailboxId,
+  input: GetAttachmentBlobInput
+) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    const [row] = yield* db
+      .select({
+        attachmentId: attachment.id,
+        contentId: attachment.contentId,
+        disposition: attachment.disposition,
+        fileName: attachment.fileName,
+        folderId: message.folderId,
+        inboundIngestId: attachment.inboundIngestId,
+        messageId: message.id,
+        mimeType: attachment.mimeType,
+        receivedAt: message.receivedAt,
+        size: attachment.size,
+        sourceIndex: attachment.sourceIndex,
+      })
+      .from(attachment)
+      .innerJoin(message, eq(message.id, attachment.messageId))
+      .innerJoin(folder, eq(folder.id, message.folderId))
+      .innerJoin(
+        inboundProcessing,
+        and(
+          eq(inboundProcessing.id, attachment.inboundIngestId),
+          eq(inboundProcessing.messageId, attachment.messageId)
+        )
+      )
+      .where(
+        and(
+          eq(attachment.id, input.attachmentId),
+          eq(attachment.messageId, input.messageId),
+          eq(attachment.disposition, "attachment"),
+          eq(message.direction, "inbound"),
+          eq(inboundProcessing.status, "ready"),
+          isNotNull(attachment.inboundIngestId),
+          isNotNull(attachment.sourceIndex),
+          isNotNull(message.receivedAt),
+          isNull(attachment.deletedAt),
+          isNull(message.deletedAt),
+          isNull(folder.deletedAt)
+        )
+      )
+      .limit(1);
+    if (row === undefined) {
+      return yield* messageDomainError(
+        "get-attachment",
+        "not-found",
+        "Inbound attachment was not found",
+        { resourceType: "attachment", resourceId: input.attachmentId }
+      );
+    }
+    return yield* Schema.decodeUnknownEffect(InboundAttachmentBlobLocation)({
+      ...row,
+      contentId: row.contentId ?? undefined,
+      mailboxId,
+    });
+  });
+
 const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
@@ -986,6 +1048,8 @@ const makeMailboxMessageStore = (
       provideDatabase(getMessage(mailboxId, input)),
     getAttachmentBlob: (input: GetAttachmentBlobInput) =>
       provideDatabase(getAttachmentBlob(mailboxId, input)),
+    getInboundAttachmentBlob: (input: GetAttachmentBlobInput) =>
+      provideDatabase(getInboundAttachmentBlob(mailboxId, input)),
     getThread: (input: GetThreadInput) =>
       provideDatabase(getThread(mailboxId, input)),
     setMessageRead: (input: SetMessageReadInput) =>

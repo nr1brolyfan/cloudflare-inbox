@@ -351,6 +351,17 @@ export const GetMailboxInlineAttachmentEndpoint = HttpApiEndpoint.get(
   }
 );
 
+export const GetMailboxInboundAttachmentEndpoint = HttpApiEndpoint.get(
+  MailboxOperation.getInboundAttachment,
+  "/api/mailboxes/:mailboxId/messages/:messageId/attachments/:attachmentId/download",
+  {
+    error: MailboxErrors,
+    params: MailboxInlineAttachmentParams,
+    query: MailboxMessageViewQuery,
+    success: Schema.Uint8Array.pipe(HttpApiSchema.asUint8Array()),
+  }
+);
+
 export const GetMailboxThreadEndpoint = HttpApiEndpoint.get(
   MailboxOperation.getThread,
   "/api/mailboxes/:mailboxId/threads/:threadId",
@@ -398,6 +409,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     GetMailboxDraftEndpoint,
     GetMailboxOutboundDeliveryEndpoint,
     GetMailboxThreadEndpoint,
+    GetMailboxInboundAttachmentEndpoint,
     GetMailboxInlineAttachmentEndpoint,
     GetMailboxMessageHtmlEndpoint,
     GetMailboxNavigationEndpoint,

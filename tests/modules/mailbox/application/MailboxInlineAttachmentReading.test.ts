@@ -75,6 +75,7 @@ const unusedAuthorization = () =>
 const repository = MailboxMessageRepository.of({
   addMessageLabel: unused,
   getAttachmentBlob: () => Effect.succeed(blobLocation),
+  getInboundAttachmentBlob: unused,
   getMessage: () => Effect.succeed(message),
   getThread: unused,
   listMessages: unused,
@@ -94,6 +95,7 @@ const authorization = MailboxAuthorization.of({
       mailboxId: blobLocation.mailboxId,
       messageId: blobLocation.messageId,
     }),
+  requireInboundAttachmentDownload: unusedAuthorization,
   requireAttachmentUpload: unusedAuthorization,
   requireDraft: unusedAuthorization,
   requireDraftCreate: unusedAuthorization,

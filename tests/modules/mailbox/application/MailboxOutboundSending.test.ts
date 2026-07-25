@@ -77,6 +77,7 @@ const authorizationWith = (
 ): MailboxAuthorizationService =>
   MailboxAuthorization.of({
     requireAttachmentRead: unusedAuthorization,
+    requireInboundAttachmentDownload: unusedAuthorization,
     requireAttachmentUpload: unusedAuthorization,
     requireDraft: unusedAuthorization,
     requireDraftCreate: unusedAuthorization,

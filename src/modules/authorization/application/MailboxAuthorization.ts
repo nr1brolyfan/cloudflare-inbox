@@ -147,6 +147,27 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
             ).pipe(Effect.as(location))
           )
         ),
+      requireInboundAttachmentDownload: ({ resource }) =>
+        resolveAttachment(resource).pipe(
+          Effect.flatMap((location) =>
+            AuthPolicy.all(
+              requirePermission(
+                AuthorizationPermission.attachmentRead,
+                mailboxResourceScope(location.mailboxId)
+              ),
+              AuthPolicy.any(
+                requirePermission(
+                  AuthorizationPermission.messageRead,
+                  mailboxResourceScope(location.mailboxId)
+                ),
+                requirePermission(
+                  AuthorizationPermission.folderRead,
+                  folderResourceScope(location.mailboxId, location.folderId)
+                )
+              )
+            ).pipe(Effect.as(location))
+          )
+        ),
       requireAttachmentUpload: ({ resource }) =>
         resolveDraft(resource).pipe(
           Effect.flatMap((location) =>

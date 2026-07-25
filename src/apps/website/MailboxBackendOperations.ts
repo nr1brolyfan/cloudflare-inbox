@@ -15,6 +15,8 @@ import type {
 import { DraftEditorDraft } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxDraftListResult } from "#/modules/mailbox/application/MailboxDraftReading";
+import type { MailboxInboundAttachmentInput } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
+import { isValidAttachmentMimeType } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import type { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { isSafeInlineImageMimeType } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
@@ -49,6 +51,7 @@ import {
   draftAttachmentMaxBytes,
   ReservedDraftAttachment,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { MAXIMUM_INBOUND_RAW_BYTES } from "#/modules/mailbox/domain/MailboxInbound";
 import type {
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
@@ -108,6 +111,16 @@ export type MailboxMessageHtmlServerResult =
 export type MailboxInlineAttachmentServerResult =
   | {
       readonly bytes: Uint8Array;
+      readonly mimeType: string;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxInboundAttachmentServerResult =
+  | {
+      readonly body: ReadableStream<Uint8Array>;
+      readonly contentDisposition: string;
+      readonly contentLength: number;
       readonly mimeType: string;
       readonly ok: true;
     }
@@ -351,6 +364,10 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
     readonly query: GetMailboxDraftQuery;
   }) => Effect.Effect<MailboxDraftServerResult>;
+  readonly getInboundAttachment: (input: {
+    readonly incoming: Request;
+    readonly query: MailboxInboundAttachmentInput;
+  }) => Effect.Effect<MailboxInboundAttachmentServerResult>;
   readonly getNavigation: (
     incoming: Request
   ) => Effect.Effect<MailboxNavigationServerResult>;
@@ -566,6 +583,66 @@ export const MailboxBackendOperationsLayer = Layer.effect(
         };
       });
 
+    const forwardInboundAttachment = (
+      query: MailboxInboundAttachmentInput,
+      incoming: Request
+    ): Effect.Effect<MailboxInboundAttachmentServerResult> =>
+      Effect.gen(function* () {
+        const headers = new Headers();
+        for (const name of forwardedHeaderNames) {
+          const value = incoming.headers.get(name);
+          if (value !== null) {
+            headers.set(name, value);
+          }
+        }
+        const search = new URLSearchParams();
+        if (query._tag === "Folder") {
+          search.set("folder", query.folderId);
+        } else {
+          search.set("label", query.labelId);
+        }
+        const path = `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/messages/${encodeURIComponent(query.messageId)}/attachments/${encodeURIComponent(query.attachmentId)}/download?${search.toString()}`;
+        const response = yield* backend.fetch(
+          "website.mailbox.inbound_attachment",
+          new Request(new URL(path, incoming.url), { headers })
+        );
+        if (!response.ok) {
+          return yield* forwardErrorResponse(
+            response,
+            "website.mailbox.inbound_attachment"
+          );
+        }
+
+        const mimeType = response.headers.get("content-type");
+        const contentDisposition = response.headers.get("content-disposition");
+        const encodedLength = response.headers.get("content-length");
+        const contentLength =
+          encodedLength === null ? Number.NaN : Number(encodedLength);
+        if (
+          mimeType === null ||
+          !isValidAttachmentMimeType(mimeType) ||
+          contentDisposition === null ||
+          !/^attachment; filename="[^"\r\n]*"; filename\*=UTF-8''[^\s\r\n]+$/u.test(
+            contentDisposition
+          ) ||
+          !Number.isSafeInteger(contentLength) ||
+          contentLength < 0 ||
+          contentLength > MAXIMUM_INBOUND_RAW_BYTES
+        ) {
+          return invalidBackendResponse();
+        }
+        if (response.body === null) {
+          return invalidBackendResponse();
+        }
+        return {
+          body: response.body,
+          contentDisposition,
+          contentLength,
+          mimeType,
+          ok: true,
+        };
+      });
+
     const decodeDraftResult = (
       result: ForwardMailboxResult,
       mailboxId: string,
@@ -736,6 +813,8 @@ export const MailboxBackendOperationsLayer = Layer.effect(
         ),
       getInlineAttachment: ({ incoming, query }) =>
         forwardInlineAttachment(query, incoming),
+      getInboundAttachment: ({ incoming, query }) =>
+        forwardInboundAttachment(query, incoming),
       getMessageHtml: ({ incoming, query }) => {
         const search = new URLSearchParams();
         if (query._tag === "Folder") {

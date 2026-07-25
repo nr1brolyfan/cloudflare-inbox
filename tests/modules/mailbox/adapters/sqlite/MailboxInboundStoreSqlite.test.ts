@@ -22,7 +22,12 @@ import {
   ruleApplication,
   ruleEvaluation,
 } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
-import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import {
+  AttachmentId,
+  MailboxId,
+  MessageId,
+} from "#/modules/mailbox/domain/Mailbox";
+import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   CommitInboundMessageV1,
   CommitInboundMessageV2,
@@ -621,6 +626,173 @@ describe("MailboxDO SQLite inbound commit", () => {
       },
       totalCalls: 3,
     });
+  });
+
+  it("exposes only committed ready ordinary inbound attachment metadata", async () => {
+    const runtime = makeRuntime();
+    const ordinary = Schema.decodeUnknownSync(CommitInboundMessageV1)({
+      ...Schema.encodeSync(CommitInboundMessageV1)(commitInput),
+      message: {
+        ...Schema.encodeSync(CommitInboundMessageV1)(commitInput).message,
+        attachments: [
+          {
+            disposition: "attachment",
+            fileName: "brief.pdf",
+            index: 0,
+            mimeType: "application/pdf",
+            size: 4,
+          },
+        ],
+      },
+    });
+    const outcome = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          const ready = yield* commit(ordinary);
+          if (ready.messageId === undefined) {
+            return yield* Effect.die("Expected committed message ID");
+          }
+          const store = yield* MailboxMessageStore;
+          const detail = yield* store.getMessage({
+            mailboxId,
+            messageId: ready.messageId,
+          });
+          const attachmentId = detail.attachments[0]?.id;
+          if (attachmentId === undefined) {
+            return yield* Effect.die("Expected committed attachment ID");
+          }
+          const ordinaryBlob = yield* store.getInboundAttachmentBlob({
+            attachmentId,
+            mailboxId,
+            messageId: ready.messageId,
+          });
+          const inlineBlob = yield* Effect.result(
+            store.getAttachmentBlob({
+              attachmentId,
+              mailboxId,
+              messageId: ready.messageId,
+            })
+          );
+          return { inlineBlob, ordinaryBlob, ready };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(outcome).toMatchObject({
+      inlineBlob: {
+        failure: { operation: "get-attachment", reason: "not-found" },
+      },
+      ordinaryBlob: {
+        disposition: "attachment",
+        fileName: "brief.pdf",
+        mailboxId: "mailbox-a",
+        mimeType: "application/pdf",
+        size: 4,
+        sourceIndex: 0,
+      },
+      ready: { status: "ready" },
+    });
+  });
+
+  it("cannot locate pre-ready, failed, deleted, outbound, or uncommitted attachments", async () => {
+    const runtime = makeRuntime();
+    const ids = [
+      "pre-ready",
+      "failed",
+      "deleted-message",
+      "deleted-attachment",
+      "outbound",
+      "uncommitted",
+    ] as const;
+    const failures = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          const db = yield* MailboxDatabase;
+          yield* db.insert(message).values(
+            ids.map((id) => ({
+              deletedAt: id === "deleted-message" ? 2000 : null,
+              direction: (id === "outbound" ? "outbound" : "inbound") as
+                | "inbound"
+                | "outbound",
+              folderId: "inbox",
+              id: `message-${id}`,
+              receivedAt: 1000,
+            }))
+          );
+          yield* db.insert(inboundProcessing).values([
+            {
+              createdAt: 1000,
+              id: "ingest-pre-ready",
+              requestKey: "request-pre-ready",
+              status: "attachments_stored",
+              updatedAt: 1000,
+            },
+            {
+              createdAt: 1000,
+              failureAt: 1000,
+              failureCode: "processing_failed",
+              failureReplayable: 1,
+              id: "ingest-failed",
+              requestKey: "request-failed",
+              status: "failed",
+              updatedAt: 1000,
+            },
+            ...["deleted-message", "deleted-attachment", "outbound"].map(
+              (id) => ({
+                createdAt: 1000,
+                id: `ingest-${id}`,
+                messageId: `message-${id}`,
+                requestKey: `request-${id}`,
+                status: "ready" as const,
+                updatedAt: 1000,
+              })
+            ),
+          ]);
+          yield* db.insert(attachment).values(
+            ids.map((id) => ({
+              deletedAt: id === "deleted-attachment" ? 2000 : null,
+              disposition: "attachment" as const,
+              fileName: `${id}.bin`,
+              id: `attachment-${id}`,
+              inboundIngestId: id === "uncommitted" ? null : `ingest-${id}`,
+              messageId: `message-${id}`,
+              mimeType: "application/octet-stream",
+              size: 1,
+              sourceIndex: id === "uncommitted" ? null : 0,
+            }))
+          );
+          const store = yield* MailboxMessageStore;
+          return yield* Effect.all(
+            ids.map((id) =>
+              store
+                .getInboundAttachmentBlob({
+                  attachmentId: Schema.decodeUnknownSync(AttachmentId)(
+                    `attachment-${id}`
+                  ),
+                  mailboxId,
+                  messageId: Schema.decodeUnknownSync(MessageId)(
+                    `message-${id}`
+                  ),
+                })
+                .pipe(Effect.result)
+            )
+          );
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(failures).toHaveLength(ids.length);
+    expect(
+      failures.every(
+        (result) =>
+          Result.isFailure(result) &&
+          result.failure instanceof MailboxDomainError &&
+          result.failure.reason === "not-found" &&
+          result.failure.operation === "get-attachment"
+      )
+    ).toBeTruthy();
   });
 
   it("atomically applies deterministic rules and records idempotent history", async () => {

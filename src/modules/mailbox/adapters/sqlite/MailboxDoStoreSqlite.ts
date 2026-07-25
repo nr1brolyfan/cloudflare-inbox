@@ -107,6 +107,13 @@ const executeMailDataRequest = (
         (value) => ({ _tag: "AttachmentBlobFound", value })
       );
     }
+    case "GetInboundAttachmentBlob": {
+      return encodeMailDataResult(
+        request,
+        stores.getInboundAttachmentBlob(request.input),
+        (value) => ({ _tag: "InboundAttachmentBlobFound", value })
+      );
+    }
     case "GetThread": {
       return encodeMailDataResult(
         request,

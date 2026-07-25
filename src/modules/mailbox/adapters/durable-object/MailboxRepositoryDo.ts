@@ -203,6 +203,18 @@ export const MailboxMessageRepositoryDoLayer = Layer.effect(
                   : mailDataProtocolError(response, false)
             )
           ),
+      getInboundAttachmentBlob: (input) =>
+        client
+          .executeMailData({ _tag: "GetInboundAttachmentBlob", input })
+          .pipe(
+            Effect.flatMap((response) =>
+              response._tag === "DomainError"
+                ? domainFailure(response)
+                : response._tag === "InboundAttachmentBlobFound"
+                  ? Effect.succeed(response.value)
+                  : mailDataProtocolError(response, false)
+            )
+          ),
       getMessage: (input) =>
         client
           .executeMailData({ _tag: "GetMessage", input })

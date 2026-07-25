@@ -20,6 +20,8 @@ import type { MailboxDraftEditingError } from "#/modules/mailbox/application/Mai
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type { MailboxDraftReadingError } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxDraftReading } from "#/modules/mailbox/application/MailboxDraftReading";
+import type { MailboxInboundAttachmentError } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
+import { MailboxInboundAttachmentReading } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import {
   MailboxInboundReplay,
   MailboxInboundReplayAuthorization,
@@ -56,6 +58,7 @@ import type { MailboxNavigationError } from "#/modules/organization/application/
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
 import type { OrganizationBootstrapError } from "#/modules/organization/application/OrganizationBootstrap";
 import { OrganizationBootstrap } from "#/modules/organization/application/OrganizationBootstrap";
+import { attachmentContentDisposition } from "#/shared/ContentDisposition";
 
 import { MailboxHttpApi } from "./BackendMailboxHttpApi";
 
@@ -158,6 +161,7 @@ type MailboxHandlerError =
   | MailboxMessageReadingError
   | MailboxMessageActionError
   | MailboxMessageHtmlError
+  | MailboxInboundAttachmentError
   | MailboxInlineAttachmentError
   | MailboxDraftEditingError
   | MailboxDraftReadingError
@@ -429,6 +433,18 @@ const mapInlineAttachmentError = (
       )
     : Effect.fail(internalError());
 
+const mapInboundAttachmentError = (
+  error: MailboxInboundAttachmentError
+): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
+  error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Inbound message attachment not found",
+        })
+      )
+    : Effect.fail(internalError());
+
 const mapResourceResolveError = (
   error: MailResourceResolveError
 ): Effect.Effect<never, AuthInternalError | AuthNotFoundError> =>
@@ -451,6 +467,7 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxMessageReadingError", mapMessageReadingError),
     Effect.catchTag("MailboxMessageActionError", mapMessageActionError),
     Effect.catchTag("MailboxMessageHtmlError", mapMessageHtmlError),
+    Effect.catchTag("MailboxInboundAttachmentError", mapInboundAttachmentError),
     Effect.catchTag("MailboxInlineAttachmentError", mapInlineAttachmentError),
     Effect.catchTag("MailboxDraftEditingError", mapDraftEditingError),
     Effect.catchTag("MailboxDraftReadingError", mapDraftReadingError),
@@ -488,6 +505,7 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
     const messageReading = yield* MailboxMessageReading;
     const messageActions = yield* MailboxMessageActions;
     const messageHtml = yield* MailboxMessageHtmlReading;
+    const inboundAttachments = yield* MailboxInboundAttachmentReading;
     const inlineAttachments = yield* MailboxInlineAttachmentReading;
     const draftEditing = yield* MailboxDraftEditing;
     const draftReading = yield* MailboxDraftReading;
@@ -580,6 +598,42 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
               "content-disposition": "inline",
               "content-length": String(content.bytes.byteLength),
               "referrer-policy": "no-referrer",
+              "x-content-type-options": "nosniff",
+            },
+          });
+        }).pipe(mapHttpErrors)
+      )
+      .handle("getInboundAttachment", ({ params, query }) =>
+        Effect.gen(function* () {
+          const view =
+            query.folder === undefined
+              ? query.label === undefined
+                ? yield* Effect.die(
+                    new Error("Inbound attachment view query invariant failed")
+                  )
+                : {
+                    _tag: "Label" as const,
+                    attachmentId: params.attachmentId,
+                    labelId: query.label,
+                    mailboxId: params.mailboxId,
+                    messageId: params.messageId,
+                  }
+              : {
+                  _tag: "Folder" as const,
+                  attachmentId: params.attachmentId,
+                  folderId: query.folder,
+                  mailboxId: params.mailboxId,
+                  messageId: params.messageId,
+                };
+          const content = yield* inboundAttachments.get(view);
+          return HttpServerResponse.uint8Array(content.bytes, {
+            contentType: content.mimeType,
+            headers: {
+              "cache-control": "private, no-store",
+              "content-disposition": attachmentContentDisposition(
+                content.fileName
+              ),
+              "content-length": String(content.bytes.byteLength),
               "x-content-type-options": "nosniff",
             },
           });

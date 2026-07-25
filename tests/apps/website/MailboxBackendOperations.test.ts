@@ -14,6 +14,7 @@ import {
   GetMailboxDraftQuery,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
+import { MailboxInboundAttachmentInput } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
@@ -563,6 +564,114 @@ describe("Website mailbox Backend forwarding", () => {
           })
         ),
       (operations) => operations.getInlineAttachment({ incoming, query })
+    );
+
+    expect(result).toMatchObject({ ok: false, status: 502 });
+  });
+
+  it("forwards and validates an ordinary inbound attachment response", async () => {
+    let forwarded: Request | undefined;
+    let backendBody: ReadableStream<Uint8Array> | null = null;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const query = Schema.decodeUnknownSync(MailboxInboundAttachmentInput)({
+      _tag: "Label",
+      attachmentId: "attachment/one",
+      labelId: "work/urgent",
+      mailboxId: "team/primary",
+      messageId: "message/one",
+    });
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        const response = new Response(new Uint8Array([0, 1, 255]), {
+          headers: {
+            "content-disposition":
+              "attachment; filename=\"resume.pdf\"; filename*=UTF-8''r%C3%A9sum%C3%A9.pdf",
+            "content-length": "3",
+            "content-type": "application/pdf",
+          },
+        });
+        backendBody = response.body;
+        return Promise.resolve(response);
+      },
+      (operations) => operations.getInboundAttachment({ incoming, query })
+    );
+
+    expect(result).toMatchObject({
+      contentDisposition:
+        "attachment; filename=\"resume.pdf\"; filename*=UTF-8''r%C3%A9sum%C3%A9.pdf",
+      contentLength: 3,
+      mimeType: "application/pdf",
+      ok: true,
+    });
+    if (!result.ok) {
+      throw new Error("Expected attachment stream");
+    }
+    expect(result.body).toBe(backendBody);
+    await expect(
+      new Response(result.body).arrayBuffer()
+    ).resolves.toStrictEqual(new Uint8Array([0, 1, 255]).buffer);
+    expect({
+      pathname:
+        forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
+      search:
+        forwarded === undefined ? undefined : new URL(forwarded.url).search,
+    }).toStrictEqual({
+      pathname:
+        "/api/mailboxes/team%2Fprimary/messages/message%2Fone/attachments/attachment%2Fone/download",
+      search: "?label=work%2Furgent",
+    });
+  });
+
+  it("rejects missing or inconsistent inbound attachment transport metadata", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(MailboxInboundAttachmentInput)({
+      _tag: "Folder",
+      attachmentId: "attachment-1",
+      folderId: "inbox",
+      mailboxId: "primary",
+      messageId: "message-1",
+    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          new Response(new Uint8Array([1, 2, 3]), {
+            headers: {
+              "content-length": "4",
+              "content-type": "text/plain; charset=utf-8",
+            },
+          })
+        ),
+      (operations) => operations.getInboundAttachment({ incoming, query })
+    );
+
+    expect(result).toMatchObject({ ok: false, status: 502 });
+  });
+
+  it("rejects an inbound attachment response with a null body", async () => {
+    const incoming = new Request("https://inbox.test/_server");
+    const query = Schema.decodeUnknownSync(MailboxInboundAttachmentInput)({
+      _tag: "Folder",
+      attachmentId: "attachment-1",
+      folderId: "inbox",
+      mailboxId: "primary",
+      messageId: "message-1",
+    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          new Response(null, {
+            headers: {
+              "content-disposition":
+                "attachment; filename=\"empty.txt\"; filename*=UTF-8''empty.txt",
+              "content-length": "0",
+              "content-type": "text/plain",
+            },
+          })
+        ),
+      (operations) => operations.getInboundAttachment({ incoming, query })
     );
 
     expect(result).toMatchObject({ ok: false, status: 502 });

@@ -57,6 +57,7 @@ const repositoryWithMessage = (
   MailboxMessageRepository.of({
     addMessageLabel: unused,
     getAttachmentBlob: unused,
+    getInboundAttachmentBlob: unused,
     getMessage: () => Effect.succeed(value),
     getThread: unused,
     listMessages: unused,
@@ -69,6 +70,7 @@ const repositoryWithMessage = (
 
 const authorization = MailboxAuthorization.of({
   requireAttachmentRead: unusedAuthorization,
+  requireInboundAttachmentDownload: unusedAuthorization,
   requireAttachmentUpload: unusedAuthorization,
   requireDraft: unusedAuthorization,
   requireDraftCreate: unusedAuthorization,

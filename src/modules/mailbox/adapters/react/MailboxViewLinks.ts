@@ -74,3 +74,18 @@ export const mailboxMessageHtmlHref = (
   }
   return `/api/mailboxes/${encodeURIComponent(mailboxId)}/messages/${encodeURIComponent(messageId)}/html?${query.toString()}`;
 };
+
+export const mailboxInboundAttachmentHref = (
+  mailboxId: string,
+  messageId: string,
+  attachmentId: string,
+  selection: MailboxViewSelection
+) => {
+  const query = new URLSearchParams();
+  if (selection.folder !== undefined) {
+    query.set("folder", selection.folder);
+  } else if (selection.label !== undefined) {
+    query.set("label", selection.label);
+  }
+  return `/api/mailboxes/${encodeURIComponent(mailboxId)}/messages/${encodeURIComponent(messageId)}/attachments/${encodeURIComponent(attachmentId)}/download?${query.toString()}`;
+};

@@ -8,6 +8,7 @@ import type {
   GetAttachmentBlobInput,
   GetMessageInput,
   GetMessageResult,
+  InboundAttachmentBlobLocation,
   GetThreadInput,
   GetThreadResult,
   ListMessagesInput,
@@ -30,6 +31,9 @@ export interface MailboxMessageRepositoryService {
   readonly getAttachmentBlob: (
     input: GetAttachmentBlobInput
   ) => Effect.Effect<AttachmentBlobLocation, RepositoryError>;
+  readonly getInboundAttachmentBlob: (
+    input: GetAttachmentBlobInput
+  ) => Effect.Effect<InboundAttachmentBlobLocation, RepositoryError>;
   readonly getMessage: (
     input: GetMessageInput
   ) => Effect.Effect<GetMessageResult, RepositoryError>;

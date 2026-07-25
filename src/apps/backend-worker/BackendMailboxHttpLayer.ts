@@ -15,6 +15,7 @@ import { InboundWorkflowStarterCloudflareLayer } from "#/modules/mailbox/adapter
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { MailboxDraftEditing } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxDraftReading } from "#/modules/mailbox/application/MailboxDraftReading";
+import { MailboxInboundAttachmentReading } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import {
   MailboxInboundReplay,
   MailboxInboundReplayAuthorization,
@@ -86,6 +87,15 @@ const MailboxInlineAttachmentLayer =
       )
     )
   );
+const MailboxInboundAttachmentLayer =
+  MailboxInboundAttachmentReading.layerNoDeps.pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        MailboxMessageRepositoryLayer,
+        InboundAttachmentBlobReaderR2RuntimeLayer
+      )
+    )
+  );
 const MailboxInboundReplayLayer = MailboxInboundReplay.layerNoDeps.pipe(
   Layer.provide(
     Layer.merge(
@@ -110,6 +120,7 @@ export const MailboxHttpLayer = MailboxHttpHandlersLayer.pipe(
       MailboxDraftAttachmentsLayer,
       MailboxMessageHtmlLayer,
       MailboxInlineAttachmentLayer,
+      MailboxInboundAttachmentLayer,
       MailboxInboundReplayAuthorizationLayer,
       MailboxInboundReplayLayer,
       MailboxSessionRequirementsMiddlewareLayer

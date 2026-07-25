@@ -21,6 +21,7 @@ import { Route as AuthCompleteAccountRecoveryRouteImport } from './routes/auth-c
 import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/html'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
+import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
 import { Route as ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRouteImport } from './routes/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
 
 const InboxRoute = InboxRouteImport.update({
@@ -91,6 +92,14 @@ const ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute =
       getParentRoute: () => rootRouteImport,
     } as any,
   )
+const ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute =
+  ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRouteImport.update(
+    {
+      id: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download',
+      path: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download',
+      getParentRoute: () => rootRouteImport,
+    } as any,
+  )
 const ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute =
   ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRouteImport.update(
     {
@@ -113,6 +122,7 @@ export interface FileRoutesByFullPath {
   '/auth/$': typeof AuthSplatRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRoutesByTo {
@@ -128,6 +138,7 @@ export interface FileRoutesByTo {
   '/auth/$': typeof AuthSplatRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRoutesById {
@@ -144,6 +155,7 @@ export interface FileRoutesById {
   '/auth/$': typeof AuthSplatRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
+  '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 export interface FileRouteTypes {
@@ -161,6 +173,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -176,6 +189,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   id:
     | '__root__'
@@ -191,6 +205,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
+    | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
   fileRoutesById: FileRoutesById
 }
@@ -207,6 +222,7 @@ export interface RootRouteChildren {
   AuthSplatRoute: typeof AuthSplatRoute
   ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute: typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
+  ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
   ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute
 }
 
@@ -296,6 +312,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': {
+      id: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
+      path: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
+      fullPath: '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
+      preLoaderRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': {
       id: '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
       path: '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
@@ -322,6 +345,8 @@ const rootRouteChildren: RootRouteChildren = {
     ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute,
   ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute:
     ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute,
+  ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute:
+    ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute,
   ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute:
     ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRoute,
 }

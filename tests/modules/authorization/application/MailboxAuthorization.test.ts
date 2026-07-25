@@ -568,6 +568,68 @@ describe("mail authorization policies", () => {
     });
   });
 
+  it("denies ordinary attachment download with folder access alone", async () => {
+    const fixture = makePermissions([
+      folderPermission(MailPermission.folderRead),
+    ]);
+    const error = await runAuthorization(
+      makeResolver(),
+      fixture.service,
+      (authorization) =>
+        authorization
+          .requireInboundAttachmentDownload({ resource: attachmentRef })
+          .pipe(Effect.flip)
+    );
+
+    expect(error).toBeInstanceOf(AuthPolicy.AuthorizationError);
+    expect(fixture.checks.map(({ permission }) => permission)).toStrictEqual([
+      MailPermission.attachmentRead,
+    ]);
+  });
+
+  it("allows ordinary attachment download with folder and attachment access", async () => {
+    const fixture = makePermissions([
+      mailboxPermission(MailPermission.attachmentRead),
+      folderPermission(MailPermission.folderRead),
+    ]);
+    const location = await runAuthorization(
+      makeResolver(),
+      fixture.service,
+      (authorization) =>
+        authorization.requireInboundAttachmentDownload({
+          resource: attachmentRef,
+        })
+    );
+
+    expect(location.attachmentId).toBe("attachment-a");
+    expect(fixture.checks.map(({ permission }) => permission)).toStrictEqual([
+      MailPermission.attachmentRead,
+      MailPermission.messageRead,
+      MailPermission.folderRead,
+    ]);
+  });
+
+  it("allows ordinary attachment download with message and attachment access", async () => {
+    const fixture = makePermissions([
+      mailboxPermission(MailPermission.attachmentRead),
+      mailboxPermission(MailPermission.messageRead),
+    ]);
+    const location = await runAuthorization(
+      makeResolver(),
+      fixture.service,
+      (authorization) =>
+        authorization.requireInboundAttachmentDownload({
+          resource: attachmentRef,
+        })
+    );
+
+    expect(location.attachmentId).toBe("attachment-a");
+    expect(fixture.checks.map(({ permission }) => permission)).toStrictEqual([
+      MailPermission.attachmentRead,
+      MailPermission.messageRead,
+    ]);
+  });
+
   it("enforces draft upload, rule, draft-create, and export capabilities", async () => {
     const fixture = makePermissions([
       mailboxPermission(MailPermission.draftCreate),

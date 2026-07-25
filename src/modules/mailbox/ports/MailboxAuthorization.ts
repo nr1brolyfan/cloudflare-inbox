@@ -85,6 +85,9 @@ export interface MailboxAuthorizationService {
   readonly requireAttachmentRead: (input: {
     readonly resource: AttachmentRef;
   }) => MailboxPolicy<TrustedAttachmentLocation, MailResourceResolveError>;
+  readonly requireInboundAttachmentDownload: (input: {
+    readonly resource: AttachmentRef;
+  }) => MailboxPolicy<TrustedAttachmentLocation, MailResourceResolveError>;
   readonly requireAttachmentUpload: (input: {
     readonly resource: DraftRef;
   }) => MailboxPolicy<TrustedDraftLocation, MailResourceResolveError>;

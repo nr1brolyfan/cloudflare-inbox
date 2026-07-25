@@ -295,6 +295,25 @@ export type AttachmentBlobLocation = Schema.Schema.Type<
   typeof AttachmentBlobLocation
 >;
 
+/** Private ordinary inbound attachment locator returned only across MailboxDO RPC. */
+export const InboundAttachmentBlobLocation = Schema.Struct({
+  attachmentId: AttachmentId,
+  contentId: Schema.optional(ContentId),
+  disposition: Schema.Literal("attachment"),
+  fileName: FileName,
+  folderId: FolderId,
+  inboundIngestId: InboundIngestId,
+  mailboxId: MailboxId,
+  messageId: MessageId,
+  mimeType: MimeType,
+  receivedAt: UnixMillis,
+  size: ByteSize,
+  sourceIndex: Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))),
+});
+export type InboundAttachmentBlobLocation = Schema.Schema.Type<
+  typeof InboundAttachmentBlobLocation
+>;
+
 /**
  * Returns messages in chronological order: activityAt ASC, id ASC.
  * Omitting page returns the latest 50; an explicit page traverses from oldest.

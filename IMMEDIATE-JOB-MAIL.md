@@ -6,8 +6,8 @@ Minimalny plan uruchomienia prywatnej skrzynki `szymon@szymondlugolecki.com` do 
 
 - Ostatnia aktualizacja: 2026-07-25
 - Stan: `IN PROGRESS`
-- Aktualne zadanie: `JOB-ATT-001` authorized inbound attachment download
-- Następne zadanie: `JOB-ATT-002` private attachment transport
+- Aktualne zadanie: `JOB-REPLY-001` inbound reply metadata
+- Następne zadanie: `JOB-REPLY-002` authorized reply target and UI
 - Docelowy tryb: private single-owner beta
 - Adres pocztowy: `szymon@szymondlugolecki.com`
 - Website origin: `https://mail.szymondlugolecki.com`
@@ -80,9 +80,11 @@ Lokalne evidence `JOB-BOOT-004` z 2026-07-25: focused matrix `49/49`, pełny `bu
 
 ### Otrzymane załączniki
 
-- [ ] JOB-ATT-001 Dodać osobny, autoryzowany use case pobierania zwykłego inbound attachment. Nie rozluźniać endpointu inline CID images.
-- [ ] JOB-ATT-002 Dodać Backend i Website GET route z exact mailbox/message/attachment binding, `attachment.read`, zweryfikowanym R2 metadata/size/hash, bezpiecznym `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` oraz `Cache-Control: private, no-store`.
-- [ ] JOB-ATT-003 Dodać przycisk pobrania i testy exact bytes, hostile filename, cross-mailbox ID, brak sesji, storage mismatch i nieistniejący attachment.
+- [x] JOB-ATT-001 Dodać osobny, autoryzowany use case pobierania zwykłego inbound attachment. Nie rozluźniać endpointu inline CID images.
+- [x] JOB-ATT-002 Dodać Backend i Website GET route z exact mailbox/message/attachment binding, `attachment.read`, zweryfikowanym R2 metadata/size/hash, bezpiecznym `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` oraz `Cache-Control: private, no-store`.
+- [x] JOB-ATT-003 Dodać przycisk pobrania i testy exact bytes, hostile filename, cross-mailbox ID, brak sesji, storage mismatch i nieistniejący attachment.
+
+Lokalne evidence `JOB-ATT-001/002/003` z 2026-07-25 na bazie `f97357b`: osobny ordinary inbound use case i locator zachowują niezmienione ograniczenia inline CID. Nowa polityka download wymaga zawsze mailbox `attachment.read` oraz dodatkowo mailbox `message.read` albo matching `folder.read`; testy pokrywają folder-only denial, folder plus attachment allow i message plus attachment allow. Use case zachowuje folder/label/message ancestry i limit 10 MiB. SQLite testy dopuszczają ready committed inbound attachment oraz odrzucają pre-ready, failed, deleted message, deleted attachment, outbound i uncommitted rows. R2 testy używają ordinary `InboundAttachmentBlobLocation` bez `contentId` i pokrywają exact bytes, missing object oraz mismatch custom metadata, MIME, object size, object hash i downloaded-content hash. Backend test bez cookie zwraca 401. Website waliduje bounded `Content-Length`, content type i `Content-Disposition`, odrzuca invalid metadata oraz null body, po czym przekazuje Backend `ReadableStream` bez ponownego buforowania; route kopiuje tylko allowlistowane bezpieczne nagłówki i testuje exact browser bytes. Hostile/non-ASCII filename, cross-site fetch, cross-mailbox/message/attachment/folder IDs, nagłówki, ThreadView action i regresja inline CID również są pokryte. Focused matrix przeszła `177/177`, pełny `bun run test` zakończył się wynikiem `154/154` files i `1796/1796` tests, a `bun run typecheck`, `bun run check`, `bun run build` oraz `git diff --check` zakończyły się powodzeniem. To jest evidence lokalne; nie zastępuje live acceptance.
 
 ### Pojedyncze Reply
 

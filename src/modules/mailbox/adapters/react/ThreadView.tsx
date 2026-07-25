@@ -1,5 +1,5 @@
 import type * as Schema from "effect/Schema";
-import { ArrowLeft, MailOpen, Paperclip } from "lucide-react";
+import { ArrowLeft, Download, MailOpen, Paperclip } from "lucide-react";
 import { useState } from "react";
 
 import type { MailboxThreadResult } from "#/modules/mailbox/application/MailboxMessageReading";
@@ -8,7 +8,11 @@ import type {
   MailboxMessageQueryState,
   MailboxViewSelection,
 } from "./MailboxViewLinks";
-import { mailboxMessageHtmlHref, mailboxViewHref } from "./MailboxViewLinks";
+import {
+  mailboxInboundAttachmentHref,
+  mailboxMessageHtmlHref,
+  mailboxViewHref,
+} from "./MailboxViewLinks";
 import { SandboxedMessageHtml } from "./SandboxedMessageHtml";
 
 type ThreadData = Schema.Codec.Encoded<typeof MailboxThreadResult>;
@@ -210,14 +214,33 @@ export function ThreadView({
                       {message.attachments.map((attachment) => (
                         <div
                           key={attachment.id}
-                          className="max-w-full rounded-xl border border-[var(--line)] bg-[var(--foam)] px-3.5 py-2.5"
+                          className="flex max-w-full items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--foam)] px-3.5 py-2.5"
                         >
-                          <p className="max-w-64 truncate text-xs font-extrabold">
-                            {attachment.fileName}
-                          </p>
-                          <p className="mt-0.5 text-[0.62rem] text-[var(--sea-ink-soft)]">
-                            {attachment.mimeType} · {byteSize(attachment.size)}
-                          </p>
+                          <div className="min-w-0">
+                            <p className="max-w-64 truncate text-xs font-extrabold">
+                              {attachment.fileName}
+                            </p>
+                            <p className="mt-0.5 text-[0.62rem] text-[var(--sea-ink-soft)]">
+                              {attachment.mimeType} ·{" "}
+                              {byteSize(attachment.size)}
+                            </p>
+                          </div>
+                          {message.direction === "inbound" &&
+                          attachment.disposition === "attachment" ? (
+                            <a
+                              aria-label={`Download ${attachment.fileName}`}
+                              className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-[var(--sea-ink)] no-underline hover:bg-[var(--sand)]"
+                              download
+                              href={mailboxInboundAttachmentHref(
+                                mailboxId,
+                                message.id,
+                                attachment.id,
+                                selection
+                              )}
+                            >
+                              <Download aria-hidden="true" size={15} />
+                            </a>
+                          ) : null}
                         </div>
                       ))}
                     </div>
