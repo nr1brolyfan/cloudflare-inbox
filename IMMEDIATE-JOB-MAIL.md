@@ -6,8 +6,8 @@ Minimalny plan uruchomienia prywatnej skrzynki `szymon@szymondlugolecki.com` do 
 
 - Ostatnia aktualizacja: 2026-07-25
 - Stan: `IN PROGRESS`
-- Aktualne zadanie: `JOB-BOOT-001` first-owner password enrollment contract
-- Następne zadanie: `JOB-BOOT-002` atomic enrollment transaction and UI
+- Aktualne zadanie: `JOB-BOOT-003` private enrollment endpoint and UI
+- Następne zadanie: `JOB-BOOT-004` first-owner denial matrix
 - Docelowy tryb: private single-owner beta
 - Adres pocztowy: `szymon@szymondlugolecki.com`
 - Website origin: `https://mail.szymondlugolecki.com`
@@ -71,8 +71,8 @@ Do przejścia całego gate'a nie wysyłamy prawdziwych aplikacji o pracę z tej 
 
 ### First-owner enrollment
 
-- [ ] JOB-BOOT-001 Dodać kontrakt jednorazowego first-owner password enrollment. Istniejący magic link lub email OTP tworzy verified effect-auth usera. Nowa operacja przyjmuje wyłącznie `{operationId,password}` i nie przyjmuje emaila, user ID, organization ID ani mailbox ID od klienta. Dopuszcza tylko unrestricted, token-bound session z maksymalnie pięciominutowym matching email proof, dokładnie jednym adresem w `MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST`, pustym deploymentem i brakiem wcześniejszego credential/recovery/owner state.
-- [ ] JOB-BOOT-002 Dodać forward-only storage seal, immutable receipt, metadata-only audit i jedną atomiczną D1 batch tworzącą password credential. Exact replay zwraca receipt, changed intent jest konfliktem, unknown commit wykonuje receipt readback, a równoległe próby mogą utworzyć dokładnie jeden credential i singleton seal.
+- [x] JOB-BOOT-001 Dodać kontrakt jednorazowego first-owner password enrollment. Istniejący magic link lub email OTP tworzy verified effect-auth usera. Nowa operacja przyjmuje wyłącznie `{operationId,password}` i nie przyjmuje emaila, user ID, organization ID ani mailbox ID od klienta. Dopuszcza tylko unrestricted, token-bound session z maksymalnie pięciominutowym matching email proof, dokładnie jednym adresem w `MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST`, pustym deploymentem i brakiem wcześniejszego credential/recovery/owner state.
+- [x] JOB-BOOT-002 Dodać forward-only storage seal, immutable receipt, metadata-only audit i jedną atomiczną D1 batch tworzącą password credential. Exact replay zwraca receipt, changed intent jest konfliktem, unknown commit wykonuje receipt readback, a równoległe próby mogą utworzyć dokładnie jeden credential i singleton seal.
 - [ ] JOB-BOOT-003 Dodać prywatny `no-store` endpoint i UI prowadzące przez: magic link/OTP, pierwsze hasło, istniejący password step-up, external recovery, UV passkey, recovery codes i istniejący mailbox bootstrap. Hasło nie jest zapisywane w local storage i jest czyszczone po step-up.
 - [ ] JOB-BOOT-004 Udowodnić testami, że publiczny signup, generic password set, nieallowlistowany lub managed-domain login, stale/wrong proof, drugi właściciel, session race, receipt/audit collision i częściowy zapis pozostają odrzucone.
 
@@ -144,3 +144,4 @@ Szacunek nie obejmuje pełnego `SAFE-005` ani nieprzewidzianych ograniczeń live
 ## Changelog
 
 - 2026-07-25: Utworzono immediate plan dla prywatnej skrzynki rekrutacyjnej, zamrożono single-owner/single-address scope, wybrano Gmail jako niezależne archiwum korespondencji i wstrzymano główny plan na `ORG-015`.
+- 2026-07-25: Ukończono nieosiągalny jeszcze z HTTP fundament `JOB-BOOT-001/002`: jednorazowy command bez caller authority, forward-only singleton seal, fresh email proof i unrestricted token-bound session, atomiczny password credential, immutable receipt, metadata-only audit, exact replay i unknown-commit readback. Storage odrzuca wcześniejsze credentials, API keys, recovery/passkey history, organization authority, managed-domain ownera, races i direct-write proof forgery. Pełny gate objął 150 plików i 1753 testy; niezależne review nie pozostawiło high/medium findings.

@@ -9,6 +9,9 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
+import { authUser, authUserIdentity } from "#/auth/schema/modules/core";
+import { authCredential } from "#/auth/schema/modules/credentials";
+
 export const appExternalRecoveryIdentity = sqliteTable(
   "app_external_recovery_identity",
   {
@@ -497,6 +500,92 @@ export const appPasskeyCredentialRevocation = sqliteTable(
     ),
     index("app_passkey_credential_revocation_user_operation_idx").on(
       t.userId,
+      t.operationId
+    ),
+  ]
+);
+
+export const appFirstOwnerPasswordEnrollment = sqliteTable(
+  "app_first_owner_password_enrollment",
+  {
+    singletonKey: integer("singleton_key").primaryKey(),
+    operationId: text("operation_id").notNull().unique(),
+    actorUserId: text("actor_user_id")
+      .notNull()
+      .references(() => authUser.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    sessionId: text("session_id").notNull(),
+    loginIdentityId: text("login_identity_id")
+      .notNull()
+      .references(() => authUserIdentity.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    credentialId: text("credential_id")
+      .notNull()
+      .unique()
+      .references(() => authCredential.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    proofType: text("proof_type", {
+      enum: ["email_otp", "magic_link"],
+    }).notNull(),
+    proofVerifiedAt: integer("proof_verified_at").notNull(),
+    passwordIntentDigest: text("password_intent_digest").notNull(),
+    committedAt: integer("committed_at").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  (t) => [
+    check(
+      "app_first_owner_password_enrollment_singleton_check",
+      sql`singleton_key = 1`
+    ),
+    check(
+      "app_first_owner_password_enrollment_operation_id_check",
+      sql`length(operation_id) = 36
+        and operation_id = lower(trim(operation_id))
+        and substr(operation_id, 9, 1) = '-'
+        and substr(operation_id, 14, 1) = '-'
+        and substr(operation_id, 15, 1) = '4'
+        and substr(operation_id, 19, 1) = '-'
+        and substr(operation_id, 20, 1) in ('8', '9', 'a', 'b')
+        and substr(operation_id, 24, 1) = '-'
+        and length(replace(operation_id, '-', '')) = 32
+        and replace(operation_id, '-', '') not glob '*[^0-9a-f]*'`
+    ),
+    check(
+      "app_first_owner_password_enrollment_identity_check",
+      sql`length(actor_user_id) between 1 and 128
+        and actor_user_id = trim(actor_user_id)
+        and length(session_id) between 1 and 128
+        and session_id = trim(session_id)
+        and length(login_identity_id) between 1 and 128
+        and login_identity_id = trim(login_identity_id)
+        and length(credential_id) between 1 and 128
+        and credential_id = trim(credential_id)`
+    ),
+    check(
+      "app_first_owner_password_enrollment_proof_check",
+      sql`proof_type in ('email_otp', 'magic_link')
+        and typeof(proof_verified_at) = 'integer'
+        and proof_verified_at between 0 and committed_at`
+    ),
+    check(
+      "app_first_owner_password_enrollment_digest_check",
+      sql`length(password_intent_digest) = 43
+        and password_intent_digest not glob '*[^A-Za-z0-9_-]*'`
+    ),
+    check(
+      "app_first_owner_password_enrollment_result_check",
+      sql`typeof(committed_at) = 'integer'
+        and committed_at between 0 and 9007199254740991
+        and schema_version = 1`
+    ),
+    index("app_first_owner_password_enrollment_actor_operation_idx").on(
+      t.actorUserId,
       t.operationId
     ),
   ]

@@ -1,4 +1,4 @@
-import { and, eq, exists, isNull, or, sql } from "drizzle-orm";
+import { and, eq, exists, isNull, notExists, or, sql } from "drizzle-orm";
 import type { SQLWrapper } from "drizzle-orm";
 
 import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
@@ -6,8 +6,12 @@ import { appOrganization } from "#/platform/control-plane-d1/OrganizationRootSch
 
 import {
   appMailbox,
+  appMailboxAdministrationReceipt,
   appMailboxLegacyOrganizationAssignment,
+  appMailboxMember,
+  appOrganizationMember,
   appOrganizationLegacyCutover,
+  appOrganizationOwnerAssignmentReceipt,
 } from "../adapters/d1/OrganizationSchema";
 
 /** Stable foreign-key target for D1 schemas owned by collaborating contexts. */
@@ -112,4 +116,23 @@ export const activeOrganizationMailboxPredicate = (
           canonicalMailboxAncestryPredicate(database, mailboxId)
         )
       )
+  );
+
+/** Absence of every organization-owned authority artifact before first-owner enrollment. */
+export const firstOwnerEnrollmentDeploymentEmptyPredicate = (
+  database: ControlPlaneDatabase
+) =>
+  and(
+    notExists(database.select({ value: sql`1` }).from(appOrganization)),
+    notExists(database.select({ value: sql`1` }).from(appMailbox)),
+    notExists(
+      database.select({ value: sql`1` }).from(appMailboxAdministrationReceipt)
+    ),
+    notExists(database.select({ value: sql`1` }).from(appMailboxMember)),
+    notExists(database.select({ value: sql`1` }).from(appOrganizationMember)),
+    notExists(
+      database
+        .select({ value: sql`1` })
+        .from(appOrganizationOwnerAssignmentReceipt)
+    )
   );
