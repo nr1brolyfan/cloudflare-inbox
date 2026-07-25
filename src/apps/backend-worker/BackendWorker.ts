@@ -429,11 +429,15 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               )
             )
           );
-        const InboundEmailApplicationLayer = Layer.merge(
+        const InboundEmailApplicationLayer = Layer.mergeAll(
           AddressRoutingLayer.pipe(
             Layer.provide(EmailControlPlaneDatabaseLayer)
           ),
-          InboundEmailIngressLayer
+          InboundEmailIngressLayer,
+          Layer.succeed(
+            MailboxArchiveConfig,
+            MailboxArchiveConfig.of(archiveConfig)
+          )
         );
 
         return yield* handleCloudflareEmailRoutingMessage(message).pipe(

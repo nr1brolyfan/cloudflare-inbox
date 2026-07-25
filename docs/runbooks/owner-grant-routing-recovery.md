@@ -155,12 +155,15 @@ A mistaken future revoke must be corrected by a new, exact, audited grant operat
 ### Detection
 
 - SMTP rejects report an unknown recipient or unavailable processing.
+- A sanitized `Inbound email archive is not available` reject reports either an explicit non-forwardable runtime message or a synchronous/rejected archive forward attempt.
 - Expected mail does not arrive, or a message is confirmed in the wrong mailbox.
 - The Cloudflare catch-all target differs from the expected Backend Worker.
 - The D1 route lookup disagrees with the SMTP envelope recipient.
 - R2 HEAD metadata for a known ingest has an unexpected bounded `envelope-to` or `mailbox-id`.
 
 The SMTP envelope recipient is routing authority. MIME `To`, `Cc`, and `Bcc` headers are not routing evidence.
+
+Cloudflare documents `setReject()` as a permanent SMTP error, not a temporary retry signal. Do not describe an archive failure as an automatic SMTP retry: the sender must choose a manual resend. Because R2 storage and Workflow create-or-confirm complete before archive forwarding, preserve the first ingest and investigate it as a possible duplicate before accepting a manually resent copy. A synchronous throw or rejected `forward()` promise is not evidence of Gmail delivery and must not trigger another forward attempt within the same Worker invocation. A resolved promise is the local success boundary and its undocumented result is ignored; only live Cloudflare activity and Gmail receipt establish final delivery. Keep evidence bounded to the archive outcome; never record the destination address, provider result/message ID, raw cause, headers, or message content.
 
 ### Containment
 
@@ -191,7 +194,11 @@ Do not update `mailbox_id`, `normalized_address`, `enabled`, primary identity st
 - The canonical SMTP envelope recipient resolves to the expected active mailbox.
 - After containment is lifted, send one uniquely identified, non-sensitive canary.
 - Confirm only bounded R2 HEAD metadata and intended mailbox appearance; do not retain its full address in the incident ticket.
+- Confirm no `archive-unavailable` outcome or sanitized archive reject occurred for the canary.
+- Confirm Cloudflare forwarding activity reached its documented accepted/final status, not merely a locally resolved promise.
+- Confirm exact Gmail receipt and inspect the canary body and attachment bytes at the verified archive destination.
 - Confirm the canary did not appear in any unintended mailbox.
+- If the canary was permanently rejected, preserve the first ingest, classify duplicate risk, and require an explicit manual resend; never expect an automatic SMTP retry or invoke forward again in the original event.
 
 ### Rollback Or Forward-Fix
 

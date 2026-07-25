@@ -1,10 +1,12 @@
 import type * as CloudflareWorkers from "@cloudflare/workers-types";
+import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { InboundMailboxResolver } from "#/modules/address-routing/ports/InboundMailboxResolver";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
+import { MailboxArchiveConfig } from "#/modules/mailbox/contracts/MailboxArchiveConfig";
 import { ByteSize } from "#/modules/mailbox/domain/Mailbox";
 import type { ReceiveInboundEmailInput as ReceiveInboundEmailInputType } from "#/modules/mailbox/domain/MailboxInbound";
 import {
@@ -17,6 +19,10 @@ import { EmailAddress } from "#/shared/EmailAddress";
 
 type ForwardableEmailMessage = CloudflareWorkers.ForwardableEmailMessage;
 const emptyEnvelope: Partial<ReceiveInboundEmailInputType> = {};
+
+class InboundArchiveTransportError extends Data.TaggedError(
+  "InboundArchiveTransportError"
+)<Record<never, never>> {}
 
 export const MailboxInboundEmailIngressUnavailableLayer = Layer.succeed(
   MailboxInboundEmailIngress,
@@ -42,6 +48,37 @@ const rejectInboundEmail =
         ? { "email.maximum_raw_bytes": MAXIMUM_INBOUND_RAW_BYTES }
         : {}),
     }).pipe(Effect.andThen(reject(message, error.message)));
+
+const rejectUnavailableArchive = (message: ForwardableEmailMessage) =>
+  Effect.annotateCurrentSpan({
+    "email.rejection_reason": "archive-unavailable",
+  }).pipe(
+    Effect.andThen(reject(message, "Inbound email archive is not available"))
+  );
+
+const cannotBeForwarded = (message: ForwardableEmailMessage): boolean => {
+  try {
+    const candidate = message as unknown as {
+      readonly canBeForwarded?: unknown;
+    };
+    if (!("canBeForwarded" in candidate)) {
+      return false;
+    }
+    const value = candidate.canBeForwarded;
+    return typeof value !== "boolean" || !value;
+  } catch {
+    return true;
+  }
+};
+
+const forwardToArchive = (
+  message: ForwardableEmailMessage,
+  recipient: string
+): Effect.Effect<void, InboundArchiveTransportError> =>
+  Effect.tryPromise({
+    try: () => message.forward(recipient),
+    catch: () => new InboundArchiveTransportError(),
+  }).pipe(Effect.asVoid);
 
 const decodeEnvelopeAddress = (
   value: string,
@@ -131,6 +168,9 @@ export const handleCloudflareEmailRoutingMessage = (
   message: ForwardableEmailMessage
 ) =>
   Effect.gen(function* () {
+    if (cannotBeForwarded(message)) {
+      return yield* new InboundArchiveTransportError();
+    }
     const envelope = yield* decodeEnvelope(message);
     const resolver = yield* InboundMailboxResolver;
     const mailboxId = yield* resolver.resolve(envelope.envelopeTo);
@@ -144,4 +184,11 @@ export const handleCloudflareEmailRoutingMessage = (
       mailboxId,
       raw: message.raw as unknown as ReadableStream<Uint8Array>,
     });
-  }).pipe(Effect.catchTag("InboundEmailRejected", rejectInboundEmail(message)));
+    const archiveConfig = yield* MailboxArchiveConfig;
+    yield* forwardToArchive(message, archiveConfig.recipient);
+  }).pipe(
+    Effect.catchTags({
+      InboundArchiveTransportError: () => rejectUnavailableArchive(message),
+      InboundEmailRejected: rejectInboundEmail(message),
+    })
+  );
