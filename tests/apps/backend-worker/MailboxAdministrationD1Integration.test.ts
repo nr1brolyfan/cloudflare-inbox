@@ -575,6 +575,10 @@ describe("mailbox administration", () => {
         guards: countRows(database, "app_authorization_guard"),
         mailboxes: countRows(database, "app_mailbox"),
         members: countRows(database, "app_mailbox_member"),
+        organizationPreferences: countRows(
+          database,
+          "app_user_organization_preference"
+        ),
         domain: {
           ...database.prepare("select * from app_mail_domain").get(),
         },
@@ -609,6 +613,7 @@ describe("mailbox administration", () => {
         guards: 0,
         mailboxes: 1,
         members: 1,
+        organizationPreferences: 0,
         domain: {
           canonical_domain: "example.test",
           canonicalization_profile_id:

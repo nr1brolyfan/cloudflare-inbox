@@ -164,9 +164,17 @@ describe("mailbox navigation", () => {
     try {
       await applyControlPlaneMigrations(database);
       insertFreshCutoverOrganization(database, 1000);
-      database.exec(`insert into app_mailbox
-        (id, display_name, status, created_by_user_id, created_at, updated_at)
-        values ('primary', 'Primary Inbox', 'active', 'user-a', 1000, 1000)`);
+      database.exec(`
+        insert into auth_user (id, created_at, updated_at)
+        values ('user-a', 1000, 1000);
+        insert into app_mailbox
+          (id, display_name, status, created_by_user_id, created_at, updated_at)
+        values ('primary', 'Primary Inbox', 'active', 'user-a', 1000, 1000);
+        insert into app_user_organization_preference
+          (organization_id, user_id, default_mailbox_id, settings_json,
+           created_at, updated_at)
+        values ('legacy_default_v1', 'user-a', 'primary', '{}', 1000, 1000);
+      `);
 
       await expect(
         Effect.runPromise(
@@ -205,11 +213,19 @@ describe("mailbox navigation", () => {
             .prepare("select count(*) as count from app_mailbox_member")
             .get(),
         },
+        preferences: {
+          ...database
+            .prepare(
+              "select count(*) as count from app_user_organization_preference"
+            )
+            .get(),
+        },
       }).toStrictEqual({
         ancestry: { count: 1 },
         authorizationCalls: 0,
         grants: { count: 0 },
         memberships: { count: 0 },
+        preferences: { count: 1 },
       });
     } finally {
       database.close();

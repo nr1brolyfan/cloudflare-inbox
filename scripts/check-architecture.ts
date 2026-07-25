@@ -78,6 +78,7 @@ const integrationTestFiles = new Set([
   "tests/integration/organization/organization-legacy-cutover-d1.test.ts",
   "tests/integration/organization/organization-member-schema-d1.test.ts",
   "tests/integration/organization/organization-owner-assignment-d1.test.ts",
+  "tests/integration/organization/user-organization-preference-d1.test.ts",
 ]);
 const allowedTestRoots = new Set([
   ...managedRoots,

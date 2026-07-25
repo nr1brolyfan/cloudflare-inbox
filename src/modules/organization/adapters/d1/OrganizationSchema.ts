@@ -14,6 +14,7 @@ import { authUser } from "#/auth/schema/modules/core";
 import { authRoleGrant } from "#/auth/schema/modules/permissions";
 import { administrativeAuditEventIdReference } from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
 import type { CanonicalMailDomain } from "#/modules/organization/domain/MailDomain";
+import type { OrganizationPreferenceSettingsJson } from "#/modules/organization/domain/UserOrganizationPreference";
 
 export const appOrganization = sqliteTable(
   "app_organization",
@@ -332,6 +333,10 @@ export const appMailbox = sqliteTable(
     index("app_mailbox_organization_status_idx")
       .on(t.organizationId, t.status, t.id)
       .where(sql`deleted_at is null`),
+    uniqueIndex("app_mailbox_organization_id_unique_idx").on(
+      t.organizationId,
+      t.id
+    ),
   ]
 );
 
@@ -1029,5 +1034,89 @@ export const appUserPreference = sqliteTable(
       sql`updated_at >= created_at`
     ),
     check("app_user_preference_version_check", sql`version >= 1`),
+  ]
+);
+
+export const appUserOrganizationPreference = sqliteTable(
+  "app_user_organization_preference",
+  {
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => appOrganization.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUser.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    defaultMailboxId: text("default_mailbox_id"),
+    settingsJson: text("settings_json")
+      .notNull()
+      .default("{}")
+      .$type<OrganizationPreferenceSettingsJson>(),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    primaryKey({
+      name: "app_user_organization_preference_pkey",
+      columns: [t.organizationId, t.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.defaultMailboxId],
+      foreignColumns: [appMailbox.organizationId, appMailbox.id],
+      name: "app_user_organization_preference_default_mailbox_fk",
+    })
+      .onUpdate("restrict")
+      .onDelete("restrict"),
+    check(
+      "app_user_organization_preference_organization_check",
+      sql`typeof(organization_id) = 'text'
+        and length(organization_id) between 1 and 128`
+    ),
+    check(
+      "app_user_organization_preference_user_check",
+      sql`typeof(user_id) = 'text' and length(user_id) between 1 and 128`
+    ),
+    check(
+      "app_user_organization_preference_default_check",
+      sql`default_mailbox_id is null or (
+        typeof(default_mailbox_id) = 'text'
+        and length(default_mailbox_id) between 1 and 128
+      )`
+    ),
+    check(
+      "app_user_organization_preference_settings_check",
+      sql`typeof(settings_json) = 'text'
+        and length(settings_json) <= 65536
+        and json_valid(settings_json)
+        and json_type(settings_json) = 'object'`
+    ),
+    check(
+      "app_user_organization_preference_created_check",
+      sql`typeof(created_at) = 'integer'
+        and created_at between 0 and 9007199254740991`
+    ),
+    check(
+      "app_user_organization_preference_updated_check",
+      sql`typeof(updated_at) = 'integer'
+        and updated_at between created_at and 9007199254740991`
+    ),
+    check(
+      "app_user_organization_preference_version_check",
+      sql`typeof(version) = 'integer'
+        and version between 1 and 9007199254740991`
+    ),
+    index("app_user_organization_preference_user_idx").on(
+      t.userId,
+      t.organizationId
+    ),
+    index("app_user_organization_preference_default_idx")
+      .on(t.organizationId, t.defaultMailboxId, t.userId)
+      .where(sql`default_mailbox_id is not null`),
   ]
 );
