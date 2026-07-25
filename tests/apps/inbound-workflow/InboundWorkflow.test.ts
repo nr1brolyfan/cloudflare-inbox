@@ -242,17 +242,17 @@ describe("inbound Workflow", () => {
       status: "ready",
     });
     expect(stepNames).toStrictEqual([
-      "record-raw-stored-v2",
-      "record-parsing-v2",
-      "parse-raw-mime-v2",
-      "store-inbound-attachments-v2",
-      "record-attachments-stored-v2",
-      "commit-inbound-message-v2",
+      "record-raw-stored-v3",
+      "record-parsing-v3",
+      "parse-raw-mime-v3",
+      "store-inbound-attachments-v3",
+      "record-attachments-stored-v3",
+      "commit-inbound-message-v3",
     ]);
     expect(taskConfigs).toStrictEqual(
       expect.arrayContaining([
         {
-          name: "parse-raw-mime-v2",
+          name: "parse-raw-mime-v3",
           retries: {
             backoff: "exponential",
             delay: "5 seconds",
@@ -261,7 +261,7 @@ describe("inbound Workflow", () => {
           timeout: "5 minutes",
         },
         {
-          name: "record-raw-stored-v2",
+          name: "record-raw-stored-v3",
           retries: {
             backoff: "exponential",
             delay: "2 seconds",
@@ -315,13 +315,14 @@ describe("inbound Workflow", () => {
       formatVersion: 2,
       workflowInstanceId: "replay-instance-1",
     };
+    const stepNames: string[] = [];
     const records: unknown[] = [];
     let commitInput: unknown;
 
     const result = await runWorkflow(
       replayInput,
       "replay-instance-1",
-      [],
+      stepNames,
       undefined,
       undefined,
       undefined,
@@ -355,6 +356,14 @@ describe("inbound Workflow", () => {
       ],
       result: { messageId: "message-1", status: "ready" },
     });
+    expect(stepNames).toStrictEqual([
+      "record-raw-stored-v4",
+      "record-parsing-v4",
+      "parse-raw-mime-v4",
+      "store-inbound-attachments-v4",
+      "record-attachments-stored-v4",
+      "commit-inbound-message-v4",
+    ]);
   });
 
   it("passes trusted ingest metadata and the exact raw buffer to parsing", async () => {
@@ -452,10 +461,10 @@ describe("inbound Workflow", () => {
         failure: { code: "malformed_message", replayable: false },
       },
       stepNames: [
-        "record-raw-stored-v2",
-        "record-parsing-v2",
-        "parse-raw-mime-v2",
-        "record-inbound-failure-v2",
+        "record-raw-stored-v3",
+        "record-parsing-v3",
+        "parse-raw-mime-v3",
+        "record-inbound-failure-v3",
       ],
     });
   });
@@ -504,6 +513,35 @@ describe("inbound Workflow", () => {
             attachments: [],
             manifest: changedManifest,
           }),
+        () =>
+          Effect.sync(() => {
+            storeCalls += 1;
+          })
+      )
+    ).rejects.toBeDefined();
+
+    expect(storeCalls).toBe(0);
+  });
+
+  it("requires reparsing to preserve the exact Reply-To manifest", async () => {
+    let storeCalls = 0;
+    const parsedWithReplyTo = Schema.decodeUnknownSync(ParsedInboundMessageV1)({
+      ...Schema.encodeSync(ParsedInboundMessageV1)(parsedManifest),
+      replyTo: [{ address: "reply@example.test", displayName: "Reply" }],
+    });
+    const changedReplyTo = Schema.decodeUnknownSync(ParsedInboundMessageV1)({
+      ...Schema.encodeSync(ParsedInboundMessageV1)(parsedWithReplyTo),
+      replyTo: [{ address: "changed@example.test" }],
+    });
+
+    await expect(
+      runWorkflow(
+        validInput,
+        "ingest-1",
+        [],
+        undefined,
+        () => Effect.succeed(parsedWithReplyTo),
+        () => Effect.succeed({ attachments: [], manifest: changedReplyTo }),
         () =>
           Effect.sync(() => {
             storeCalls += 1;

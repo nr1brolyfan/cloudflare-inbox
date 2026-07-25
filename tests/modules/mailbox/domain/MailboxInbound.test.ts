@@ -109,4 +109,21 @@ describe("mailbox inbound contracts", () => {
       })
     ).toBeFalsy();
   });
+
+  it("decodes manifests written before optional Reply-To was added", () => {
+    const parsed = Schema.decodeUnknownSync(ParsedInboundMessageV1)({
+      attachments: [],
+      bcc: [],
+      cc: [],
+      formatVersion: 1,
+      references: ["<root@example.test>"],
+      subject: "Legacy manifest",
+      to: [],
+    });
+
+    expect(parsed.replyTo).toBeUndefined();
+    expect(
+      Schema.encodeSync(ParsedInboundMessageV1)(parsed)
+    ).not.toHaveProperty("replyTo");
+  });
 });

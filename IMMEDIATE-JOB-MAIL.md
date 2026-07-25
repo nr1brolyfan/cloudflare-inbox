@@ -6,8 +6,8 @@ Minimalny plan uruchomienia prywatnej skrzynki `szymon@szymondlugolecki.com` do 
 
 - Ostatnia aktualizacja: 2026-07-25
 - Stan: `IN PROGRESS`
-- Aktualne zadanie: `JOB-REPLY-001` inbound reply metadata
-- Następne zadanie: `JOB-REPLY-002` authorized reply target and UI
+- Aktualne zadanie: `JOB-REPLY-002` authorized reply target and UI
+- Następne zadanie: `JOB-REPLY-003` immutable outbound threading snapshot
 - Docelowy tryb: private single-owner beta
 - Adres pocztowy: `szymon@szymondlugolecki.com`
 - Website origin: `https://mail.szymondlugolecki.com`
@@ -88,10 +88,12 @@ Lokalne evidence `JOB-ATT-001/002/003` z 2026-07-25 na bazie `f97357b`: osobny o
 
 ### Pojedyncze Reply
 
-- [ ] JOB-REPLY-001 Parsować i przechowywać inbound MIME `Reply-To` oraz bounded RFC threading metadata. Migracja MailboxDO jest addytywna i zachowuje stare rows.
+- [x] JOB-REPLY-001 Parsować i przechowywać inbound MIME `Reply-To` oraz bounded RFC threading metadata. Migracja MailboxDO jest addytywna i zachowuje stare rows.
 - [ ] JOB-REPLY-002 Dodać autoryzowaną projekcję reply target oraz UI Reply. Odbiorcą jest `Reply-To`, a w jego braku `From`; subject otrzymuje pojedyncze `Re:`. Reply nie kopiuje starych załączników i używa bieżącego singleton primary sendera.
-- [ ] JOB-REPLY-003 Zamrozić nowy RFC `Message-ID`, `In-Reply-To` i bounded `References` w immutable outbound snapshot przed dispatch.
-- [ ] JOB-REPLY-004 Przekazać threading headers do Cloudflare Email Sending i przetestować provider rejection. Live staging musi potwierdzić, że Cloudflare akceptuje te nagłówki i Gmail/Outlook grupują odpowiedź we właściwym wątku.
+- [ ] JOB-REPLY-003 Zamrozić `In-Reply-To` i bounded `References` w immutable outbound snapshot przed dispatch. Nie generować, nie zamrażać i nigdy nie próbować ustawiać własnego `Message-ID`: Cloudflare Email Service kontroluje ten nagłówek i odrzuca próbę override jako `E_HEADER_NOT_ALLOWED` ([oficjalne ograniczenie providera](https://developers.cloudflare.com/email-service/reference/headers/#platform-controlled-headers)).
+- [ ] JOB-REPLY-004 Przekazać allowlistowane `In-Reply-To` i `References` do Cloudflare Email Sending i przetestować provider rejection. Po acceptance zapisać zwrócony provider `messageId` wyłącznie jako kandydata na RFC `Message-ID`; datowane live staging evidence musi potwierdzić jego dokładną równość z `Message-ID` rzeczywiście dostarczonego RFC oraz poprawne grupowanie odpowiedzi w Gmail i Outlook. Bez takiego dowodu nie traktować provider result jako autorytatywnego delivered RFC `Message-ID` i nie próbować custom `Message-ID`.
+
+Lokalne evidence `JOB-REPLY-001` z 2026-07-25 na bazie `ee2c78a`: PostalMime parsuje wszystkie poprawne mailboxy i grupy `Reply-To` przez istniejący `MailAddress`, odrzuca niepoprawne adresy z manifestu i liczy wszystkie raw mailboxy `Reply-To` do wspólnego limitu. Nowe MIME `Message-ID`, `In-Reply-To` i `References` używają jawnie konserwatywnego, provider-safe profilu, a nie pełnej gramatyki RFC 5322: wymagają pojedynczego tokenu `<id-left@id-right>` bez whitespace, controls i zagnieżdżonych bracketów, z ASCII dot-atom-like id-left, LDH/dotted id-right i limitem 998 UTF-8 bytes; comments, garbage i niepoprawne tokeny są pomijane, persisted `RfcMessageId` zachowuje kompatybilność starych danych, a limit `References` wynosi dokładnie 100. Opcjonalne pole V1 zachowuje decode starych manifestów, a generacje Workflow v3/v4 zapobiegają porównaniu cached manifestu bez `replyTo` z nową reparsą. Addytywna migracja MailboxDO v13 zachowuje rows v12 jako null; column CHECK wymusza nullable, poprawną, niepustą tablicę JSON o maksymalnie 256 elementach, a natywne `BEFORE INSERT/UPDATE` triggers walidują każdy element jako obiekt z dokładnie dozwolonym `address` i opcjonalnym tekstowym `displayName` oraz konserwatywnym SQLite odpowiednikiem ASCII dot-atom + DNS `EmailAddress`. Runtime corruption zwraca fail-closed typed `invalid-state`, nie defect. Inbound commit zapisuje `replyTo` atomowo i obejmuje canonical idempotency key; `MessageDetail`, `GetMessage`, `GetThread` i protokół DO je hydratują, natomiast list/search summary nie ujawniają go jeszcze przeglądarce. Nowy outbound snapshot pozostawia pole null, a resend kopiuje istniejący snapshot. Restore decoder przyjmuje wspierane artifacts/evidence v12 i v13: v13 zachowuje pełne exact digest i closure checks, natomiast v12 jest najpierw dokładnie weryfikowane, następnie migrowane produkcyjną migracją 13 i publikowane jako zdrowe v13 z niezmienionym mailbox ID oraz null `reply_to_json` dla legacy rows. Retry po utracie odpowiedzi wyprowadza niezależny oczekiwany efekt migracji 13 z immutable v12 archive, normalizuje wyłącznie niedeterministyczny ledger `applied_at`, dokładnie weryfikuje istniejący target i zwraca `already-restored`; foreign, partial lub tampered target nadal failuje bez clobber. Focused tests `97/97`, restore rehearsal `20/20`, pełny `bun run test` `154/154` files i `1808/1808` tests, a także `bun run typecheck`, `bun run check`, `bun run build` i `git diff --check` zakończyły się powodzeniem.
 
 ### Niezależne archiwum Gmail
 

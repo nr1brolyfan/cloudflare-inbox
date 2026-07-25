@@ -20,6 +20,103 @@ interface MailboxMigration {
   readonly statements: readonly string[];
 }
 
+// SQLite CHECK constraints cannot iterate json_each; triggers enforce each element.
+const replyToElementValidationTrigger = (
+  name: string,
+  event: "INSERT" | "UPDATE OF reply_to_json"
+) => `CREATE TRIGGER ${name}
+  BEFORE ${event} ON message
+  WHEN new.reply_to_json IS NOT NULL
+  BEGIN
+    SELECT CASE WHEN EXISTS (
+      SELECT 1
+      FROM json_each(new.reply_to_json) AS item
+      WHERE json_type(item.value) <> 'object'
+        OR (SELECT count(*) FROM json_each(item.value) AS field) NOT BETWEEN 1 AND 2
+        OR (SELECT count(*) FROM json_each(item.value) AS field WHERE field.key = 'address') <> 1
+        OR (SELECT count(*) FROM json_each(item.value) AS field WHERE field.key = 'displayName') > 1
+        OR EXISTS (
+          SELECT 1 FROM json_each(item.value) AS field
+          WHERE field.key NOT IN ('address', 'displayName')
+        )
+        OR json_type(item.value, '$.address') <> 'text'
+        OR (
+          (SELECT count(*) FROM json_each(item.value) AS field WHERE field.key = 'displayName') = 1
+          AND json_type(item.value, '$.displayName') <> 'text'
+        )
+        OR length(json_extract(item.value, '$.address')) NOT BETWEEN 3 AND 320
+        OR json_extract(item.value, '$.address') <> trim(json_extract(item.value, '$.address'))
+        OR json_extract(item.value, '$.address') GLOB '*[^A-Za-z0-9.!#$%&''*+/=?^_\`{|}~@-]*'
+        OR instr(json_extract(item.value, '$.address'), '@') <= 1
+        OR instr(
+          substr(
+            json_extract(item.value, '$.address'),
+            instr(json_extract(item.value, '$.address'), '@') + 1
+          ),
+          '@'
+        ) <> 0
+        OR length(
+          substr(
+            json_extract(item.value, '$.address'),
+            1,
+            instr(json_extract(item.value, '$.address'), '@') - 1
+          )
+        ) > 64
+        OR substr(json_extract(item.value, '$.address'), 1, 1) = '.'
+        OR substr(
+          json_extract(item.value, '$.address'),
+          instr(json_extract(item.value, '$.address'), '@') - 1,
+          1
+        ) = '.'
+        OR substr(
+          json_extract(item.value, '$.address'),
+          1,
+          instr(json_extract(item.value, '$.address'), '@') - 1
+        ) LIKE '%..%'
+        OR instr(
+          substr(
+            json_extract(item.value, '$.address'),
+            instr(json_extract(item.value, '$.address'), '@') + 1
+          ),
+          '.'
+        ) = 0
+        OR substr(json_extract(item.value, '$.address'), -1) IN ('.', '-')
+        OR substr(
+          json_extract(item.value, '$.address'),
+          instr(json_extract(item.value, '$.address'), '@') + 1,
+          1
+        ) IN ('.', '-')
+        OR EXISTS (
+          WITH RECURSIVE labels(label, rest) AS (
+            SELECT
+              CASE WHEN instr(domain, '.') = 0 THEN domain
+                ELSE substr(domain, 1, instr(domain, '.') - 1) END,
+              CASE WHEN instr(domain, '.') = 0 THEN ''
+                ELSE substr(domain, instr(domain, '.') + 1) END
+            FROM (
+              SELECT substr(
+                json_extract(item.value, '$.address'),
+                instr(json_extract(item.value, '$.address'), '@') + 1
+              ) AS domain
+            )
+            UNION ALL
+            SELECT
+              CASE WHEN instr(rest, '.') = 0 THEN rest
+                ELSE substr(rest, 1, instr(rest, '.') - 1) END,
+              CASE WHEN instr(rest, '.') = 0 THEN ''
+                ELSE substr(rest, instr(rest, '.') + 1) END
+            FROM labels
+            WHERE rest <> ''
+          )
+          SELECT 1 FROM labels
+          WHERE length(label) NOT BETWEEN 1 AND 63
+            OR label GLOB '*[^A-Za-z0-9-]*'
+            OR substr(label, 1, 1) = '-'
+            OR substr(label, -1) = '-'
+        )
+    ) THEN RAISE(ABORT, 'invalid message reply_to_json') END;
+  END`;
+
 const migrations = [
   {
     version: 1,
@@ -507,6 +604,27 @@ const migrations = [
     statements: [
       `CREATE INDEX draft_active_updated_idx
         ON draft(updated_at DESC, id DESC) WHERE deleted_at IS NULL`,
+    ],
+  },
+  {
+    version: 13,
+    statements: [
+      `ALTER TABLE message ADD COLUMN reply_to_json TEXT CHECK (
+        reply_to_json IS NULL OR CASE
+          WHEN json_valid(reply_to_json) THEN
+            json_type(reply_to_json) = 'array' AND
+            json_array_length(reply_to_json) BETWEEN 1 AND 256
+          ELSE 0
+        END
+      )`,
+      replyToElementValidationTrigger(
+        "message_reply_to_json_insert_check",
+        "INSERT"
+      ),
+      replyToElementValidationTrigger(
+        "message_reply_to_json_update_check",
+        "UPDATE OF reply_to_json"
+      ),
     ],
   },
 ] as const satisfies readonly MailboxMigration[];

@@ -107,6 +107,7 @@ export const message = sqliteTable(
     outboundDeliveryId: text("outbound_delivery_id"),
     subject: text("subject").notNull().default(""),
     senderJson: text("sender_json"),
+    replyToJson: text("reply_to_json"),
     recipientsJson: text("recipients_json").notNull().default("[]"),
     snippet: text("snippet").notNull().default(""),
     activityAt: integer("activity_at").notNull().default(0),
@@ -151,6 +152,10 @@ export const message = sqliteTable(
     check(
       "message_sender_json_check",
       sql`${t.senderJson} is null or json_valid(${t.senderJson})`
+    ),
+    check(
+      "message_reply_to_json_check",
+      sql`${t.replyToJson} is null or case when json_valid(${t.replyToJson}) then json_type(${t.replyToJson}) = 'array' and json_array_length(${t.replyToJson}) between 1 and 256 else 0 end`
     ),
     check(
       "message_recipients_json_check",

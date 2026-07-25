@@ -102,6 +102,7 @@ const commitInput = Schema.decodeUnknownSync(CommitInboundMessageV1)({
     cc: [],
     formatVersion: 1,
     references: [],
+    replyTo: [{ address: "reply@example.test", displayName: "Reply Address" }],
     rfcMessageId: "message@example.test",
     sender: { address: "sender@example.test", name: "Sender" },
     subject: "Hello",
@@ -607,6 +608,9 @@ describe("MailboxDO SQLite inbound commit", () => {
         folderId: "inbox",
         id: "generated-2",
         read: false,
+        replyTo: [
+          { address: "reply@example.test", displayName: "Reply Address" },
+        ],
         size: 123,
         snippet: "Hello from inbound",
         threadId: "generated-1",
@@ -1053,6 +1057,38 @@ describe("MailboxDO SQLite inbound commit", () => {
     );
   });
 
+  it("rejects the same ingest ID when only Reply-To changes", async () => {
+    const runtime = makeRuntime();
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* commit();
+          return yield* Effect.result(
+            commit(
+              Schema.decodeUnknownSync(CommitInboundMessageV1)({
+                ...Schema.encodeSync(CommitInboundMessageV1)(commitInput),
+                message: {
+                  ...Schema.encodeSync(CommitInboundMessageV1)(commitInput)
+                    .message,
+                  replyTo: [{ address: "changed@example.test" }],
+                },
+              })
+            )
+          );
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(Result.isFailure(result) ? result.failure : undefined).toMatchObject(
+      {
+        operation: "commit-inbound",
+        reason: "idempotency-conflict",
+        resourceId: "ingest-1",
+      }
+    );
+  });
+
   it("round-trips commit and domain conflicts through the DO protocol", async () => {
     const runtime = makeRuntime();
     const outcome = await Effect.runPromise(
@@ -1063,6 +1099,14 @@ describe("MailboxDO SQLite inbound commit", () => {
           const committed = yield* handler.executeMailData({
             _tag: "CommitInbound",
             input: commitInput,
+          });
+          const found = yield* handler.executeMailData({
+            _tag: "GetMessage",
+            input: { mailboxId, messageId: "generated-2" },
+          });
+          const thread = yield* handler.executeMailData({
+            _tag: "GetThread",
+            input: { mailboxId, threadId: "generated-1" },
           });
           const conflict = yield* handler.executeMailData({
             _tag: "CommitInbound",
@@ -1075,7 +1119,7 @@ describe("MailboxDO SQLite inbound commit", () => {
               },
             },
           });
-          return { committed, conflict };
+          return { committed, conflict, found, thread };
         }).pipe(Effect.provide(handlerTestLive(runtime.service)))
       )
     );
@@ -1094,6 +1138,29 @@ describe("MailboxDO SQLite inbound commit", () => {
         operation: "commit-inbound",
         reason: "idempotency-conflict",
         resourceId: "ingest-1",
+      },
+      found: {
+        _tag: "MessageFound",
+        value: {
+          replyTo: [
+            { address: "reply@example.test", displayName: "Reply Address" },
+          ],
+        },
+      },
+      thread: {
+        _tag: "ThreadFound",
+        value: {
+          messages: [
+            {
+              replyTo: [
+                {
+                  address: "reply@example.test",
+                  displayName: "Reply Address",
+                },
+              ],
+            },
+          ],
+        },
       },
     });
   });

@@ -81,6 +81,9 @@ export const MessageSummarySchema = MessageSummary.check(
 export class MessageDetail extends MessageSummary.extend<MessageDetail>(
   "cloudflare-inbox/MessageDetail"
 )({
+  replyTo: Schema.optional(
+    Schema.Array(MailAddress).pipe(Schema.check(Schema.isLengthBetween(1, 256)))
+  ),
   rfcMessageId: Schema.optional(RfcMessageId),
   inReplyTo: Schema.optional(RfcMessageId),
   references: Schema.Array(RfcMessageId),

@@ -43,6 +43,7 @@ import type {
   SearchMessagesInput,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { MailAddress } from "#/shared/MailAddress";
 import { UnixMillis, Version } from "#/shared/Temporal";
 
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
@@ -64,10 +65,45 @@ import {
   outboundDelivery,
 } from "./MailboxSqliteSchema";
 
+const StoredReplyToList = Schema.Array(MailAddress).pipe(
+  Schema.check(Schema.isLengthBetween(1, 256))
+);
+
+const storedReplyToError = (
+  operation: MailboxDomainError["operation"],
+  messageId: string
+) =>
+  new MailboxDomainError({
+    operation,
+    reason: "invalid-state",
+    message: "Stored message Reply-To metadata is invalid",
+    resourceType: "message",
+    resourceId: messageId,
+  });
+
+const decodeStoredReplyTo = (
+  value: string | null,
+  operation: MailboxDomainError["operation"],
+  messageId: string
+) =>
+  value === null
+    ? Effect.void
+    : Effect.try({
+        try: () => JSON.parse(value),
+        catch: () => storedReplyToError(operation, messageId),
+      }).pipe(
+        Effect.flatMap((input) =>
+          Schema.decodeUnknownEffect(StoredReplyToList)(input).pipe(
+            Effect.mapError(() => storedReplyToError(operation, messageId))
+          )
+        )
+      );
+
 const readMessageDetailRow = (
   db: Omit<MailboxDatabase, "$client">,
   row: typeof message.$inferSelect,
-  mailboxId: MailboxId
+  mailboxId: MailboxId,
+  operation: MailboxDomainError["operation"]
 ) =>
   Effect.gen(function* () {
     const [labelRows, attachmentRows, deliveryRows] = yield* Effect.all([
@@ -108,6 +144,11 @@ const readMessageDetailRow = (
         disposition: item.disposition,
       })
     );
+    const replyTo = yield* decodeStoredReplyTo(
+      row.replyToJson,
+      operation,
+      row.id
+    );
 
     return Schema.decodeUnknownSync(MessageDetailSchema)({
       id: row.id,
@@ -119,6 +160,7 @@ const readMessageDetailRow = (
       deliveryStatus: deliveryRows[0]?.status,
       subject: row.subject,
       sender: optionalAddress(row.senderJson),
+      replyTo,
       recipients: decodeJson(AddressList, row.recipientsJson),
       snippet: row.snippet,
       activityAt: row.activityAt,
@@ -342,11 +384,14 @@ const listMessages = (mailboxId: MailboxId, input: ListMessagesInput) =>
               (row.activityAt === cursor.activityAt && row.id < cursor.id)
         )
         .map((row) =>
-          Effect.map(readMessageDetailRow(db, row, mailboxId), (detail) => ({
-            row,
-            detail,
-            summary: readMessageSummaryRow(detail),
-          }))
+          Effect.map(
+            readMessageDetailRow(db, row, mailboxId, "list-messages"),
+            (detail) => ({
+              row,
+              detail,
+              summary: readMessageSummaryRow(detail),
+            })
+          )
         )
     );
     const filtered = hydrated.filter(({ detail, row, summary }) =>
@@ -427,12 +472,15 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
       .orderBy(rank, desc(message.activityAt), desc(message.id));
     const hydrated = yield* Effect.all(
       rows.map((row) =>
-        Effect.map(readMessageDetailRow(db, row, mailboxId), (detail) => ({
-          row,
-          rank: row.searchRank,
-          detail,
-          summary: readMessageSummaryRow(detail),
-        }))
+        Effect.map(
+          readMessageDetailRow(db, row, mailboxId, "search-messages"),
+          (detail) => ({
+            row,
+            rank: row.searchRank,
+            detail,
+            summary: readMessageSummaryRow(detail),
+          })
+        )
       )
     );
     const matching = hydrated.filter(({ detail, row, summary }) =>
@@ -503,7 +551,7 @@ const getMessage = (mailboxId: MailboxId, input: GetMessageInput) =>
         { resourceType: "message", resourceId: input.messageId }
       );
     }
-    return yield* readMessageDetailRow(db, row, mailboxId);
+    return yield* readMessageDetailRow(db, row, mailboxId, "get-message");
   });
 
 const getAttachmentBlob = (
@@ -681,7 +729,7 @@ const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
       .from(message)
       .where(threadPredicate);
     const all = yield* Effect.all(
-      rows.map((row) => readMessageDetailRow(db, row, mailboxId))
+      rows.map((row) => readMessageDetailRow(db, row, mailboxId, "get-thread"))
     );
     if (all.length === 0) {
       return yield* messageDomainError(
@@ -1014,7 +1062,12 @@ const mutateMessage = (
             }
           );
         }
-        const detail = yield* readMessageDetailRow(tx, next, mailboxId);
+        const detail = yield* readMessageDetailRow(
+          tx,
+          next,
+          mailboxId,
+          "mutate-message"
+        );
         const result = readMessageSummaryRow(detail);
         yield* operations.store(
           input.operationId,

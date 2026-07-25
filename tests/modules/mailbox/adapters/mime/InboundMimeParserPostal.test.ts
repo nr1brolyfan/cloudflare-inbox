@@ -79,6 +79,7 @@ describe("PostalMime inbound parser", () => {
   it("maps decoded headers, addresses, threading, and text", async () => {
     const result = await runParse(
       `From: =?UTF-8?Q?Sender_=E2=9C=93?= <sender@example.test>\r
+Reply-To: Support <support@example.test>, Friends: One <one@example.test>, invalid-address, Two <two@example.test>;\r
 To: Owner <owner@example.test>\r
 Cc: invalid-address, Team <team@example.test>\r
 Subject: =?UTF-8?Q?Hello_=E2=9C=93?=\r
@@ -99,12 +100,76 @@ Hello=20world`
       headerDate: 0,
       inReplyTo: "<parent@example.test>",
       references: ["<root@example.test>", "<parent@example.test>"],
+      replyTo: [
+        { address: "support@example.test", displayName: "Support" },
+        { address: "one@example.test", displayName: "One" },
+        { address: "two@example.test", displayName: "Two" },
+      ],
       rfcMessageId: "<message-1@example.test>",
       sender: { address: "sender@example.test", displayName: "Sender ✓" },
       subject: "Hello ✓",
       to: [{ address: "owner@example.test", displayName: "Owner" }],
     });
     expect(result.textBody).toContain("Hello world");
+  });
+
+  it("omits Reply-To when the header is absent or has no valid mailbox", async () => {
+    const [absent, invalid] = await Promise.all([
+      runParse("From: sender@example.test\r\n\r\nBody"),
+      runParse("Reply-To: invalid-address\r\n\r\nBody"),
+    ]);
+
+    expect(absent.replyTo).toBeUndefined();
+    expect(invalid.replyTo).toBeUndefined();
+  });
+
+  it("counts raw Reply-To group mailboxes against the total address limit", async () => {
+    const failure = await runParse(
+      "To: owner@example.test\r\nReply-To: Team: one@example.test, invalid-address, two@example.test;\r\n\r\nBody",
+      { maximumAddresses: 3 }
+    ).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({
+      _tag: "MimeParseError",
+      reason: "unsupported-message",
+    });
+  });
+
+  it("omits malformed, nested, comment-only, and oversized threading tokens", async () => {
+    const oversized = `<${"a".repeat(986)}@example.test>`;
+    const result = await runParse(
+      `Message-ID: garbage (comment) bare@example.test\r\nIn-Reply-To: <<nested@example.test>> (only-comment)\r\nReferences: (comment) <valid@example.test> <missing-at> <white space@example.test> <bad@@example.test> ${oversized}\r\n\r\nBody`
+    );
+
+    expect(result.rfcMessageId).toBeUndefined();
+    expect(result.inReplyTo).toBeUndefined();
+    expect(result.references).toStrictEqual(["<valid@example.test>"]);
+  });
+
+  it("accepts exactly 100 conservative References tokens", async () => {
+    const references = Array.from(
+      { length: 100 },
+      (_, index) => `<reference-${index}@example.test>`
+    ).join(" ");
+    const outcome = await runParse(`References: ${references}\r\n\r\nBody`);
+
+    expect(outcome.references).toHaveLength(100);
+    expect(outcome.references.at(-1)).toBe("<reference-99@example.test>");
+  });
+
+  it("rejects 101 conservative References tokens", async () => {
+    const references = Array.from(
+      { length: 101 },
+      (_, index) => `<reference-${index}@example.test>`
+    ).join(" ");
+    const outcome = await runParse(
+      `References: ${references}\r\n\r\nBody`
+    ).catch((error: unknown) => error);
+
+    expect(outcome).toMatchObject({
+      _tag: "MimeParseError",
+      reason: "unsupported-message",
+    });
   });
 
   it("emits attachment metadata without binary content", async () => {

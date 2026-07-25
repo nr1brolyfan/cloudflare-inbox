@@ -603,6 +603,7 @@ const resendOutbound = (
           outboundDeliveryId: deliveryId,
           subject: sourceMessage.subject,
           senderJson: sourceMessage.senderJson,
+          replyToJson: sourceMessage.replyToJson,
           recipientsJson: sourceMessage.recipientsJson,
           snippet: sourceMessage.snippet,
           activityAt: now,

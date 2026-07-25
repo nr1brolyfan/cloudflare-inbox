@@ -231,6 +231,9 @@ export const ParsedInboundMessageV1 = Schema.Struct({
   formatVersion: Schema.Literal(1),
   subject: MessageSubject,
   sender: Schema.optional(MailAddress),
+  replyTo: Schema.optional(
+    Schema.Array(MailAddress).pipe(Schema.check(Schema.isLengthBetween(1, 256)))
+  ),
   to: Schema.Array(MailAddress),
   cc: Schema.Array(MailAddress),
   bcc: Schema.Array(MailAddress),

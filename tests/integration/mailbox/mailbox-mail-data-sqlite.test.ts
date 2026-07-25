@@ -230,6 +230,8 @@ const seedMessages = Effect.gen(function* () {
       direction: "inbound",
       subject: "Hello",
       senderJson: '{"address":"sender@example.com","displayName":"Sender"}',
+      replyToJson:
+        '[{"address":"reply@example.com","displayName":"Reply Address"}]',
       recipientsJson: '[{"address":"owner@example.com"}]',
       snippet: "First",
       activityAt: 100,
@@ -414,6 +416,8 @@ describe("Mailbox mail data SQLite", () => {
           first: page.items[0]?.id,
           next: next.items[0]?.id,
           attachment: detail.attachments[0]?.fileName,
+          detailReplyTo: detail.replyTo?.map((address) => ({ ...address })),
+          summaryHasReplyTo: Object.hasOwn(page.items[0] ?? {}, "replyTo"),
           sender: detail.sender?.address,
           cursorError: wrongCursor.reason,
           filtered: filtered.items.map((item) => item.id),
@@ -421,9 +425,51 @@ describe("Mailbox mail data SQLite", () => {
           first: "m2",
           next: "m1",
           attachment: "note.txt",
+          detailReplyTo: [
+            { address: "reply@example.com", displayName: "Reply Address" },
+          ],
+          summaryHasReplyTo: false,
           sender: "sender@example.com",
           cursorError: "validation",
           filtered: ["m1"],
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("maps corrupt stored Reply-To metadata to a fail-closed domain error", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        yield* db.$client.unsafe(
+          "DROP TRIGGER message_reply_to_json_insert_check"
+        );
+        yield* db.$client.unsafe(
+          "DROP TRIGGER message_reply_to_json_update_check"
+        );
+        yield* db.$client.unsafe("PRAGMA ignore_check_constraints = ON");
+        yield* db.$client.unsafe(
+          `UPDATE message SET reply_to_json = '[{"address":"invalid"}]' WHERE id = 'm1'`
+        );
+
+        const result = yield* Effect.result(
+          getMessage(
+            Schema.decodeUnknownSync(GetMessageInput)({
+              mailboxId,
+              messageId: "m1",
+            })
+          )
+        );
+
+        expect(
+          Result.isFailure(result) ? result.failure : undefined
+        ).toMatchObject({
+          _tag: "MailboxDomainError",
+          operation: "get-message",
+          reason: "invalid-state",
+          resourceId: "m1",
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
@@ -1264,7 +1310,7 @@ describe("Mailbox mail data SQLite", () => {
           })
         );
         const [messageBefore] = yield* db
-          .select({ size: message.size })
+          .select({ replyToJson: message.replyToJson, size: message.size })
           .from(message)
           .where(eq(message.id, scheduled.delivery.messageId));
         const [snapshotBefore] = yield* db
@@ -1283,6 +1329,10 @@ describe("Mailbox mail data SQLite", () => {
             status: "failed",
           })
           .where(eq(outboundDelivery.id, scheduled.delivery.id));
+        yield* db
+          .update(message)
+          .set({ replyToJson: '[{"address":"snapshot@example.com"}]' })
+          .where(eq(message.id, scheduled.delivery.messageId));
         const resent = yield* resendOutbound(
           Schema.decodeUnknownSync(ResendOutboundInput)({
             ...explicitConfirmation,
@@ -1301,14 +1351,22 @@ describe("Mailbox mail data SQLite", () => {
           .select()
           .from(attachment)
           .where(eq(attachment.messageId, resent.delivery.messageId));
+        const [resendMessage] = yield* db
+          .select({ replyToJson: message.replyToJson })
+          .from(message)
+          .where(eq(message.id, resent.delivery.messageId));
 
         expect({
           messageBefore,
+          resendMessage,
           resendSnapshot,
           snapshotAfter,
           snapshotBefore,
         }).toMatchObject({
-          messageBefore: { size: 9 },
+          messageBefore: { replyToJson: null, size: 9 },
+          resendMessage: {
+            replyToJson: '[{"address":"snapshot@example.com"}]',
+          },
           resendSnapshot: {
             contentSha256: "a".repeat(64),
             draftAttachmentId: reserved.id,

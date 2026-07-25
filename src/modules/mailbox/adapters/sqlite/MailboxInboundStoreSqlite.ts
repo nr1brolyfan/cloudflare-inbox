@@ -596,6 +596,10 @@ const commitInboundMessage = (
             input.message.sender === undefined
               ? null
               : encodeJson(MailAddress, input.message.sender),
+          replyToJson:
+            input.message.replyTo === undefined
+              ? null
+              : encodeJson(AddressList, input.message.replyTo),
           recipientsJson: encodeJson(AddressList, recipients),
           snippet: inboundSnippet(input.message.textBody),
           activityAt: input.receivedAt,

@@ -90,9 +90,41 @@ const decodeAddresses = (addresses: readonly PostalAddress[] | undefined) =>
     return decoded === undefined ? [] : [decoded];
   });
 
+const maximumThreadingMessageIdBytes = 998;
+
+/** Conservative provider-safe profile, not the complete RFC 5322 msg-id grammar. */
+const decodeThreadingMessageId = (candidate: string) => {
+  if (
+    new TextEncoder().encode(candidate).byteLength >
+      maximumThreadingMessageIdBytes ||
+    !/^<[A-Za-z0-9!#$%&'*+\-/=?^_`{|}~.]+@[A-Za-z0-9.-]+>$/u.test(candidate)
+  ) {
+    return;
+  }
+  const separator = candidate.indexOf("@");
+  const idLeft = candidate.slice(1, separator);
+  const idRight = candidate.slice(separator + 1, -1);
+  const labels = idRight.split(".");
+  if (
+    idLeft.startsWith(".") ||
+    idLeft.endsWith(".") ||
+    idLeft.includes("..") ||
+    labels.some(
+      (label) =>
+        label.length === 0 ||
+        label.length > 63 ||
+        label.startsWith("-") ||
+        label.endsWith("-")
+    )
+  ) {
+    return;
+  }
+  return decodeOptional(RfcMessageId, candidate);
+};
+
 const messageIds = (value: string | undefined) =>
-  (value?.match(/<[^>]+>|[^\s,]+/gu) ?? []).flatMap((candidate) => {
-    const decoded = decodeOptional(RfcMessageId, candidate);
+  (value?.match(/(?<![<>])<[^<>]*>(?![<>])/gu) ?? []).flatMap((candidate) => {
+    const decoded = decodeThreadingMessageId(candidate);
     return decoded === undefined ? [] : [decoded];
   });
 
@@ -187,6 +219,7 @@ const parseMime = (
     const to = decodeAddresses(parsed.to);
     const cc = decodeAddresses(parsed.cc);
     const bcc = decodeAddresses(parsed.bcc);
+    const replyTo = decodeAddresses(parsed.replyTo);
     const [senderMailbox] = flattenAddresses(
       parsed.from === undefined ? undefined : [parsed.from]
     );
@@ -196,7 +229,8 @@ const parseMime = (
     const addressCount =
       flattenAddresses(parsed.to).length +
       flattenAddresses(parsed.cc).length +
-      flattenAddresses(parsed.bcc).length;
+      flattenAddresses(parsed.bcc).length +
+      flattenAddresses(parsed.replyTo).length;
 
     if (
       addressCount > config.maximumAddresses ||
@@ -220,6 +254,7 @@ const parseMime = (
       subject: parsed.subject ?? "",
       sender:
         senderMailbox === undefined ? undefined : decodeAddress(senderMailbox),
+      replyTo: replyTo.length === 0 ? undefined : replyTo,
       to,
       cc,
       bcc,

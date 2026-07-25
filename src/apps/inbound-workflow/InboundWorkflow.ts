@@ -198,7 +198,7 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
         mailboxStateTaskConfig
       );
     let parsedForFailure: ParsedInboundMessageV1Type | undefined;
-    const taskSuffix = params.formatVersion === 1 ? "v2" : "v3";
+    const taskSuffix = params.formatVersion === 1 ? "v3" : "v4";
     const recordFailure = (failure: ProcessingFailure) =>
       Cloudflare.Workflows.task(
         `record-inbound-failure-${taskSuffix}`,

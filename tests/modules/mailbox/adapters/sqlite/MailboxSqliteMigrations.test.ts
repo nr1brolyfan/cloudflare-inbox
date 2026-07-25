@@ -67,6 +67,7 @@ describe("MailboxDO migrations", () => {
         { version: 10, applied_at: expect.any(String) },
         { version: 11, applied_at: expect.any(String) },
         { version: 12, applied_at: expect.any(String) },
+        { version: 13, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -183,6 +184,108 @@ describe("MailboxDO migrations", () => {
           )
           .get()?.sql
       ).toContain("WHERE deleted_at IS NULL");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("upgrades populated v12 messages with null Reply-To without changing rows", () => {
+    const database = new DatabaseSync(":memory:");
+    const storage = makeStorage(database);
+
+    try {
+      applyMailboxMigrations(storage);
+      database.exec(`
+        DROP TRIGGER message_reply_to_json_insert_check;
+        DROP TRIGGER message_reply_to_json_update_check;
+        ALTER TABLE message DROP COLUMN reply_to_json;
+        DELETE FROM mailbox_schema_migration WHERE version = 13;
+        INSERT INTO folder (id, name, kind, created_at, updated_at)
+          VALUES ('inbox', 'Inbox', 'inbox', 0, 0);
+        INSERT INTO message (id, folder_id, subject, received_at)
+          VALUES ('legacy-message', 'inbox', 'Legacy', 1000);
+      `);
+      const before = database
+        .prepare("SELECT * FROM message WHERE id = 'legacy-message'")
+        .get();
+
+      expect(applyMailboxMigrations(storage)).toBe(13);
+      const after = database
+        .prepare("SELECT * FROM message WHERE id = 'legacy-message'")
+        .get();
+
+      expect({ ...after }).toStrictEqual({ ...before, reply_to_json: null });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("accepts only nullable bounded arrays of structurally valid MailAddress objects", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+      database.exec(`
+        INSERT INTO folder (id, name, kind, created_at, updated_at)
+          VALUES ('inbox', 'Inbox', 'inbox', 0, 0);
+        INSERT INTO message (id, folder_id, reply_to_json)
+          VALUES ('valid', 'inbox', '[{"address":"reply@example.test"},{"address":"Named.Local+tag@Sub.Example.test","displayName":"Reply ✓"}]');
+        INSERT INTO message (id, folder_id, reply_to_json)
+          VALUES ('legacy-null', 'inbox', NULL);
+      `);
+      const insert = database.prepare(
+        "INSERT INTO message (id, folder_id, reply_to_json) VALUES (?, 'inbox', ?)"
+      );
+
+      for (const [id, value] of [
+        ["invalid-json", "{"],
+        ["object", "{}"],
+        ["empty", "[]"],
+        ["too-many", JSON.stringify(Array.from({ length: 257 }, () => null))],
+        ["null-entry", "[null]"],
+        ["scalar-entry", '["reply@example.test"]'],
+        ["missing-address", '[{"displayName":"Reply"}]'],
+        ["null-address", '[{"address":null}]'],
+        ["numeric-address", '[{"address":1}]'],
+        ["extra-field", '[{"address":"reply@example.test","extra":true}]'],
+        [
+          "duplicate-address",
+          '[{"address":"one@example.test","address":"two@example.test"}]',
+        ],
+        [
+          "null-display-name",
+          '[{"address":"reply@example.test","displayName":null}]',
+        ],
+        ["missing-at", '[{"address":"reply.example.test"}]'],
+        ["multiple-at", '[{"address":"reply@@example.test"}]'],
+        ["local-leading-dot", '[{"address":".reply@example.test"}]'],
+        ["local-trailing-dot", '[{"address":"reply.@example.test"}]'],
+        ["local-double-dot", '[{"address":"re..ply@example.test"}]'],
+        [
+          "local-too-long",
+          JSON.stringify([{ address: `${"a".repeat(65)}@example.test` }]),
+        ],
+        ["domain-one-label", '[{"address":"reply@example"}]'],
+        ["domain-empty-label", '[{"address":"reply@example..test"}]'],
+        ["domain-leading-hyphen", '[{"address":"reply@-example.test"}]'],
+        ["domain-trailing-hyphen", '[{"address":"reply@example-.test"}]'],
+        ["domain-symbol", '[{"address":"reply@exam_ple.test"}]'],
+        [
+          "domain-label-too-long",
+          JSON.stringify([{ address: `reply@${"a".repeat(64)}.test` }]),
+        ],
+        ["whitespace", '[{"address":" reply@example.test"}]'],
+      ] as const) {
+        expect(() => insert.run(id, value)).toThrow(
+          /CHECK constraint failed|invalid message reply_to_json|malformed JSON/u
+        );
+      }
+
+      expect(
+        database
+          .prepare("SELECT reply_to_json FROM message WHERE id = 'valid'")
+          .get()?.reply_to_json
+      ).toContain('"displayName":"Reply ✓"');
     } finally {
       database.close();
     }
