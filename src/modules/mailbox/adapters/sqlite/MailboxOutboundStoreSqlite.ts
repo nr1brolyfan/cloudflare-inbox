@@ -5,6 +5,7 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { MailboxArchiveRecipient } from "#/modules/mailbox/contracts/MailboxArchiveConfig";
 import {
   estimateCloudflareStructuredEmailWireSize,
   isCloudflareStructuredEmailSizeAccepted,
@@ -29,12 +30,13 @@ import {
   ResendOutboundInput,
   ResendOutboundResult,
   ScheduleOutboundResult,
+  effectiveOutboundBcc,
   outboundMaxRecipientCount,
   outboundUndoWindowMillis,
 } from "#/modules/mailbox/domain/MailboxOutbound";
 import type {
   GetOutboundDeliveryInput,
-  ScheduleOutboundInput,
+  PrivateScheduleOutboundInput,
 } from "#/modules/mailbox/domain/MailboxOutbound";
 import {
   isProviderSafeRfcMessageId,
@@ -208,6 +210,13 @@ const ResendSizeMetadata = Schema.Struct({
   to: AddressList,
 });
 
+const decodeArchiveRecipient = (value: string | null) => {
+  if (value === null) {
+    return;
+  }
+  return Schema.decodeUnknownSync(MailboxArchiveRecipient)(value);
+};
+
 const deriveReplyThreading = (
   sourceDraft: typeof draft.$inferSelect,
   parent: typeof message.$inferSelect | undefined
@@ -296,7 +305,7 @@ const deriveReplyThreading = (
 
 const scheduleOutbound = (
   mailboxId: MailboxId,
-  input: ScheduleOutboundInput,
+  input: PrivateScheduleOutboundInput,
   runtime: MailboxRuntime,
   operations: MailboxOperationStore
 ) =>
@@ -390,6 +399,12 @@ const scheduleOutbound = (
         const to = decodeJson(AddressList, sourceDraft.toJson);
         const cc = decodeJson(AddressList, sourceDraft.ccJson);
         const bcc = decodeJson(AddressList, sourceDraft.bccJson);
+        const effectiveBcc = effectiveOutboundBcc(
+          to,
+          cc,
+          bcc,
+          input.archiveRecipient
+        );
         const recipients = [...to, ...cc, ...bcc];
         if (recipients.length === 0) {
           return yield* new MailboxDomainError({
@@ -400,7 +415,10 @@ const scheduleOutbound = (
             resourceId: input.draftId,
           });
         }
-        if (recipients.length > outboundMaxRecipientCount) {
+        if (
+          to.length + cc.length + effectiveBcc.length >
+          outboundMaxRecipientCount
+        ) {
           return yield* new MailboxDomainError({
             operation: "schedule-outbound",
             reason: "validation",
@@ -453,7 +471,7 @@ const scheduleOutbound = (
             fileName: item.fileName,
             mimeType: item.mimeType,
           })),
-          bcc,
+          bcc: effectiveBcc,
           cc,
           ...(sourceDraft.htmlBody === null
             ? {}
@@ -532,6 +550,7 @@ const scheduleOutbound = (
         const [deliveryRow] = yield* tx
           .insert(outboundDelivery)
           .values({
+            archiveRecipient: input.archiveRecipient,
             id: deliveryId,
             messageId,
             status: "scheduled",
@@ -820,6 +839,12 @@ const resendOutbound = (
             if (sourceMessage.inReplyTo === null && references.length > 0) {
               throw new Error("References exist without In-Reply-To");
             }
+            const archiveRecipient = decodeArchiveRecipient(
+              source.archiveRecipient
+            );
+            const to = decodeJson(AddressList, sourceMessage.toJson);
+            const cc = decodeJson(AddressList, sourceMessage.ccJson);
+            const bcc = decodeJson(AddressList, sourceMessage.bccJson);
             return Schema.decodeUnknownSync(ResendSizeMetadata)({
               attachments: sourceAttachments.map((sourceAttachment) => ({
                 byteLength: sourceAttachment.size,
@@ -828,8 +853,8 @@ const resendOutbound = (
                 fileName: sourceAttachment.fileName,
                 mimeType: sourceAttachment.mimeType,
               })),
-              bcc: decodeJson(AddressList, sourceMessage.bccJson),
-              cc: decodeJson(AddressList, sourceMessage.ccJson),
+              bcc: effectiveOutboundBcc(to, cc, bcc, archiveRecipient),
+              cc,
               html: sourceMessage.htmlBody ?? undefined,
               sender:
                 sourceMessage.senderJson === null
@@ -844,7 +869,7 @@ const resendOutbound = (
                       inReplyTo: sourceMessage.inReplyTo,
                       references,
                     },
-              to: decodeJson(AddressList, sourceMessage.toJson),
+              to,
             });
           },
           catch: () => invalidOutboundSnapshot(input.outboundDeliveryId),
@@ -908,6 +933,7 @@ const resendOutbound = (
         const [deliveryRow] = yield* tx
           .insert(outboundDelivery)
           .values({
+            archiveRecipient: source.archiveRecipient,
             id: deliveryId,
             resendOf: input.outboundDeliveryId,
             messageId,
@@ -950,7 +976,7 @@ const makeMailboxOutboundStore = (
   return {
     getOutboundDelivery: (input: GetOutboundDeliveryInput) =>
       provideDatabase(getOutboundDelivery(mailboxId, input)),
-    scheduleOutbound: (input: ScheduleOutboundInput) =>
+    scheduleOutbound: (input: PrivateScheduleOutboundInput) =>
       provideDatabase(scheduleOutbound(mailboxId, input, runtime, operations)),
     cancelOutboundDelivery: (input: CancelOutboundDeliveryInput) =>
       provideDatabase(

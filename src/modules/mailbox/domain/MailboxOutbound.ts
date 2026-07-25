@@ -1,6 +1,7 @@
 /* oxlint-disable max-classes-per-file -- Outbound domain schemas are intentionally consolidated. */
 import * as Schema from "effect/Schema";
 
+import { NormalizedEmailAddress } from "#/shared/EmailAddress";
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 import { UnixMillis, Version } from "#/shared/Temporal";
@@ -258,6 +259,37 @@ export const ScheduleOutboundInput = Schema.Struct({
 export type ScheduleOutboundInput = Schema.Schema.Type<
   typeof ScheduleOutboundInput
 >;
+
+/** Trusted Backend-to-MailboxDO input. It is intentionally not a public command. */
+export const PrivateScheduleOutboundInput = Schema.Struct({
+  ...ScheduleOutboundInput.fields,
+  archiveRecipient: NormalizedEmailAddress,
+});
+export type PrivateScheduleOutboundInput = Schema.Schema.Type<
+  typeof PrivateScheduleOutboundInput
+>;
+
+const addressIdentity = (address: string) => {
+  const separator = address.lastIndexOf("@");
+  return `${address.slice(0, separator)}@${address.slice(separator + 1).toLowerCase()}`;
+};
+
+export const effectiveOutboundBcc = (
+  to: readonly MailAddress[],
+  cc: readonly MailAddress[],
+  bcc: readonly MailAddress[],
+  archiveRecipient: NormalizedEmailAddress | undefined
+): readonly MailAddress[] => {
+  if (archiveRecipient === undefined) {
+    return bcc;
+  }
+  const archiveIdentity = addressIdentity(archiveRecipient);
+  return [...to, ...cc, ...bcc].some(
+    (recipient) => addressIdentity(recipient.address) === archiveIdentity
+  )
+    ? bcc
+    : [...bcc, new MailAddress({ address: archiveRecipient })];
+};
 
 export const ScheduleOutboundResult = Schema.Struct({
   delivery: OutboundDeliverySchema,

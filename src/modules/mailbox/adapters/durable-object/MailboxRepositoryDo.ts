@@ -1,6 +1,7 @@
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
+import { MailboxArchiveConfig } from "#/modules/mailbox/contracts/MailboxArchiveConfig";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type { MessageMutationResult } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
@@ -438,6 +439,7 @@ export const MailboxOutboundSendingRepositoryDoLayer = Layer.effect(
   MailboxOutboundSendingRepository,
   Effect.gen(function* () {
     const client = yield* MailboxDoClient;
+    const archiveConfig = yield* MailboxArchiveConfig;
     return MailboxOutboundSendingRepository.of({
       cancelOutboundDelivery: (input) =>
         client
@@ -465,7 +467,10 @@ export const MailboxOutboundSendingRepositoryDoLayer = Layer.effect(
           ),
       scheduleOutbound: (input) =>
         client
-          .executeMailData({ _tag: "ScheduleOutbound", input })
+          .executeMailData({
+            _tag: "ScheduleOutbound",
+            input: { ...input, archiveRecipient: archiveConfig.recipient },
+          })
           .pipe(
             Effect.flatMap((response) =>
               response._tag === "DomainError"

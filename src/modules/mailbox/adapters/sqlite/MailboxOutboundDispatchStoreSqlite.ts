@@ -9,6 +9,7 @@ import {
   message,
   outboundDelivery,
 } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
+import { MailboxArchiveRecipient } from "#/modules/mailbox/contracts/MailboxArchiveConfig";
 import type { OutboundDeliveryId } from "#/modules/mailbox/domain/Mailbox";
 import { RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
@@ -42,6 +43,13 @@ const snapshotError = (
 const decodeJson = <A>(schema: Schema.Decoder<A>, value: string): A =>
   Schema.decodeUnknownSync(schema)(JSON.parse(value));
 
+const decodeArchiveRecipient = (value: string | null) => {
+  if (value === null) {
+    return;
+  }
+  return Schema.decodeUnknownSync(MailboxArchiveRecipient)(value);
+};
+
 export const MailboxOutboundDispatchStoreSqliteLayer = Layer.effect(
   MailboxOutboundDispatchStore,
   Effect.gen(function* () {
@@ -61,6 +69,7 @@ export const MailboxOutboundDispatchStoreSqliteLayer = Layer.effect(
             attachmentMimeType: attachment.mimeType,
             attachmentSize: attachment.size,
             deliveryId: outboundDelivery.id,
+            deliveryArchiveRecipient: outboundDelivery.archiveRecipient,
             deliveryMessageId: outboundDelivery.messageId,
             messageBccJson: message.bccJson,
             messageCcJson: message.ccJson,
@@ -152,6 +161,9 @@ export const MailboxOutboundDispatchStoreSqliteLayer = Layer.effect(
                         },
                       ];
                     }),
+                    archiveRecipient: decodeArchiveRecipient(
+                      first.deliveryArchiveRecipient
+                    ),
                     bcc: decodeJson(AddressList, first.messageBccJson),
                     cc: decodeJson(AddressList, first.messageCcJson),
                     html: first.messageHtmlBody ?? undefined,
@@ -172,8 +184,8 @@ export const MailboxOutboundDispatchStoreSqliteLayer = Layer.effect(
                     to: decodeJson(AddressList, first.messageToJson),
                   });
                 },
-                catch: (cause) =>
-                  snapshotError(outboundDeliveryId, "invalid-snapshot", cause),
+                catch: () =>
+                  snapshotError(outboundDeliveryId, "invalid-snapshot"),
               });
             }),
             Effect.catchDefect((cause) =>

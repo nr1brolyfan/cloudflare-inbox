@@ -117,6 +117,65 @@ const replyToElementValidationTrigger = (
     ) THEN RAISE(ABORT, 'invalid message reply_to_json') END;
   END`;
 
+const archiveRecipientValidationTrigger = (
+  name: string,
+  event: "INSERT" | "UPDATE OF archive_recipient"
+) => `CREATE TRIGGER ${name}
+  BEFORE ${event} ON outbound_delivery
+  WHEN new.archive_recipient IS NOT NULL
+  BEGIN
+    SELECT CASE WHEN
+      length(new.archive_recipient) NOT BETWEEN 3 AND 320
+      OR new.archive_recipient <> trim(new.archive_recipient)
+      OR new.archive_recipient GLOB '*[^A-Za-z0-9.!#$%&''*+/=?^_\`{|}~@-]*'
+      OR instr(new.archive_recipient, '@') <= 1
+      OR instr(substr(new.archive_recipient, instr(new.archive_recipient, '@') + 1), '@') <> 0
+      OR length(substr(new.archive_recipient, 1, instr(new.archive_recipient, '@') - 1)) > 64
+      OR substr(new.archive_recipient, 1, 1) = '.'
+      OR substr(new.archive_recipient, instr(new.archive_recipient, '@') - 1, 1) = '.'
+      OR substr(new.archive_recipient, 1, instr(new.archive_recipient, '@') - 1) LIKE '%..%'
+      OR substr(new.archive_recipient, instr(new.archive_recipient, '@') + 1) <> lower(substr(new.archive_recipient, instr(new.archive_recipient, '@') + 1))
+      OR instr(substr(new.archive_recipient, instr(new.archive_recipient, '@') + 1), '.') = 0
+      OR EXISTS (
+        WITH RECURSIVE labels(label, rest) AS (
+          SELECT
+            CASE WHEN instr(domain, '.') = 0 THEN domain ELSE substr(domain, 1, instr(domain, '.') - 1) END,
+            CASE WHEN instr(domain, '.') = 0 THEN '' ELSE substr(domain, instr(domain, '.') + 1) END
+          FROM (SELECT substr(new.archive_recipient, instr(new.archive_recipient, '@') + 1) AS domain)
+          UNION ALL
+          SELECT
+            CASE WHEN instr(rest, '.') = 0 THEN rest ELSE substr(rest, 1, instr(rest, '.') - 1) END,
+            CASE WHEN instr(rest, '.') = 0 THEN '' ELSE substr(rest, instr(rest, '.') + 1) END
+          FROM labels WHERE rest <> ''
+        )
+        SELECT 1 FROM labels
+        WHERE length(label) NOT BETWEEN 1 AND 63
+          OR label GLOB '*[^a-z0-9-]*'
+          OR substr(label, 1, 1) = '-'
+          OR substr(label, -1) = '-'
+          OR (rest = '' AND label NOT GLOB '*[a-z]*')
+      )
+    THEN RAISE(ABORT, 'invalid outbound_delivery archive_recipient') END;
+  END`;
+
+const archiveRecipientImmutableUpdateTrigger = `CREATE TRIGGER outbound_delivery_archive_recipient_immutable_update
+  BEFORE UPDATE OF archive_recipient ON outbound_delivery
+  WHEN old.archive_recipient IS NOT new.archive_recipient
+  BEGIN
+    SELECT RAISE(ABORT, 'outbound_delivery archive_recipient is immutable');
+  END`;
+
+const archiveRecipientImmutableReplaceTrigger = `CREATE TRIGGER outbound_delivery_archive_recipient_immutable_replace
+  BEFORE INSERT ON outbound_delivery
+  WHEN EXISTS (
+    SELECT 1 FROM outbound_delivery AS existing
+    WHERE (existing.id = new.id OR existing.message_id = new.message_id)
+      AND existing.archive_recipient IS NOT new.archive_recipient
+  )
+  BEGIN
+    SELECT RAISE(ABORT, 'outbound_delivery archive_recipient is immutable');
+  END`;
+
 const migrations = [
   {
     version: 1,
@@ -625,6 +684,30 @@ const migrations = [
         "message_reply_to_json_update_check",
         "UPDATE OF reply_to_json"
       ),
+    ],
+  },
+  {
+    version: 14,
+    statements: [
+      `ALTER TABLE outbound_delivery ADD COLUMN archive_recipient TEXT CHECK (
+        archive_recipient IS NULL OR (
+          length(archive_recipient) BETWEEN 3 AND 320 AND
+          archive_recipient = trim(archive_recipient) AND
+          instr(archive_recipient, '@') > 1 AND
+          instr(substr(archive_recipient, instr(archive_recipient, '@') + 1), '@') = 0 AND
+          substr(archive_recipient, instr(archive_recipient, '@') + 1) = lower(substr(archive_recipient, instr(archive_recipient, '@') + 1))
+        )
+      )`,
+      archiveRecipientValidationTrigger(
+        "outbound_delivery_archive_recipient_insert_check",
+        "INSERT"
+      ),
+      archiveRecipientValidationTrigger(
+        "outbound_delivery_archive_recipient_update_check",
+        "UPDATE OF archive_recipient"
+      ),
+      archiveRecipientImmutableUpdateTrigger,
+      archiveRecipientImmutableReplaceTrigger,
     ],
   },
 ] as const satisfies readonly MailboxMigration[];

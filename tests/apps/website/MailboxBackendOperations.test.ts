@@ -424,7 +424,14 @@ describe("Website mailbox Backend forwarding", () => {
       (request) => {
         forwarded.push(request);
         return Promise.resolve(
-          Response.json({ delivery: scheduledDelivery, serverNow: 1000 })
+          Response.json({
+            archiveRecipient: "must-not-reach-ui@example.net",
+            delivery: {
+              ...scheduledDelivery,
+              archiveRecipient: "must-not-reach-ui@example.net",
+            },
+            serverNow: 1000,
+          })
         );
       },
       (operations) => operations.sendDraft({ command: sendCommand, incoming })
@@ -444,6 +451,9 @@ describe("Website mailbox Backend forwarding", () => {
       },
       undo: { delivery: cancelledDelivery, ok: true },
     });
+    expect(JSON.stringify({ send, undo })).not.toContain(
+      "must-not-reach-ui@example.net"
+    );
     await expect(
       Promise.all(
         forwarded.map(async (request) => ({

@@ -16,8 +16,12 @@ import {
   OutboundDeliveryId,
   Sha256Digest,
 } from "#/modules/mailbox/domain/Mailbox";
-import { outboundMaxRecipientCount } from "#/modules/mailbox/domain/MailboxOutbound";
+import {
+  effectiveOutboundBcc,
+  outboundMaxRecipientCount,
+} from "#/modules/mailbox/domain/MailboxOutbound";
 import { OutboundThreadingMetadata } from "#/modules/mailbox/domain/MailboxThreading";
+import { NormalizedEmailAddress } from "#/shared/EmailAddress";
 import { MailAddress } from "#/shared/MailAddress";
 
 export class OutboundDraftAttachmentLocation extends Schema.Class<OutboundDraftAttachmentLocation>(
@@ -52,6 +56,7 @@ export class OutboundDispatchSnapshot extends Schema.Class<OutboundDispatchSnaps
   "cloudflare-inbox/OutboundDispatchSnapshot"
 )({
   attachments: Schema.Array(OutboundDispatchAttachmentSnapshot),
+  archiveRecipient: Schema.optional(NormalizedEmailAddress),
   bcc: Schema.Array(MailAddress),
   cc: Schema.Array(MailAddress),
   html: Schema.optional(Schema.String),
@@ -68,7 +73,14 @@ export class OutboundDispatchSnapshot extends Schema.Class<OutboundDispatchSnaps
 export const OutboundDispatchSnapshotSchema = OutboundDispatchSnapshot.check(
   Schema.makeFilter((snapshot) => {
     const recipientCount =
-      snapshot.to.length + snapshot.cc.length + snapshot.bcc.length;
+      snapshot.to.length +
+      snapshot.cc.length +
+      effectiveOutboundBcc(
+        snapshot.to,
+        snapshot.cc,
+        snapshot.bcc,
+        snapshot.archiveRecipient
+      ).length;
     if (recipientCount === 0) {
       return "an outbound dispatch snapshot requires at least one recipient";
     }

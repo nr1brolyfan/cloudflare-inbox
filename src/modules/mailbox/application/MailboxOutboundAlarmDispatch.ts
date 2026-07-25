@@ -57,6 +57,15 @@ const failureResolution = (
   }
 };
 
+export const outboundDispatchFailureAnnotations = (
+  error: MailboxOutboundDispatcherError
+): Readonly<Record<string, string>> => ({
+  "error.type": error._tag,
+  ...(error._tag === "OutboundDispatchSnapshotError"
+    ? { "outbound.snapshot_error_reason": error.reason }
+    : {}),
+});
+
 export interface MailboxOutboundAlarmDispatchService {
   readonly handle: Effect.Effect<void>;
 }
@@ -104,9 +113,15 @@ export class MailboxOutboundAlarmDispatch extends Context.Service<
               });
             }
             const resolution = failureResolution(result.failure);
-            return resolution === "retry"
-              ? lifecycle.retry(claim)
-              : lifecycle.settle(claim, resolution);
+            return (
+              resolution === "retry"
+                ? lifecycle.retry(claim)
+                : lifecycle.settle(claim, resolution)
+            ).pipe(
+              Effect.annotateLogs(
+                outboundDispatchFailureAnnotations(result.failure)
+              )
+            );
           }),
           // Unknown failures cannot prove whether provider acceptance occurred.
           Effect.catchDefect(() =>

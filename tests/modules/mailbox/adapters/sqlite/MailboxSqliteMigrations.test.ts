@@ -68,6 +68,7 @@ describe("MailboxDO migrations", () => {
         { version: 11, applied_at: expect.any(String) },
         { version: 12, applied_at: expect.any(String) },
         { version: 13, applied_at: expect.any(String) },
+        { version: 14, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -166,6 +167,101 @@ describe("MailboxDO migrations", () => {
     }
   });
 
+  it("adds a private validated write-once archive recipient snapshot", () => {
+    const database = new DatabaseSync(":memory:");
+
+    try {
+      applyMailboxMigrations(makeStorage(database));
+      database.exec(`
+        INSERT INTO folder (id, name, kind, created_at, updated_at)
+          VALUES ('scheduled', 'Scheduled', 'scheduled', 0, 0);
+        INSERT INTO message (id, folder_id) VALUES ('message-archive', 'scheduled');
+        INSERT INTO outbound_delivery
+          (id, message_id, archive_recipient, status, send_at, created_at, updated_at)
+          VALUES ('delivery-archive', 'message-archive', 'Private.Archive@example.net', 'scheduled', 0, 0, 0);
+      `);
+      expect(
+        database
+          .prepare(
+            "SELECT archive_recipient FROM outbound_delivery WHERE id = 'delivery-archive'"
+          )
+          .get()?.archive_recipient
+      ).toBe("Private.Archive@example.net");
+      for (const value of [
+        "archive@EXAMPLE.NET",
+        ".archive@example.net",
+        "archive@-example.net",
+        "archive@example..net",
+        "archive@example.123",
+      ]) {
+        expect(() =>
+          database
+            .prepare(
+              "UPDATE outbound_delivery SET archive_recipient = ? WHERE id = 'delivery-archive'"
+            )
+            .run(value)
+        ).toThrow(/archive_recipient|CHECK constraint/u);
+      }
+      database.prepare("PRAGMA foreign_keys = OFF").run();
+      database
+        .prepare(
+          "UPDATE outbound_delivery SET status = 'sending', updated_at = 1, archive_recipient = archive_recipient WHERE id = 'delivery-archive'"
+        )
+        .run();
+      const rejected = [
+        () =>
+          database
+            .prepare(
+              "UPDATE outbound_delivery SET archive_recipient = NULL WHERE id = 'delivery-archive'"
+            )
+            .run(),
+        () =>
+          database
+            .prepare(
+              "UPDATE outbound_delivery SET archive_recipient = 'other@example.net' WHERE id = 'delivery-archive'"
+            )
+            .run(),
+        () =>
+          database
+            .prepare(
+              `INSERT INTO outbound_delivery
+                (id, message_id, archive_recipient, status, send_at, created_at, updated_at)
+               VALUES ('delivery-archive', 'message-archive', 'other@example.net', 'scheduled', 0, 0, 0)
+               ON CONFLICT(id) DO UPDATE SET archive_recipient = excluded.archive_recipient`
+            )
+            .run(),
+        () =>
+          database
+            .prepare(
+              `INSERT OR REPLACE INTO outbound_delivery
+                (id, message_id, archive_recipient, status, send_at, created_at, updated_at)
+               VALUES ('delivery-archive', 'message-archive', 'other@example.net', 'scheduled', 0, 0, 0)`
+            )
+            .run(),
+      ].map((mutation) => {
+        try {
+          mutation();
+          return false;
+        } catch (error) {
+          return String(error).includes("archive_recipient is immutable");
+        }
+      });
+      expect(rejected).toStrictEqual([true, true, true, true]);
+      expect(
+        database
+          .prepare(
+            "SELECT archive_recipient, status FROM outbound_delivery WHERE id = 'delivery-archive'"
+          )
+          .get()
+      ).toMatchObject({
+        archive_recipient: "Private.Archive@example.net",
+        status: "sending",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
   it("indexes active drafts for descending keyset listing", () => {
     const database = new DatabaseSync(":memory:");
 
@@ -198,8 +294,13 @@ describe("MailboxDO migrations", () => {
       database.exec(`
         DROP TRIGGER message_reply_to_json_insert_check;
         DROP TRIGGER message_reply_to_json_update_check;
+        DROP TRIGGER outbound_delivery_archive_recipient_insert_check;
+        DROP TRIGGER outbound_delivery_archive_recipient_immutable_replace;
+        DROP TRIGGER outbound_delivery_archive_recipient_immutable_update;
+        DROP TRIGGER outbound_delivery_archive_recipient_update_check;
+        ALTER TABLE outbound_delivery DROP COLUMN archive_recipient;
         ALTER TABLE message DROP COLUMN reply_to_json;
-        DELETE FROM mailbox_schema_migration WHERE version = 13;
+        DELETE FROM mailbox_schema_migration WHERE version IN (13, 14);
         INSERT INTO folder (id, name, kind, created_at, updated_at)
           VALUES ('inbox', 'Inbox', 'inbox', 0, 0);
         INSERT INTO message (id, folder_id, subject, received_at)
@@ -209,7 +310,7 @@ describe("MailboxDO migrations", () => {
         .prepare("SELECT * FROM message WHERE id = 'legacy-message'")
         .get();
 
-      expect(applyMailboxMigrations(storage)).toBe(13);
+      expect(applyMailboxMigrations(storage)).toBe(14);
       const after = database
         .prepare("SELECT * FROM message WHERE id = 'legacy-message'")
         .get();

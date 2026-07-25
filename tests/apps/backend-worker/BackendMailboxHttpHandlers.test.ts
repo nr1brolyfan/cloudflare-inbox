@@ -1,3 +1,4 @@
+/* oxlint-disable vitest/max-expects -- HTTP integration cases verify binding, provenance, response, and privacy outcomes together. */
 import { AuthSecretsLive } from "@effect-auth/core/AuthConfig";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import {
@@ -1055,6 +1056,7 @@ describe("protected mailbox API", () => {
     }
   });
 
+  // oxlint-disable-next-line vitest/max-expects -- One route matrix verifies binding, provenance, public bodies, and archive denial.
   it("sends, reads, and undoes with path identity", async () => {
     const commands: unknown[] = [];
     const provenances: unknown[] = [];
@@ -1111,12 +1113,23 @@ describe("protected mailbox API", () => {
       const read = await handler(
         mailboxRequest("/api/mailboxes/primary/outbound/delivery-1", "GET")
       );
+      const attemptedArchiveAuthority = await handler(
+        mailboxRequest("/api/mailboxes/primary/drafts/draft-1/send", "POST", {
+          body: {
+            archiveRecipient: "attacker-archive@example.net",
+            expectedVersion: 1,
+            operationId: "operation-send-attacker-archive",
+          },
+        })
+      );
 
       expect({
         read: read.status,
         send: sent.status,
         undo: undone.status,
+        attemptedArchiveAuthority: attemptedArchiveAuthority.status,
       }).toStrictEqual({
+        attemptedArchiveAuthority: 400,
         read: 200,
         send: 202,
         undo: 200,
@@ -1150,9 +1163,12 @@ describe("protected mailbox API", () => {
       expect(queries).toStrictEqual([
         { mailboxId: "primary", outboundDeliveryId: "delivery-1" },
       ]);
-      await expect(
-        Promise.all([sent.json(), undone.json(), read.json()])
-      ).resolves.toMatchObject([
+      const publicBodies = await Promise.all([
+        sent.json(),
+        undone.json(),
+        read.json(),
+      ]);
+      expect(publicBodies).toMatchObject([
         {
           delivery: { id: "delivery-1", mailboxId: "primary" },
           serverNow: 1000,
@@ -1167,6 +1183,12 @@ describe("protected mailbox API", () => {
           serverNow: 2000,
         },
       ]);
+      expect(
+        JSON.stringify({
+          attemptedArchiveAuthority: await attemptedArchiveAuthority.json(),
+          publicBodies,
+        })
+      ).not.toContain("attacker-archive@example.net");
     } finally {
       await dispose();
     }

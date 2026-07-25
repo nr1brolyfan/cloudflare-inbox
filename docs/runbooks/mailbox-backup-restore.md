@@ -23,6 +23,7 @@ The test proves, on local Linux:
 - Migration history, the complete SQLite schema, integrity and foreign-key checks, and FTS contents and repair are verified.
 - Outbound fixtures cover all eight states: `scheduled`, `sending`, `accepted`, `delivered`, `failed`, `bounced`, `cancelled`, and `indeterminate`.
 - Raw MIME, inbound attachment, and draft/outbound attachment blobs are restored with exact bytes and metadata.
+- MailboxDO v14 backup and restore retains the private nullable outbound archive-recipient snapshot exactly; evidence and operator output contain only digests and counts, never the address.
 - Production object-key and metadata builders and production blob readers verify the restored objects.
 - SQLite-derived object closure includes authoritative objects and recognized mailbox-scoped in-flight orphans. Missing, unmanifested, foreign-mailbox, non-canonical, or inconsistent objects fail closed.
 - Canonical row, schema, object-byte, and object-metadata checksums bind a closed, unique, sorted manifest to the archive.

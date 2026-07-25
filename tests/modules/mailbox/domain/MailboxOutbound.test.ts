@@ -2,8 +2,10 @@ import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
+import { MailboxArchiveRecipient } from "#/modules/mailbox/contracts/MailboxArchiveConfig";
 import {
   canTransitionOutbound,
+  effectiveOutboundBcc,
   OutboundDeliverySchema,
   OutboundDeliveryStatus,
   ResendOutboundInput,
@@ -30,6 +32,11 @@ const outbound = (overrides: Readonly<Record<string, unknown>> = {}) => ({
   version: 1,
   ...overrides,
 });
+
+const address = (value: string) =>
+  Schema.decodeUnknownSync(MailAddress)({ address: value });
+const archive = (value: string) =>
+  Schema.decodeUnknownSync(MailboxArchiveRecipient)(value);
 
 describe("mailbox outbound contracts", () => {
   it("defines the fixed undo-send scheduling policy", () => {
@@ -66,6 +73,58 @@ describe("mailbox outbound contracts", () => {
       decodes(OutboundDeliveryStatus, "sent"),
       decodes(OutboundDeliveryStatus, "indeterminate"),
     ]).toStrictEqual([true, false, true]);
+  });
+
+  it("appends a distinct archive recipient after user BCC with SMTP identity dedupe", () => {
+    const userBcc = [address("blind@example.com")];
+
+    const namedBcc = [
+      Schema.decodeUnknownSync(MailAddress)({
+        address: "Blind@Example.COM",
+        displayName: "User supplied name",
+      }),
+    ];
+    expect({
+      distinct: effectiveOutboundBcc(
+        [address("Visible@Example.COM")],
+        [address("copy@example.com")],
+        userBcc,
+        archive("archive@example.net")
+      ),
+      toDomainCaseCollision: effectiveOutboundBcc(
+        [address("Visible@Example.COM")],
+        [],
+        userBcc,
+        archive("Visible@example.com")
+      ),
+      ccCollision: effectiveOutboundBcc(
+        [],
+        [address("copy@EXAMPLE.COM")],
+        userBcc,
+        archive("copy@example.com")
+      ),
+      userBccDisplayCollision: effectiveOutboundBcc(
+        [],
+        [],
+        namedBcc,
+        archive("Blind@example.com")
+      ),
+      localCaseDistinct: effectiveOutboundBcc(
+        [address("visible@example.com")],
+        [],
+        userBcc,
+        archive("Visible@example.com")
+      ),
+    }).toStrictEqual({
+      distinct: [address("blind@example.com"), address("archive@example.net")],
+      toDomainCaseCollision: userBcc,
+      ccCollision: userBcc,
+      userBccDisplayCollision: namedBcc,
+      localCaseDistinct: [
+        address("blind@example.com"),
+        address("Visible@example.com"),
+      ],
+    });
   });
 
   it.each([

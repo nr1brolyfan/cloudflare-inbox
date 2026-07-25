@@ -768,6 +768,7 @@ export const outboundDelivery = sqliteTable(
         onUpdate: "cascade",
         onDelete: "restrict",
       }),
+    archiveRecipient: text("archive_recipient"),
     status: text("status", {
       enum: [
         "scheduled",
@@ -798,6 +799,10 @@ export const outboundDelivery = sqliteTable(
     check(
       "outbound_delivery_id_check",
       sql`length(${t.id}) between 1 and 128 and ${t.id} = trim(${t.id})`
+    ),
+    check(
+      "outbound_delivery_archive_recipient_check",
+      sql`${t.archiveRecipient} is null or (length(${t.archiveRecipient}) between 3 and 320 and ${t.archiveRecipient} = trim(${t.archiveRecipient}) and instr(${t.archiveRecipient}, '@') > 1 and instr(substr(${t.archiveRecipient}, instr(${t.archiveRecipient}, '@') + 1), '@') = 0 and substr(${t.archiveRecipient}, instr(${t.archiveRecipient}, '@') + 1) = lower(substr(${t.archiveRecipient}, instr(${t.archiveRecipient}, '@') + 1)))`
     ),
     check(
       "outbound_delivery_status_check",

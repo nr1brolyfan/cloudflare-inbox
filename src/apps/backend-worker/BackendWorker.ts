@@ -50,6 +50,10 @@ import {
   InboundWorkflowStarterCloudflareLayer,
 } from "#/modules/mailbox/adapters/workflow/InboundWorkflowStarterCloudflare";
 import { MailboxInboundEmailIngress } from "#/modules/mailbox/application/MailboxInboundEmailIngress";
+import {
+  MailboxArchiveConfig,
+  mailboxArchiveConfig,
+} from "#/modules/mailbox/contracts/MailboxArchiveConfig";
 import { LegacyMailDomainClaimReconciler } from "#/modules/organization/application/LegacyMailDomainClaimReconciliation";
 import {
   MailboxBootstrapConfig,
@@ -197,6 +201,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const publicOrigin = yield* Config.string("PUBLIC_ORIGIN");
     const emailFrom = yield* Config.string("AUTH_EMAIL_FROM");
     const bootstrapConfig = yield* mailboxBootstrapConfig.pipe(Effect.orDie);
+    const archiveConfig = yield* mailboxArchiveConfig(
+      bootstrapConfig.initialDomain
+    ).pipe(Effect.orDie);
     const sessionSecret = yield* Config.redacted("AUTH_SESSION_SECRET");
     const challengeSecret = yield* Config.redacted("AUTH_CHALLENGE_SECRET");
     const privacySecret = yield* Config.redacted("AUTH_PRIVACY_SECRET");
@@ -323,6 +330,10 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       OutboundAttachmentReadClientLayer,
       MailboxOutboundProviderLayer,
       AiInferenceApplicationLayer,
+      Layer.succeed(
+        MailboxArchiveConfig,
+        MailboxArchiveConfig.of(archiveConfig)
+      ),
       Layer.succeed(
         MailboxBootstrapConfig,
         MailboxBootstrapConfig.of(bootstrapConfig)

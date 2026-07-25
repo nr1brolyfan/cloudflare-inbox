@@ -286,10 +286,10 @@ const seedOutboundDeliveries = (database: DatabaseSync) => {
 
   const insert = database.prepare(
     `INSERT INTO outbound_delivery (
-      id, resend_of, message_id, status, send_at, provider_message_id,
+      id, resend_of, message_id, archive_recipient, status, send_at, provider_message_id,
       accepted_at, delivered_at, bounced_at, cancelled_at, failure_code,
       failure_at, attempt_count, created_at, updated_at, version, deleted_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?)`
+    ) VALUES (?, ?, ?, 'Private.Archive@example.net', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 2, ?)`
   );
   for (const row of rows) {
     insert.run(
@@ -1115,7 +1115,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
     rmSync(directory, { force: true, recursive: true });
   });
 
-  it("restores schema v13, every authoritative row, FTS, and exact blob state to the same mailbox", async () => {
+  it("restores schema v14, every authoritative row, FTS, and exact blob state to the same mailbox", async () => {
     const targetPath = path.join(directory, "restored.sqlite");
     const destinationObjects = new InMemoryRehearsalObjectDestination();
 
@@ -1187,6 +1187,10 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
         "message_search_ad",
         "message_search_ai",
         "message_search_au",
+        "outbound_delivery_archive_recipient_immutable_replace",
+        "outbound_delivery_archive_recipient_immutable_update",
+        "outbound_delivery_archive_recipient_insert_check",
+        "outbound_delivery_archive_recipient_update_check",
         "outbound_delivery_status_send_idx",
         "rule_application_rule_applied_idx",
       ]);
@@ -1215,7 +1219,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       ).toStrictEqual([]);
 
       const beforeIdempotentMigration = canonicalMailboxRows(restored);
-      expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(13);
+      expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(14);
       expect(canonicalMailboxRows(restored)).toStrictEqual(
         beforeIdempotentMigration
       );
@@ -1297,7 +1301,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
     }
   });
 
-  it("verifies an exact v12 archive, migrates it to v13, and preserves legacy null Reply-To", async () => {
+  it("verifies an exact v13 archive, migrates it to v14, and preserves a null private archive snapshot", async () => {
     const v12Path = path.join(directory, "v12-source.sqlite");
     const v12Source = new DatabaseSync(v12Path);
     let v12Archive: LocalMailboxRestoreArchive | undefined;
@@ -1305,11 +1309,13 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       applyMailboxMigrations(makeMigrationStorage(v12Source));
       seedMailbox(v12Source);
       v12Source.exec(`
-        UPDATE message SET reply_to_json = NULL;
-        DROP TRIGGER message_reply_to_json_insert_check;
-        DROP TRIGGER message_reply_to_json_update_check;
-        ALTER TABLE message DROP COLUMN reply_to_json;
-        DELETE FROM mailbox_schema_migration WHERE version = 13;
+        DROP TRIGGER outbound_delivery_archive_recipient_immutable_replace;
+        DROP TRIGGER outbound_delivery_archive_recipient_immutable_update;
+        UPDATE outbound_delivery SET archive_recipient = NULL;
+        DROP TRIGGER outbound_delivery_archive_recipient_insert_check;
+        DROP TRIGGER outbound_delivery_archive_recipient_update_check;
+        ALTER TABLE outbound_delivery DROP COLUMN archive_recipient;
+        DELETE FROM mailbox_schema_migration WHERE version = 14;
       `);
       v12Archive = await captureLocalMailboxRestoreArchive({
         archiveDirectory: directory,
@@ -1317,7 +1323,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
         objects: sourceObjects(),
         snapshot: v12Source,
       });
-      expect(v12Archive.manifest.schemaVersion).toBe(12);
+      expect(v12Archive.manifest.schemaVersion).toBe(13);
 
       const targetPath = path.join(directory, "restored-v12.sqlite");
       const destinationObjects = new InMemoryRehearsalObjectDestination();
@@ -1336,14 +1342,14 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       });
       expect(retryEvidence).toMatchObject({
         restoreOutcome: "already-restored",
-        schemaVersion: 13,
+        schemaVersion: 14,
       });
       expect(
         Schema.decodeUnknownSync(LocalMailboxRestoreEvidence)({
           ...retryEvidence,
-          schemaVersion: 12,
+          schemaVersion: 13,
         }).schemaVersion
-      ).toBe(12);
+      ).toBe(13);
 
       const restored = new DatabaseSync(targetPath);
       try {
@@ -1354,7 +1360,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
             )
             .all()
             .map((row) => row.version)
-        ).toStrictEqual(Array.from({ length: 13 }, (_, index) => index + 1));
+        ).toStrictEqual(Array.from({ length: 14 }, (_, index) => index + 1));
         expect(
           restored
             .prepare(
@@ -1365,22 +1371,24 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
         expect(
           restored
             .prepare(
-              "SELECT count(*) AS count FROM message WHERE reply_to_json IS NOT NULL"
+              "SELECT count(*) AS count FROM outbound_delivery WHERE archive_recipient IS NOT NULL"
             )
             .get()?.count
         ).toBe(0);
         expect(
           restored
             .prepare(
-              "SELECT name FROM sqlite_schema WHERE type = 'trigger' AND name LIKE 'message_reply_to_json_%' ORDER BY name"
+              "SELECT name FROM sqlite_schema WHERE type = 'trigger' AND name LIKE 'outbound_delivery_archive_recipient_%' ORDER BY name"
             )
             .all()
             .map((row) => row.name)
         ).toStrictEqual([
-          "message_reply_to_json_insert_check",
-          "message_reply_to_json_update_check",
+          "outbound_delivery_archive_recipient_immutable_replace",
+          "outbound_delivery_archive_recipient_immutable_update",
+          "outbound_delivery_archive_recipient_insert_check",
+          "outbound_delivery_archive_recipient_update_check",
         ]);
-        expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(13);
+        expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(14);
         expect(restored.prepare("PRAGMA integrity_check").get()).toMatchObject({
           integrity_check: "ok",
         });
@@ -2154,7 +2162,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       mode: "local-rehearsal",
       orphanInFlightObjectCount: 1,
       restoreOutcome: "restored",
-      schemaVersion: 13,
+      schemaVersion: 14,
       sqliteRowsSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
       limitations: {
         cloudflare: "not-exercised",
@@ -2167,6 +2175,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
 
     const serialized = JSON.stringify(evidence);
     for (const sensitive of [
+      "Private.Archive@example.net",
       "subject",
       "body",
       "example.test",

@@ -11,11 +11,17 @@ import {
   message,
   outboundDelivery,
 } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
-import { MailboxOutboundAlarmDispatch } from "#/modules/mailbox/application/MailboxOutboundAlarmDispatch";
+import {
+  MailboxOutboundAlarmDispatch,
+  outboundDispatchFailureAnnotations,
+} from "#/modules/mailbox/application/MailboxOutboundAlarmDispatch";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import type { MailboxOutboundDispatcherService as Dispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
-import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import {
+  MailboxId,
+  OutboundDeliveryId,
+} from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAlarmStorage } from "#/modules/mailbox/ports/MailboxAlarmStorage";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
@@ -154,6 +160,25 @@ const runOutcome = (
 };
 
 describe("outbound alarm dispatch", () => {
+  it("uses bounded snapshot failure logging annotations", () => {
+    const privateAddress = "Private.Archive@example.net";
+    const error = new OutboundDispatchSnapshotError({
+      cause: new Error(`Invalid snapshot ${privateAddress}`),
+      message: "Outbound dispatch snapshot is inconsistent",
+      outboundDeliveryId: Schema.decodeUnknownSync(OutboundDeliveryId)(
+        "delivery-private-archive"
+      ),
+      reason: "invalid-snapshot",
+    });
+    const annotations = outboundDispatchFailureAnnotations(error);
+
+    expect(annotations).toStrictEqual({
+      "error.type": "OutboundDispatchSnapshotError",
+      "outbound.snapshot_error_reason": "invalid-snapshot",
+    });
+    expect(JSON.stringify(annotations)).not.toContain(privateAddress);
+  });
+
   it("leaves queued work untouched while the organization is suspended", async () => {
     let providerCalls = 0;
     const live = testLive(

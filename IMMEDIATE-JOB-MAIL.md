@@ -6,8 +6,8 @@ Minimalny plan uruchomienia prywatnej skrzynki `szymon@szymondlugolecki.com` do 
 
 - Ostatnia aktualizacja: 2026-07-25
 - Stan: `IN PROGRESS`
-- Aktualne zadanie: `JOB-ARCH-001` private verified archive recipient configuration
-- Następne zadanie: `JOB-ARCH-002` dual-path inbound archive delivery
+- Aktualne zadanie: `JOB-ARCH-002` dual-path inbound archive delivery
+- Następne zadanie: `JOB-ARCH-004` archive delivery verification matrix
 - Docelowy tryb: private single-owner beta
 - Adres pocztowy: `szymon@szymondlugolecki.com`
 - Website origin: `https://mail.szymondlugolecki.com`
@@ -113,10 +113,12 @@ Lokalne evidence `JOB-SEND-001` po korektach review z 2026-07-25 na bazie `e0a62
 
 ### Niezależne archiwum Gmail
 
-- [ ] JOB-ARCH-001 Dodać prywatną konfigurację jednego verified archive recipient. Adres nie może należeć do managed domain i nie może być zwracany przez API ani logi.
+- [x] JOB-ARCH-001 Local-complete dla bieżącego singletonu: dodać prywatną konfigurację jednego archive recipient, wymagając exact canonical address oraz domeny różnej od `MailboxBootstrapConfig.initialDomain`, która jest obecnym authoritative managed-domain claim. Adres nie jest zwracany przez API, UI, logi ani telemetry. Checkbox nie dowodzi własności lub weryfikacji Cloudflare/Gmail destination, rzeczywistego Gmail delivery ani przyszłej zgodności z wieloma managed domains; te live/future obowiązki pozostają w `JOB-CF-002`, `JOB-CF-005`, `JOB-ARCH-004` i docelowym domain lifecycle.
 - [ ] JOB-ARCH-002 Dla inboundu zapisać raw MIME w aplikacji i przekazać tę samą wiadomość do Gmaila przez Cloudflare Email Worker. Live spike musi potwierdzić zachowanie streamu i `forward()`; event nie może zostać uznany za sukces przed potwierdzeniem obu wymaganych ścieżek. Awaria ma prowadzić do kontrolowanego SMTP reject/retry, nie cichej utraty.
-- [ ] JOB-ARCH-003 Dla outboundu atomowo dodać archive recipient jako ukryty BCC do immutable send snapshot. Gmail BCC jest kopią bezpieczeństwa, nie rekordem Sent w naszej aplikacji. Konflikt z adresem docelowym jest deduplikowany.
+- [x] JOB-ARCH-003 Dla outboundu atomowo dodać archive recipient jako ukryty BCC do immutable send snapshot. Gmail BCC jest kopią bezpieczeństwa, nie rekordem Sent w naszej aplikacji. Konflikt z adresem docelowym jest deduplikowany.
 - [ ] JOB-ARCH-004 Przetestować kopie treści i załączników, brak ujawnienia BCC, retry/indeterminate behavior oraz awarię ścieżki aplikacji i archiwum.
+
+Lokalne evidence `JOB-ARCH-001`/`JOB-ARCH-003` z 2026-07-26 na bazie `1c61048`: wymagany value-free `MailboxArchiveConfig` i deployment preflight walidują exact address oraz różnicę względem obecnego singleton `initialDomain` bez outputu wartości. Prywatny Backend scheduling RPC atomowo zamraża recipient w addytywnej migracji MailboxDO v14; null-safe triggery walidują adres i blokują późniejszą zmianę przez update/upsert/replace także przy wyłączonych FK, nie blokując lifecycle updates. Admission i estymator używają effective recipients z limitem dokładnie 50 oraz case-sensitive local/case-insensitive domain dedupe przez To/Cc/user-Bcc; user message rows i FTS pozostają niezmienione. Exact replay ignoruje rotację configu, resend zachowuje source snapshot, a legacy null pozostaje unarchived. Dispatch ponownie waliduje prywatny snapshot, dokłada go najwyżej raz po user Bcc i używa wyłącznie structured provider `bcc`, bez custom `Bcc` header. Bezpośredni test schedule -> persisted private row -> dispatch hydration -> dispatcher -> Cloudflare builder zachowuje bodies, attachmenty i threading. Publiczne send/read/delivery/message/thread/search/UI/error oraz reprezentatywne observability evidence nie zawierają adresu, a wyszukiwanie po nim nie tworzy side-channelu. Restore wspiera exact v13/v14, idempotentnie migruje legacy null i zachowuje prywatne v14 rows przy evidence ograniczonym do digestów/countów. Finalny focused matrix przeszedł `7/7` files i `239/239` tests; pełny `bun run test` przeszedł `157/157` files i `1894/1894` tests, restore `20/20`, a `bun run typecheck`, `bun run check`, `bun run build` i `git diff --check` zakończyły się powodzeniem. Live Cloudflare/Gmail delivery, destination ownership/verification oraz niezależny production review pozostają pending w `JOB-ARCH-004`/`JOB-CF-*`.
 
 ### Cloudflare production
 

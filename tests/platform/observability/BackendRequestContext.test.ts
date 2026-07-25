@@ -136,7 +136,8 @@ describe("backend request completion", () => {
         return yield* completion.emit({
           context,
           method: "CUSTOM-METHOD-WITH-SECRET",
-          pathname: "/api/health?token=secret-token#secret-fragment",
+          pathname:
+            "/api/mailboxes/primary/send?archiveRecipient=Private.Archive@example.net&token=secret-token#secret-fragment",
           startedAtNanos,
           statusCode: 200,
         });
@@ -146,9 +147,12 @@ describe("backend request completion", () => {
       backendRequestCompletedAnnotations(event)
     );
 
-    expect(event).toMatchObject({ method: "UNKNOWN", route: "/api/health" });
+    expect(event).toMatchObject({
+      method: "UNKNOWN",
+      route: "/api/mailboxes/*",
+    });
     expect(serialized).not.toMatch(
-      /secret-token|secret-fragment|cookie|authorization|user-agent|email/u
+      /Private.Archive@example.net|archiveRecipient|secret-token|secret-fragment|cookie|authorization|user-agent|email/u
     );
   });
 

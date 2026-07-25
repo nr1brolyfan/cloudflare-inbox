@@ -67,7 +67,7 @@ import {
   OutboundDeliveryResult,
   ResendOutboundInput,
   ResendOutboundResult,
-  ScheduleOutboundInput,
+  PrivateScheduleOutboundInput,
   ScheduleOutboundResult,
 } from "#/modules/mailbox/domain/MailboxOutbound";
 import { Version } from "#/shared/Temporal";
@@ -294,7 +294,7 @@ export const MailDataRpcRequest = Schema.Union([
   }),
   Schema.Struct({
     _tag: Schema.Literal("ScheduleOutbound"),
-    input: ScheduleOutboundInput,
+    input: PrivateScheduleOutboundInput,
   }),
   Schema.Struct({
     _tag: Schema.Literal("GetOutboundDelivery"),

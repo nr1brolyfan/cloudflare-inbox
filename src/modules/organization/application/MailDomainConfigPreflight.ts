@@ -1,5 +1,6 @@
 import * as Effect from "effect/Effect";
 
+import { mailboxArchiveConfig } from "#/modules/mailbox/contracts/MailboxArchiveConfig";
 import { mailboxBootstrapConfig } from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import {
   MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
@@ -11,10 +12,11 @@ export interface MailDomainConfigSuccess {
   readonly version: typeof MAIL_DOMAIN_CANONICALIZATION_VERSION;
 }
 
-export const mailDomainConfigPreflight = mailboxBootstrapConfig.pipe(
-  Effect.as({
+export const mailDomainConfigPreflight = Effect.gen(function* () {
+  const bootstrap = yield* mailboxBootstrapConfig;
+  yield* mailboxArchiveConfig(bootstrap.initialDomain);
+  return {
     profileId: MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
     version: MAIL_DOMAIN_CANONICALIZATION_VERSION,
-  } satisfies MailDomainConfigSuccess),
-  Effect.orDie
-);
+  } satisfies MailDomainConfigSuccess;
+}).pipe(Effect.orDie);

@@ -10,6 +10,10 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import { describe, expect, it } from "vitest";
 
+import {
+  MailboxArchiveConfigError,
+  parseMailboxArchiveConfig,
+} from "#/modules/mailbox/contracts/MailboxArchiveConfig";
 import { mailDomainConfigPreflight } from "#/modules/organization/application/MailDomainConfigPreflight";
 import {
   MailboxBootstrapConfigError,
@@ -22,6 +26,7 @@ const script = path.join(root, "scripts/check-mail-domain-config.ts");
 
 const runPreflight = (input?: {
   readonly allowlist?: string;
+  readonly archiveRecipient?: string;
   readonly envFile?: boolean;
   readonly initialAddress?: string;
 }) => {
@@ -37,6 +42,9 @@ const runPreflight = (input?: {
       MAILBOX_INITIAL_ADDRESS: input?.envFile
         ? undefined
         : input?.initialAddress,
+      MAILBOX_ARCHIVE_RECIPIENT: input?.envFile
+        ? undefined
+        : input?.archiveRecipient,
       PATH: process.env.PATH,
     };
     const args = [script];
@@ -44,7 +52,7 @@ const runPreflight = (input?: {
       const envFile = path.join(workingDirectory, "bootstrap.env");
       writeFileSync(
         envFile,
-        `MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST=${input.allowlist ?? ""}\nMAILBOX_INITIAL_ADDRESS=${input.initialAddress ?? ""}\n`
+        `MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST=${input.allowlist ?? ""}\nMAILBOX_INITIAL_ADDRESS=${input.initialAddress ?? ""}\nMAILBOX_ARCHIVE_RECIPIENT=${input.archiveRecipient ?? ""}\n`
       );
       args.unshift(`--env-file=${envFile}`);
     }
@@ -101,15 +109,48 @@ describe("mailbox bootstrap configuration preflight", () => {
   it("reports only bounded profile metadata on success", () => {
     const allowlist = '["Sensitive.Owner@example.com"]';
     const initialAddress = "private-inbox@example.com";
-    const result = runPreflight({ allowlist, initialAddress });
+    const archiveRecipient = "Private.Archive@example.net";
+    const result = runPreflight({
+      allowlist,
+      archiveRecipient,
+      initialAddress,
+    });
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout.trim()).toBe(
       "mail-domain-config ok profile=mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1 version=1"
     );
-    expect(`${result.stdout}${result.stderr}`).not.toContain(allowlist);
-    expect(`${result.stdout}${result.stderr}`).not.toContain(initialAddress);
+    expect(
+      [allowlist, initialAddress, archiveRecipient].every(
+        (value) => !`${result.stdout}${result.stderr}`.includes(value)
+      )
+    ).toBeTruthy();
   });
+
+  it.each([
+    [undefined, "missing"],
+    ["archive@EXAMPLE.NET", "invalid-recipient"],
+    ["archive@example.123", "invalid-recipient"],
+    ["archive@example.com", "managed-domain"],
+  ] as const)(
+    "rejects invalid private archive config %# without retaining its value",
+    (recipient, reason) => {
+      const bootstrap = Effect.runSync(
+        parseMailboxBootstrapConfig(
+          '["owner@example.com"]',
+          "inbox@example.com"
+        )
+      );
+      const error = Effect.runSync(
+        Effect.flip(
+          parseMailboxArchiveConfig(recipient, bootstrap.initialDomain)
+        )
+      );
+      expect(error).toBeInstanceOf(MailboxArchiveConfigError);
+      expect(error).toMatchObject({ reason });
+      expect(JSON.stringify(error)).not.toContain(recipient);
+    }
+  );
 
   it("rejects oversized allowlists and provides no old-name fallback", () => {
     const oversized = JSON.stringify(
@@ -139,6 +180,7 @@ describe("mailbox bootstrap configuration preflight", () => {
   it("loads the same contract through Bun --env-file", () => {
     const result = runPreflight({
       allowlist: '["owner@example.com"]',
+      archiveRecipient: "archive@example.net",
       envFile: true,
       initialAddress: "inbox@example.com",
     });
@@ -172,6 +214,7 @@ describe("mailbox bootstrap configuration preflight", () => {
             ConfigProvider.fromUnknown({
               MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST: `["${secret}"]`,
               MAILBOX_INITIAL_ADDRESS: "inbox@example.com",
+              MAILBOX_ARCHIVE_RECIPIENT: "archive@example.net",
             })
           )
         )
@@ -200,6 +243,21 @@ describe("mailbox bootstrap configuration preflight", () => {
           parseMailboxBootstrapConfig(
             values.MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST,
             values.MAILBOX_INITIAL_ADDRESS
+          )
+        )
+      )
+    ).toBeTruthy();
+    expect(
+      Exit.isSuccess(
+        Effect.runSyncExit(
+          parseMailboxArchiveConfig(
+            values.MAILBOX_ARCHIVE_RECIPIENT,
+            Effect.runSync(
+              parseMailboxBootstrapConfig(
+                values.MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST,
+                values.MAILBOX_INITIAL_ADDRESS
+              )
+            ).initialDomain
           )
         )
       )

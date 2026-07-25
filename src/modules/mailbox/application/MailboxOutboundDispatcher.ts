@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import type { OutboundDeliveryId } from "#/modules/mailbox/domain/Mailbox";
+import { effectiveOutboundBcc } from "#/modules/mailbox/domain/MailboxOutbound";
 import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
 import {
   MailboxOperationalStatus,
@@ -74,10 +75,16 @@ export class MailboxOutboundDispatcher extends Context.Service<
             );
             const noBody =
               snapshot.text === undefined && snapshot.html === undefined;
+            const bcc = effectiveOutboundBcc(
+              snapshot.to,
+              snapshot.cc,
+              snapshot.bcc,
+              snapshot.archiveRecipient
+            );
 
             return yield* provider.send({
               attachments,
-              bcc: snapshot.bcc,
+              bcc,
               cc: snapshot.cc,
               ...(snapshot.html === undefined ? {} : { html: snapshot.html }),
               sender: snapshot.sender,
