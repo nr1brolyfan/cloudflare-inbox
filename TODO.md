@@ -9,6 +9,7 @@ Jedna skrzynka z aliasami, auth, uprawnieniami na poziomie mailbox/folder, inbou
 - Ukończone etapy: **9/11**
 - Aktualny etap: **11. Hardening i produkcja**
 - Aktualne zadanie: **CD i kontrola środowisk**
+- Priorytet tymczasowy: [Immediate job mail](IMMEDIATE-JOB-MAIL.md)
 
 | #   | Etap                                  | Status      | Postęp |
 | --- | ------------------------------------- | ----------- | ------ |

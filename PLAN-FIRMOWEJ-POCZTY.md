@@ -9,6 +9,7 @@ Kompletny plan przejścia z jednej skrzynki do modelu organizacji, wielu izolowa
 - Aktualny etap: `1. Fundament bezpieczeństwa i operacji`
 - Aktualne zadanie: `ORG-015` organization model documentation
 - Następne zadanie: `ORG-016` domain ownership verification lifecycle
+- Priorytet tymczasowy: [Immediate job mail](IMMEDIATE-JOB-MAIL.md); główna kolejność jest wstrzymana na `ORG-015`
 - Zakres pierwszego wydania: jedna organizacja i jedna domena na wdrożenie, ale model danych od początku tenant-aware
 - Migracja układu źródeł i zależności: `DONE` zgodnie z [Architecture Migration Guide](docs/architecture-migration-guide.md); nie oznacza to ukończenia produktu organization/multi-mailbox
 - Źródło prawdy dla istniejącego v1: `TODO.md`

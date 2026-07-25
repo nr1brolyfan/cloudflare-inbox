@@ -1,0 +1,146 @@
+# Immediate job mail
+
+Minimalny plan uruchomienia prywatnej skrzynki `szymon@szymondlugolecki.com` do bezpiecznego prowadzenia korespondencji rekrutacyjnej przed wznowieniem pełnego [planu firmowej poczty](PLAN-FIRMOWEJ-POCZTY.md).
+
+## Status
+
+- Ostatnia aktualizacja: 2026-07-25
+- Stan: `IN PROGRESS`
+- Aktualne zadanie: `JOB-BOOT-001` first-owner password enrollment contract
+- Następne zadanie: `JOB-BOOT-002` atomic enrollment transaction and UI
+- Docelowy tryb: private single-owner beta
+- Adres pocztowy: `szymon@szymondlugolecki.com`
+- Website origin: `https://mail.szymondlugolecki.com`
+- Mailbox: immutable singleton `primary`
+- Recovery i awaryjne archiwum: oddzielny, zweryfikowany adres Gmail
+- Główny plan: wstrzymany na `ORG-015`, bez zmiany jego kolejności
+
+## Cel
+
+Launch gate jest spełniony, gdy z produkcyjnej aplikacji można:
+
+1. Zalogować się i odzyskać dostęp bez zależności od zarządzanego adresu.
+2. Wysłać z `szymon@szymondlugolecki.com` prostą wiadomość i PDF.
+3. Odebrać i bezpiecznie przeczytać wiadomość tekstową lub HTML.
+4. Pobrać otrzymany załącznik i zweryfikować jego dokładne bajty.
+5. Odpowiedzieć do MIME `Reply-To`, a przy jego braku do MIME `From`.
+6. Zachować poprawne `Message-ID`, `In-Reply-To` i `References`.
+7. Zachować niezależną kopię przychodzącej i wychodzącej korespondencji w Gmailu.
+8. Przejść datowany live smoke test z Gmail i Outlook oraz sprawdzenie SPF, DKIM i DMARC.
+
+Do przejścia całego gate'a nie wysyłamy prawdziwych aplikacji o pracę z tej skrzynki.
+
+## Granice
+
+### W zakresie
+
+- Jeden właściciel, jedna organizacja, jeden mailbox i jeden adres.
+- Exact route wyłącznie dla `szymon@szymondlugolecki.com`.
+- Compose, draft, outbound attachment i istniejący undo-send.
+- Inbound, odczyt, pojedyncze Reply i pobieranie załączników.
+- Zewnętrzny login/recovery oraz niezależne archiwum Gmail.
+- Ręczny, kontrolowany deployment i live acceptance evidence.
+
+### Poza zakresem
+
+- Catch-all, aliasy, wiele mailboxów i wielu użytkowników.
+- Reply all, forward i alias-preserving send identity.
+- Transfery adresów, invitations, organization administration i mailbox lifecycle.
+- Rozbudowa AI i automatyzacji.
+- Destrukcyjne migracje, contraction i usuwanie compatibility artifacts.
+- Pełne zamknięcie `SAFE-005`; Gmail jest niezależnym archiwum korespondencji, a nie backupem całego D1, MailboxDO, Workflow i konfiguracji aplikacji.
+
+## Zasady bezpieczeństwa
+
+- Login i recovery używają zewnętrznego adresu, nigdy wyłącznie `szymon@szymondlugolecki.com`.
+- Publiczny password signup i generic first-password enrollment pozostają wyłączone.
+- Email proof nie staje się ogólnym `control-plane-sensitive` step-up.
+- Każda nowa storage mutation jest addytywna, audytowana, replay-safe i fail-closed.
+- Backend pozostaje prywatny i dostępny wyłącznie przez service binding.
+- Wiadomości, adresy, tokeny, sekrety, hashe i raw MIME nie trafiają do telemetry.
+- Produkcja pozostaje przypięta do zaakceptowanego commita; rozwój głównego planu nie jest automatycznie wdrażany.
+- Nie wykonujemy destrukcyjnej migracji przed live backup/restore `SAFE-005`.
+
+## Zadania
+
+### Plan i baseline
+
+- [x] JOB-PLAN-001 Zapisać osobny immediate plan, launch gate, zakres odłożony, zależności i model ograniczonego ryzyka.
+- [ ] JOB-PLAN-002 Przed pierwszym deploymentem uruchomić pełny gate release commit: `bun run check`, `bun run typecheck`, `bun run test`, `bun run build`, `bun run test:mailbox-restore` oraz `git diff --check`.
+- [ ] JOB-PLAN-003 Uzyskać pozytywny live GitHub CI run, przypiąć release commit i wyłączyć automatyczny production deploy z bieżącego `main`.
+
+### First-owner enrollment
+
+- [ ] JOB-BOOT-001 Dodać kontrakt jednorazowego first-owner password enrollment. Istniejący magic link lub email OTP tworzy verified effect-auth usera. Nowa operacja przyjmuje wyłącznie `{operationId,password}` i nie przyjmuje emaila, user ID, organization ID ani mailbox ID od klienta. Dopuszcza tylko unrestricted, token-bound session z maksymalnie pięciominutowym matching email proof, dokładnie jednym adresem w `MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST`, pustym deploymentem i brakiem wcześniejszego credential/recovery/owner state.
+- [ ] JOB-BOOT-002 Dodać forward-only storage seal, immutable receipt, metadata-only audit i jedną atomiczną D1 batch tworzącą password credential. Exact replay zwraca receipt, changed intent jest konfliktem, unknown commit wykonuje receipt readback, a równoległe próby mogą utworzyć dokładnie jeden credential i singleton seal.
+- [ ] JOB-BOOT-003 Dodać prywatny `no-store` endpoint i UI prowadzące przez: magic link/OTP, pierwsze hasło, istniejący password step-up, external recovery, UV passkey, recovery codes i istniejący mailbox bootstrap. Hasło nie jest zapisywane w local storage i jest czyszczone po step-up.
+- [ ] JOB-BOOT-004 Udowodnić testami, że publiczny signup, generic password set, nieallowlistowany lub managed-domain login, stale/wrong proof, drugi właściciel, session race, receipt/audit collision i częściowy zapis pozostają odrzucone.
+
+### Otrzymane załączniki
+
+- [ ] JOB-ATT-001 Dodać osobny, autoryzowany use case pobierania zwykłego inbound attachment. Nie rozluźniać endpointu inline CID images.
+- [ ] JOB-ATT-002 Dodać Backend i Website GET route z exact mailbox/message/attachment binding, `attachment.read`, zweryfikowanym R2 metadata/size/hash, bezpiecznym `Content-Disposition: attachment`, `X-Content-Type-Options: nosniff` oraz `Cache-Control: private, no-store`.
+- [ ] JOB-ATT-003 Dodać przycisk pobrania i testy exact bytes, hostile filename, cross-mailbox ID, brak sesji, storage mismatch i nieistniejący attachment.
+
+### Pojedyncze Reply
+
+- [ ] JOB-REPLY-001 Parsować i przechowywać inbound MIME `Reply-To` oraz bounded RFC threading metadata. Migracja MailboxDO jest addytywna i zachowuje stare rows.
+- [ ] JOB-REPLY-002 Dodać autoryzowaną projekcję reply target oraz UI Reply. Odbiorcą jest `Reply-To`, a w jego braku `From`; subject otrzymuje pojedyncze `Re:`. Reply nie kopiuje starych załączników i używa bieżącego singleton primary sendera.
+- [ ] JOB-REPLY-003 Zamrozić nowy RFC `Message-ID`, `In-Reply-To` i bounded `References` w immutable outbound snapshot przed dispatch.
+- [ ] JOB-REPLY-004 Przekazać threading headers do Cloudflare Email Sending i przetestować provider rejection. Live staging musi potwierdzić, że Cloudflare akceptuje te nagłówki i Gmail/Outlook grupują odpowiedź we właściwym wątku.
+
+### Niezależne archiwum Gmail
+
+- [ ] JOB-ARCH-001 Dodać prywatną konfigurację jednego verified archive recipient. Adres nie może należeć do managed domain i nie może być zwracany przez API ani logi.
+- [ ] JOB-ARCH-002 Dla inboundu zapisać raw MIME w aplikacji i przekazać tę samą wiadomość do Gmaila przez Cloudflare Email Worker. Live spike musi potwierdzić zachowanie streamu i `forward()`; event nie może zostać uznany za sukces przed potwierdzeniem obu wymaganych ścieżek. Awaria ma prowadzić do kontrolowanego SMTP reject/retry, nie cichej utraty.
+- [ ] JOB-ARCH-003 Dla outboundu atomowo dodać archive recipient jako ukryty BCC do immutable send snapshot. Gmail BCC jest kopią bezpieczeństwa, nie rekordem Sent w naszej aplikacji. Konflikt z adresem docelowym jest deduplikowany.
+- [ ] JOB-ARCH-004 Przetestować kopie treści i załączników, brak ujawnienia BCC, retry/indeterminate behavior oraz awarię ścieżki aplikacji i archiwum.
+
+### Cloudflare production
+
+- [ ] JOB-CF-001 Utworzyć production resources przez Alchemy: Website, prywatny Backend, D1, R2, MailboxDO, auth rate-limit DO, Workflows i Email Sending bindings.
+- [ ] JOB-CF-002 Skonfigurować `https://mail.szymondlugolecki.com`, exact `PUBLIC_ORIGIN`, trzy różne high-entropy auth secrets, zewnętrzny owner allowlist, `MAILBOX_INITIAL_ADDRESS=szymon@szymondlugolecki.com` i Gmail archive recipient.
+- [ ] JOB-CF-003 Włączyć Email Routing dla domeny, dodać exact route do Backend email Workera i nie włączać catch-all.
+- [ ] JOB-CF-004 Skonfigurować provider-generated MX, SPF i DKIM. Uruchomić DMARC początkowo w reporting mode i zaostrzyć dopiero po live evidence.
+- [ ] JOB-CF-005 Przejść health/startup preflight, wykonać first-owner enrollment, założyć co najmniej dwa UV passkeys, zweryfikować external recovery, zapisać recovery codes offline i utworzyć mailbox `primary` z exact initial address.
+
+### Launch acceptance
+
+- [ ] JOB-LIVE-001 Gmail i Outlook wysyłają do `szymon@szymondlugolecki.com` plain text, HTML, inline image oraz PDF; wszystkie wiadomości są widoczne w aplikacji i archiwum Gmail.
+- [ ] JOB-LIVE-002 Otrzymany PDF pobiera dokładne bajty, a skopiowany URL bez sesji oraz cross-resource ID nie ujawniają danych.
+- [ ] JOB-LIVE-003 Reply bez `Reply-To` i z innym `Reply-To` trafia do właściwego odbiorcy, ma poprawne nagłówki i tworzy wątek w Gmail oraz Outlook.
+- [ ] JOB-LIVE-004 Nowy mail i Reply z nowym PDF-em wychodzą z `szymon@szymondlugolecki.com`, docierają do odbiorcy i do ukrytego archiwum.
+- [ ] JOB-LIVE-005 Sprawdzić Gmail/Outlook Authentication-Results dla SPF, DKIM i DMARC oraz zapisać datowane, content-free evidence z deployment version.
+- [ ] JOB-LIVE-006 Sprawdzić unknown recipient, inbound >10 MiB, outbound failed, `indeterminate`, Workflow retry, auth denial i brak automatycznego resend przy nieznanym provider outcome.
+- [ ] JOB-LIVE-007 Uruchomić końcowy pełny gate, niezależne security/reliability review i dopiero wtedy oznaczyć private beta jako gotową do wysyłania CV.
+
+## Tryb po uruchomieniu
+
+- Produkcja używa przypiętego release commita i nie śledzi automatycznie `main`.
+- Główny plan jest rozwijany lokalnie lub na osobnym staging environment.
+- Production update wymaga compatibility check, pełnego gate i jawnej promocji.
+- Codziennie sprawdzamy Email Routing rejects, Worker/Workflow errors oraz outbound `failed` i `indeterminate`.
+- Awaria archiwum, unexplained routing, brak R2 bytes lub authorization anomaly zatrzymują wysyłanie aplikacji do czasu wyjaśnienia.
+- Gmail pozostaje awaryjnym archiwum co najmniej do zamknięcia live `SAFE-005`.
+
+## Ryzyko rezydualne
+
+Ten plan nie daje absolutnej gwarancji braku utraty. Minimalizuje ryzyko przez dwa niezależne miejsca przechowywania korespondencji, R2-before-Workflow, retry/replay, immutable outbound snapshot i SMTP rejection przy znanej awarii admission. Nadal możliwe są awarie wspólnego dostawcy, błędy operatora, provider `indeterminate`, opóźnienia lub odrzucenie przez odbiorcę. Gmail archive pozwala odzyskać treść i załączniki, ale nie odtwarza folderów, draftów, reguł ani pełnego stanu aplikacji.
+
+## Szacunek
+
+| Obszar                             |       Szacunek |
+| ---------------------------------- | -------------: |
+| First-owner enrollment             |        2-4 dni |
+| Received attachment download       |        1-2 dni |
+| Pojedyncze Reply                   |        2-3 dni |
+| Gmail archive                      |        1-2 dni |
+| Cloudflare deployment i onboarding |        1-2 dni |
+| Live acceptance i poprawki         |        1-3 dni |
+| Łącznie                            | 8-16 dni pracy |
+
+Szacunek nie obejmuje pełnego `SAFE-005` ani nieprzewidzianych ograniczeń live Cloudflare Email Service. Pracę grupujemy w kilka spójnych commitów, używamy focused tests podczas implementacji oraz pełnego gate i jednego niezależnego review na końcu milestone, aby ograniczyć koszt bez obniżania launch gate.
+
+## Changelog
+
+- 2026-07-25: Utworzono immediate plan dla prywatnej skrzynki rekrutacyjnej, zamrożono single-owner/single-address scope, wybrano Gmail jako niezależne archiwum korespondencji i wstrzymano główny plan na `ORG-015`.
