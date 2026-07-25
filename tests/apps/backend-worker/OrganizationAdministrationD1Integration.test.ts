@@ -377,4 +377,80 @@ describe("OrganizationAdministration D1", () => {
       }
     }
   );
+
+  it("cannot use an organization A grant with active organization B membership", async () => {
+    const sqlite = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(sqlite);
+      const validated = makeValidatedSession();
+      seedAuthority(sqlite, validated);
+      sqlite.exec(`
+        insert into app_organization (id, created_at, updated_at)
+        values ('organization-b', 1000, 1000);
+        insert into app_organization_member
+          (id, organization_id, user_id, created_at, updated_at)
+        values ('membership-b', 'organization-b', 'user-a', 1000, 1000)
+      `);
+
+      const exit = await Effect.runPromiseExit(
+        runAdministration(
+          makeTestD1Database(sqlite),
+          validated,
+          Effect.gen(function* () {
+            const administration = yield* OrganizationAdministration;
+            return yield* administration.suspend(
+              Schema.decodeUnknownSync(SuspendOrganizationCommand)({
+                expectedVersion: 1,
+                operationId: "00000000-0000-4000-8000-000000000013",
+                organizationId: "organization-b",
+              })
+            );
+          })
+        )
+      );
+
+      const failure = Exit.isFailure(exit) ? Cause.squash(exit.cause) : null;
+      expect(failure).toBeInstanceOf(OrganizationAdministrationError);
+      expect((failure as OrganizationAdministrationError).reason).toBe(
+        "authorization-recheck"
+      );
+      expect({
+        audits: {
+          ...sqlite
+            .prepare(
+              "select count(*) as count from app_organization_administrative_audit_event"
+            )
+            .get(),
+        },
+        guards: {
+          ...sqlite
+            .prepare("select count(*) as count from app_authorization_guard")
+            .get(),
+        },
+        organizations: sqlite
+          .prepare(
+            "select id, status, version from app_organization order by id"
+          )
+          .all()
+          .map((row) => ({ ...row })),
+        receipts: {
+          ...sqlite
+            .prepare(
+              "select count(*) as count from app_organization_administration_receipt"
+            )
+            .get(),
+        },
+      }).toStrictEqual({
+        audits: { count: 0 },
+        guards: { count: 0 },
+        organizations: [
+          { id: "organization-a", status: "active", version: 1 },
+          { id: "organization-b", status: "active", version: 1 },
+        ],
+        receipts: { count: 0 },
+      });
+    } finally {
+      sqlite.close();
+    }
+  });
 });

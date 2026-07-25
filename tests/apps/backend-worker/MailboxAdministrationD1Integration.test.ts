@@ -534,6 +534,26 @@ const countRows = (database: DatabaseSync, table: string) =>
     }
   ).count;
 
+const bootstrapClosureCounts = (database: DatabaseSync) => ({
+  addresses: countRows(database, "app_mailbox_address"),
+  ancestry: countRows(database, "app_mailbox_legacy_organization_assignment"),
+  audits: countRows(database, "app_administrative_audit_event"),
+  domainIntents: countRows(database, "app_mailbox_bootstrap_domain_intent"),
+  domainReceipts: countRows(database, "app_mail_domain_claim_receipt"),
+  domains: countRows(database, "app_mail_domain"),
+  grants: countRows(database, "auth_role_grant"),
+  mailboxMembers: countRows(database, "app_mailbox_member"),
+  mailboxReceipts: countRows(database, "app_mailbox_administration_receipt"),
+  mailboxes: countRows(database, "app_mailbox"),
+  organizationMembers: countRows(database, "app_organization_member"),
+  organizations: countRows(database, "app_organization"),
+  ownerReceipts: countRows(
+    database,
+    "app_organization_owner_assignment_receipt"
+  ),
+  receiptV2: countRows(database, "app_mailbox_bootstrap_receipt_v2"),
+});
+
 const seedHistoricalBootstrapReceipt = (
   database: DatabaseSync,
   address = "inbox@example.test",
@@ -768,6 +788,64 @@ describe("mailbox administration", () => {
         role_id: LegacyMailboxRole.owner,
         scope_id: "primary",
         scope_type: "mailbox",
+      });
+      const organizationOwner = database
+        .prepare(
+          `select member.id as membership_id, member.organization_id,
+                  member.user_id, member.status as membership_status,
+                  member.version as membership_version, grant_row.role_id,
+                  grant_row.scope_type, grant_row.scope_id,
+                  grant_row.metadata, owner_receipt.mailbox_id,
+                  owner_receipt.source, owner_receipt.source_bootstrap_operation_id,
+                  owner_receipt.source_audit_event_id,
+                  domain_intent.canonical_domain
+             from app_organization_member member
+             join auth_role_grant grant_row
+               on grant_row.subject_type = 'user'
+              and grant_row.subject_id = member.user_id
+              and grant_row.role_id = 'organization.owner'
+              and grant_row.scope_type = 'organization'
+              and grant_row.scope_id = member.organization_id
+             join app_organization_owner_assignment_receipt owner_receipt
+               on owner_receipt.organization_id = member.organization_id
+              and owner_receipt.membership_id = member.id
+             join app_mailbox_bootstrap_domain_intent domain_intent
+               on domain_intent.operation_id
+                = owner_receipt.source_bootstrap_operation_id`
+        )
+        .get();
+      expect(organizationOwner).toMatchObject({
+        canonical_domain: "example.test",
+        mailbox_id: "primary",
+        membership_id: "legacy_default_v1_owner_v1",
+        membership_status: "active",
+        membership_version: 1,
+        metadata:
+          '{"membershipId":"legacy_default_v1_owner_v1","source":"organization-owner-bootstrap-v1"}',
+        organization_id: "legacy_default_v1",
+        role_id: "organization.owner",
+        scope_id: "legacy_default_v1",
+        scope_type: "organization",
+        source: "fresh-bootstrap",
+        source_audit_event_id: expect.any(String),
+        source_bootstrap_operation_id: "00000000-0000-4000-8000-000000000010",
+        user_id: "user-a",
+      });
+      expect(bootstrapClosureCounts(database)).toStrictEqual({
+        addresses: 1,
+        ancestry: 1,
+        audits: 1,
+        domainIntents: 1,
+        domainReceipts: 1,
+        domains: 1,
+        grants: 2,
+        mailboxMembers: 1,
+        mailboxReceipts: 1,
+        mailboxes: 1,
+        organizationMembers: 1,
+        organizations: 1,
+        ownerReceipts: 1,
+        receiptV2: 1,
       });
     } finally {
       database.close();
@@ -1666,6 +1744,131 @@ describe("mailbox administration", () => {
         members: 0,
         organizations: 0,
         receipts: 0,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rolls back all trigger-generated closure when the final guard cleanup fails", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`create trigger fail_bootstrap_guard_cleanup
+        before delete on app_authorization_guard
+        when (select count(*) from app_organization)
+           + (select count(*) from app_mailbox)
+           + (select count(*) from app_mailbox_legacy_organization_assignment)
+           + (select count(*) from app_mailbox_address)
+           + (select count(*) from app_mailbox_member)
+           + (select count(*) from auth_role_grant)
+           + (select count(*) from app_mailbox_administration_receipt)
+           + (select count(*) from app_mailbox_bootstrap_receipt_v2)
+           + (select count(*) from app_mailbox_bootstrap_domain_intent)
+           + (select count(*) from app_administrative_audit_event)
+           + (select count(*) from app_organization_member)
+           + (select count(*) from app_organization_owner_assignment_receipt)
+           + (select count(*) from app_mail_domain)
+           + (select count(*) from app_mail_domain_claim_receipt) = 15
+        begin
+          select raise(abort, 'guard cleanup failed');
+        end`);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      const error = await Effect.runPromise(
+        bootstrap(d1, validated, "bootstrap-guard").pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({
+        commitState: "unknown",
+        reason: "storage",
+      });
+      expect(bootstrapClosureCounts(database)).toStrictEqual({
+        addresses: 0,
+        ancestry: 0,
+        audits: 0,
+        domainIntents: 0,
+        domainReceipts: 0,
+        domains: 0,
+        grants: 0,
+        mailboxMembers: 0,
+        mailboxReceipts: 0,
+        mailboxes: 0,
+        organizationMembers: 0,
+        organizations: 0,
+        ownerReceipts: 0,
+        receiptV2: 0,
+      });
+      expect(countRows(database, "app_authorization_guard")).toBe(0);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("preserves a foreign current domain and rolls back the colliding bootstrap", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      database.exec(`
+        insert into app_organization (id, created_at, updated_at)
+        values ('organization-b', 1000, 1000);
+        insert into app_mail_domain
+          (id, organization_id, canonical_domain, canonicalization_profile_id,
+           canonicalization_version, status, created_at, updated_at, version)
+        values ('domain-b', 'organization-b', 'example.test',
+          'mail-domain/ascii-alabel-input/uts46-nontransitional-std3/unicode-17/v1',
+          1, 'pending_verification', 1000, 1000, 1);
+      `);
+      const foreignBefore = {
+        ...database
+          .prepare("select * from app_mail_domain where id = 'domain-b'")
+          .get(),
+      };
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+
+      const error = await Effect.runPromise(
+        bootstrap(d1, validated, "bootstrap-guard").pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({ reason: "storage" });
+      expect({
+        foreign: {
+          ...database
+            .prepare("select * from app_mail_domain where id = 'domain-b'")
+            .get(),
+        },
+        reservedAddresses: countRows(database, "app_mailbox_address"),
+        reservedAncestry: countRows(
+          database,
+          "app_mailbox_legacy_organization_assignment"
+        ),
+        reservedAudits: countRows(database, "app_administrative_audit_event"),
+        reservedGrants: countRows(database, "auth_role_grant"),
+        reservedMailboxes: countRows(database, "app_mailbox"),
+        reservedOrganization: {
+          ...database
+            .prepare(
+              "select count(*) as count from app_organization where id = 'legacy_default_v1'"
+            )
+            .get(),
+        },
+        reservedReceipts: countRows(
+          database,
+          "app_mailbox_administration_receipt"
+        ),
+      }).toStrictEqual({
+        foreign: foreignBefore,
+        reservedAddresses: 0,
+        reservedAncestry: 0,
+        reservedAudits: 0,
+        reservedGrants: 0,
+        reservedMailboxes: 0,
+        reservedOrganization: { count: 0 },
+        reservedReceipts: 0,
       });
     } finally {
       database.close();

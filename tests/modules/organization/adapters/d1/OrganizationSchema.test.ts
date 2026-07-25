@@ -96,6 +96,13 @@ const organizationRow = (database: DatabaseSync, id: string) => {
   return row === undefined ? undefined : { ...row };
 };
 
+const countRows = (database: DatabaseSync, table: string) =>
+  (
+    database.prepare(`select count(*) as count from ${table}`).get() as {
+      readonly count: number;
+    }
+  ).count;
+
 const seedLegacyMailboxState = (database: DatabaseSync) => {
   database.exec(`
     insert into app_mailbox
@@ -2039,6 +2046,112 @@ describe("mailbox bootstrap receipt V2 migration", () => {
       expect(organizationRow(database, "legacy_default_v1")).toMatchObject({
         status: "suspended",
         version: 2,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects cross-organization lifecycle audit, receipt, and fence bindings", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      activateOrganizationLifecycleProtocol(database);
+      insertFreshCutoverOrganization(database, 1000);
+      database.exec(`
+        insert into auth_user (id, created_at, updated_at)
+        values ('user-a', 1000, 1000);
+        insert into app_mailbox
+          (id, display_name, status, created_by_user_id, created_at, updated_at)
+        values ('primary', 'Inbox', 'active', 'user-a', 1000, 1000);
+        insert into app_organization (id, created_at, updated_at)
+        values ('organization-b', 1000, 1000);
+      `);
+      database.exec("pragma foreign_keys = off");
+      expect(() =>
+        database.exec(`
+          insert into app_organization_operation_fence
+            (holder_id, operation_id, operation_kind, organization_id,
+             mailbox_id, created_at)
+          values ('00000000-0000-4000-8000-000000000090', 'delivery-foreign',
+                  'outbound-dispatch', 'organization-b', 'primary', 1900)
+        `)
+      ).toThrow(/active mailbox organization/u);
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 2,
+        beforeVersion: 1,
+        occurredAt: 2100,
+        organizationId: "legacy_default_v1",
+      });
+      expect(() =>
+        database.exec(`
+          update app_organization
+             set status = 'suspended', updated_at = 2100, version = 2
+           where id = 'organization-b'
+        `)
+      ).toThrow(/lifecycle/u);
+
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 2,
+        beforeVersion: 1,
+        occurredAt: 2100,
+        organizationId: "organization-b",
+      });
+      database.exec(`
+        update app_organization
+           set status = 'suspended', updated_at = 2100, version = 2
+         where id = 'organization-b'
+      `);
+      const auditA = database
+        .prepare(
+          `select event_id, operation_id
+             from app_organization_administrative_audit_event
+            where organization_id = 'legacy_default_v1'`
+        )
+        .get() as { readonly event_id: string; readonly operation_id: string };
+      expect(() =>
+        database
+          .prepare(
+            `insert into app_organization_administration_receipt
+              (operation_id, operation_kind, actor_user_id, organization_id,
+               expected_version, result_status, result_created_at,
+               result_updated_at, result_version, committed_at, audit_event_id,
+               matrix_id, matrix_version, step_up_policy_id,
+               step_up_policy_version, schema_version)
+             values (?, 'suspend', 'test-system', 'organization-b', 1,
+                     'suspended', 1000, 2100, 2, 2100, ?,
+                     'organization-operations', 1, 'control-plane-sensitive',
+                     1, 1)`
+          )
+          .run(auditA.operation_id, auditA.event_id)
+      ).toThrow(/binding/u);
+
+      expect({
+        audits: countRows(
+          database,
+          "app_organization_administrative_audit_event"
+        ),
+        fence: countRows(database, "app_organization_operation_fence"),
+        organizations: database
+          .prepare(
+            "select id, status, version from app_organization order by id"
+          )
+          .all()
+          .map((row) => ({ ...row })),
+        receipts: countRows(
+          database,
+          "app_organization_administration_receipt"
+        ),
+      }).toStrictEqual({
+        audits: 2,
+        fence: 0,
+        organizations: [
+          { id: "legacy_default_v1", status: "active", version: 1 },
+          { id: "organization-b", status: "suspended", version: 2 },
+        ],
+        receipts: 0,
       });
     } finally {
       database.close();

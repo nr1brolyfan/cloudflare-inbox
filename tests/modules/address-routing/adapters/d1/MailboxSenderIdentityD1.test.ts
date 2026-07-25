@@ -16,6 +16,7 @@ import {
 import {
   applyControlPlaneMigrations,
   insertFreshCutoverOrganization,
+  insertOrganizationLifecycleAudit,
   makeTestD1Database,
 } from "../../../../support/d1";
 
@@ -122,6 +123,33 @@ describe("mailbox sender identity", () => {
       `);
 
       await expect(resolve(database)).rejects.toMatchObject({
+        reason: "not-found",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects an active sender identity while its organization is suspended", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertMailbox(database);
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 2,
+        beforeVersion: 1,
+        occurredAt: 2000,
+        organizationId: "legacy_default_v1",
+      });
+      database.exec(`
+        update app_organization
+           set status = 'suspended', updated_at = 2000, version = 2
+         where id = 'legacy_default_v1'
+      `);
+
+      await expect(resolve(database)).rejects.toMatchObject({
+        _tag: "MailboxSenderIdentityError",
         reason: "not-found",
       });
     } finally {
