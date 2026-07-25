@@ -2,7 +2,7 @@
 
 - Status: Accepted
 - Date: 2026-07-22
-- Last updated: 2026-07-24
+- Last updated: 2026-07-25
 - Owners: Product owner and engineering
 
 ## Context
@@ -34,6 +34,8 @@ The control plane is tenant-aware from its first multi-mailbox migration:
 - ORG-011 changes no public API, Backend/Website mutation, bootstrap write, response, or current navigation selection. Absence is valid. Migration 1028 is forward-only with immutable cutover/generation evidence and a successor collision fence for old migration reapplication; it never heals tampered artifacts. Legacy contraction remains blocked by `SAFE-005`.
 - Migration 1025 assigns the uniquely grant-nominated legacy mailbox owner to fixed retained membership `legacy_default_v1_owner_v1` and a canonical organization-scoped `organization.owner` grant. Exact ancestry, user, mailbox membership, creator, catalog, global-grant absence, and compatible bootstrap history corroborate but never select the nominee. Its immutable receipt is the migration authority ledger; the existing mailbox owner grant remains current mailbox authority.
 - Fresh owner bootstrap materializes the same membership, organization grant, and receipt from an ORG-008-owned trigger on the real successful mailbox bootstrap audit. This preserves old writers and transaction atomicity without adding organization input to the public command or inventing an organization audit action.
+- ORG-012 Phase A establishes one application bootstrap authority without changing storage protocol. Public bootstrap intent contains only display name and operation ID and explicitly rejects named organization, mailbox, owner, address, domain, and protocol fields. `OrganizationBootstrap.make` captures trusted bootstrap configuration and the `OrganizationBootstrapTransaction` port; HTTP does not derive trusted values, while `MailboxAdministration` retains only rename and operation readback.
+- The current D1 transaction, `mailbox.owner-bootstrap` audit, V1/V2 receipts, domain intent, rolling triggers, statement order, replay, and unknown-commit behavior remain unchanged. Trigger retirement requires a separate dual-protocol expand/activate/drain/contract cutover with proven live-writer drain, exact Cloudflare D1 atomicity, maintenance/quiescence controls, and dated staging evidence. Phase A supplies none of those production proofs.
 - Migration 1026 binds fixed pending claim `legacy_default_v1_domain_v1` to the exact retained `primary` route epoch and `legacy_default_v1`. Its immutable receipt is migration provenance, not verification or readiness. Populated legacy state is canonicalized only by the required Backend TypeScript reconciliation Effect; fresh writers stage the branded canonical domain before audit, and the rolling SQL fallback accepts only ordinary lowercase ASCII LDH. ORG-016 must replace the lifecycle freeze with typed verification/handoff, and ORG-012 must atomically replace the fresh staging trigger while retaining cutover, intent, and receipt.
 - Multi-organization SaaS remains deferred, but no new model may depend on a global organization singleton.
 - A `Mailbox` is the storage and authorization boundary.
@@ -58,6 +60,7 @@ The control plane is tenant-aware from its first multi-mailbox migration:
 - The ORG-010 canonical mailbox column records resource ancestry, not access. It does not add ACL-003 membership gating, transfer, multi-mailbox behavior, or caller-provided organization selection, and the singleton remains until ROLL-008.
 - The ORG-011 canonical preference is storage-only ranking state. Current unordered singleton navigation remains unchanged until MBX-006/007, and bootstrap intentionally creates no preference.
 - The ORG-008 membership and organization grant do not widen mailbox-content access. Organization permission, active membership, and later ACL-003 resource gates remain separate requirements; membership alone is never permission.
+- The focused bootstrap service prevents transport adapters from becoming an organization/mailbox/owner/address/domain authority. Actor identity remains request context and is transactionally rechecked; it is not a command field.
 
 ## Rejected alternatives
 

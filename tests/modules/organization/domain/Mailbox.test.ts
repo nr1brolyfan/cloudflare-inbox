@@ -4,10 +4,10 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import {
-  BootstrapOwnerMailboxCommand,
   MailboxAdministrationReceiptSchema,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
+import { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
@@ -18,7 +18,7 @@ const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
 describe("organization mailbox contracts", () => {
   it("decodes transport-neutral mailbox administration commands", () => {
     expect(
-      Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+      Schema.decodeUnknownSync(BootstrapOrganizationCommand)({
         displayName: "  Inbox  ",
         operationId: "00000000-0000-4000-8000-000000000010",
       })
@@ -59,7 +59,7 @@ describe("organization mailbox contracts", () => {
 
   it("reuses the mailbox name invariant at the administration boundary", () => {
     expect(
-      Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+      Schema.decodeUnknownSync(BootstrapOrganizationCommand)({
         displayName: "  Team inbox  ",
         operationId: "00000000-0000-4000-8000-000000000010",
       })
@@ -68,15 +68,37 @@ describe("organization mailbox contracts", () => {
       operationId: "00000000-0000-4000-8000-000000000010",
     });
     expect(
-      decodeSucceeds(BootstrapOwnerMailboxCommand, {
+      decodeSucceeds(BootstrapOrganizationCommand, {
         displayName: "x".repeat(201),
         operationId: "00000000-0000-4000-8000-000000000010",
       })
     ).toBeFalsy();
     expect(
-      decodeSucceeds(BootstrapOwnerMailboxCommand, {
+      decodeSucceeds(BootstrapOrganizationCommand, {
         displayName: "Team inbox",
         operationId: "owner@example.test",
+      })
+    ).toBeFalsy();
+  });
+
+  it.each([
+    "actorUserId",
+    "initialAddress",
+    "initialDomain",
+    "mailboxId",
+    "organizationId",
+    "ownerEmailAllowlist",
+    "ownerUserId",
+    "protocol",
+    "protocolGeneration",
+    "protocolMarker",
+    "protocolVersion",
+  ])("rejects public bootstrap authority field %s", (field) => {
+    expect(
+      decodeSucceeds(BootstrapOrganizationCommand, {
+        displayName: "Inbox",
+        [field]: "attacker-controlled",
+        operationId: "00000000-0000-4000-8000-000000000010",
       })
     ).toBeFalsy();
   });

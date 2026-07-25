@@ -50,12 +50,12 @@ import {
   ReservedDraftAttachment,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type {
-  BootstrapOwnerMailboxCommand,
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxAdministrationReceiptSchema } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
+import type { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 
 import { BackendClient } from "./WebsitePlatform";
@@ -340,7 +340,7 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
   }) => Effect.Effect<MailboxMessageActionServerResult>;
   readonly bootstrapOwner: (input: {
-    readonly command: BootstrapOwnerMailboxCommand;
+    readonly command: BootstrapOrganizationCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxServerResult>;
   readonly createDraft: (input: {

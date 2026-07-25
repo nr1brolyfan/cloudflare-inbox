@@ -20,6 +20,8 @@ import { describe, expect, it } from "vitest";
 import {
   MailboxAdministrationD1Layer,
   MailboxAdministrationRuntime,
+  OrganizationBootstrapD1Layer,
+  OrganizationBootstrapTransactionD1Layer,
 } from "#/apps/backend-worker/MailboxAdministrationD1Integration";
 import { CONTROL_PLANE_STEP_UP_POLICY } from "#/modules/account-security/domain/StepUpPolicy";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
@@ -44,18 +46,19 @@ import {
 } from "#/modules/mailbox/domain/MailboxResource";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
+import { MailboxAdministration } from "#/modules/organization/application/MailboxAdministration";
 import {
-  MailboxAdministration,
-  MailboxAdministrationError,
-} from "#/modules/organization/application/MailboxAdministration";
+  OrganizationBootstrap,
+  OrganizationBootstrapError,
+} from "#/modules/organization/application/OrganizationBootstrap";
 import {
   MailboxBootstrapConfig,
   MailboxBootstrapConfigValue,
 } from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import { OrganizationBootstrapTransaction } from "#/modules/organization/ports/OrganizationBootstrapTransaction";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
-import { NormalizedEmailAddress } from "#/shared/EmailAddress";
 import { AdministrativeOperationId } from "#/shared/Operation";
 import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import {
@@ -327,24 +330,58 @@ const bootstrap = (
   operationId = "00000000-0000-4000-8000-000000000010",
   displayName = "Inbox",
   configuredInitialAddress = ownerEmail,
-  configuredOwnerAllowlist = [canonicalTestAddress(ownerEmail)],
-  commandInitialAddress = configuredInitialAddress
+  configuredOwnerAllowlist: readonly string[] = [
+    canonicalTestAddress(ownerEmail),
+  ],
+  trustedOverrides?: {
+    readonly initialAddress?: string;
+    readonly initialDomain?: string;
+    readonly ownerEmailAllowlist?: readonly string[];
+  }
 ) =>
   provideRequestAuth(
     Effect.gen(function* () {
-      const administration = yield* MailboxAdministration;
-      return yield* administration.bootstrapOwner({
-        displayName: Schema.decodeUnknownSync(MailboxDisplayName)(displayName),
-        initialAddress: Schema.decodeUnknownSync(NormalizedEmailAddress)(
-          canonicalTestAddress(commandInitialAddress)
-        ),
-        operationId: Schema.decodeUnknownSync(AdministrativeOperationId)(
-          operationId
-        ),
+      const trustedDisplayName =
+        Schema.decodeUnknownSync(MailboxDisplayName)(displayName);
+      const trustedOperationId = Schema.decodeUnknownSync(
+        AdministrativeOperationId
+      )(operationId);
+      if (trustedOverrides !== undefined) {
+        const transaction = yield* OrganizationBootstrapTransaction;
+        return yield* transaction.bootstrap({
+          displayName: trustedDisplayName,
+          initialAddress: Schema.decodeUnknownSync(
+            MailboxBootstrapConfigValue.fields.initialAddress
+          )(
+            canonicalTestAddress(
+              trustedOverrides.initialAddress ?? configuredInitialAddress
+            )
+          ),
+          initialDomain: Schema.decodeUnknownSync(
+            MailboxBootstrapConfigValue.fields.initialDomain
+          )(
+            trustedOverrides.initialDomain ??
+              canonicalTestAddress(configuredInitialAddress).slice(
+                configuredInitialAddress.lastIndexOf("@") + 1
+              )
+          ),
+          operationId: trustedOperationId,
+          ownerEmailAllowlist: Schema.decodeUnknownSync(
+            MailboxBootstrapConfigValue.fields.ownerEmailAllowlist
+          )(trustedOverrides.ownerEmailAllowlist ?? configuredOwnerAllowlist),
+        });
+      }
+      const organizationBootstrap = yield* OrganizationBootstrap;
+      return yield* organizationBootstrap.bootstrap({
+        displayName: trustedDisplayName,
+        operationId: trustedOperationId,
       });
     }).pipe(
       Effect.provide(
-        MailboxAdministrationD1Layer.pipe(
+        Layer.merge(
+          OrganizationBootstrapD1Layer,
+          OrganizationBootstrapTransactionD1Layer
+        ).pipe(
           Layer.provide(unavailableMailAuthorizationLive),
           Layer.provide(
             Layer.mergeAll(
@@ -819,54 +856,112 @@ describe("mailbox administration", () => {
     }
   });
 
-  it("rejects a direct trusted-command address mismatch before writes", async () => {
-    const database = new DatabaseSync(":memory:");
-    try {
-      await applyControlPlaneMigrations(database);
-      const d1 = makeTestD1Database(database);
-      const validated = makeValidatedSession("user-a", "session-a");
-      insertCurrentSession(database, validated);
+  it.each([
+    {
+      configuredOwnerAllowlist: ["user-a@example.test"],
+      name: "initial address",
+      trustedOverrides: { initialAddress: "forged@example.test" },
+    },
+    {
+      configuredOwnerAllowlist: ["user-a@example.test"],
+      name: "initial domain",
+      trustedOverrides: { initialDomain: "forged.example.test" },
+    },
+    {
+      configuredOwnerAllowlist: ["user-a@example.test", "other@example.test"],
+      name: "owner allowlist content",
+      trustedOverrides: {
+        ownerEmailAllowlist: ["user-a@example.test", "forged@example.test"],
+      },
+    },
+    {
+      configuredOwnerAllowlist: ["user-a@example.test", "other@example.test"],
+      name: "owner allowlist order",
+      trustedOverrides: {
+        ownerEmailAllowlist: ["other@example.test", "user-a@example.test"],
+      },
+    },
+  ] as const)(
+    "rejects trusted-command $name mismatch with zero writes",
+    async ({ configuredOwnerAllowlist, trustedOverrides }) => {
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
 
-      const error = await Effect.runPromise(
-        bootstrap(
-          d1,
-          validated,
-          "unused-guard",
-          "user-a@example.test",
-          "00000000-0000-4000-8000-000000000010",
-          "Inbox",
-          "inbox@example.test",
-          ["user-a@example.test"],
-          "forged@example.test"
-        ).pipe(Effect.flip)
-      );
+        const error = await Effect.runPromise(
+          bootstrap(
+            d1,
+            validated,
+            "unused-guard",
+            "user-a@example.test",
+            "00000000-0000-4000-8000-000000000010",
+            "Inbox",
+            "inbox@example.test",
+            configuredOwnerAllowlist,
+            trustedOverrides
+          ).pipe(Effect.flip)
+        );
 
-      expect(error).toMatchObject({
-        operation: "bootstrap-owner",
-        reason: "invalid-input",
-      });
-      expect({
-        assignments: countRows(
-          database,
-          "app_mailbox_legacy_organization_assignment"
-        ),
-        grants: countRows(database, "auth_role_grant"),
-        mailboxes: countRows(database, "app_mailbox"),
-        members: countRows(database, "app_mailbox_member"),
-        organizations: countRows(database, "app_organization"),
-        receipts: countRows(database, "app_mailbox_administration_receipt"),
-      }).toStrictEqual({
-        assignments: 0,
-        grants: 0,
-        mailboxes: 0,
-        members: 0,
-        organizations: 0,
-        receipts: 0,
-      });
-    } finally {
-      database.close();
+        expect(error).toMatchObject({
+          operation: "bootstrap-owner",
+          reason: "invalid-input",
+        });
+        expect({
+          addresses: countRows(database, "app_mailbox_address"),
+          ancestry: countRows(
+            database,
+            "app_mailbox_legacy_organization_assignment"
+          ),
+          auditEvents: countRows(database, "app_administrative_audit_event"),
+          authorizationGuards: countRows(database, "app_authorization_guard"),
+          bootstrapDomainIntents: countRows(
+            database,
+            "app_mailbox_bootstrap_domain_intent"
+          ),
+          bootstrapReceipts: countRows(
+            database,
+            "app_mailbox_bootstrap_receipt_v2"
+          ),
+          domainClaims: countRows(database, "app_mail_domain"),
+          domainReceipts: countRows(database, "app_mail_domain_claim_receipt"),
+          grants: countRows(database, "auth_role_grant"),
+          mailboxMembers: countRows(database, "app_mailbox_member"),
+          mailboxReceipts: countRows(
+            database,
+            "app_mailbox_administration_receipt"
+          ),
+          mailboxes: countRows(database, "app_mailbox"),
+          organizationMembers: countRows(database, "app_organization_member"),
+          ownerAssignments: countRows(
+            database,
+            "app_organization_owner_assignment_receipt"
+          ),
+          organizations: countRows(database, "app_organization"),
+        }).toStrictEqual({
+          addresses: 0,
+          ancestry: 0,
+          auditEvents: 0,
+          authorizationGuards: 0,
+          bootstrapDomainIntents: 0,
+          bootstrapReceipts: 0,
+          domainClaims: 0,
+          domainReceipts: 0,
+          grants: 0,
+          mailboxMembers: 0,
+          mailboxReceipts: 0,
+          mailboxes: 0,
+          organizationMembers: 0,
+          ownerAssignments: 0,
+          organizations: 0,
+        });
+      } finally {
+        database.close();
+      }
     }
-  });
+  );
 
   it("rejects a distinct second owner bootstrap without partial writes", async () => {
     const database = new DatabaseSync(":memory:");
@@ -889,7 +984,7 @@ describe("mailbox administration", () => {
         ).pipe(Effect.flip)
       );
 
-      expect(error).toBeInstanceOf(MailboxAdministrationError);
+      expect(error).toBeInstanceOf(OrganizationBootstrapError);
       expect(error).toMatchObject({
         operation: "bootstrap-owner",
         reason: "conflict",
@@ -1550,7 +1645,7 @@ describe("mailbox administration", () => {
         bootstrap(d1, validated, "bootstrap-guard").pipe(Effect.flip)
       );
 
-      expect(error).toBeInstanceOf(MailboxAdministrationError);
+      expect(error).toBeInstanceOf(OrganizationBootstrapError);
       expect(error).toMatchObject({
         commitState: "unknown",
         reason: "storage",

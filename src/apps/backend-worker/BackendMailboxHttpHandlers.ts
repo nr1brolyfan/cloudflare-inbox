@@ -54,7 +54,8 @@ import {
 } from "#/modules/organization/application/MailboxAdministration";
 import type { MailboxNavigationError } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
-import { MailboxBootstrapConfig } from "#/modules/organization/contracts/MailboxBootstrapConfig";
+import type { OrganizationBootstrapError } from "#/modules/organization/application/OrganizationBootstrap";
+import { OrganizationBootstrap } from "#/modules/organization/application/OrganizationBootstrap";
 
 import { MailboxHttpApi } from "./BackendMailboxHttpApi";
 
@@ -73,7 +74,7 @@ type MailboxPublicError =
   | AuthStepUpRequiredError;
 
 const mapAdministrationError = (
-  error: MailboxAdministrationError
+  error: MailboxAdministrationError | OrganizationBootstrapError
 ): Effect.Effect<never, MailboxPublicError> => {
   switch (error.reason) {
     case "invalid-input": {
@@ -152,6 +153,7 @@ type MailboxHandlerError =
   | AuthUnauthenticatedError
   | MailboxAuthorizationError
   | MailboxAdministrationError
+  | OrganizationBootstrapError
   | MailboxNavigationError
   | MailboxMessageReadingError
   | MailboxMessageActionError
@@ -444,6 +446,7 @@ const mapHttpErrors = <A, R>(
 ) =>
   mapAuthGuardErrors(effect).pipe(
     Effect.catchTag("MailboxAdministrationError", mapAdministrationError),
+    Effect.catchTag("OrganizationBootstrapError", mapAdministrationError),
     Effect.catchTag("MailboxNavigationError", mapNavigationError),
     Effect.catchTag("MailboxMessageReadingError", mapMessageReadingError),
     Effect.catchTag("MailboxMessageActionError", mapMessageActionError),
@@ -480,7 +483,7 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
   "mailboxes",
   Effect.fn("backend.http.mailbox_group")(function* (handlers) {
     const administration = yield* MailboxAdministration;
-    const bootstrapConfig = yield* MailboxBootstrapConfig;
+    const organizationBootstrap = yield* OrganizationBootstrap;
     const navigation = yield* MailboxNavigation;
     const messageReading = yield* MailboxMessageReading;
     const messageActions = yield* MailboxMessageActions;
@@ -505,12 +508,7 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
           .pipe(mapHttpErrors)
       )
       .handle("bootstrapOwner", ({ payload }) =>
-        administration
-          .bootstrapOwner({
-            ...payload,
-            initialAddress: bootstrapConfig.initialAddress,
-          })
-          .pipe(mapHttpErrors)
+        organizationBootstrap.bootstrap(payload).pipe(mapHttpErrors)
       )
       .handle("createDraft", ({ params, payload }) =>
         draftEditing

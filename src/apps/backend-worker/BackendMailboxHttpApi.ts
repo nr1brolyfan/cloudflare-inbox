@@ -68,12 +68,12 @@ import {
   ReplayInboundInput,
 } from "#/modules/mailbox/domain/MailboxInbound";
 import {
-  BootstrapOwnerMailboxCommand,
   MailboxAdministrationReceiptSchema,
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
+import { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 
@@ -160,7 +160,7 @@ export const BootstrapOwnerEndpoint = HttpApiEndpoint.post(
   "/api/mailboxes/bootstrap-owner",
   {
     error: MailboxErrors,
-    payload: BootstrapOwnerMailboxCommand,
+    payload: BootstrapOrganizationCommand,
     success: MailboxRecordSchema.pipe(HttpApiSchema.status(201)),
   }
 );

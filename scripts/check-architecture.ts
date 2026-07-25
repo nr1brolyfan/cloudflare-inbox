@@ -103,6 +103,22 @@ const isDirectLayerInitializer = (node: ts.Expression): boolean => {
   );
 };
 
+const isBootstrapAuthorityMember = (node: ts.Node): boolean => {
+  if (
+    !ts.isPropertySignature(node) &&
+    !ts.isMethodSignature(node) &&
+    !ts.isPropertyDeclaration(node) &&
+    !ts.isMethodDeclaration(node)
+  ) {
+    return false;
+  }
+  const name =
+    ts.isIdentifier(node.name) || ts.isStringLiteralLike(node.name)
+      ? node.name.text
+      : undefined;
+  return name !== undefined && /^bootstrap(?:$|[A-Z0-9_])/u.test(name);
+};
+
 const normalize = (value: string): string => value.replaceAll("\\", "/");
 
 const resolveImport = (file: string, specifier: string): string | undefined => {
@@ -414,10 +430,19 @@ export const checkArchitectureSource = (
       "RuntimeContext.phantom is allowed only in concrete adapters and apps"
     );
   }
+  const bootstrapAuthorityRestricted =
+    normalizedFile.startsWith("src/modules/organization/application/") &&
+    normalizedFile !==
+      "src/modules/organization/application/OrganizationBootstrap.ts";
 
   // Every branch enforces an independent source-declaration policy.
   // oxlint-disable-next-line eslint/complexity
   const inspect = (node: ts.Node): void => {
+    if (bootstrapAuthorityRestricted && isBootstrapAuthorityMember(node)) {
+      violations.add(
+        "OrganizationBootstrap is the only application bootstrap authority"
+      );
+    }
     if (ts.isExportDeclaration(node) && node.moduleSpecifier !== undefined) {
       const target = ts.isStringLiteralLike(node.moduleSpecifier)
         ? resolveImport(normalizedFile, node.moduleSpecifier.text)

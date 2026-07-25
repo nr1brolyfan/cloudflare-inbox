@@ -38,6 +38,51 @@ describe("architecture policy", () => {
     ).toStrictEqual(["domain, application and ports must not import adapters"]);
   });
 
+  it("rejects organization bootstrap service property variants", () => {
+    expect(
+      checkArchitectureSource(
+        "src/modules/organization/application/MailboxAdministration.ts",
+        `
+          export interface MailboxAdministrationService {
+            readonly bootstrapOrganization: (input: unknown) => unknown;
+          }
+        `
+      )
+    ).toStrictEqual([
+      "OrganizationBootstrap is the only application bootstrap authority",
+    ]);
+  });
+
+  it("rejects organization bootstrap class method variants", () => {
+    expect(
+      checkArchitectureSource(
+        "src/modules/organization/application/MailboxAdministration.ts",
+        `
+          export class MailboxAdministration {
+            bootstrapLegacyOwner(): unknown {
+              return undefined;
+            }
+          }
+        `
+      )
+    ).toStrictEqual([
+      "OrganizationBootstrap is the only application bootstrap authority",
+    ]);
+  });
+
+  it("allows bootstrap members only in the focused service", () => {
+    expect(
+      checkArchitectureSource(
+        "src/modules/organization/application/OrganizationBootstrap.ts",
+        `
+          export interface OrganizationBootstrapService {
+            readonly bootstrap: (input: unknown) => unknown;
+          }
+        `
+      )
+    ).toStrictEqual([]);
+  });
+
   it("rejects business-module imports from runtime apps", () => {
     expect(
       checkArchitectureImports(

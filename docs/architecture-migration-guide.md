@@ -106,6 +106,7 @@ Rules:
 - Cross-context imports use explicit public modules/contracts, not persistence schemas or adapter internals.
 - Cross-context D1 collaboration uses narrowly named `integration/` predicates and statement factories. These factories return composable Drizzle SQL or `ControlPlaneStatement` values; callers retain one ordered `ControlPlaneBatch` and must not replace transaction-local checks with preflight CRUD calls.
 - The trusted mailbox bootstrap composes the organization-owned conditional `legacy_default_v1` insert statement into its existing Backend-owned batch. Organization migration provenance, deterministic migration-owned trigger replacement, creation-time binding, and the fresh-mailbox storage guard remain organization-owned; the app composition root still owns session authorization, statement order, receipt, grant, and audit atomicity.
+- `OrganizationBootstrap` is the sole application owner-bootstrap authority. Its public schema contains only caller intent and explicitly rejects named authority fields; `make` captures `MailboxBootstrapConfig` and the `OrganizationBootstrapTransaction` port and constructs the trusted command. HTTP may decode and delegate but must not inject organization, mailbox, owner, address, domain, or protocol values. `MailboxAdministration` owns only rename and operation readback.
 - Platform request guards accept platform-neutral guarded session facts. Account-security owns adaptation from `CurrentRequestAuth` and binds step-up and remediation policy SQL.
 - `shared` contains only truly context-neutral semantics, e.g. generic time/operation primitives. No generic helpers dump.
 - Keep the automated architecture and import-boundary checks in `bun run check`.
@@ -246,6 +247,7 @@ Preserve throughout moves and refactors:
 - `RuntimeContext.phantom` only at concrete Alchemy/Cloudflare adapter call sites;
 - generated/framework-owned files and historical migrations untouched unless explicitly scoped;
 - telemetry privacy: no credentials, secrets, tokens, message content, raw paths/headers/bodies, or unbounded user data.
+- compatibility protocol contraction requires four explicit stages: expand dual readers/writers, activate the successor atomically, drain and prove absence of every old live writer, then contract. Local code completion or deployment age is not writer-drain evidence; Cloudflare D1 atomicity, maintenance/quiescence controls, staging evidence, and applicable backup/restore gates must be recorded before trigger retirement.
 
 ## Migration Record
 
@@ -287,3 +289,5 @@ The local migration harness wraps every migration file in `BEGIN IMMEDIATE` and 
 Generic administrative audit taxonomies must not be reused for a semantically different migration. ORG-008 therefore uses its immutable assignment receipt as the authority ledger and links fresh materialization to the real mailbox bootstrap audit; typed organization audit actions remain future work.
 
 Stock D1 must never infer canonical Punycode. A migration may install structural fences and record an awaiting-reconciliation state, but canonical A-label reconciliation belongs in a required TypeScript initialization Effect using the pinned profile and one atomic conditional D1 batch. ORG-009 is intentionally single-domain; ORG-012 must replace its fresh staging/trigger protocol atomically and retain its cutover, canonical intent, and receipt.
+
+ORG-012 Phase A completes only the application service/port split. It intentionally leaves current V1/V2 receipts, domain staging, compatibility triggers, migrations, audit taxonomy, statement ordering, and 15-row artifact closure unchanged. Storage-protocol replacement remains blocked pending the expand/activate/drain/contract evidence above.

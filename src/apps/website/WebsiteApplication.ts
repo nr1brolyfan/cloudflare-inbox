@@ -26,10 +26,10 @@ import type {
   UploadDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type {
-  BootstrapOwnerMailboxCommand,
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
+import type { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
 
 import {
   DevEmailOperations,
@@ -65,7 +65,7 @@ export const WebsiteApplication = {
         return yield* operations.actOnMessage({ command, incoming });
       })
     ),
-  bootstrapMailboxOwner: (command: BootstrapOwnerMailboxCommand) =>
+  bootstrapMailboxOwner: (command: BootstrapOrganizationCommand) =>
     WebsiteRuntime.runPromise(
       Effect.gen(function* () {
         const operations = yield* MailboxBackendOperations;

@@ -19,14 +19,14 @@ import {
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { ReserveDraftAttachmentCommand } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
-  BootstrapOwnerMailboxCommand,
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
+import { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
 
 import { WebsiteApplication } from "./WebsiteApplication";
 
-const bootstrapInput = Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand);
+const bootstrapInput = Schema.decodeUnknownSync(BootstrapOrganizationCommand);
 const renameInput = Schema.decodeUnknownSync(RenameMailboxCommand);
 const readMailboxOperationInput = Schema.decodeUnknownSync(
   ReadMailboxAdministrationOperationQuery

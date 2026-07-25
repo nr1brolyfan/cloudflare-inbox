@@ -28,10 +28,10 @@ import {
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { GetDraftAttachmentInput } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
-  BootstrapOwnerMailboxCommand,
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
+import { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
 
 const mailbox = {
   createdAt: 1000,
@@ -874,7 +874,7 @@ describe("Website mailbox Backend forwarding", () => {
       },
       (operations) =>
         operations.bootstrapOwner({
-          command: Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+          command: Schema.decodeUnknownSync(BootstrapOrganizationCommand)({
             displayName: "Inbox",
             operationId: "00000000-0000-4000-8000-000000000010",
           }),
@@ -989,7 +989,7 @@ describe("Website mailbox Backend forwarding", () => {
         ),
       (operations) =>
         operations.bootstrapOwner({
-          command: Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+          command: Schema.decodeUnknownSync(BootstrapOrganizationCommand)({
             displayName: "Inbox",
             operationId: "00000000-0000-4000-8000-000000000010",
           }),
@@ -1058,7 +1058,7 @@ describe("Website mailbox Backend forwarding", () => {
       },
       (operations) =>
         operations.bootstrapOwner({
-          command: Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+          command: Schema.decodeUnknownSync(BootstrapOrganizationCommand)({
             displayName: "Inbox",
             operationId: "00000000-0000-4000-8000-000000000010",
           }),
@@ -1129,7 +1129,7 @@ describe("Website mailbox Backend forwarding", () => {
         ),
       (operations) =>
         operations.bootstrapOwner({
-          command: Schema.decodeUnknownSync(BootstrapOwnerMailboxCommand)({
+          command: Schema.decodeUnknownSync(BootstrapOrganizationCommand)({
             displayName: "Inbox",
             operationId: "00000000-0000-4000-8000-000000000010",
           }),

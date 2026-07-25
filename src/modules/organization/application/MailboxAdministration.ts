@@ -21,22 +21,6 @@ import type { CurrentRequestAuth } from "#/shared/RequestAuth";
 import type { RequestCorrelation } from "#/shared/RequestCorrelation";
 import { UnixMillis, Version } from "#/shared/Temporal";
 
-export const BootstrapOwnerMailboxCommand = Schema.Struct({
-  displayName: MailboxDisplayName,
-  operationId: AdministrativeOperationId,
-});
-export type BootstrapOwnerMailboxCommand = Schema.Schema.Type<
-  typeof BootstrapOwnerMailboxCommand
->;
-
-export const TrustedBootstrapOwnerMailboxCommand = Schema.Struct({
-  ...BootstrapOwnerMailboxCommand.fields,
-  initialAddress: NormalizedEmailAddress,
-});
-export type TrustedBootstrapOwnerMailboxCommand = Schema.Schema.Type<
-  typeof TrustedBootstrapOwnerMailboxCommand
->;
-
 export const RenameMailboxCommand = Schema.Struct({
   displayName: MailboxDisplayName,
   expectedVersion: Version,
@@ -123,15 +107,6 @@ export class MailboxAdministrationError extends Data.TaggedError(
 }> {}
 
 export interface MailboxAdministrationService {
-  // Trusted auth and authorization capabilities are application dependencies;
-  // HTTP middleware is only one adapter that supplies them.
-  readonly bootstrapOwner: (
-    input: TrustedBootstrapOwnerMailboxCommand
-  ) => Effect.Effect<
-    MailboxRecord,
-    MailboxAdministrationError,
-    AuthPermission.CurrentPrincipal | CurrentRequestAuth | RequestCorrelation
-  >;
   readonly rename: (
     input: RenameMailboxCommand
   ) => Effect.Effect<

@@ -5,14 +5,16 @@ import { MailboxNavigationD1Layer } from "#/modules/organization/adapters/d1/Mai
 import {
   MailboxAdministrationD1Layer,
   MailboxAdministrationRuntimeLayer,
+  OrganizationBootstrapD1Layer,
 } from "./MailboxAdministrationD1Integration";
 
-const MailboxAdministrationLayer = MailboxAdministrationD1Layer.pipe(
-  Layer.provide(MailboxAdministrationRuntimeLayer)
-);
+const OrganizationServicesLayer = Layer.merge(
+  MailboxAdministrationD1Layer,
+  OrganizationBootstrapD1Layer
+).pipe(Layer.provide(MailboxAdministrationRuntimeLayer));
 
 /** Organization use cases backed by the existing control-plane D1 registry. */
 export const OrganizationLayer = Layer.merge(
-  MailboxAdministrationLayer,
+  OrganizationServicesLayer,
   MailboxNavigationD1Layer
 );

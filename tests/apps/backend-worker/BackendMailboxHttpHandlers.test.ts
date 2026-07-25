@@ -111,10 +111,11 @@ import {
   MailboxNavigationResult,
 } from "#/modules/organization/application/MailboxNavigation";
 import type { MailboxNavigationService } from "#/modules/organization/application/MailboxNavigation";
+import type { OrganizationBootstrapService } from "#/modules/organization/application/OrganizationBootstrap";
 import {
-  MailboxBootstrapConfig,
-  MailboxBootstrapConfigValue,
-} from "#/modules/organization/contracts/MailboxBootstrapConfig";
+  OrganizationBootstrap,
+  OrganizationBootstrapError,
+} from "#/modules/organization/application/OrganizationBootstrap";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
 import {
@@ -326,11 +327,18 @@ const cancelledDelivery = Schema.decodeUnknownSync(OutboundDeliverySchema)({
   version: 2,
 });
 
-const makeAdministration = (
-  overrides: Partial<MailboxAdministrationService> = {}
-) =>
-  MailboxAdministration.of({
-    bootstrapOwner: () => Effect.succeed(mailbox),
+interface TestAdministrationOverrides extends Partial<MailboxAdministrationService> {
+  readonly bootstrapOwner?: OrganizationBootstrapService["bootstrap"];
+}
+
+const bootstrapByAdministration = new WeakMap<
+  MailboxAdministrationService,
+  OrganizationBootstrapService
+>();
+
+const makeAdministration = (overrides: TestAdministrationOverrides = {}) => {
+  const { bootstrapOwner, ...administrationOverrides } = overrides;
+  const administration = MailboxAdministration.of({
     readOperation: () => Effect.succeed(mailboxAdministrationReceipt),
     rename: ({ displayName }) =>
       Effect.succeed(
@@ -340,8 +348,16 @@ const makeAdministration = (
           version: 2,
         })
       ),
-    ...overrides,
+    ...administrationOverrides,
   });
+  bootstrapByAdministration.set(
+    administration,
+    OrganizationBootstrap.of({
+      bootstrap: bootstrapOwner ?? (() => Effect.succeed(mailbox)),
+    })
+  );
+  return administration;
+};
 
 const makeHandler = (
   administration: MailboxAdministrationService,
@@ -435,20 +451,11 @@ const makeHandler = (
       Layer.mergeAll(
         Layer.succeed(MailboxAdministration, administration),
         Layer.succeed(
-          MailboxBootstrapConfig,
-          MailboxBootstrapConfig.of(
-            new MailboxBootstrapConfigValue({
-              initialAddress: Schema.decodeUnknownSync(
-                MailboxBootstrapConfigValue.fields.initialAddress
-              )("inbox@example.test"),
-              initialDomain: Schema.decodeUnknownSync(
-                MailboxBootstrapConfigValue.fields.initialDomain
-              )("example.test"),
-              ownerEmailAllowlist: Schema.decodeUnknownSync(
-                MailboxBootstrapConfigValue.fields.ownerEmailAllowlist
-              )(["user-a@example.test"]),
+          OrganizationBootstrap,
+          bootstrapByAdministration.get(administration) ??
+            OrganizationBootstrap.of({
+              bootstrap: () => Effect.succeed(mailbox),
             })
-          )
         ),
         Layer.succeed(MailboxNavigation, navigation),
         Layer.succeed(MailboxMessageReading, messageReading),
@@ -735,7 +742,7 @@ const makeCountingHandler = (session: ValidatedSession) => {
   return {
     counts,
     ...makeHandler(
-      MailboxAdministration.of({
+      makeAdministration({
         bootstrapOwner: () => counted(MailboxOperation.bootstrapOwner, mailbox),
         readOperation: () =>
           counted(MailboxOperation.readOperation, mailboxAdministrationReceipt),
@@ -1578,34 +1585,48 @@ describe("protected mailbox API", () => {
     }
   });
 
-  it("injects the trusted initial address instead of accepting a public choice", async () => {
-    let initialAddress: string | undefined;
-    const { dispose, handler } = makeHandler(
-      makeAdministration({
-        bootstrapOwner: (command) => {
-          const { initialAddress: trustedInitialAddress } = command;
-          initialAddress = trustedInitialAddress;
-          return Effect.succeed(mailbox);
-        },
-      })
-    );
-    try {
-      const response = await handler(
-        mailboxRequest("/api/mailboxes/bootstrap-owner", "POST", {
-          body: {
-            displayName: "Inbox",
-            initialAddress: "attacker@external.test",
-            operationId: "00000000-0000-4000-8000-000000000010",
+  it.each([
+    ["actorUserId", "user-attacker"],
+    ["initialAddress", "attacker@external.test"],
+    ["initialDomain", "external.test"],
+    ["mailboxId", "attacker-mailbox"],
+    ["organizationId", "attacker-organization"],
+    ["ownerEmailAllowlist", ["attacker@external.test"]],
+    ["ownerUserId", "user-attacker"],
+    ["protocol", "attacker-protocol"],
+    ["protocolGeneration", 2],
+    ["protocolMarker", "attacker-marker"],
+    ["protocolVersion", 2],
+  ] as const)(
+    "rejects public authority field %s before invoking bootstrap",
+    async (field, value) => {
+      let bootstraps = 0;
+      const { dispose, handler } = makeHandler(
+        makeAdministration({
+          bootstrapOwner: () => {
+            bootstraps += 1;
+            return Effect.succeed(mailbox);
           },
         })
       );
+      try {
+        const response = await handler(
+          mailboxRequest("/api/mailboxes/bootstrap-owner", "POST", {
+            body: {
+              displayName: "Inbox",
+              [field]: value,
+              operationId: "00000000-0000-4000-8000-000000000010",
+            },
+          })
+        );
 
-      expect(response.status).toBe(201);
-      expect(initialAddress).toBe("inbox@example.test");
-    } finally {
-      await dispose();
+        expect(response.status).toBe(400);
+        expect(bootstraps).toBe(0);
+      } finally {
+        await dispose();
+      }
     }
-  });
+  );
 
   it("returns an authenticated typed mailbox operation receipt", async () => {
     const { dispose, handler } = makeHandler(makeAdministration());
@@ -1637,7 +1658,7 @@ describe("protected mailbox API", () => {
       makeAdministration({
         bootstrapOwner: () =>
           Effect.fail(
-            new MailboxAdministrationError({
+            new OrganizationBootstrapError({
               cause: new Error("stored actor and intent details"),
               message: "sensitive operation mismatch",
               operation: "bootstrap-owner",
@@ -1789,7 +1810,7 @@ describe("protected mailbox API", () => {
       makeAdministration({
         bootstrapOwner: () =>
           Effect.fail(
-            new MailboxAdministrationError({
+            new OrganizationBootstrapError({
               message: "internal policy detail",
               operation: "bootstrap-owner",
               reason: "step-up-required",

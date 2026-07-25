@@ -52,8 +52,9 @@ import {
   MailboxAdministrationReceiptSchema,
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
-  TrustedBootstrapOwnerMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
+import { OrganizationBootstrap } from "#/modules/organization/application/OrganizationBootstrap";
+import type { MailboxBootstrapConfigValue } from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { MailboxBootstrapConfig } from "#/modules/organization/contracts/MailboxBootstrapConfig";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import {
@@ -64,6 +65,10 @@ import { LEGACY_DEFAULT_ORGANIZATION_ID } from "#/modules/organization/domain/Or
 import { canonicalMailboxAncestryPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import { legacyDefaultOrganizationBootstrapInsertStatement } from "#/modules/organization/integration/OrganizationD1Statements";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
+import {
+  OrganizationBootstrapTransaction,
+  TrustedBootstrapOrganizationCommand,
+} from "#/modules/organization/ports/OrganizationBootstrapTransaction";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import * as ControlPlane from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
@@ -180,11 +185,16 @@ const validateDisplayName = (
     )
   );
 
-const requireConfiguredBootstrapAddress = (
-  initialAddress: string,
-  configuredInitialAddress: string
+const requireConfiguredBootstrapValues = (
+  input: Schema.Schema.Type<typeof TrustedBootstrapOrganizationCommand>,
+  config: MailboxBootstrapConfigValue
 ) =>
-  initialAddress === configuredInitialAddress
+  input.initialAddress === config.initialAddress &&
+  input.initialDomain === config.initialDomain &&
+  input.ownerEmailAllowlist.length === config.ownerEmailAllowlist.length &&
+  input.ownerEmailAllowlist.every(
+    (address, index) => address === config.ownerEmailAllowlist[index]
+  )
     ? Effect.void
     : Effect.fail(
         new MailboxAdministrationError({
@@ -369,9 +379,8 @@ const receiptMatches = (
   (receipt.schemaVersion === 1 ||
     receipt.initialAddress === intent.initialAddress);
 
-/** Transactional mailbox service built from explicit Effect configuration. */
-const MailboxAdministrationTransactionD1Layer = Layer.effect(
-  MailboxAdministrationTransaction,
+/** Transactional bootstrap and mailbox administration built from one D1 assembly. */
+const OrganizationTransactionsD1Layer = Layer.effectContext(
   Effect.gen(function* () {
     const bootstrapConfig = yield* MailboxBootstrapConfig;
     const runtime = yield* MailboxAdministrationRuntime;
@@ -570,11 +579,11 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
       schema_version: appMailboxAdministrationReceipt.schemaVersion,
     } as const;
 
-    return MailboxAdministrationTransaction.of({
-      bootstrapOwner: (untrusted) =>
+    const services = {
+      bootstrap: (untrusted: unknown) =>
         Effect.gen(function* () {
           const input = yield* Schema.decodeUnknownEffect(
-            TrustedBootstrapOwnerMailboxCommand
+            TrustedBootstrapOrganizationCommand
           )(untrusted).pipe(
             Effect.mapError(
               (cause) =>
@@ -586,10 +595,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                 })
             )
           );
-          yield* requireConfiguredBootstrapAddress(
-            input.initialAddress,
-            bootstrapConfig.initialAddress
-          );
+          yield* requireConfiguredBootstrapValues(input, bootstrapConfig);
           const requestAuth = yield* CurrentRequestAuth;
           const { validated } = requestAuth;
           yield* ensureTrustedAuthInvariant(requestAuth);
@@ -665,7 +671,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const ownerIdentityValid = ownerIdentityPredicate(
             database,
             validated.actor.userId,
-            bootstrapConfig.ownerEmailAllowlist
+            input.ownerEmailAllowlist
           );
           const mailboxAvailable = notExists(
             database.select({ value: sql`1` }).from(appMailbox)
@@ -855,7 +861,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
             database.insert(appMailboxBootstrapDomainIntent).select(
               database
                 .select({
-                  canonicalDomain: sql`${bootstrapConfig.initialDomain}`.as(
+                  canonicalDomain: sql`${input.initialDomain}`.as(
                     "canonical_domain"
                   ),
                   canonicalizationProfileId:
@@ -1047,7 +1053,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           }
           return receipt.result;
         }),
-      readOperation: (untrusted) =>
+      readOperation: (untrusted: unknown) =>
         Effect.gen(function* () {
           const input = yield* Schema.decodeUnknownEffect(
             ReadMailboxAdministrationOperationQuery
@@ -1080,7 +1086,7 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           }
           return receipt;
         }),
-      rename: (untrusted) =>
+      rename: (untrusted: unknown) =>
         Effect.gen(function* () {
           const input = yield* Schema.decodeUnknownEffect(RenameMailboxCommand)(
             untrusted
@@ -1419,11 +1425,34 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const receipt = yield* decodeReceipt(receiptRow, "rename");
           return receipt.result;
         }),
-    });
+    };
+
+    return Context.make(
+      OrganizationBootstrapTransaction,
+      OrganizationBootstrapTransaction.of({ bootstrap: services.bootstrap })
+    ).pipe(
+      Context.add(
+        MailboxAdministrationTransaction,
+        MailboxAdministrationTransaction.of({
+          readOperation: services.readOperation,
+          rename: services.rename,
+        })
+      )
+    );
   })
 );
 
+export const OrganizationBootstrapD1Layer =
+  OrganizationBootstrap.layerNoDeps.pipe(
+    Layer.provide(OrganizationTransactionsD1Layer)
+  );
+
+export const OrganizationBootstrapTransactionD1Layer = Layer.effect(
+  OrganizationBootstrapTransaction,
+  OrganizationBootstrapTransaction
+).pipe(Layer.provide(OrganizationTransactionsD1Layer));
+
 export const MailboxAdministrationD1Layer =
   MailboxAdministration.layerNoDeps.pipe(
-    Layer.provide(MailboxAdministrationTransactionD1Layer)
+    Layer.provide(OrganizationTransactionsD1Layer)
   );

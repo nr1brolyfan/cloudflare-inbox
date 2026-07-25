@@ -1,7 +1,7 @@
 # Owner, Grant, And Routing Recovery
 
 - Owner: Product owner and engineering
-- Last reviewed: 2026-07-24
+- Last reviewed: 2026-07-25
 - Scope: `SAFE-010`; owner loss, bad mailbox grants, and bad inbound routing
 
 ## Operating Boundary
@@ -18,7 +18,7 @@ Current constraints:
 - `app_mail_domain_claim_cutover` seals ORG-009's initial outcome. A populated deployment must have either an explicitly awaiting-reconciliation state before Backend initialization or the exact pair of fixed pending claim `legacy_default_v1_domain_v1` and immutable receipt bound to the retained `primary` route epoch. Missing pairs, extra/current/retired claims, snapshot disagreement, lifecycle drift, or changed provenance are corruption and reapplication does not heal them. Neither route continuity nor this pending claim proves DNS ownership or readiness.
 - `app_mailbox_member` is a discovery projection, not authorization. Effect-auth role and permission grants authorize access.
 - `app_user_organization_preference` is optional dormant ranking state, not organization selection, discovery, assignment, grant, permission, or access evidence. A default may legitimately reference a suspended or deleted mailbox and must not be edited as owner, grant, routing, or navigation recovery. The retained `app_user_preference` table is migration-frozen; preserve both tables and the ORG-011 cutover/generation evidence for investigation, and use only a reviewed successor forward-fix after required backup controls exist.
-- Supported mailbox administration is owner bootstrap and rename. There is no supported owner transfer, grant/revoke, route disable, or route reassignment operation.
+- Supported mailbox administration is owner bootstrap and rename. Owner bootstrap is exposed through the focused `OrganizationBootstrap` application service; the public body contains only display name and operation ID, trusted configuration is injected behind the HTTP boundary, and actor identity remains request context. This boundary change is not a new recovery, transfer, grant/revoke, route disable, or route reassignment operation.
 - `app_mailbox_address` is both the enabled inbound lookup and the current primary outbound identity. It has no route history or assignment revision.
 - Administrative audit has a closed current taxonomy. It does not contain grant or route mutations.
 - `/api/health` checks dependency readiness for D1, R2, Durable Objects, rate limiting, and authorization storage. It does not validate owner, grant, or route semantics.
@@ -75,6 +75,8 @@ Run the current owner-chain and recovery-readiness templates below. Determine wh
 `MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST` controls only which verified identities may bootstrap. `MAILBOX_INITIAL_ADDRESS` supplies the trusted initial route and centralized canonical `initialDomain`. After bootstrap, the fixed pending `MailDomain`, immutable claim receipt, and retained legacy primary route are continuity authorities and must agree with trusted configuration; changing configuration does not transfer an existing mailbox or domain, and disagreement blocks Backend startup without logging the values.
 
 Neither bootstrap configuration value can select or transfer the retained ORG-008 owner. Only the exact active metadata-null legacy mailbox owner grant nominates that user; creator, membership, receipt, audit, identity, and ancestry data can only corroborate or abort the cutover.
+
+Do not retire or disable current bootstrap compatibility triggers during incident response. ORG-012 Phase A did not change the storage protocol. Any future retirement requires a planned expand/activate/drain/contract rollout, proof that all live old writers drained, exact Cloudflare D1 migration atomicity, verified maintenance/quiescence controls, and dated staging evidence. `SAFE-010` and `SAFE-005` remain open gates; this runbook does not supply those controls or authorize contraction.
 
 ### Currently Supported Remediation
 
