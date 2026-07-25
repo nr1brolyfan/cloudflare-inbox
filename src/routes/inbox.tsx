@@ -30,6 +30,7 @@ import {
   listMailboxMessages,
   actOnMailboxMessage,
   createMailboxDraft,
+  createMailboxReplyDraft,
   reserveMailboxDraftAttachment,
   sendMailboxDraft,
   undoMailboxSend,
@@ -43,6 +44,13 @@ import {
   handleMailboxReadDenial,
   mailboxReadDenialQueryKey,
 } from "#/modules/account-security/adapters/browser/AuthClient";
+import {
+  clearPendingReplyCommand,
+  persistPendingReplyCommand,
+  readPendingReplyCommand,
+  replyCommandsHaveSameTarget,
+  retainReplyOperationForStatus,
+} from "#/modules/mailbox/adapters/browser/ReplyDraftOperationStorage";
 import { DraftEditor } from "#/modules/mailbox/adapters/react/DraftEditor";
 import { DraftList } from "#/modules/mailbox/adapters/react/DraftList";
 import {
@@ -82,6 +90,7 @@ import {
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import { SendMailboxDraftCommand } from "#/modules/mailbox/application/MailboxOutboundSending";
+import { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import {
   FolderId,
   DraftId,
@@ -145,6 +154,9 @@ const decodeMailboxMessageActionOption = Schema.decodeUnknownOption(
 );
 const decodeCreateMailboxDraft = Schema.decodeUnknownSync(
   CreateMailboxDraftCommand
+);
+const decodeCreateMailboxReplyDraft = Schema.decodeUnknownSync(
+  CreateMailboxReplyDraftCommand
 );
 const decodeDraftEditorContent = Schema.decodeUnknownSync(DraftEditorContent);
 const decodeDraftEditorDraft = Schema.decodeUnknownSync(DraftEditorDraft);
@@ -638,7 +650,12 @@ function ConversationPane({
   readonly sessionId: string;
   readonly threadId?: string;
 }) {
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const [replyFailure, setReplyFailure] = useState<{
+    readonly command: Schema.Schema.Type<typeof CreateMailboxReplyDraftCommand>;
+    readonly retainOperation: boolean;
+  }>();
   const view = decodeMailboxMessageView(
     selection.folder === undefined
       ? { _tag: "Label", labelId: selection.label, mailboxId }
@@ -669,7 +686,48 @@ function ConversationPane({
     ],
     retry: false,
   });
-
+  const reply = useMutation({
+    mutationFn: (
+      command: Schema.Schema.Type<typeof CreateMailboxReplyDraftCommand>
+    ) => {
+      persistPendingReplyCommand(window.sessionStorage, command);
+      return createMailboxReplyDraft({ data: command });
+    },
+    onError: (_error, command) =>
+      setReplyFailure({ command, retainOperation: true }),
+    onMutate: () => setReplyFailure(undefined),
+    onSuccess: (result, command) => {
+      if (!result.ok) {
+        const retainOperation = retainReplyOperationForStatus(result.status);
+        if (!retainOperation) {
+          clearPendingReplyCommand(window.sessionStorage, command);
+        }
+        setReplyFailure({
+          command,
+          retainOperation,
+        });
+        if (result.status === 401) {
+          void clearCachedAuthSession(queryClient);
+        }
+        return;
+      }
+      clearPendingReplyCommand(window.sessionStorage, command);
+      setReplyFailure(undefined);
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "navigation"] }),
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "drafts"] }),
+      ]);
+      void navigate({
+        to: "/inbox",
+        search: decodeInboxSearch({
+          ...selection,
+          delivery: filters.delivery,
+          draft: result.draft.id,
+        }),
+      });
+    },
+    retry: false,
+  });
   if (threadId === undefined) {
     return <NoThreadSelected />;
   }
@@ -710,6 +768,34 @@ function ConversationPane({
           void handleMailboxReadDenial(queryClient, { ok: false, status });
         }
       }}
+      onReply={(targetMessageId) => {
+        const failed = replyFailure?.command;
+        const target = decodeCreateMailboxReplyDraft({
+          ...view,
+          messageId: targetMessageId,
+          operationId: crypto.randomUUID(),
+          threadId,
+        });
+        const pending = readPendingReplyCommand(window.sessionStorage, target);
+        reply.mutate(
+          failed !== undefined &&
+            replyCommandsHaveSameTarget(failed, target) &&
+            replyFailure?.retainOperation === true
+            ? failed
+            : (pending ?? target)
+        );
+      }}
+      replyError={
+        replyFailure === undefined
+          ? undefined
+          : {
+              messageId: replyFailure.command.messageId,
+              retryable: replyFailure.retainOperation,
+            }
+      }
+      replyingMessageId={
+        reply.isPending ? reply.variables?.messageId : undefined
+      }
       selection={selection}
     />
   );
@@ -1017,6 +1103,7 @@ function MailboxWorkspace({
         trashFolderId={trashFolderId}
       />
       <ConversationPane
+        key={`${mailboxId}:${selection.folder ?? selection.label}:${threadId ?? "none"}:${messageId ?? "none"}`}
         filters={filters}
         mailboxId={mailboxId}
         messageId={messageId}

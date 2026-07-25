@@ -1,5 +1,5 @@
 import type * as Schema from "effect/Schema";
-import { ArrowLeft, Download, MailOpen, Paperclip } from "lucide-react";
+import { ArrowLeft, Download, MailOpen, Paperclip, Reply } from "lucide-react";
 import { useState } from "react";
 
 import type { MailboxThreadResult } from "#/modules/mailbox/application/MailboxMessageReading";
@@ -16,6 +16,7 @@ import {
 import { SandboxedMessageHtml } from "./SandboxedMessageHtml";
 
 type ThreadData = Schema.Codec.Encoded<typeof MailboxThreadResult>;
+const ignoreReply = (_messageId: string) => null;
 
 const messageDate = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -117,6 +118,9 @@ export function ThreadView({
   mailboxId,
   onClose,
   onPreviewAccessFailure,
+  onReply = ignoreReply,
+  replyError,
+  replyingMessageId,
   selection,
 }: {
   readonly data: ThreadData;
@@ -124,6 +128,12 @@ export function ThreadView({
   readonly mailboxId: string;
   readonly onClose: () => void;
   readonly onPreviewAccessFailure?: (status: 401 | 403) => void;
+  readonly onReply?: (messageId: string) => void;
+  readonly replyError?: {
+    readonly messageId: string;
+    readonly retryable: boolean;
+  };
+  readonly replyingMessageId?: string;
   readonly selection: MailboxViewSelection;
 }) {
   return (
@@ -244,6 +254,32 @@ export function ThreadView({
                         </div>
                       ))}
                     </div>
+                  </div>
+                ) : null}
+                {message.direction === "inbound" && message.replyEligible ? (
+                  <div className="mt-5 flex items-center gap-3 border-t border-[var(--line)] pt-4">
+                    <button
+                      type="button"
+                      disabled={replyingMessageId !== undefined}
+                      onClick={() => onReply(message.id)}
+                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3.5 py-2 text-xs font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      <Reply aria-hidden="true" size={14} />
+                      {replyingMessageId === message.id
+                        ? "Creating reply..."
+                        : replyError?.messageId === message.id &&
+                            replyError.retryable
+                          ? "Retry reply"
+                          : "Reply"}
+                    </button>
+                    {replyError?.messageId === message.id ? (
+                      <p
+                        role="alert"
+                        className="text-xs font-bold text-red-700"
+                      >
+                        Reply draft could not be created.
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </div>

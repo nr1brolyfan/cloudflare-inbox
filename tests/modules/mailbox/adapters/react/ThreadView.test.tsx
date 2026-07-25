@@ -29,6 +29,7 @@ const thread = {
       hasHtmlBody: true,
       id: "message-1",
       read: false,
+      replyEligible: true,
       sender: { address: "sender@example.test", displayName: "Sender" },
       textBody: maliciousText,
       to: [{ address: "owner@example.test" }],
@@ -37,10 +38,11 @@ const thread = {
       activityAt: 2000,
       attachments: [],
       cc: [],
-      direction: "inbound" as const,
+      direction: "outbound" as const,
       hasHtmlBody: true,
       id: "message-2",
       read: true,
+      replyEligible: false,
       sender: { address: "sender@example.test" },
       to: [{ address: "owner@example.test" }],
     },
@@ -117,6 +119,60 @@ describe(ThreadView, () => {
     screen.getByRole("link", { name: "Close conversation" }).click();
     expect(onClose).toHaveBeenCalledOnce();
   });
+
+  it("offers reply only for eligible inbound messages and excludes outbound", () => {
+    const onReply = vi.fn<(messageId: string) => void>();
+    render(
+      <ThreadView
+        data={thread}
+        filters={{}}
+        mailboxId="primary"
+        onClose={vi.fn<() => void>()}
+        onReply={onReply}
+        replyError={{ messageId: "message-1", retryable: true }}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    const actions = screen.getAllByRole("button", { name: /reply/iu });
+    expect(actions).toHaveLength(1);
+    fireEvent.click(actions[0] as HTMLButtonElement);
+    expect(onReply).toHaveBeenCalledWith("message-1");
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Reply draft could not be created"
+    );
+  });
+
+  it.each([
+    ["folder", { folder: "inbox" } as const],
+    ["label", { label: "work" } as const],
+  ])(
+    "hides Reply for inbound messages outside the selected %s",
+    (_, selection) => {
+      render(
+        <ThreadView
+          data={{
+            ...thread,
+            messages: [
+              {
+                ...thread.messages[0],
+                attachments: [],
+                replyEligible: false,
+              },
+            ],
+            thread: { ...thread.thread, messageCount: 1, unreadCount: 1 },
+          }}
+          filters={{}}
+          mailboxId="primary"
+          onClose={vi.fn<() => void>()}
+          onReply={vi.fn<(messageId: string) => void>()}
+          selection={selection}
+        />
+      );
+
+      expect(screen.queryByRole("button", { name: "Reply" })).toBeNull();
+    }
+  );
 
   it("renders the no-conversation-selected empty state", () => {
     render(<NoThreadSelected />);

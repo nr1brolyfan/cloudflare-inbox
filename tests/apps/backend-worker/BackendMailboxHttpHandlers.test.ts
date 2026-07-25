@@ -92,6 +92,11 @@ import {
   SendMailboxDraftResult,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { MailboxOutboundSendingService } from "#/modules/mailbox/application/MailboxOutboundSending";
+import {
+  MailboxReplyDraftCreation,
+  MailboxReplyDraftCreationError,
+} from "#/modules/mailbox/application/MailboxReplyDraftCreation";
+import type { MailboxReplyDraftCreationService } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import { MimeType } from "#/modules/mailbox/domain/Mailbox";
 import {
   DraftAttachmentReservationSchema,
@@ -235,6 +240,7 @@ const mailboxThread = Schema.decodeUnknownSync(MailboxThreadResult)({
       hasHtmlBody: true,
       id: "message-1",
       read: false,
+      replyEligible: true,
       sender: { address: "sender@example.test", displayName: "Sender" },
       textBody: "Plain text body",
       to: [{ address: "owner@example.test" }],
@@ -423,6 +429,11 @@ const makeHandler = (
           mimeType: Schema.decodeUnknownSync(MimeType)("application/pdf"),
         }),
     }
+  ),
+  replyDraftCreation: MailboxReplyDraftCreationService = MailboxReplyDraftCreation.of(
+    {
+      create: () => Effect.succeed(mailboxDraft),
+    }
   )
 ) => {
   const requestAuthLive = Layer.mergeAll(
@@ -477,6 +488,7 @@ const makeHandler = (
         Layer.succeed(MailboxInboundAttachmentReading, inboundAttachments),
         Layer.succeed(MailboxDraftEditing, draftEditing),
         Layer.succeed(MailboxDraftReading, draftReading),
+        Layer.succeed(MailboxReplyDraftCreation, replyDraftCreation),
         Layer.succeed(MailboxDraftAttachments, draftAttachments),
         Layer.succeed(MailboxOutboundSending, outboundSending),
         Layer.succeed(MailboxOutboundDeliveryReading, outboundDeliveryReading),
@@ -543,6 +555,25 @@ const mailboxRequest = (
     method: mutationMethod,
   });
 };
+
+const makeReplyHandler = (reply: MailboxReplyDraftCreationService) =>
+  makeHandler(
+    makeAdministration(),
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    reply
+  );
 
 const validatedSessionWithClaims = (
   claims: SessionClaims | undefined
@@ -684,6 +715,22 @@ const mailboxOperationCases: readonly MailboxOperationCase[] = [
         body: { operationId: "replay-inbound-1" },
       }),
     successStatus: 202,
+  },
+  {
+    operation: MailboxOperation.createReplyDraft,
+    request: () =>
+      mailboxRequest(
+        "/api/mailboxes/primary/threads/thread-1/messages/message-1/reply-draft",
+        "POST",
+        {
+          body: {
+            _tag: "Folder",
+            folderId: "inbox",
+            operationId: "reply-draft-1",
+          },
+        }
+      ),
+    successStatus: 201,
   },
   {
     operation: MailboxOperation.reserveDraftAttachment,
@@ -832,12 +879,103 @@ const makeCountingHandler = (session: ValidatedSession) => {
             fileName: "brief.pdf",
             mimeType: Schema.decodeUnknownSync(MimeType)("application/pdf"),
           }),
+      }),
+      MailboxReplyDraftCreation.of({
+        create: () => counted(MailboxOperation.createReplyDraft, mailboxDraft),
       })
     ),
   };
 };
 
 describe("protected mailbox API", () => {
+  it("binds reply params and accepts only Folder/Label context plus operationId", async () => {
+    let received: unknown;
+    const { dispose, handler } = makeReplyHandler(
+      MailboxReplyDraftCreation.of({
+        create: (command) => {
+          received = command;
+          return Effect.succeed(mailboxDraft);
+        },
+      })
+    );
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/threads/thread-1/messages/message-1/reply-draft",
+          "POST",
+          {
+            body: {
+              _tag: "Label",
+              labelId: "work",
+              operationId: "reply-payload",
+              sender: { address: "attacker@example.test" },
+              to: [{ address: "attacker@example.test" }],
+            },
+          }
+        )
+      );
+
+      expect({ received, status: response.status }).toStrictEqual({
+        received: {
+          _tag: "Label",
+          labelId: "work",
+          mailboxId: "primary",
+          messageId: "message-1",
+          operationId: "reply-payload",
+          threadId: "thread-1",
+        },
+        status: 201,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it.each([
+    ["invalid-input", 400, "Invalid reply target"],
+    ["not-found", 404, "Reply target not found"],
+    ["conflict", 409, "Reply draft operation conflict"],
+  ] as const)(
+    "maps reply %s errors without leaking target data",
+    async (reason, status, message) => {
+      const { dispose, handler } = makeReplyHandler(
+        MailboxReplyDraftCreation.of({
+          create: () =>
+            Effect.fail(
+              new MailboxReplyDraftCreationError({
+                message: "sensitive internal detail",
+                reason,
+              })
+            ),
+        })
+      );
+      try {
+        const response = await handler(
+          mailboxRequest(
+            "/api/mailboxes/primary/threads/thread-1/messages/message-1/reply-draft",
+            "POST",
+            {
+              body: {
+                _tag: "Folder",
+                folderId: "inbox",
+                operationId: "reply-error",
+              },
+            }
+          )
+        );
+        expect({
+          body: await response.json(),
+          status: response.status,
+        }).toMatchObject({
+          body: { message },
+          status,
+        });
+      } finally {
+        await dispose();
+      }
+    }
+  );
+
   it.each(mailboxOperationCases)(
     "allows unrestricted session for $operation",
     async ({ operation, request, successStatus }) => {

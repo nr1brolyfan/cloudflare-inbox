@@ -8,9 +8,11 @@ import * as Schema from "effect/Schema";
 import { Cursor, DraftId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateDraftInput,
+  CreateReplyDraftInput,
   DraftPage,
   DraftSchema,
   DraftSummary,
+  ReplyDraftOperationResult,
   UpdateDraftInput,
 } from "#/modules/mailbox/domain/MailboxDraft";
 import type {
@@ -19,9 +21,11 @@ import type {
 } from "#/modules/mailbox/domain/MailboxDraft";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { normalizeEmailAddressDomain } from "#/shared/EmailAddress";
 import { MailAddress } from "#/shared/MailAddress";
 import { UnixMillis, Version } from "#/shared/Temporal";
 
+import { readMessageDetailRow } from "./MailboxMessageStoreSqlite";
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";
 import {
@@ -31,7 +35,7 @@ import {
   StringList,
 } from "./MailboxSqliteJson";
 import { MailboxRuntime } from "./MailboxSqliteRuntime";
-import { draft } from "./MailboxSqliteSchema";
+import { draft, message } from "./MailboxSqliteSchema";
 
 const readDraftRow = (row: typeof draft.$inferSelect, mailboxId: MailboxId) =>
   Schema.decodeUnknownSync(DraftSchema)({
@@ -118,6 +122,177 @@ const createDraft = (
         yield* operations.store(
           input.operationId,
           "create-draft",
+          requestKey,
+          id,
+          JSON.stringify(Schema.encodeSync(DraftSchema)(created)),
+          now
+        );
+        return created;
+      })
+    );
+  });
+
+const replySubject = (subject: string) => {
+  const base = subject.replace(/^(?:\s*re\s*:\s*)+/iu, "");
+  return base.length === 0 ? "Re:" : `Re: ${base.slice(0, 994)}`;
+};
+
+const replyRequestKey = (input: CreateReplyDraftInput) =>
+  JSON.stringify(Schema.encodeSync(CreateReplyDraftInput)(input));
+
+const readReplyDraftOperation = (
+  input: CreateReplyDraftInput,
+  operations: MailboxOperationStore
+) =>
+  operations
+    .replay(
+      input.operationId,
+      "create-reply-draft",
+      "create-reply-draft",
+      replyRequestKey(input),
+      DraftSchema
+    )
+    .pipe(
+      Effect.flatMap((previous) =>
+        previous === undefined
+          ? Effect.succeed(
+              Schema.decodeUnknownSync(ReplyDraftOperationResult)({
+                _tag: "NotFound",
+              })
+            )
+          : Result.isFailure(previous)
+            ? Effect.fail(previous.failure)
+            : Effect.succeed(
+                Schema.decodeUnknownSync(ReplyDraftOperationResult)({
+                  _tag: "Found",
+                  draft: previous.success,
+                })
+              )
+      )
+    );
+
+const createReplyDraft = (
+  mailboxId: MailboxId,
+  input: CreateReplyDraftInput,
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
+) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const requestKey = replyRequestKey(input);
+        const previous = yield* operations.replay(
+          input.operationId,
+          "create-reply-draft",
+          "create-reply-draft",
+          requestKey,
+          DraftSchema
+        );
+        if (previous !== undefined) {
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
+        }
+
+        const [targetRow] = yield* tx
+          .select()
+          .from(message)
+          .where(
+            and(eq(message.id, input.messageId), isNull(message.deletedAt))
+          )
+          .limit(1);
+        if (targetRow === undefined || targetRow.direction !== "inbound") {
+          return yield* new MailboxDomainError({
+            operation: "create-reply-draft",
+            reason: "not-found",
+            message: "Reply target was not found",
+            resourceType: "message",
+            resourceId: input.messageId,
+          });
+        }
+        const target = yield* readMessageDetailRow(
+          tx,
+          targetRow,
+          mailboxId,
+          "create-reply-draft"
+        );
+        const inContext =
+          target.threadId === input.threadId &&
+          (input._tag === "Folder"
+            ? target.folderId === input.folderId
+            : target.labelIds.includes(input.labelId));
+        if (!inContext) {
+          return yield* new MailboxDomainError({
+            operation: "create-reply-draft",
+            reason: "not-found",
+            message: "Reply target was not found",
+            resourceType: "message",
+            resourceId: input.messageId,
+          });
+        }
+
+        const storedRecipients =
+          target.replyTo === undefined
+            ? target.sender === undefined
+              ? []
+              : [target.sender]
+            : target.replyTo;
+        const seen = new Set<string>();
+        const recipients = storedRecipients.filter((recipient) => {
+          const address = normalizeEmailAddressDomain(recipient.address);
+          if (seen.has(address)) {
+            return false;
+          }
+          seen.add(address);
+          return true;
+        });
+        if (recipients.length === 0) {
+          return yield* new MailboxDomainError({
+            operation: "create-reply-draft",
+            reason: "not-found",
+            message: "Reply target has no recipient",
+            resourceType: "message",
+            resourceId: input.messageId,
+          });
+        }
+        if (recipients.length > 50) {
+          return yield* new MailboxDomainError({
+            operation: "create-reply-draft",
+            reason: "validation",
+            message: "Reply target has too many recipients",
+            resourceType: "message",
+            resourceId: input.messageId,
+          });
+        }
+
+        const id = runtime.randomId();
+        const now = runtime.now();
+        const [row] = yield* tx
+          .insert(draft)
+          .values({
+            id,
+            threadId: input.threadId,
+            inReplyToMessageId: input.messageId,
+            toJson: encodeJson(AddressList, recipients),
+            ccJson: "[]",
+            bccJson: "[]",
+            subject: replySubject(target.subject),
+            textBody: null,
+            htmlBody: null,
+            attachmentIdsJson: "[]",
+            createdAt: now,
+            updatedAt: now,
+          })
+          .returning();
+        if (row === undefined) {
+          return yield* Effect.die("Reply draft insert returned no row");
+        }
+        const created = readDraftRow(row, mailboxId);
+        yield* operations.store(
+          input.operationId,
+          "create-reply-draft",
           requestKey,
           id,
           JSON.stringify(Schema.encodeSync(DraftSchema)(created)),
@@ -363,8 +538,12 @@ const makeMailboxDraftStore = (
   ) => effect.pipe(Effect.provideService(MailboxDatabase, db));
 
   return {
+    createReplyDraft: (input: CreateReplyDraftInput) =>
+      provideDatabase(createReplyDraft(mailboxId, input, runtime, operations)),
     createDraft: (input: CreateDraftInput) =>
       provideDatabase(createDraft(mailboxId, input, runtime, operations)),
+    readReplyDraftOperation: (input: CreateReplyDraftInput) =>
+      provideDatabase(readReplyDraftOperation(input, operations)),
     getDraft: (input: GetDraftInput) =>
       provideDatabase(getDraft(mailboxId, input)),
     listDrafts: (input: ListDraftsInput) =>

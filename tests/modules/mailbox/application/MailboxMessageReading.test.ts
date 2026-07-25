@@ -20,6 +20,7 @@ import type { MailboxMessageReadingService } from "#/modules/mailbox/application
 import { FolderId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
+  GetMessageResult,
   GetThreadResult,
   MessagePage,
 } from "#/modules/mailbox/domain/MailboxMessage";
@@ -531,6 +532,92 @@ describe("mailbox message reading", () => {
       authorizedMessages: 2,
       threadId: "thread-1",
     });
+  });
+
+  it("projects reply eligibility for each message in the selected folder or label", async () => {
+    const anchor = getThreadFixtureMessage();
+    const mixedThread = Schema.decodeUnknownSync(GetThreadResult)({
+      messages: [
+        anchor,
+        {
+          ...Schema.encodeSync(GetMessageResult)(anchor),
+          id: "message-2",
+          folderId: "archive",
+          labelIds: ["other"],
+          attachments: [],
+          hasAttachments: false,
+          activityAt: 3000,
+          read: true,
+          receivedAt: 3000,
+        },
+      ],
+      thread: Schema.encodeSync(GetThreadResult)(thread).thread,
+    });
+    // oxlint-disable-next-line unicorn/consistent-function-scoping -- Keep the authorization fixture beside its projection matrix.
+    const mailboxRead = ({
+      resource,
+    }: Parameters<
+      MailboxAuthorizationService["requireMailboxMessageRead"]
+    >[0]) => Effect.succeed(resource);
+    // oxlint-disable-next-line unicorn/consistent-function-scoping -- Keep the authorization fixture beside its projection matrix.
+    const folderRead = ({
+      resource,
+    }: Parameters<
+      MailboxAuthorizationService["requireFolderMessageRead"]
+    >[0]) =>
+      Effect.succeed({
+        _tag: "FolderMessageRead" as const,
+        folderId: resource.folderId,
+        mailboxId: resource.mailboxId,
+      });
+    const messageRead = ({
+      resource,
+    }: Parameters<MailboxAuthorizationService["requireMessage"]>[0]) =>
+      Effect.succeed({
+        ...resource,
+        folderId: Schema.decodeUnknownSync(FolderId)(
+          resource.messageId === anchor.id ? "inbox" : "archive"
+        ),
+      });
+    const repository = repositoryWith(
+      undefined,
+      () => Effect.succeed(mixedThread),
+      () => Effect.succeed(anchor)
+    );
+
+    const folderResult = await runReading(
+      authorizationWith(mailboxRead, folderRead, messageRead),
+      repository,
+      (reading) =>
+        reading.openThread(
+          Schema.decodeUnknownSync(OpenMailboxThreadInput)({
+            _tag: "Folder",
+            folderId: "inbox",
+            mailboxId: "primary",
+            messageId: anchor.id,
+            threadId: "thread-1",
+          })
+        )
+    );
+    const labelResult = await runReading(
+      authorizationWith(mailboxRead),
+      repository,
+      (reading) =>
+        reading.openThread(
+          Schema.decodeUnknownSync(OpenMailboxThreadInput)({
+            _tag: "Label",
+            labelId: "work",
+            mailboxId: "primary",
+            messageId: anchor.id,
+            threadId: "thread-1",
+          })
+        )
+    );
+
+    expect({
+      folder: folderResult.messages.map((message) => message.replyEligible),
+      label: labelResult.messages.map((message) => message.replyEligible),
+    }).toStrictEqual({ folder: [true, false], label: [true, false] });
   });
 
   it("does not open a thread outside the selected view", async () => {

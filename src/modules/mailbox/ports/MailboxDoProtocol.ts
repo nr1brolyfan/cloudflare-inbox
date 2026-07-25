@@ -18,10 +18,12 @@ import {
 } from "#/modules/mailbox/domain/MailboxDirectory";
 import {
   CreateDraftInput,
+  CreateReplyDraftInput,
   DraftPage,
   DraftResult,
   GetDraftInput,
   ListDraftsInput,
+  ReplyDraftOperationResult,
   UpdateDraftInput,
 } from "#/modules/mailbox/domain/MailboxDraft";
 import {
@@ -88,6 +90,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "get-thread",
     "mutate-message",
     "create-draft",
+    "create-reply-draft",
     "list-drafts",
     "get-draft",
     "update-draft",
@@ -258,6 +261,14 @@ export const MailDataRpcRequest = Schema.Union([
     _tag: Schema.Literal("CreateDraft"),
     input: CreateDraftInput,
   }),
+  Schema.Struct({
+    _tag: Schema.Literal("CreateReplyDraft"),
+    input: CreateReplyDraftInput,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReadReplyDraftOperation"),
+    input: CreateReplyDraftInput,
+  }),
   Schema.Struct({ _tag: Schema.Literal("GetDraft"), input: GetDraftInput }),
   Schema.Struct({ _tag: Schema.Literal("ListDrafts"), input: ListDraftsInput }),
   Schema.Struct({
@@ -338,6 +349,14 @@ export const MailDataRpcResponse = Schema.Union([
     value: MessageMutationResult,
   }),
   Schema.Struct({ _tag: Schema.Literal("DraftCreated"), value: DraftResult }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReplyDraftCreated"),
+    value: DraftResult,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ReplyDraftOperationRead"),
+    value: ReplyDraftOperationResult,
+  }),
   Schema.Struct({ _tag: Schema.Literal("DraftFound"), value: DraftResult }),
   Schema.Struct({ _tag: Schema.Literal("DraftsListed"), value: DraftPage }),
   Schema.Struct({ _tag: Schema.Literal("DraftUpdated"), value: DraftResult }),
@@ -503,6 +522,16 @@ export const mailDataRequestMetadataByTag = {
     operation: "create-draft",
     kind: "write",
     responseTag: "DraftCreated",
+  },
+  CreateReplyDraft: {
+    operation: "create-reply-draft",
+    kind: "write",
+    responseTag: "ReplyDraftCreated",
+  },
+  ReadReplyDraftOperation: {
+    operation: "create-reply-draft",
+    kind: "read",
+    responseTag: "ReplyDraftOperationRead",
   },
   GetDraft: {
     operation: "get-draft",

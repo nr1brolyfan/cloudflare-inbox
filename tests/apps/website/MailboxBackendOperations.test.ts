@@ -27,6 +27,7 @@ import {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
+import { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import { GetDraftAttachmentInput } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
   ReadMailboxAdministrationOperationQuery,
@@ -86,6 +87,7 @@ const thread = {
       hasHtmlBody: false,
       id: "message-1",
       read: false,
+      replyEligible: true,
       sender: { address: "sender@example.test" },
       textBody: "Body",
       to: [{ address: "owner@example.test" }],
@@ -271,6 +273,83 @@ describe("Website mailbox Backend forwarding", () => {
       operationId: "operation-create",
     });
   });
+
+  it("forwards only reply target context and operation identity", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const command = Schema.decodeUnknownSync(CreateMailboxReplyDraftCommand)({
+      _tag: "Label",
+      mailboxId: "team/primary",
+      labelId: "work/urgent",
+      messageId: "message/one",
+      threadId: "thread/one",
+      operationId: "operation-reply",
+      sender: { address: "attacker@example.test" },
+      to: [{ address: "attacker@example.test" }],
+    });
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(draft, { status: 201 }));
+      },
+      (operations) => operations.createReplyDraft({ command, incoming })
+    );
+
+    expect(result).toStrictEqual({ draft, ok: true });
+    expect(new URL(forwarded?.url ?? "https://invalid.test").pathname).toBe(
+      "/api/mailboxes/team%2Fprimary/threads/thread%2Fone/messages/message%2Fone/reply-draft"
+    );
+    await expect(forwarded?.json()).resolves.toStrictEqual({
+      _tag: "Label",
+      labelId: "work/urgent",
+      operationId: "operation-reply",
+    });
+  });
+
+  it.each([
+    [400, "bad_request", "Reply target has too many recipients"],
+    [404, "not_found", "Reply target not found"],
+    [409, "conflict", "Reply operation ID conflict"],
+  ] as const)(
+    "maps reply Backend status %s to a Reply-specific public error",
+    async (status, code, message) => {
+      const incoming = new Request("https://inbox.test/_server", {
+        headers: { cookie: "__Host-session=session-a.secret" },
+      });
+      const command = Schema.decodeUnknownSync(CreateMailboxReplyDraftCommand)({
+        _tag: "Folder",
+        mailboxId: "team/primary",
+        folderId: "inbox",
+        messageId: "message/one",
+        threadId: "thread/one",
+        operationId: "operation-reply-error",
+      });
+      const tag =
+        code === "bad_request"
+          ? "AuthBadRequestError"
+          : code === "not_found"
+            ? "AuthNotFoundError"
+            : "AuthConflictError";
+      const result = await runForward(
+        () =>
+          Promise.resolve(
+            Response.json(
+              { _tag: tag, code, message: "sensitive Backend detail" },
+              { status }
+            )
+          ),
+        (operations) => operations.createReplyDraft({ command, incoming })
+      );
+
+      expect(result).toMatchObject({
+        error: { code, message },
+        ok: false,
+        status,
+      });
+    }
+  );
 
   it("forwards and validates a paginated draft summary list", async () => {
     let forwarded: Request | undefined;

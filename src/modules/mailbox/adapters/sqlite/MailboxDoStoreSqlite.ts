@@ -163,6 +163,20 @@ const executeMailDataRequest = (
         (value) => ({ _tag: "DraftCreated", value })
       );
     }
+    case "CreateReplyDraft": {
+      return encodeMailDataResult(
+        request,
+        stores.createReplyDraft(request.input),
+        (value) => ({ _tag: "ReplyDraftCreated", value })
+      );
+    }
+    case "ReadReplyDraftOperation": {
+      return encodeMailDataResult(
+        request,
+        stores.readReplyDraftOperation(request.input),
+        (value) => ({ _tag: "ReplyDraftOperationRead", value })
+      );
+    }
     case "GetDraft": {
       return encodeMailDataResult(
         request,

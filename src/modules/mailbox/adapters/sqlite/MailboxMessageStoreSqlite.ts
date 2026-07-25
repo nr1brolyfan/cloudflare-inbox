@@ -99,7 +99,7 @@ const decodeStoredReplyTo = (
         )
       );
 
-const readMessageDetailRow = (
+export const readMessageDetailRow = (
   db: Omit<MailboxDatabase, "$client">,
   row: typeof message.$inferSelect,
   mailboxId: MailboxId,

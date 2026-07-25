@@ -4,6 +4,7 @@ import { InboundReplayPreparerDoLayer } from "#/modules/mailbox/adapters/durable
 import {
   MailboxDirectoryRepositoryDoLayer,
   MailboxDraftRepositoryDoLayer,
+  MailboxReplyDraftRepositoryDoLayer,
   MailboxMessageRepositoryDoLayer,
   MailboxOutboundDeliveryRepositoryDoLayer,
   MailboxOutboundSendingRepositoryDoLayer,
@@ -26,6 +27,7 @@ import { MailboxMessageHtmlReading } from "#/modules/mailbox/application/Mailbox
 import { MailboxMessageReading } from "#/modules/mailbox/application/MailboxMessageReading";
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
+import { MailboxReplyDraftCreation } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 
 import { MailboxHttpHandlersLayer } from "./BackendMailboxHttpHandlers";
 import { MailboxSessionRequirementsMiddlewareLayer } from "./MailboxSessionRequirements";
@@ -55,6 +57,10 @@ const MailboxDraftEditingLayer = MailboxDraftEditing.layerNoDeps.pipe(
 const MailboxDraftReadingLayer = MailboxDraftReading.layerNoDeps.pipe(
   Layer.provide(MailboxDraftRepositoryLayer)
 );
+const MailboxReplyDraftCreationLayer =
+  MailboxReplyDraftCreation.layerNoDeps.pipe(
+    Layer.provide(MailboxReplyDraftRepositoryDoLayer)
+  );
 const MailboxOutboundSendingLayer = MailboxOutboundSending.layerNoDeps.pipe(
   Layer.provide(MailboxOutboundSendingRepositoryLayer)
 );
@@ -115,6 +121,7 @@ export const MailboxHttpLayer = MailboxHttpHandlersLayer.pipe(
       MailboxMessageActionsLayer,
       MailboxDraftEditingLayer,
       MailboxDraftReadingLayer,
+      MailboxReplyDraftCreationLayer,
       MailboxOutboundDeliveryReadingLayer,
       MailboxOutboundSendingLayer,
       MailboxDraftAttachmentsLayer,

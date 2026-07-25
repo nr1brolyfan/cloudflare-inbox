@@ -76,6 +76,7 @@ import { MailboxNavigationResult } from "#/modules/organization/application/Mail
 import { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
+import { OperationId } from "#/shared/Operation";
 
 import {
   MailboxOperation,
@@ -218,6 +219,32 @@ export const CreateMailboxDraftEndpoint = HttpApiEndpoint.post(
       operationId: CreateMailboxDraftCommand.fields.operationId,
       content: CreateMailboxDraftCommand.fields.content,
     }),
+    success: DraftEditorDraft.pipe(HttpApiSchema.status(201)),
+  }
+);
+
+export const CreateMailboxReplyDraftEndpoint = HttpApiEndpoint.post(
+  MailboxOperation.createReplyDraft,
+  "/api/mailboxes/:mailboxId/threads/:threadId/messages/:messageId/reply-draft",
+  {
+    error: MailboxErrors,
+    params: Schema.Struct({
+      mailboxId: MailboxId,
+      threadId: ThreadId,
+      messageId: MessageId,
+    }),
+    payload: Schema.Union([
+      Schema.Struct({
+        _tag: Schema.Literal("Folder"),
+        folderId: FolderId,
+        operationId: OperationId,
+      }),
+      Schema.Struct({
+        _tag: Schema.Literal("Label"),
+        labelId: LabelId,
+        operationId: OperationId,
+      }),
+    ]),
     success: DraftEditorDraft.pipe(HttpApiSchema.status(201)),
   }
 );
@@ -406,6 +433,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     ActOnMailboxMessageEndpoint,
     BootstrapOwnerEndpoint,
     CreateMailboxDraftEndpoint,
+    CreateMailboxReplyDraftEndpoint,
     GetMailboxDraftEndpoint,
     GetMailboxOutboundDeliveryEndpoint,
     GetMailboxThreadEndpoint,

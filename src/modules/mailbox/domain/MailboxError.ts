@@ -22,6 +22,7 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "get-thread"
     | "mutate-message"
     | "create-draft"
+    | "create-reply-draft"
     | "list-drafts"
     | "get-draft"
     | "update-draft"

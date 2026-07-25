@@ -15,6 +15,8 @@ import {
   MessageSubject,
   PageSize,
   ThreadId,
+  FolderId,
+  LabelId,
 } from "./Mailbox";
 
 export class Draft extends Schema.Class<Draft>("cloudflare-inbox/Draft")({
@@ -61,6 +63,36 @@ export const CreateDraftInput = Schema.Struct({
   content: DraftContent,
 });
 export type CreateDraftInput = Schema.Schema.Type<typeof CreateDraftInput>;
+
+export const CreateReplyDraftInput = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Folder"),
+    mailboxId: MailboxId,
+    folderId: FolderId,
+    messageId: MessageId,
+    threadId: ThreadId,
+    operationId: OperationId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Label"),
+    mailboxId: MailboxId,
+    labelId: LabelId,
+    messageId: MessageId,
+    threadId: ThreadId,
+    operationId: OperationId,
+  }),
+]);
+export type CreateReplyDraftInput = Schema.Schema.Type<
+  typeof CreateReplyDraftInput
+>;
+
+export const ReplyDraftOperationResult = Schema.Union([
+  Schema.Struct({ _tag: Schema.Literal("NotFound") }),
+  Schema.Struct({ _tag: Schema.Literal("Found"), draft: DraftSchema }),
+]);
+export type ReplyDraftOperationResult = Schema.Schema.Type<
+  typeof ReplyDraftOperationResult
+>;
 
 export const GetDraftInput = Schema.Struct({
   mailboxId: MailboxId,

@@ -16,6 +16,7 @@ describe("mailbox session requirements matrix", () => {
       "actOnMessage",
       "bootstrapOwner",
       "createDraft",
+      "createReplyDraft",
       "getDraft",
       "getInboundAttachment",
       "getInlineAttachment",

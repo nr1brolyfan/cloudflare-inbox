@@ -37,6 +37,7 @@ import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/Mai
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import {
   CreateDraftInput,
+  CreateReplyDraftInput,
   GetDraftInput,
   ListDraftsInput,
   UpdateDraftInput,
@@ -126,6 +127,14 @@ const addMessageLabel = (input: AddMessageLabelInput) =>
   );
 const createDraft = (input: CreateDraftInput) =>
   MailboxDraftStore.pipe(Effect.flatMap((store) => store.createDraft(input)));
+const createReplyDraft = (input: CreateReplyDraftInput) =>
+  MailboxDraftStore.pipe(
+    Effect.flatMap((store) => store.createReplyDraft(input))
+  );
+const readReplyDraftOperation = (input: CreateReplyDraftInput) =>
+  MailboxDraftStore.pipe(
+    Effect.flatMap((store) => store.readReplyDraftOperation(input))
+  );
 const getDraft = (input: GetDraftInput) =>
   MailboxDraftStore.pipe(Effect.flatMap((store) => store.getDraft(input)));
 const listDrafts = (input: ListDraftsInput) =>
@@ -992,6 +1001,310 @@ describe("Mailbox mail data SQLite", () => {
         expect(updated.textBody).toBeUndefined();
         expect(found.textBody).toBeUndefined();
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("creates reply drafts from the exact inbound target with replay-safe derived content", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(message)
+          .set({
+            replyToJson:
+              '[{"address":"first@example.com","displayName":"First"},{"address":"second@example.com"},{"address":"first@EXAMPLE.COM","displayName":"Duplicate"}]',
+            subject: " RE: re: Hiring update",
+          })
+          .where(eq(message.id, "m1"));
+        yield* db.insert(label).values({
+          id: "work",
+          name: "Work",
+          createdAt: 0,
+          updatedAt: 0,
+        });
+        yield* db
+          .insert(messageLabel)
+          .values({ messageId: "m1", labelId: "work" });
+        yield* db.insert(message).values({
+          id: "m3",
+          folderId: "inbox",
+          threadId: "thread-empty",
+          direction: "inbound",
+          subject: "No sender",
+          activityAt: 300,
+          receivedAt: 300,
+          createdAt: 300,
+          updatedAt: 300,
+        });
+
+        const input = Schema.decodeUnknownSync(CreateReplyDraftInput)({
+          _tag: "Label",
+          mailboxId,
+          labelId: "work",
+          messageId: "m1",
+          threadId: "thread-1",
+          operationId: "reply-op",
+        });
+        const created = yield* createReplyDraft(input);
+        const replay = yield* createReplyDraft(input);
+        const conflict = failure(
+          yield* Effect.result(
+            createReplyDraft(
+              Schema.decodeUnknownSync(CreateReplyDraftInput)({
+                ...Schema.encodeSync(CreateReplyDraftInput)(input),
+                messageId: "m2",
+              })
+            )
+          )
+        );
+        const denials = yield* Effect.all(
+          [
+            { ...input, operationId: "wrong-thread", threadId: "other" },
+            { ...input, operationId: "wrong-label", labelId: "missing" },
+            {
+              _tag: "Folder" as const,
+              mailboxId,
+              folderId: "archive",
+              messageId: "m1",
+              threadId: "thread-1",
+              operationId: "wrong-folder",
+            },
+          ].map((candidate) =>
+            Effect.result(
+              createReplyDraft(
+                Schema.decodeUnknownSync(CreateReplyDraftInput)(candidate)
+              )
+            ).pipe(Effect.map(failure))
+          )
+        );
+        const fallback = yield* createReplyDraft(
+          Schema.decodeUnknownSync(CreateReplyDraftInput)({
+            _tag: "Folder",
+            mailboxId,
+            folderId: "inbox",
+            messageId: "m2",
+            threadId: "thread-1",
+            operationId: "fallback",
+          })
+        );
+        const noRecipient = failure(
+          yield* Effect.result(
+            createReplyDraft(
+              Schema.decodeUnknownSync(CreateReplyDraftInput)({
+                _tag: "Folder",
+                mailboxId,
+                folderId: "inbox",
+                messageId: "m3",
+                threadId: "thread-empty",
+                operationId: "no-recipient",
+              })
+            )
+          )
+        );
+        const missing = failure(
+          yield* Effect.result(
+            createReplyDraft(
+              Schema.decodeUnknownSync(CreateReplyDraftInput)({
+                _tag: "Folder",
+                mailboxId,
+                folderId: "inbox",
+                messageId: "missing",
+                threadId: "thread-1",
+                operationId: "missing-target",
+              })
+            )
+          )
+        );
+        yield* db
+          .update(message)
+          .set({ direction: "outbound", receivedAt: null, scheduledAt: 100 })
+          .where(eq(message.id, "m2"));
+        const outbound = failure(
+          yield* Effect.result(
+            createReplyDraft(
+              Schema.decodeUnknownSync(CreateReplyDraftInput)({
+                _tag: "Folder",
+                mailboxId,
+                folderId: "inbox",
+                messageId: "m2",
+                threadId: "thread-1",
+                operationId: "outbound-target",
+              })
+            )
+          )
+        );
+
+        expect({
+          created,
+          replay,
+          conflict,
+          denials,
+          fallback,
+          outbound,
+          noRecipient,
+          missing,
+        }).toMatchObject({
+          created: {
+            id: replay.id,
+            threadId: "thread-1",
+            inReplyToMessageId: "m1",
+            to: [
+              { address: "first@example.com", displayName: "First" },
+              { address: "second@example.com" },
+            ],
+            cc: [],
+            bcc: [],
+            subject: "Re: Hiring update",
+            attachmentIds: [],
+            textBody: undefined,
+            htmlBody: undefined,
+          },
+          conflict: { reason: "idempotency-conflict" },
+          denials: [
+            { reason: "not-found" },
+            { reason: "not-found" },
+            { reason: "not-found" },
+          ],
+          fallback: { to: [{ address: "other@example.com" }] },
+          outbound: { reason: "not-found" },
+          noRecipient: { reason: "not-found" },
+          missing: { reason: "not-found" },
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("reads back a committed reply after target move/delete and rejects changed intent", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        const input = Schema.decodeUnknownSync(CreateReplyDraftInput)({
+          _tag: "Folder",
+          mailboxId,
+          folderId: "inbox",
+          messageId: "m1",
+          threadId: "thread-1",
+          operationId: "reply-readback",
+        });
+        const created = yield* createReplyDraft(input);
+        yield* db
+          .update(message)
+          .set({ folderId: "archive", deletedAt: 2000 })
+          .where(eq(message.id, "m1"));
+
+        const readback = yield* readReplyDraftOperation(input);
+        const replay = yield* createReplyDraft(input);
+        const conflict = failure(
+          yield* Effect.result(
+            readReplyDraftOperation(
+              Schema.decodeUnknownSync(CreateReplyDraftInput)({
+                ...Schema.encodeSync(CreateReplyDraftInput)(input),
+                threadId: "changed-thread",
+              })
+            )
+          )
+        );
+        const rows = yield* db.select({ id: draft.id }).from(draft);
+
+        expect({ created, readback, replay, conflict, rows }).toMatchObject({
+          readback: { _tag: "Found", draft: { id: created.id } },
+          replay: { id: created.id },
+          conflict: { reason: "idempotency-conflict" },
+          rows: [{ id: created.id }],
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("rejects more than 50 deduplicated Reply-To recipients without a draft", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(message)
+          .set({
+            replyToJson: JSON.stringify(
+              Array.from({ length: 51 }, (_, index) => ({
+                address: `reply-${index}@example.com`,
+              }))
+            ),
+          })
+          .where(eq(message.id, "m1"));
+
+        const error = failure(
+          yield* Effect.result(
+            createReplyDraft(
+              Schema.decodeUnknownSync(CreateReplyDraftInput)({
+                _tag: "Folder",
+                mailboxId,
+                folderId: "inbox",
+                messageId: "m1",
+                threadId: "thread-1",
+                operationId: "too-many-recipients",
+              })
+            )
+          )
+        );
+        const rows = yield* db.select({ id: draft.id }).from(draft);
+
+        expect({ error, rows }).toMatchObject({
+          error: { operation: "create-reply-draft", reason: "validation" },
+          rows: [],
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("sends a reply draft with the sender supplied at send time", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        const reply = yield* createReplyDraft(
+          Schema.decodeUnknownSync(CreateReplyDraftInput)({
+            _tag: "Folder",
+            mailboxId,
+            folderId: "inbox",
+            messageId: "m1",
+            threadId: "thread-1",
+            operationId: "reply-to-send",
+          })
+        );
+        const currentPrimarySender = Schema.decodeUnknownSync(MailAddress)({
+          address: "current-primary@example.com",
+          displayName: "Current Primary",
+        });
+        const scheduled = yield* scheduleOutbound(
+          Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...explicitConfirmation,
+            draftId: reply.id,
+            expectedVersion: reply.version,
+            mailboxId,
+            operationId: "send-reply",
+            sender: currentPrimarySender,
+          })
+        );
+        const [outbound] = yield* db
+          .select({
+            senderJson: message.senderJson,
+            recipientsJson: message.recipientsJson,
+          })
+          .from(message)
+          .where(eq(message.id, scheduled.delivery.messageId));
+
+        expect(outbound).toStrictEqual({
+          senderJson: JSON.stringify(currentPrimarySender),
+          recipientsJson: JSON.stringify(reply.to),
+        });
+        expect(outbound?.senderJson).not.toContain("sender@example.com");
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });
 

@@ -41,6 +41,7 @@ import {
   SendMailboxDraftResult,
   UndoMailboxSendResult,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
+import type { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import type {
   DraftAttachmentReservationSchema,
   ReserveDraftAttachmentCommand,
@@ -297,10 +298,22 @@ const policyDeniedMessage = (body: object, operation: string) => {
     : publicErrors.policy_denied.message;
 };
 
+// oxlint-disable-next-line eslint/complexity -- Operation-specific public messages are an explicit sanitization boundary.
 const operationErrorMessage = (
   code: keyof typeof publicErrors,
   operation: string
 ) => {
+  if (operation === "website.mailbox.reply_draft_create") {
+    if (code === "bad_request") {
+      return "Reply target has too many recipients";
+    }
+    if (code === "conflict") {
+      return "Reply operation ID conflict";
+    }
+    return code === "not_found"
+      ? "Reply target not found"
+      : publicErrors[code].message;
+  }
   if (operation === "website.mailbox.draft_list") {
     return code === "bad_request"
       ? "Invalid mailbox draft query"
@@ -358,6 +371,10 @@ export interface MailboxBackendOperationsShape {
   }) => Effect.Effect<MailboxServerResult>;
   readonly createDraft: (input: {
     readonly command: CreateMailboxDraftCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxDraftServerResult>;
+  readonly createReplyDraft: (input: {
+    readonly command: CreateMailboxReplyDraftCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxDraftServerResult>;
   readonly getDraft: (input: {
@@ -747,6 +764,27 @@ export const MailboxBackendOperationsLayer = Layer.effect(
             content: command.content,
             operationId: command.operationId,
           },
+        }).pipe(
+          Effect.map((result) => decodeDraftResult(result, command.mailboxId))
+        ),
+      createReplyDraft: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "POST",
+          operation: "website.mailbox.reply_draft_create",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/threads/${encodeURIComponent(command.threadId)}/messages/${encodeURIComponent(command.messageId)}/reply-draft`,
+          payload:
+            command._tag === "Folder"
+              ? {
+                  _tag: command._tag,
+                  folderId: command.folderId,
+                  operationId: command.operationId,
+                }
+              : {
+                  _tag: command._tag,
+                  labelId: command.labelId,
+                  operationId: command.operationId,
+                },
         }).pipe(
           Effect.map((result) => decodeDraftResult(result, command.mailboxId))
         ),

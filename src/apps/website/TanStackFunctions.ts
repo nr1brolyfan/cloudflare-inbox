@@ -17,6 +17,7 @@ import {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
+import { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import { ReserveDraftAttachmentCommand } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
   ReadMailboxAdministrationOperationQuery,
@@ -40,6 +41,9 @@ const mailboxMessageActionInput = Schema.decodeUnknownSync(
 );
 const createMailboxDraftInput = Schema.decodeUnknownSync(
   CreateMailboxDraftCommand
+);
+const createMailboxReplyDraftInput = Schema.decodeUnknownSync(
+  CreateMailboxReplyDraftCommand
 );
 const getMailboxDraftInput = Schema.decodeUnknownSync(GetMailboxDraftQuery);
 const updateMailboxDraftInput = Schema.decodeUnknownSync(
@@ -66,6 +70,10 @@ export const bootstrapMailboxOwner = createServerFn({ method: "POST" })
 export const createMailboxDraft = createServerFn({ method: "POST" })
   .validator(createMailboxDraftInput)
   .handler(({ data }) => WebsiteApplication.createMailboxDraft(data));
+
+export const createMailboxReplyDraft = createServerFn({ method: "POST" })
+  .validator(createMailboxReplyDraftInput)
+  .handler(({ data }) => WebsiteApplication.createMailboxReplyDraft(data));
 
 export const getMailboxDraft = createServerFn({ method: "GET" })
   .validator(getMailboxDraftInput)

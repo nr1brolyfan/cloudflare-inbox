@@ -202,6 +202,39 @@ describe("mailbox outbound sending", () => {
     });
   });
 
+  it("resolves the current primary sender when sending a reply draft", async () => {
+    const command = Schema.decodeUnknownSync(SendMailboxDraftCommand)({
+      draftId: "reply-draft-1",
+      expectedVersion: 1,
+      mailboxId: "primary",
+      operationId: "send-reply-draft",
+      sender: { address: "inbound-or-browser@example.test" },
+    });
+    let scheduledInput: unknown;
+    await runSending(
+      authorizationWith({
+        requireDraft: ({ resource }) => Effect.succeed(resource),
+      }),
+      MailboxSenderIdentity.of({ resolve: () => Effect.succeed(sender) }),
+      repositoryWith({
+        scheduleOutbound: (input) => {
+          scheduledInput = input;
+          return Effect.succeed(scheduledResult);
+        },
+      }),
+      (service) => service.send(command),
+      explicitSend(command)
+    );
+
+    expect(scheduledInput).toMatchObject({
+      draftId: "reply-draft-1",
+      sender,
+    });
+    expect(JSON.stringify(scheduledInput)).not.toContain(
+      "inbound-or-browser@example.test"
+    );
+  });
+
   it.each([
     ["missing", undefined],
     [

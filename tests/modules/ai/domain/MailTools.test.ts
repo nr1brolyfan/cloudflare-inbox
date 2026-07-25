@@ -105,6 +105,7 @@ const threadResult = Schema.decodeUnknownSync(MailboxThreadResult)({
     hasHtmlBody: true,
     id: `message-${index + 1}`,
     read: true,
+    replyEligible: true,
     sender: { address: "sender@example.test" },
     textBody: "Plain text",
     to: [{ address: "owner@example.test" }],

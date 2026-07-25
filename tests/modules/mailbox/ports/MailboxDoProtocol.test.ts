@@ -118,6 +118,16 @@ const expectedMailDataMetadata = {
     kind: "write",
     responseTag: "DraftCreated",
   },
+  CreateReplyDraft: {
+    operation: "create-reply-draft",
+    kind: "write",
+    responseTag: "ReplyDraftCreated",
+  },
+  ReadReplyDraftOperation: {
+    operation: "create-reply-draft",
+    kind: "read",
+    responseTag: "ReplyDraftOperationRead",
+  },
   GetDraft: {
     operation: "get-draft",
     kind: "read",

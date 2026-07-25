@@ -15,6 +15,7 @@ import { MailboxDraftRepository } from "#/modules/mailbox/ports/MailboxDraftRepo
 import { MailboxMessageRepository } from "#/modules/mailbox/ports/MailboxMessageRepository";
 import { MailboxOutboundDeliveryRepository } from "#/modules/mailbox/ports/MailboxOutboundDeliveryRepository";
 import { MailboxOutboundSendingRepository } from "#/modules/mailbox/ports/MailboxOutboundSendingRepository";
+import { MailboxReplyDraftRepository } from "#/modules/mailbox/ports/MailboxReplyDraftRepository";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
 import { MailboxDoClient } from "./MailboxDoClient";
@@ -373,6 +374,39 @@ export const MailboxDraftRepositoryDoLayer = Layer.effect(
                 : response._tag === "DraftUpdated"
                   ? Effect.succeed(response.value)
                   : mailDataProtocolError(response, true)
+            )
+          ),
+    });
+  })
+);
+
+export const MailboxReplyDraftRepositoryDoLayer = Layer.effect(
+  MailboxReplyDraftRepository,
+  Effect.gen(function* () {
+    const client = yield* MailboxDoClient;
+    return MailboxReplyDraftRepository.of({
+      createReplyDraft: (input) =>
+        client
+          .executeMailData({ _tag: "CreateReplyDraft", input })
+          .pipe(
+            Effect.flatMap((response) =>
+              response._tag === "DomainError"
+                ? domainFailure(response)
+                : response._tag === "ReplyDraftCreated"
+                  ? Effect.succeed(response.value)
+                  : mailDataProtocolError(response, true)
+            )
+          ),
+      readReplyDraftOperation: (input) =>
+        client
+          .executeMailData({ _tag: "ReadReplyDraftOperation", input })
+          .pipe(
+            Effect.flatMap((response) =>
+              response._tag === "DomainError"
+                ? domainFailure(response)
+                : response._tag === "ReplyDraftOperationRead"
+                  ? Effect.succeed(response.value)
+                  : mailDataProtocolError(response, false)
             )
           ),
     });

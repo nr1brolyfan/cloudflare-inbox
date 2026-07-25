@@ -156,6 +156,7 @@ export class MailboxThreadMessage extends Schema.Class<MailboxThreadMessage>(
   cc: Schema.Array(MailAddress),
   activityAt: UnixMillis,
   read: Schema.Boolean,
+  replyEligible: Schema.Boolean,
   textBody: Schema.optional(Schema.String),
   hasHtmlBody: Schema.Boolean,
   attachments: Schema.Array(MailboxThreadAttachment),
@@ -466,6 +467,11 @@ export class MailboxMessageReading extends Context.Service<
               hasHtmlBody: message.htmlBody !== undefined,
               id: message.id,
               read: message.read,
+              replyEligible:
+                message.direction === "inbound" &&
+                (input._tag === "Folder"
+                  ? message.folderId === input.folderId
+                  : message.labelIds.includes(input.labelId)),
               sender: message.sender,
               textBody: message.textBody,
               to: message.to,

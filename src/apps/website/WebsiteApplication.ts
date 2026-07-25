@@ -22,6 +22,7 @@ import type {
   SendMailboxDraftCommand,
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
+import type { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import type {
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
@@ -80,6 +81,14 @@ export const WebsiteApplication = {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.createDraft({ command, incoming });
+      })
+    ),
+  createMailboxReplyDraft: (command: CreateMailboxReplyDraftCommand) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.createReplyDraft({ command, incoming });
       })
     ),
   clearDevEmails: () =>

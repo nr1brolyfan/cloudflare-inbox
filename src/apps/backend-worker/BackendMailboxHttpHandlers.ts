@@ -38,6 +38,8 @@ import type { MailboxOutboundDeliveryReadingError } from "#/modules/mailbox/appl
 import { MailboxOutboundDeliveryReading } from "#/modules/mailbox/application/MailboxOutboundDeliveryReading";
 import type { MailboxOutboundSendingError } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOutboundSending";
+import type { MailboxReplyDraftCreationError } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
+import { MailboxReplyDraftCreation } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
   MailboxAuthorizationError,
@@ -165,6 +167,7 @@ type MailboxHandlerError =
   | MailboxInlineAttachmentError
   | MailboxDraftEditingError
   | MailboxDraftReadingError
+  | MailboxReplyDraftCreationError
   | MailboxDraftAttachmentError
   | MailboxOutboundDeliveryReadingError
   | MailboxOutboundSendingError
@@ -308,6 +311,38 @@ const mapDraftReadingError = (
         })
       )
     : Effect.fail(internalError());
+
+const mapReplyDraftCreationError = (
+  error: MailboxReplyDraftCreationError
+): Effect.Effect<
+  never,
+  | AuthBadRequestError
+  | AuthConflictError
+  | AuthInternalError
+  | AuthNotFoundError
+> =>
+  error.reason === "invalid-input"
+    ? Effect.fail(
+        new AuthBadRequestError({
+          code: "bad_request",
+          message: "Invalid reply target",
+        })
+      )
+    : error.reason === "not-found"
+      ? Effect.fail(
+          new AuthNotFoundError({
+            code: "not_found",
+            message: "Reply target not found",
+          })
+        )
+      : error.reason === "conflict"
+        ? Effect.fail(
+            new AuthConflictError({
+              code: "conflict",
+              message: "Reply draft operation conflict",
+            })
+          )
+        : Effect.fail(internalError());
 
 const mapDraftAttachmentError = (
   error: MailboxDraftAttachmentError
@@ -471,6 +506,10 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxInlineAttachmentError", mapInlineAttachmentError),
     Effect.catchTag("MailboxDraftEditingError", mapDraftEditingError),
     Effect.catchTag("MailboxDraftReadingError", mapDraftReadingError),
+    Effect.catchTag(
+      "MailboxReplyDraftCreationError",
+      mapReplyDraftCreationError
+    ),
     Effect.catchTag("MailboxDraftAttachmentError", mapDraftAttachmentError),
     Effect.catchTag(
       "MailboxOutboundDeliveryReadingError",
@@ -509,6 +548,7 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
     const inlineAttachments = yield* MailboxInlineAttachmentReading;
     const draftEditing = yield* MailboxDraftEditing;
     const draftReading = yield* MailboxDraftReading;
+    const replyDraftCreation = yield* MailboxReplyDraftCreation;
     const draftAttachments = yield* MailboxDraftAttachments;
     const outboundDeliveryReading = yield* MailboxOutboundDeliveryReading;
     const outboundSending = yield* MailboxOutboundSending;
@@ -532,6 +572,9 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
         draftEditing
           .create({ ...payload, mailboxId: params.mailboxId })
           .pipe(mapHttpErrors)
+      )
+      .handle("createReplyDraft", ({ params, payload }) =>
+        replyDraftCreation.create({ ...params, ...payload }).pipe(mapHttpErrors)
       )
       .handle("getDraft", ({ params }) =>
         draftEditing.get(params).pipe(mapHttpErrors)
