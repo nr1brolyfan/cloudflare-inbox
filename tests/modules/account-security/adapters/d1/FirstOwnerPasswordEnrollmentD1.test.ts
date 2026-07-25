@@ -72,10 +72,12 @@ const session = (
     readonly proofTime?: number;
     readonly proofType?: "email_otp" | "magic_link";
     readonly restricted?: boolean;
+    readonly sessionId?: string;
+    readonly userId?: string;
   } = {}
 ): ValidatedSession => {
-  const userId = UserId("user-a");
-  const sessionId = SessionId("session-a");
+  const userId = UserId(options.userId ?? "user-a");
+  const sessionId = SessionId(options.sessionId ?? "session-a");
   const authenticationEvents = [
     {
       identityId: options.proofIdentityId ?? "identity-a",
@@ -101,12 +103,17 @@ const session = (
     currentSession,
     issued: {
       ...currentSession,
-      token: SessionToken("session-a.secret"),
+      token: SessionToken(`${sessionId}.secret`),
     },
   };
 };
 
-const insertAccount = (database: DatabaseSync, validated: ValidatedSession) => {
+const insertAccount = (
+  database: DatabaseSync,
+  validated: ValidatedSession,
+  address = "owner@external.test",
+  identityId = "identity-a"
+) => {
   const metadata =
     validated.issued.claims === undefined
       ? null
@@ -126,10 +133,17 @@ const insertAccount = (database: DatabaseSync, validated: ValidatedSession) => {
       `insert into auth_user_identity
         (id, user_id, scope_type, scope_id, kind, value, normalized_value,
          verified_at, is_primary_login, created_at, updated_at)
-       values ('identity-a', ?, 'global', 'global', 'email',
-               'owner@external.test', 'owner@external.test', ?, 1, ?, ?)`
+       values (?, ?, 'global', 'global', 'email', ?, ?, ?, 1, ?, ?)`
     )
-    .run(validated.actor.userId, now - 500, now - 1000, now - 500);
+    .run(
+      identityId,
+      validated.actor.userId,
+      address,
+      address,
+      now - 500,
+      now - 1000,
+      now - 500
+    );
   database
     .prepare(
       `insert into auth_session
@@ -586,6 +600,45 @@ describe("FirstOwnerPasswordEnrollmentD1", () => {
     ).toMatchObject({ count: 1 });
   });
 
+  it("rejects sequential singleton claims and another actor replaying the committed operation", async () => {
+    const { database, d1, validated } = await setup();
+    await runEnrollment(d1, validated);
+
+    await expect(
+      runEnrollment(d1, validated, { operationId: nextOperationId, password })
+    ).rejects.toMatchObject({ reason: "operation-conflict" });
+
+    const otherSession = session({
+      proofIdentityId: "identity-b",
+      sessionId: "session-b",
+      userId: "user-b",
+    });
+    insertAccount(database, otherSession, "other@external.test", "identity-b");
+    await expect(runEnrollment(d1, otherSession)).rejects.toMatchObject({
+      reason: "operation-conflict",
+    });
+
+    expect({
+      audits: database
+        .prepare(
+          "select count(*) count from auth_audit_log where type = 'app.first_owner.password_enrolled'"
+        )
+        .get(),
+      credentials: database
+        .prepare("select count(*) count from auth_credential")
+        .get(),
+      receipts: database
+        .prepare(
+          "select count(*) count from app_first_owner_password_enrollment"
+        )
+        .get(),
+    }).toMatchObject({
+      audits: { count: 1 },
+      credentials: { count: 1 },
+      receipts: { count: 1 },
+    });
+  });
+
   it("rate-limits replay before intent comparison and requires the persisted session", async () => {
     const mutations = [
       "update auth_session set secret_hash = 'rotated' where id = 'session-a'",
@@ -626,22 +679,31 @@ describe("FirstOwnerPasswordEnrollmentD1", () => {
       ownerEmailAllowlist: [],
     } as unknown as MailboxBootstrapConfigValue;
     const cases = [
-      emptyOwnerConfig,
-      configWith(["owner@external.test", "other@external.test"]),
-      configWith(["owner@external.test"], "external.test"),
-      configWith(["other@external.test"]),
+      { configured: emptyOwnerConfig, reason: "owner-config-invalid" },
+      {
+        configured: configWith(["owner@external.test", "other@external.test"]),
+        reason: "owner-config-invalid",
+      },
+      {
+        configured: configWith(["owner@external.test"], "external.test"),
+        reason: "owner-config-invalid",
+      },
+      {
+        configured: configWith(["other@external.test"]),
+        reason: "owner-not-eligible",
+      },
     ];
-    for (const configured of cases) {
+    for (const testCase of cases) {
       // oxlint-disable-next-line eslint/no-await-in-loop -- Each config owns an isolated SQLite database.
       const { database, d1, validated } = await setup();
       // oxlint-disable-next-line eslint/no-await-in-loop -- Each config owns an isolated SQLite database.
       const error = await rejectedEnrollment(
-        runEnrollment(d1, validated, undefined, { config: configured })
+        runEnrollment(d1, validated, undefined, {
+          config: testCase.configured,
+        })
       );
 
-      expect(["owner-config-invalid", "owner-not-eligible"]).toContain(
-        error.reason
-      );
+      expect(error.reason).toBe(testCase.reason);
       expect(
         database.prepare("select count(*) count from auth_credential").get()
       ).toMatchObject({ count: 0 });
@@ -710,6 +772,9 @@ describe("FirstOwnerPasswordEnrollmentD1", () => {
   it("rechecks identity and matching proof inside the batch", async () => {
     const mutations = [
       "update auth_user_identity set revoked_at = updated_at where id = 'identity-a'",
+      "update auth_user_identity set verified_at = null where id = 'identity-a'",
+      "update auth_user_identity set is_primary_login = 0 where id = 'identity-a'",
+      "update auth_user_identity set normalized_value = 'other@external.test' where id = 'identity-a'",
       "update auth_session set authentication_events = '[]' where id = 'session-a'",
       "update auth_session set secret_hash = 'rotated' where id = 'session-a'",
       "delete from auth_session where id = 'session-a'",

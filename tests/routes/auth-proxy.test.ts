@@ -10,7 +10,9 @@ describe("website auth proxy response policy", () => {
     ["rate denial", 429],
     ["internal error", 500],
   ])("marks %s responses private and no-store", async (_name, status) => {
-    const incoming = new Request("https://inbox.test/auth/example");
+    const incoming = new Request(
+      "https://inbox.test/auth/first-owner/password"
+    );
     const forwarded: { operation: string; request: Request }[] = [];
     const response = await forwardPrivateAuthResponse(
       incoming,
