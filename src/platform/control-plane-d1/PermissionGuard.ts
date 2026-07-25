@@ -9,36 +9,43 @@ import {
 import type { ControlPlaneDatabase } from "./ControlPlaneDatabase";
 import { controlPlaneDatabaseNow } from "./RequestAuthGuard";
 
-export const permissionPredicate = (
+const makePermissionPredicate = (
   database: ControlPlaneDatabase,
   principal: AuthPermission.PermissionSubject,
   permission: AuthPermission.PermissionId,
-  scope: AuthPermission.PermissionScope
+  scope: AuthPermission.PermissionScope,
+  acceptGlobal: boolean
 ) => {
   const scopeIdPresent = scope.id === undefined ? 0 : 1;
   const scopeId = scope.id ?? "";
-  const permissionGrantScope = or(
-    and(
-      eq(authPermissionGrant.scopeType, "global"),
-      eq(authPermissionGrant.scopeIdPresent, 0)
-    ),
-    and(
-      eq(authPermissionGrant.scopeType, scope.type),
-      eq(authPermissionGrant.scopeIdPresent, scopeIdPresent),
-      eq(authPermissionGrant.scopeId, scopeId)
-    )
+  const exactPermissionGrantScope = and(
+    eq(authPermissionGrant.scopeType, scope.type),
+    eq(authPermissionGrant.scopeIdPresent, scopeIdPresent),
+    eq(authPermissionGrant.scopeId, scopeId)
   );
-  const roleGrantScope = or(
-    and(
-      eq(authRoleGrant.scopeType, "global"),
-      eq(authRoleGrant.scopeIdPresent, 0)
-    ),
-    and(
-      eq(authRoleGrant.scopeType, scope.type),
-      eq(authRoleGrant.scopeIdPresent, scopeIdPresent),
-      eq(authRoleGrant.scopeId, scopeId)
-    )
+  const exactRoleGrantScope = and(
+    eq(authRoleGrant.scopeType, scope.type),
+    eq(authRoleGrant.scopeIdPresent, scopeIdPresent),
+    eq(authRoleGrant.scopeId, scopeId)
   );
+  const permissionGrantScope = acceptGlobal
+    ? or(
+        and(
+          eq(authPermissionGrant.scopeType, "global"),
+          eq(authPermissionGrant.scopeIdPresent, 0)
+        ),
+        exactPermissionGrantScope
+      )
+    : exactPermissionGrantScope;
+  const roleGrantScope = acceptGlobal
+    ? or(
+        and(
+          eq(authRoleGrant.scopeType, "global"),
+          eq(authRoleGrant.scopeIdPresent, 0)
+        ),
+        exactRoleGrantScope
+      )
+    : exactRoleGrantScope;
   const rolePermission = exists(
     database
       .select({ value: sql`1` })
@@ -97,3 +104,18 @@ export const permissionPredicate = (
     )
   );
 };
+
+export const permissionPredicate = (
+  database: ControlPlaneDatabase,
+  principal: AuthPermission.PermissionSubject,
+  permission: AuthPermission.PermissionId,
+  scope: AuthPermission.PermissionScope
+) => makePermissionPredicate(database, principal, permission, scope, true);
+
+/** Permission check that cannot be satisfied by a global grant. */
+export const exactScopePermissionPredicate = (
+  database: ControlPlaneDatabase,
+  principal: AuthPermission.PermissionSubject,
+  permission: AuthPermission.PermissionId,
+  scope: AuthPermission.PermissionScope
+) => makePermissionPredicate(database, principal, permission, scope, false);

@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import type { MailboxOutboundDispatcherService } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import { MailboxOperationalStatus } from "#/modules/mailbox/ports/MailboxOperationalStatus";
 import {
   MailboxOutboundDispatchStore,
   OutboundDispatchSnapshotSchema,
@@ -45,7 +46,8 @@ const snapshot = Schema.decodeUnknownSync(OutboundDispatchSnapshotSchema)({
 
 const runDispatch = (
   provider: OutboundEmailProviderService,
-  counters: { attachmentReads: number; loads: number }
+  counters: { attachmentReads: number; loads: number },
+  isActive = true
 ) =>
   Effect.runPromise(
     MailboxOutboundDispatcher.pipe(
@@ -74,7 +76,15 @@ const runDispatch = (
                   },
                 })
               ),
-              Layer.succeed(OutboundEmailProvider, provider)
+              Layer.succeed(OutboundEmailProvider, provider),
+              Layer.succeed(
+                MailboxOperationalStatus,
+                MailboxOperationalStatus.of({
+                  acquire: () => Effect.succeed(isActive ? "holder-a" : null),
+                  isActive: () => Effect.succeed(isActive),
+                  release: () => Effect.void,
+                })
+              )
             )
           )
         )
@@ -83,6 +93,28 @@ const runDispatch = (
   );
 
 describe("mailbox outbound dispatcher", () => {
+  it("rechecks lifecycle before reading attachments or calling the provider", async () => {
+    const counters = { attachmentReads: 0, loads: 0 };
+    let sends = 0;
+    await expect(
+      runDispatch(
+        {
+          send: () => {
+            sends += 1;
+            return Effect.die("provider must not run");
+          },
+        },
+        counters,
+        false
+      )
+    ).rejects.toMatchObject({ _tag: "MailboxOperationalStatusError" });
+    expect({ ...counters, sends }).toStrictEqual({
+      attachmentReads: 0,
+      loads: 1,
+      sends: 0,
+    });
+  });
+
   it("loads once, reads attachments, normalizes an absent body, and sends once", async () => {
     const counters = { attachmentReads: 0, loads: 0 };
     let sends = 0;

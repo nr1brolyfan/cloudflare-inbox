@@ -4,11 +4,11 @@ import { LEGACY_DEFAULT_ORGANIZATION_ID } from "#/modules/organization/domain/Or
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
 import type { ControlPlaneStatement } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { appOrganization } from "#/platform/control-plane-d1/OrganizationRootSchema";
 
 import {
   appMailDomain,
   appMailbox,
-  appOrganization,
   appOrganizationLegacyCutover,
 } from "../adapters/d1/OrganizationSchema";
 import { canonicalMailboxAncestryPredicate } from "./OrganizationD1Predicates";

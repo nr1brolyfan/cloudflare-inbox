@@ -12,50 +12,164 @@ import {
 
 import { authUser } from "#/auth/schema/modules/core";
 import { authRoleGrant } from "#/auth/schema/modules/permissions";
-import { administrativeAuditEventIdReference } from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
+import {
+  administrativeAuditEventIdReference,
+  organizationAdministrativeAuditEventIdReference,
+} from "#/modules/administrative-audit/integration/AdministrativeAuditD1Statements";
 import type { CanonicalMailDomain } from "#/modules/organization/domain/MailDomain";
 import type { OrganizationPreferenceSettingsJson } from "#/modules/organization/domain/UserOrganizationPreference";
+import { appOrganization } from "#/platform/control-plane-d1/OrganizationRootSchema";
 
-export const appOrganization = sqliteTable(
-  "app_organization",
+export const appOrganizationAdministrationReceipt = sqliteTable(
+  "app_organization_administration_receipt",
   {
-    id: text("id").notNull(),
-    status: text("status", { enum: ["active", "suspended"] })
+    operationId: text("operation_id").primaryKey(),
+    operationKind: text("operation_kind", {
+      enum: ["suspend", "resume"],
+    }).notNull(),
+    actorUserId: text("actor_user_id")
       .notNull()
-      .default("active"),
-    createdAt: integer("created_at").notNull(),
-    updatedAt: integer("updated_at").notNull(),
-    version: integer("version").notNull().default(1),
+      .references(() => authUser.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => appOrganization.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    expectedVersion: integer("expected_version").notNull(),
+    resultStatus: text("result_status", {
+      enum: ["active", "suspended"],
+    }).notNull(),
+    resultCreatedAt: integer("result_created_at").notNull(),
+    resultUpdatedAt: integer("result_updated_at").notNull(),
+    resultVersion: integer("result_version").notNull(),
+    committedAt: integer("committed_at").notNull(),
+    auditEventId: text("audit_event_id")
+      .notNull()
+      .unique()
+      .references(organizationAdministrativeAuditEventIdReference, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    matrixId: text("matrix_id").notNull(),
+    matrixVersion: integer("matrix_version").notNull(),
+    stepUpPolicyId: text("step_up_policy_id").notNull(),
+    stepUpPolicyVersion: integer("step_up_policy_version").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
   },
   (t) => [
-    primaryKey({ name: "app_organization_pkey", columns: [t.id] }),
     check(
-      "app_organization_id_check",
-      sql`typeof(id) = 'text'
-        and length(id) between 1 and 128
-        and length(cast(id as blob)) = length(id)
-        and id not glob '*[^A-Za-z0-9_-]*'`
+      "app_organization_administration_receipt_operation_id_check",
+      sql`length(operation_id) = 36
+        and operation_id = lower(trim(operation_id))
+        and substr(operation_id, 9, 1) = '-'
+        and substr(operation_id, 14, 1) = '-'
+        and substr(operation_id, 15, 1) = '4'
+        and substr(operation_id, 19, 1) = '-'
+        and substr(operation_id, 20, 1) in ('8', '9', 'a', 'b')
+        and substr(operation_id, 24, 1) = '-'
+        and length(replace(operation_id, '-', '')) = 32
+        and replace(operation_id, '-', '') not glob '*[^0-9a-f]*'`
     ),
     check(
-      "app_organization_status_check",
-      sql`status in ('active', 'suspended')`
+      "app_organization_administration_receipt_result_check",
+      sql`typeof(expected_version) = 'integer'
+        and expected_version between 1 and 9007199254740990
+        and result_version = expected_version + 1
+        and typeof(result_created_at) = 'integer'
+        and result_created_at between 0 and 9007199254740991
+        and typeof(result_updated_at) = 'integer'
+        and result_updated_at between result_created_at and 9007199254740991
+        and committed_at = result_updated_at
+        and ((operation_kind = 'suspend' and result_status = 'suspended')
+          or (operation_kind = 'resume' and result_status = 'active'))`
     ),
     check(
-      "app_organization_created_at_check",
+      "app_organization_administration_receipt_policy_check",
+      sql`matrix_id = 'organization-operations'
+        and matrix_version = 1
+        and step_up_policy_id = 'control-plane-sensitive'
+        and step_up_policy_version = 1
+        and schema_version = 1`
+    ),
+    index("app_organization_administration_receipt_actor_operation_idx").on(
+      t.actorUserId,
+      t.operationId
+    ),
+  ]
+);
+
+export const appOrganizationLifecycleActivation = sqliteTable(
+  "app_organization_lifecycle_activation",
+  {
+    id: integer("id").primaryKey(),
+    status: text("status", { enum: ["expanded", "active"] }).notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  () => [
+    check("app_organization_lifecycle_activation_id_check", sql`id = 1`),
+    check(
+      "app_organization_lifecycle_activation_status_check",
+      sql`status in ('expanded', 'active') and schema_version = 1`
+    ),
+  ]
+);
+
+export const appOrganizationOperationFence = sqliteTable(
+  "app_organization_operation_fence",
+  {
+    holderId: text("holder_id").primaryKey(),
+    operationId: text("operation_id").notNull(),
+    operationKind: text("operation_kind", {
+      enum: ["inbound-commit", "outbound-dispatch"],
+    }).notNull(),
+    organizationId: text("organization_id")
+      .notNull()
+      .references(() => appOrganization.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    mailboxId: text("mailbox_id").notNull(),
+    createdAt: integer("created_at").notNull(),
+  },
+  (t) => [
+    foreignKey({
+      columns: [t.organizationId, t.mailboxId],
+      foreignColumns: [appMailbox.organizationId, appMailbox.id],
+      name: "app_organization_operation_fence_mailbox_fk",
+    })
+      .onUpdate("restrict")
+      .onDelete("restrict"),
+    check(
+      "app_organization_operation_fence_operation_check",
+      sql`typeof(holder_id) = 'text'
+        and length(holder_id) = 36
+        and holder_id = lower(trim(holder_id))
+        and substr(holder_id, 9, 1) = '-'
+        and substr(holder_id, 14, 1) = '-'
+        and substr(holder_id, 15, 1) = '4'
+        and substr(holder_id, 19, 1) = '-'
+        and substr(holder_id, 20, 1) in ('8', '9', 'a', 'b')
+        and substr(holder_id, 24, 1) = '-'
+        and length(replace(holder_id, '-', '')) = 32
+        and replace(holder_id, '-', '') not glob '*[^0-9a-f]*'
+        and typeof(operation_id) = 'text'
+        and length(operation_id) between 1 and 256
+        and operation_kind in ('inbound-commit', 'outbound-dispatch')`
+    ),
+    check(
+      "app_organization_operation_fence_time_check",
       sql`typeof(created_at) = 'integer'
         and created_at between 0 and 9007199254740991`
     ),
-    check(
-      "app_organization_updated_at_check",
-      sql`typeof(updated_at) = 'integer'
-        and updated_at between created_at and 9007199254740991`
+    index("app_organization_operation_fence_organization_idx").on(
+      t.organizationId,
+      t.operationId,
+      t.holderId
     ),
-    check(
-      "app_organization_version_check",
-      sql`typeof(version) = 'integer'
-        and version between 1 and 9007199254740991`
-    ),
-    index("app_organization_status_idx").on(t.status, t.id),
   ]
 );
 

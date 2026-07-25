@@ -13,12 +13,14 @@ import {
 import { BackendHealthGroup } from "#/platform/observability/http/BackendHealthHttpApi";
 
 import { MailboxGroup } from "./BackendMailboxHttpApi";
+import { OrganizationGroup } from "./BackendOrganizationHttpApi";
 
 /** The complete private Worker contract. Every route is registered by one builder. */
 export const BackendHttpApi = ApplicationAuthHttpApi.add(
   AccountRecoveryGroup,
   BackendHealthGroup,
   MailboxGroup,
+  OrganizationGroup,
   DevEmailGroup,
   ExternalRecoveryIdentityGroup,
   PasskeyEnrollmentGroup,

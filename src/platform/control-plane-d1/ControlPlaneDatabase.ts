@@ -38,3 +38,13 @@ export const ControlPlaneDatabaseLayer = Layer.unwrap(
     ).pipe(Layer.provide(clientLayer));
   })
 );
+
+export const controlPlaneDatabaseLayerFromBinding = (database: D1Database) =>
+  ControlPlaneDatabaseLayer.pipe(
+    Layer.provide(
+      Layer.succeed(
+        ControlPlaneD1Binding,
+        ControlPlaneD1Binding.of({ database })
+      )
+    )
+  );

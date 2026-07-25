@@ -11,17 +11,19 @@ import {
   appMailDomainClaimReceipt,
   appOrganizationOwnerAssignmentReceipt,
 } from "#/modules/organization/adapters/d1/OrganizationSchema";
-import type { appOrganization } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import {
   MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
   MailDomainSchema,
 } from "#/modules/organization/domain/MailDomain";
 import { OrganizationSchema } from "#/modules/organization/domain/Organization";
+import type { appOrganization } from "#/platform/control-plane-d1/OrganizationRootSchema";
 
 import {
+  activateOrganizationLifecycleProtocol,
   applyControlPlaneMigration,
   applyControlPlaneMigrations,
   applyControlPlaneMigrationsThrough,
+  insertOrganizationLifecycleAudit,
   insertFreshCutoverOrganization,
 } from "../../../../support/d1";
 
@@ -474,8 +476,17 @@ describe("organization D1 schema", () => {
         insert into app_organization
           (id, status, created_at, updated_at, version)
         values ('version-max', 'active', 1000, 1000, 9007199254740990);
+      `);
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 9_007_199_254_740_991,
+        beforeVersion: 9_007_199_254_740_990,
+        occurredAt: 1000,
+        organizationId: "version-max",
+      });
+      database.exec(`
         update app_organization
-           set version = 9007199254740991
+           set status = 'suspended', version = 9007199254740991
          where id = 'version-max';
       `);
       const versionMax = organizationRow(database, "version-max");
@@ -551,7 +562,7 @@ describe("organization D1 schema", () => {
               set status = 'suspended', updated_at = 1100
             where id = 'organization-a'`
         )
-      ).toThrow(/lifecycle/u);
+      ).toThrow(/constraint|lifecycle/u);
       expect(() =>
         database.exec(
           `update app_organization
@@ -565,7 +576,7 @@ describe("organization D1 schema", () => {
               set status = 'suspended', updated_at = 999, version = 2
           where id = 'organization-a'`
         )
-      ).toThrow(/lifecycle/u);
+      ).toThrow(/constraint|lifecycle/u);
     } finally {
       database.close();
     }
@@ -574,6 +585,13 @@ describe("organization D1 schema", () => {
   it("persists closed-catalog lifecycle updates for domain decoding", async () => {
     const database = await makeOrganizationDatabase();
     try {
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 2,
+        beforeVersion: 1,
+        occurredAt: 1100,
+        organizationId: "organization-a",
+      });
       database.exec(
         `update app_organization
             set status = 'suspended', updated_at = 1100, version = 2
@@ -586,6 +604,13 @@ describe("organization D1 schema", () => {
             where id = 'organization-a'`
         )
       ).toThrow(/constraint/u);
+      insertOrganizationLifecycleAudit(database, {
+        action: "resume",
+        afterVersion: 3,
+        beforeVersion: 2,
+        occurredAt: 1200,
+        organizationId: "organization-a",
+      });
       database.exec(
         `update app_organization
             set status = 'active', updated_at = 1200, version = 3
@@ -1800,6 +1825,297 @@ describe("mailbox bootstrap receipt V2 migration", () => {
           )
           .run()
       ).toThrow("legacy mailbox bootstrap intents are immutable");
+    } finally {
+      database.close();
+    }
+  });
+
+  it("stores organization lifecycle audit and receipts as an immutable pair", async () => {
+    const database = await makeOrganizationDatabase();
+    const operationId = "00000000-0000-4000-8000-000000000001";
+    const auditEventId = `admin-audit-sha256:${"a".repeat(64)}`;
+    try {
+      database.exec(`
+        insert into auth_user (id, created_at, updated_at)
+        values ('user-a', 1000, 1000);
+      `);
+      expect(() =>
+        database.exec(`
+          update app_organization
+             set status = 'suspended', updated_at = 2000, version = 2
+           where id = 'organization-a'
+        `)
+      ).toThrow(/lifecycle/u);
+      activateOrganizationLifecycleProtocol(database);
+      database
+        .prepare(
+          `insert into app_organization_administrative_audit_event
+            (event_id, schema_version, event_version, operation_id, action,
+             actor_id, organization_id, reason_code, change_type,
+             resource_version_before, resource_version_after, request_id,
+             correlation_id, occurred_at)
+           values (?, 1, 1, ?, 'organization.suspend', 'user-a',
+                   'organization-a', 'organization-suspended',
+                   'organization-suspended', 1, 2, ?, ?, 2000)`
+        )
+        .run(
+          auditEventId,
+          operationId,
+          "00000000-0000-4000-8000-000000000002",
+          "00000000-0000-4000-8000-000000000003"
+        );
+      database.exec(`
+        update app_organization
+           set status = 'suspended', updated_at = 2000, version = 2
+         where id = 'organization-a';
+      `);
+      database
+        .prepare(
+          `insert into app_organization_administration_receipt
+            (operation_id, operation_kind, actor_user_id, organization_id,
+             expected_version, result_status, result_created_at,
+             result_updated_at, result_version, committed_at, audit_event_id,
+             matrix_id, matrix_version, step_up_policy_id,
+             step_up_policy_version, schema_version)
+           values (?, 'suspend', 'user-a', 'organization-a', 1, 'suspended',
+                   1000, 2000, 2, 2000, ?, 'organization-operations', 1,
+                   'control-plane-sensitive', 1, 1)`
+        )
+        .run(operationId, auditEventId);
+
+      expect(
+        database
+          .prepare(
+            `select operation_kind, result_status, result_version
+               from app_organization_administration_receipt`
+          )
+          .get()
+      ).toMatchObject({
+        operation_kind: "suspend",
+        result_status: "suspended",
+        result_version: 2,
+      });
+      expect(() =>
+        database.exec(
+          `update app_organization_administration_receipt
+              set result_status = 'active'`
+        )
+      ).toThrow(/immutable/u);
+      expect(() =>
+        database.exec("delete from app_organization_administrative_audit_event")
+      ).toThrow(/retained/u);
+      database.exec("pragma recursive_triggers = off");
+      expect(() =>
+        database.exec(`
+          insert or replace into app_organization_administrative_audit_event
+            (storage_id, event_id, schema_version, event_version, operation_id,
+             action, actor_id, organization_id, reason_code, change_type,
+             resource_version_before, resource_version_after, request_id,
+             correlation_id, occurred_at)
+          select storage_id,
+            'admin-audit-sha256:${"b".repeat(64)}', 1, 1,
+            '00000000-0000-4000-8000-000000000099', action, actor_id,
+            organization_id, reason_code, change_type, resource_version_before,
+            resource_version_after, request_id, correlation_id, occurred_at
+          from app_organization_administrative_audit_event limit 1
+        `)
+      ).toThrow(/immutable/u);
+      database.exec("pragma foreign_keys = off");
+      expect(() =>
+        database.exec(`
+          insert into app_organization_administrative_audit_event
+            (event_id, schema_version, event_version, operation_id, action,
+             actor_id, organization_id, reason_code, change_type,
+             resource_version_before, resource_version_after, request_id,
+             correlation_id, occurred_at)
+          values ('admin-audit-sha256:${"c".repeat(64)}', 1, 1,
+            '00000000-0000-4000-8000-000000000098', 'organization.suspend',
+            'user-a', 'missing', 'organization-suspended',
+            'organization-suspended', 1, 2,
+            '00000000-0000-4000-8000-000000000097',
+            '00000000-0000-4000-8000-000000000096', 2000)
+        `)
+      ).toThrow(/parent/u);
+      expect(() =>
+        database.exec(`
+          insert into app_organization_administrative_audit_event
+            (event_id, schema_version, event_version, operation_id, action,
+             actor_id, organization_id, reason_code, change_type,
+             resource_version_before, resource_version_after, request_id,
+             correlation_id, occurred_at)
+          values ('admin-audit-sha256:${"d".repeat(64)}', 1, 1,
+            '00000000-0000-4000-8000-000000000095', 'organization.resume',
+            'missing', 'organization-a', 'organization-resumed',
+            'organization-resumed', 2, 3,
+            '00000000-0000-4000-8000-000000000094',
+            '00000000-0000-4000-8000-000000000093', 2100)
+        `)
+      ).toThrow(/parent/u);
+      expect(() =>
+        database.exec(
+          `update app_organization
+              set updated_at = 2100, version = 3
+            where id = 'organization-a'`
+        )
+      ).toThrow(/lifecycle/u);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("installs lifecycle fencing in expanded mode until a successor activates it", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      expect(
+        database
+          .prepare(
+            "select * from app_organization_lifecycle_activation where id = 1"
+          )
+          .get()
+      ).toMatchObject({ id: 1, schema_version: 1, status: "expanded" });
+      expect(() =>
+        database.exec(
+          "update app_organization_lifecycle_activation set status = 'active' where id = 1"
+        )
+      ).toThrow(/successor migration/u);
+    } finally {
+      database.close();
+    }
+  });
+
+  it("serializes organization suspension against in-flight mailbox work", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertFreshCutoverOrganization(database, 1000);
+      database.exec(`
+        insert into auth_user (id, created_at, updated_at)
+        values ('user-a', 1000, 1000);
+        insert into app_mailbox
+          (id, display_name, status, created_by_user_id, created_at, updated_at)
+        values ('primary', 'Inbox', 'active', 'user-a', 1000, 1000);
+        insert into app_organization_operation_fence
+          (holder_id, operation_id, operation_kind, organization_id, mailbox_id,
+           created_at)
+        values ('00000000-0000-4000-8000-000000000091', 'delivery-1',
+                'outbound-dispatch',
+                'legacy_default_v1', 'primary', 1500);
+      `);
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 2,
+        beforeVersion: 1,
+        occurredAt: 2000,
+        organizationId: "legacy_default_v1",
+      });
+
+      expect(() =>
+        database.exec(`
+          update app_organization
+             set status = 'suspended', updated_at = 2000, version = 2
+           where id = 'legacy_default_v1'
+        `)
+      ).toThrow(/lifecycle/u);
+      database.exec("pragma recursive_triggers = off");
+      expect(() =>
+        database.exec(`
+          insert or replace into app_organization_operation_fence
+            (rowid, holder_id, operation_id, operation_kind, organization_id,
+             mailbox_id, created_at)
+          select rowid, '00000000-0000-4000-8000-000000000092', operation_id,
+                 operation_kind, organization_id, mailbox_id, created_at
+            from app_organization_operation_fence
+           where holder_id = '00000000-0000-4000-8000-000000000091'
+        `)
+      ).toThrow(/cannot be replaced/u);
+      database.exec(`
+        delete from app_organization_operation_fence
+         where holder_id = '00000000-0000-4000-8000-000000000091';
+        update app_organization
+           set status = 'suspended', updated_at = 2000, version = 2
+         where id = 'legacy_default_v1';
+      `);
+      expect(organizationRow(database, "legacy_default_v1")).toMatchObject({
+        status: "suspended",
+        version: 2,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects reserved ORG-013 artifacts before changing the predecessor", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrationsThrough(
+        database,
+        "1028_app_user_organization_preference.sql"
+      );
+      const triggerBefore = database
+        .prepare(
+          `select sql from sqlite_master
+            where type = 'trigger' and name = 'app_organization_update_lifecycle'`
+        )
+        .get();
+      database.exec(
+        "create table app_organization_administrative_audit_event (id integer)"
+      );
+
+      await expect(
+        applyControlPlaneMigration(
+          database,
+          "1029_app_organization_lifecycle.sql"
+        )
+      ).rejects.toThrow(/constraint/u);
+      expect(
+        database
+          .prepare(
+            `select sql from sqlite_master
+              where type = 'trigger' and name = 'app_organization_update_lifecycle'`
+          )
+          .get()
+      ).toStrictEqual(triggerBefore);
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from sqlite_master
+              where name = 'app_organization_administration_receipt'`
+          )
+          .get()
+      ).toMatchObject({ count: 0 });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects a predecessor generation payload that no longer matches storage", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrationsThrough(
+        database,
+        "1028_app_user_organization_preference.sql"
+      );
+      database.exec(`
+        drop trigger app_user_organization_preference_generation_no_update;
+        update app_user_organization_preference_generation
+           set artifact_sql_json = '[]'
+         where id = 1;
+      `);
+      await expect(
+        applyControlPlaneMigration(
+          database,
+          "1029_app_organization_lifecycle.sql"
+        )
+      ).rejects.toThrow(/constraint/u);
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from sqlite_master
+              where name = 'app_organization_administration_receipt'`
+          )
+          .get()
+      ).toMatchObject({ count: 0 });
     } finally {
       database.close();
     }

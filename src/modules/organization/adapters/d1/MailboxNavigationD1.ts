@@ -17,6 +17,7 @@ import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import { canonicalMailboxAncestryPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import { MailboxNavigationReader } from "#/modules/organization/ports/MailboxNavigationReader";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { appOrganization } from "#/platform/control-plane-d1/OrganizationRootSchema";
 
 import { appMailbox, appMailboxMember } from "./OrganizationSchema";
 
@@ -57,11 +58,16 @@ const MailboxNavigationReaderD1Layer = Layer.effect(
           })
           .from(appMailboxMember)
           .innerJoin(appMailbox, eq(appMailbox.id, appMailboxMember.mailboxId))
+          .innerJoin(
+            appOrganization,
+            eq(appOrganization.id, appMailbox.organizationId)
+          )
           .where(
             and(
               eq(appMailboxMember.userId, actor.userId),
               isNull(appMailboxMember.revokedAt),
               eq(appMailbox.status, "active"),
+              eq(appOrganization.status, "active"),
               isNull(appMailbox.deletedAt)
             )
           )

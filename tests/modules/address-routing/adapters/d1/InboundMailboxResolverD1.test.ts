@@ -16,6 +16,7 @@ import { EmailAddress } from "#/shared/EmailAddress";
 import {
   applyControlPlaneMigrations,
   insertFreshCutoverOrganization,
+  insertOrganizationLifecycleAudit,
   makeTestD1Database,
 } from "../../../../support/d1";
 
@@ -115,6 +116,21 @@ describe("inbound mailbox resolver", () => {
       await expect(resolve(database, "Owner@EXAMPLE.TEST")).resolves.toBe(
         "primary"
       );
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 2,
+        beforeVersion: 1,
+        occurredAt: 2000,
+        organizationId: "legacy_default_v1",
+      });
+      database.exec(`
+        update app_organization
+           set status = 'suspended', updated_at = 2000, version = 2
+         where id = 'legacy_default_v1';
+      `);
+      await expect(
+        resolve(database, "Owner@EXAMPLE.TEST")
+      ).rejects.toMatchObject({ reason: "unknown-recipient" });
       await expect(
         resolve(database, "owner@example.test")
       ).rejects.toMatchObject({ reason: "unknown-recipient" });

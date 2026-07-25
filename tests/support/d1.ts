@@ -198,3 +198,69 @@ export const makeTestD1Database = (
     prepare: (sql) => makeStatement(sql),
   };
 };
+
+let organizationLifecycleAuditSequence = 100;
+
+export const activateOrganizationLifecycleProtocol = (
+  database: DatabaseSync
+) => {
+  const row = database
+    .prepare(
+      "select status from app_organization_lifecycle_activation where id = 1"
+    )
+    .get() as { readonly status: string } | undefined;
+  if (row?.status === "expanded") {
+    database.exec(`
+      drop trigger app_organization_lifecycle_activation_no_update;
+      update app_organization_lifecycle_activation
+         set status = 'active'
+       where id = 1;
+    `);
+  }
+};
+
+export const insertOrganizationLifecycleAudit = (
+  database: DatabaseSync,
+  input: {
+    readonly action: "resume" | "suspend";
+    readonly afterVersion: number;
+    readonly beforeVersion: number;
+    readonly occurredAt: number;
+    readonly organizationId: string;
+  }
+) => {
+  activateOrganizationLifecycleProtocol(database);
+  organizationLifecycleAuditSequence += 1;
+  const suffix = String(organizationLifecycleAuditSequence).padStart(12, "0");
+  const operationId = `00000000-0000-4000-8000-${suffix}`;
+  const eventId = `admin-audit-sha256:${organizationLifecycleAuditSequence
+    .toString(16)
+    .padStart(64, "0")}`;
+  const semantic = `organization-${input.action === "suspend" ? "suspended" : "resumed"}`;
+  database.exec(`
+    insert or ignore into auth_user (id, created_at, updated_at)
+    values ('test-system', 0, 0)
+  `);
+  database
+    .prepare(
+      `insert into app_organization_administrative_audit_event
+        (event_id, schema_version, event_version, operation_id, action,
+         actor_id, organization_id, reason_code, change_type,
+         resource_version_before, resource_version_after, request_id,
+         correlation_id, occurred_at)
+       values (?, 1, 1, ?, ?, 'test-system', ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      eventId,
+      operationId,
+      `organization.${input.action}`,
+      input.organizationId,
+      semantic,
+      semantic,
+      input.beforeVersion,
+      input.afterVersion,
+      `00000000-0000-4000-8000-${suffix}`,
+      `00000000-0000-4000-9000-${suffix}`,
+      input.occurredAt
+    );
+};

@@ -28,7 +28,9 @@ import { BackendHealthHttpHandlersLayer } from "#/platform/observability/http/Ba
 import { BackendHealthLayer } from "./BackendHealthLayer";
 import { BackendHttpApi } from "./BackendHttpApi";
 import { MailboxHttpLayer } from "./BackendMailboxHttpLayer";
+import { OrganizationHttpHandlersLayer } from "./BackendOrganizationHttpHandlers";
 import { OrganizationLayer } from "./OrganizationApplicationLayer";
+import { OrganizationSessionRequirementsMiddlewareLayer } from "./OrganizationSessionRequirements";
 
 /** Builds the one Backend API from closed bounded-context HTTP graphs. */
 const AdministrativeAuditApplicationRuntimeLayer =
@@ -79,6 +81,12 @@ const MailboxHttpApplicationLayer = MailboxHttpLayer.pipe(
   Layer.provide(AccountSecurityHttpMiddlewareApplicationLayer),
   Layer.provide(BackendRequestContextMiddlewareLayer)
 );
+const OrganizationHttpApplicationLayer = OrganizationHttpHandlersLayer.pipe(
+  Layer.provide(OrganizationSessionRequirementsMiddlewareLayer),
+  Layer.provide(OrganizationApplicationLayer),
+  Layer.provide(AccountSecurityHttpMiddlewareApplicationLayer),
+  Layer.provide(BackendRequestContextMiddlewareLayer)
+);
 const AccountSecurityHttpApplicationLayer = AccountSecurityHttpLayer.pipe(
   Layer.provide(AdministrativeAuditApplicationRuntimeLayer),
   Layer.provide(BackendRequestContextMiddlewareLayer)
@@ -97,7 +105,8 @@ export const BackendApplicationLayer = HttpApiBuilder.layer(
     Layer.mergeAll(
       AccountSecurityHttpApplicationLayer,
       HealthHttpApplicationLayer,
-      MailboxHttpApplicationLayer
+      MailboxHttpApplicationLayer,
+      OrganizationHttpApplicationLayer
     )
   ),
   Layer.provide(ControlPlaneD1Layer),

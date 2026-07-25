@@ -4,9 +4,13 @@ import { describe, expect, it } from "vitest";
 
 import {
   LEGACY_DEFAULT_ORGANIZATION_ID,
+  ORGANIZATION_OPERATION_MATRIX_ID,
+  ORGANIZATION_OPERATION_MATRIX_VERSION,
   OrganizationId,
+  OrganizationOperationMatrix,
   OrganizationSchema,
   OrganizationStatus,
+  isOrganizationOperationAllowed,
 } from "#/modules/organization/domain/Organization";
 
 const decodeSucceeds = <S extends Schema.ConstraintDecoder<unknown, never>>(
@@ -51,6 +55,51 @@ describe("organization domain", () => {
       "suspended"
     );
     expect(decodeSucceeds(OrganizationStatus, "deleted")).toBeFalsy();
+  });
+
+  it("publishes a versioned fail-closed operation matrix", () => {
+    expect(OrganizationOperationMatrix).toMatchObject({
+      matrixId: ORGANIZATION_OPERATION_MATRIX_ID,
+      policyVersion: ORGANIZATION_OPERATION_MATRIX_VERSION,
+    });
+    expect(Object.keys(OrganizationOperationMatrix.operations)).toStrictEqual([
+      "organization.read",
+      "organization.audit.read",
+      "organization.lifecycle.read-operation",
+      "organization.lifecycle.suspend",
+      "organization.lifecycle.resume",
+      "organization.settings.manage",
+      "organization.members.manage",
+      "organization.domains.manage",
+      "organization.addresses.manage",
+      "organization.mailboxes.manage",
+      "organization.ownership.transfer",
+    ]);
+    expect({
+      activeResume: isOrganizationOperationAllowed(
+        "active",
+        "organization.lifecycle.resume"
+      ),
+      activeSuspend: isOrganizationOperationAllowed(
+        "active",
+        "organization.lifecycle.suspend"
+      ),
+      deleting: isOrganizationOperationAllowed("active", "organization.delete"),
+      suspendedResume: isOrganizationOperationAllowed(
+        "suspended",
+        "organization.lifecycle.resume"
+      ),
+      suspendedSuspend: isOrganizationOperationAllowed(
+        "suspended",
+        "organization.lifecycle.suspend"
+      ),
+    }).toStrictEqual({
+      activeResume: false,
+      activeSuspend: true,
+      deleting: false,
+      suspendedResume: true,
+      suspendedSuspend: false,
+    });
   });
 
   it("decodes organizations with monotonic Unix millisecond timestamps", () => {

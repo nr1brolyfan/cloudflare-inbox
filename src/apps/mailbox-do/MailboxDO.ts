@@ -14,6 +14,7 @@ import { mailboxSchemaMigration } from "#/modules/mailbox/adapters/sqlite/Mailbo
 import { MailboxOutboundAlarmDispatch } from "#/modules/mailbox/application/MailboxOutboundAlarmDispatch";
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import { MailboxOutboundLifecycleStore } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
+import { mailboxOperationalStatusD1Layer } from "#/modules/organization/adapters/d1/MailboxOperationalStatusD1";
 
 import { MailboxDoApplicationLayer } from "./MailboxDoApplicationLayer";
 import { MailboxDoBindings, MailboxDoBindingsLayer } from "./MailboxDoBindings";
@@ -58,10 +59,14 @@ const mailboxDoImplementation = Effect.gen(function* () {
 
 const mailboxDoRuntime = Effect.gen(function* () {
   const bindings = yield* MailboxDoBindings;
+  const controlPlaneDatabase = yield* bindings.controlPlane;
+  const operationalStatusLayer =
+    mailboxOperationalStatusD1Layer(controlPlaneDatabase);
 
   return mailboxDoImplementation.pipe(
     Effect.provide(
       MailboxDoApplicationLayer.pipe(
+        Layer.provide(operationalStatusLayer),
         Layer.provide(
           Layer.succeed(MailboxDoBindings, MailboxDoBindings.of(bindings))
         )

@@ -15,7 +15,6 @@ import {
   appMailboxBootstrapReceiptV1Intent,
   appMailboxBootstrapReceiptV2,
   appMailboxLegacyOrganizationAssignment,
-  appOrganization,
   appOrganizationOwnerAssignmentReceipt,
 } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import {
@@ -31,6 +30,7 @@ import {
 import type { MaterializeLegacyMailDomainClaim } from "#/modules/organization/ports/LegacyMailDomainClaimStore";
 import { ControlPlaneBatch } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { appOrganization } from "#/platform/control-plane-d1/OrganizationRootSchema";
 
 const storageError = (cause?: unknown) =>
   new LegacyMailDomainClaimStoreError({ cause });

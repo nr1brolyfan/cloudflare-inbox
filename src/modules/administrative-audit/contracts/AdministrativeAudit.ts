@@ -38,6 +38,8 @@ export const AdministrativeAuditAction = Schema.Literals([
   "external-recovery-identity.verify",
   "mailbox.owner-bootstrap",
   "mailbox.rename",
+  "organization.resume",
+  "organization.suspend",
 ]);
 export type AdministrativeAuditAction = Schema.Schema.Type<
   typeof AdministrativeAuditAction
@@ -45,6 +47,8 @@ export type AdministrativeAuditAction = Schema.Schema.Type<
 
 export const AdministrativeAuditReasonCode = Schema.Literals([
   "mailbox-renamed",
+  "organization-resumed",
+  "organization-suspended",
   "owner-bootstrap",
   "recovery-enrolled",
   "recovery-revoked",
@@ -64,6 +68,10 @@ const AdministrativeAuditTenantScope = Schema.Union([
     _tag: Schema.Literal("LegacyMailbox"),
     mailboxId: MailboxId,
   }),
+  Schema.Struct({
+    _tag: Schema.Literal("Organization"),
+    organizationId: ResourceId,
+  }),
 ]);
 
 const AdministrativeAuditResource = Schema.Union([
@@ -74,6 +82,10 @@ const AdministrativeAuditResource = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("Mailbox"),
     id: MailboxId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Organization"),
+    id: ResourceId,
   }),
 ]);
 
@@ -101,6 +113,16 @@ const AdministrativeAuditChange = Schema.Union([
     afterVersion: Version,
     beforeVersion: Version,
     changedField: Schema.Literal("displayName"),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("OrganizationResumed"),
+    afterVersion: Version,
+    beforeVersion: Version,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("OrganizationSuspended"),
+    afterVersion: Version,
+    beforeVersion: Version,
   }),
 ]);
 
@@ -146,6 +168,20 @@ const administrativeAuditSemantics: Readonly<
     event.tenantScope.mailboxId === event.resource.id &&
     event.reasonCode === "mailbox-renamed" &&
     event.change._tag === "MailboxRenamed" &&
+    event.change.afterVersion === event.change.beforeVersion + 1,
+  "organization.resume": (event) =>
+    event.resource._tag === "Organization" &&
+    event.tenantScope._tag === "Organization" &&
+    event.tenantScope.organizationId === event.resource.id &&
+    event.reasonCode === "organization-resumed" &&
+    event.change._tag === "OrganizationResumed" &&
+    event.change.afterVersion === event.change.beforeVersion + 1,
+  "organization.suspend": (event) =>
+    event.resource._tag === "Organization" &&
+    event.tenantScope._tag === "Organization" &&
+    event.tenantScope.organizationId === event.resource.id &&
+    event.reasonCode === "organization-suspended" &&
+    event.change._tag === "OrganizationSuspended" &&
     event.change.afterVersion === event.change.beforeVersion + 1,
   "external-recovery-identity.enroll": (event) =>
     event.resource._tag === "ExternalRecoveryIdentity" &&
@@ -209,6 +245,20 @@ export const PrepareAdministrativeAuditEvent = Schema.Union([
     occurredAt: UnixMillis,
     operationId: AdministrativeOperationId,
   }),
+  Schema.Struct({
+    _tag: Schema.Literal("OrganizationResumed"),
+    beforeVersion: Version,
+    occurredAt: UnixMillis,
+    operationId: AdministrativeOperationId,
+    organizationId: ResourceId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("OrganizationSuspended"),
+    beforeVersion: Version,
+    occurredAt: UnixMillis,
+    operationId: AdministrativeOperationId,
+    organizationId: ResourceId,
+  }),
 ]);
 export type PrepareAdministrativeAuditEvent = Schema.Schema.Type<
   typeof PrepareAdministrativeAuditEvent
@@ -256,6 +306,32 @@ const eventDetails = (input: PrepareAdministrativeAuditEvent) => {
       tenantScope: {
         _tag: "LegacyMailbox" as const,
         mailboxId: input.mailboxId,
+      },
+    };
+  }
+  if (
+    input._tag === "OrganizationResumed" ||
+    input._tag === "OrganizationSuspended"
+  ) {
+    const resumed = input._tag === "OrganizationResumed";
+    return {
+      action: resumed
+        ? ("organization.resume" as const)
+        : ("organization.suspend" as const),
+      change: {
+        _tag: input._tag,
+        afterVersion: Schema.decodeUnknownSync(Version)(
+          input.beforeVersion + 1
+        ),
+        beforeVersion: input.beforeVersion,
+      },
+      reasonCode: resumed
+        ? ("organization-resumed" as const)
+        : ("organization-suspended" as const),
+      resource: { _tag: "Organization" as const, id: input.organizationId },
+      tenantScope: {
+        _tag: "Organization" as const,
+        organizationId: input.organizationId,
       },
     };
   }

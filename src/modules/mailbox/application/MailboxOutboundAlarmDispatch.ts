@@ -7,6 +7,8 @@ import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/Mai
 import type { MailboxOutboundDispatcherError } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import type { OutboundFailureCode } from "#/modules/mailbox/domain/MailboxOutbound";
+import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { MailboxOperationalStatus } from "#/modules/mailbox/ports/MailboxOperationalStatus";
 import { MailboxOutboundLifecycleStore } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 import type { OutboundDeliverySettlement } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
@@ -43,6 +45,9 @@ const failureResolution = (
         ? "retry"
         : { _tag: "Failed", code: "preparation_failed" };
     }
+    case "MailboxOperationalStatusError": {
+      return "retry";
+    }
     case "DeliveryIndeterminateError": {
       return { _tag: "Indeterminate" };
     }
@@ -65,32 +70,54 @@ export class MailboxOutboundAlarmDispatch extends Context.Service<
     const lifecycle = yield* MailboxOutboundLifecycleStore;
     const dispatcher = yield* MailboxOutboundDispatcher;
     const scheduler = yield* MailboxOutboundAlarmScheduler;
+    const identity = yield* MailboxIdentity;
+    const operationalStatus = yield* MailboxOperationalStatus;
 
     const processOne = Effect.gen(function* () {
-      yield* lifecycle.recoverStaleSending;
-      const claim = yield* lifecycle.claimDue;
-      if (claim === null) {
+      const fence = {
+        mailboxId: identity.mailboxId,
+        operationId: `alarm-claim:${crypto.randomUUID()}`,
+        operationKind: "outbound-dispatch" as const,
+      };
+      const holderId = yield* operationalStatus
+        .acquire(fence)
+        .pipe(Effect.orDie);
+      if (holderId === null) {
         return;
       }
 
-      yield* Effect.result(dispatcher.dispatch(claim.outboundDeliveryId)).pipe(
-        Effect.flatMap((result) => {
-          if (Result.isSuccess(result)) {
-            return lifecycle.settle(claim, {
-              _tag: "Accepted",
-              providerMessageId: result.success.providerMessageId,
-            });
-          }
-          const resolution = failureResolution(result.failure);
-          return resolution === "retry"
-            ? lifecycle.retry(claim)
-            : lifecycle.settle(claim, resolution);
-        }),
-        // Unknown failures cannot prove whether provider acceptance occurred.
-        Effect.catchDefect(() =>
-          lifecycle.settle(claim, { _tag: "Indeterminate" })
-        ),
-        Effect.asVoid
+      return yield* Effect.gen(function* () {
+        yield* lifecycle.recoverStaleSending;
+        const claim = yield* lifecycle.claimDue;
+        if (claim === null) {
+          return;
+        }
+
+        yield* Effect.result(
+          dispatcher.dispatch(claim.outboundDeliveryId)
+        ).pipe(
+          Effect.flatMap((result) => {
+            if (Result.isSuccess(result)) {
+              return lifecycle.settle(claim, {
+                _tag: "Accepted",
+                providerMessageId: result.success.providerMessageId,
+              });
+            }
+            const resolution = failureResolution(result.failure);
+            return resolution === "retry"
+              ? lifecycle.retry(claim)
+              : lifecycle.settle(claim, resolution);
+          }),
+          // Unknown failures cannot prove whether provider acceptance occurred.
+          Effect.catchDefect(() =>
+            lifecycle.settle(claim, { _tag: "Indeterminate" })
+          ),
+          Effect.asVoid
+        );
+      }).pipe(
+        Effect.ensuring(
+          operationalStatus.release({ ...fence, holderId }).pipe(Effect.orDie)
+        )
       );
     });
 

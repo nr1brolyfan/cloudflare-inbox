@@ -30,6 +30,7 @@ import {
 import {
   applyControlPlaneMigrations,
   insertFreshCutoverOrganization,
+  insertOrganizationLifecycleAudit,
   makeTestD1Database,
 } from "../../../../support/d1";
 
@@ -273,6 +274,50 @@ describe("mailbox navigation", () => {
         label: "label-work",
         mailbox: { displayName: "Primary Inbox", id: "primary" },
       });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("does not discover mailboxes while their organization is suspended", async () => {
+    const database = new DatabaseSync(":memory:");
+    let authorizationCalls = 0;
+
+    try {
+      await applyControlPlaneMigrations(database);
+      insertMailboxMembership(database);
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 2,
+        beforeVersion: 1,
+        occurredAt: 2000,
+        organizationId: "legacy_default_v1",
+      });
+      database.exec(`
+        update app_organization
+           set status = 'suspended', updated_at = 2000, version = 2
+         where id = 'legacy_default_v1';
+      `);
+
+      await expect(
+        Effect.runPromise(
+          navigationEffect(
+            database,
+            authorizationWith(({ resource }) => {
+              authorizationCalls += 1;
+              return Effect.succeed(resource);
+            }),
+            repositoryWith(
+              () => Effect.succeed(folders),
+              () => Effect.succeed(labels)
+            )
+          )
+        )
+      ).rejects.toMatchObject({
+        _tag: "MailboxNavigationError",
+        reason: "not-found",
+      });
+      expect(authorizationCalls).toBe(0);
     } finally {
       database.close();
     }

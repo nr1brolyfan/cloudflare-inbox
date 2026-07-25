@@ -2,11 +2,11 @@ import { and, eq, exists, isNull, or, sql } from "drizzle-orm";
 import type { SQLWrapper } from "drizzle-orm";
 
 import type { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
+import { appOrganization } from "#/platform/control-plane-d1/OrganizationRootSchema";
 
 import {
   appMailbox,
   appMailboxLegacyOrganizationAssignment,
-  appOrganization,
   appOrganizationLegacyCutover,
 } from "../adapters/d1/OrganizationSchema";
 
@@ -99,10 +99,15 @@ export const activeOrganizationMailboxPredicate = (
     database
       .select({ id: appMailbox.id })
       .from(appMailbox)
+      .innerJoin(
+        appOrganization,
+        eq(appOrganization.id, appMailbox.organizationId)
+      )
       .where(
         and(
           eq(appMailbox.id, mailboxId),
           eq(appMailbox.status, "active"),
+          eq(appOrganization.status, "active"),
           isNull(appMailbox.deletedAt),
           canonicalMailboxAncestryPredicate(database, mailboxId)
         )

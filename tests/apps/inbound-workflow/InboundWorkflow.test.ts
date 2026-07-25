@@ -34,6 +34,7 @@ import {
   InboundMessageCommitter,
   InboundProcessingRecorder,
 } from "#/modules/mailbox/ports/MailboxInboundRepository";
+import { MailboxOperationalStatus } from "#/modules/mailbox/ports/MailboxOperationalStatus";
 import { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 import { WorkflowStartError } from "#/modules/mailbox/ports/MailboxWorkflowStarter";
 
@@ -125,7 +126,8 @@ const runWorkflow = (
     Effect.succeed(committedProcessing),
   record: InboundProcessingRecorderService["record"] = recordProcessing,
   taskConfigs: unknown[] = [],
-  startAsyncRules: AsyncRuleWorkflowStarterService["start"] = () => Effect.void
+  startAsyncRules: AsyncRuleWorkflowStarterService["start"] = () => Effect.void,
+  isActive = true
 ) =>
   Effect.runPromise(
     Effect.gen(function* () {
@@ -176,6 +178,14 @@ const runWorkflow = (
           Layer.succeed(
             AsyncRuleWorkflowStarter,
             AsyncRuleWorkflowStarter.of({ start: startAsyncRules })
+          ),
+          Layer.succeed(
+            MailboxOperationalStatus,
+            MailboxOperationalStatus.of({
+              acquire: () => Effect.succeed(isActive ? "holder-a" : null),
+              isActive: () => Effect.succeed(isActive),
+              release: () => Effect.void,
+            })
           )
         )
       )
@@ -183,6 +193,30 @@ const runWorkflow = (
   );
 
 describe("inbound Workflow", () => {
+  it("rechecks lifecycle immediately before the durable commit", async () => {
+    let commits = 0;
+    await expect(
+      runWorkflow(
+        validInput,
+        "ingest-1",
+        [],
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        () => {
+          commits += 1;
+          return Effect.succeed(committedProcessing);
+        },
+        undefined,
+        [],
+        undefined,
+        false
+      )
+    ).rejects.toThrow(/rejected inbound processing/u);
+    expect(commits).toBe(0);
+  });
+
   it("parses raw MIME after the raw_stored checkpoint", async () => {
     const stepNames: string[] = [];
     const taskConfigs: unknown[] = [];

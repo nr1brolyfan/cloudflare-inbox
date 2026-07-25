@@ -4,6 +4,10 @@ import * as Layer from "effect/Layer";
 
 import type { OutboundDeliveryId } from "#/modules/mailbox/domain/Mailbox";
 import type { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import {
+  MailboxOperationalStatus,
+  MailboxOperationalStatusError,
+} from "#/modules/mailbox/ports/MailboxOperationalStatus";
 import { MailboxOutboundDispatchStore } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 import type { OutboundDispatchSnapshotError } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 import { OutboundDraftAttachmentBlobReader } from "#/modules/mailbox/ports/OutboundDraftAttachmentBlobReader";
@@ -15,6 +19,7 @@ import type {
 
 export type MailboxOutboundDispatcherError =
   | BlobStoreError
+  | MailboxOperationalStatusError
   | OutboundDispatchSnapshotError
   | OutboundEmailProviderError;
 
@@ -35,42 +40,62 @@ export class MailboxOutboundDispatcher extends Context.Service<
     const store = yield* MailboxOutboundDispatchStore;
     const attachmentReader = yield* OutboundDraftAttachmentBlobReader;
     const provider = yield* OutboundEmailProvider;
+    const operationalStatus = yield* MailboxOperationalStatus;
 
     return {
       dispatch: (outboundDeliveryId) =>
         Effect.gen(function* () {
           const snapshot = yield* store.load(outboundDeliveryId);
-          const attachments = yield* Effect.all(
-            snapshot.attachments.map((attachment) =>
-              attachmentReader.read(attachment.location).pipe(
-                Effect.map((content) => ({
-                  content,
-                  contentId: attachment.contentId,
-                  disposition: attachment.disposition,
-                  fileName: attachment.fileName,
-                  mimeType: attachment.location.mimeType,
-                }))
-              )
-            ),
-            { concurrency: 1 }
-          );
-          const noBody =
-            snapshot.text === undefined && snapshot.html === undefined;
+          const fence = {
+            mailboxId: snapshot.mailboxId,
+            operationId: snapshot.outboundDeliveryId,
+            operationKind: "outbound-dispatch" as const,
+          };
+          const acquired = yield* operationalStatus.acquire(fence);
+          if (!acquired) {
+            return yield* new MailboxOperationalStatusError({
+              message: "Mailbox or organization is suspended",
+            });
+          }
+          return yield* Effect.gen(function* () {
+            const attachments = yield* Effect.all(
+              snapshot.attachments.map((attachment) =>
+                attachmentReader.read(attachment.location).pipe(
+                  Effect.map((content) => ({
+                    content,
+                    contentId: attachment.contentId,
+                    disposition: attachment.disposition,
+                    fileName: attachment.fileName,
+                    mimeType: attachment.location.mimeType,
+                  }))
+                )
+              ),
+              { concurrency: 1 }
+            );
+            const noBody =
+              snapshot.text === undefined && snapshot.html === undefined;
 
-          return yield* provider.send({
-            attachments,
-            bcc: snapshot.bcc,
-            cc: snapshot.cc,
-            ...(snapshot.html === undefined ? {} : { html: snapshot.html }),
-            sender: snapshot.sender,
-            subject: snapshot.subject,
-            ...(snapshot.text === undefined
-              ? noBody
-                ? { text: "" }
-                : {}
-              : { text: snapshot.text }),
-            to: snapshot.to,
-          });
+            return yield* provider.send({
+              attachments,
+              bcc: snapshot.bcc,
+              cc: snapshot.cc,
+              ...(snapshot.html === undefined ? {} : { html: snapshot.html }),
+              sender: snapshot.sender,
+              subject: snapshot.subject,
+              ...(snapshot.text === undefined
+                ? noBody
+                  ? { text: "" }
+                  : {}
+                : { text: snapshot.text }),
+              to: snapshot.to,
+            });
+          }).pipe(
+            Effect.ensuring(
+              operationalStatus
+                .release({ ...fence, holderId: acquired })
+                .pipe(Effect.orDie)
+            )
+          );
         }),
     } satisfies MailboxOutboundDispatcherService;
   }),

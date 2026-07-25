@@ -15,8 +15,11 @@ import { MailboxOutboundAlarmDispatch } from "#/modules/mailbox/application/Mail
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import { MailboxOutboundDispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
 import type { MailboxOutboundDispatcherService as Dispatcher } from "#/modules/mailbox/application/MailboxOutboundDispatcher";
+import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxAlarmStorage } from "#/modules/mailbox/ports/MailboxAlarmStorage";
 import { BlobStoreError } from "#/modules/mailbox/ports/MailboxBlobStore";
+import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
+import { MailboxOperationalStatus } from "#/modules/mailbox/ports/MailboxOperationalStatus";
 import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
 import { OutboundDispatchSnapshotError } from "#/modules/mailbox/ports/MailboxOutboundDispatchStore";
 import {
@@ -38,6 +41,19 @@ const acceptance = Schema.decodeUnknownSync(OutboundProviderAcceptance)({
   providerMessageId: "provider-message-1",
 });
 const alarmNow = () => 1200;
+const mailboxId = Schema.decodeUnknownSync(MailboxId)("mailbox-a");
+const operationalLayers = (isActive = true) =>
+  Layer.merge(
+    Layer.succeed(MailboxIdentity, MailboxIdentity.of({ mailboxId })),
+    Layer.succeed(
+      MailboxOperationalStatus,
+      MailboxOperationalStatus.of({
+        acquire: () => Effect.succeed(isActive ? "holder-a" : null),
+        isActive: () => Effect.succeed(isActive),
+        release: () => Effect.void,
+      })
+    )
+  );
 
 const setup = Effect.gen(function* () {
   const db = yield* MailboxDatabase;
@@ -68,7 +84,8 @@ const seedDelivery = (id: string, sendAt = 1000) =>
 const testLive = (
   dispatcher: Dispatcher,
   now: () => number,
-  onReconcile: () => void
+  onReconcile: () => void,
+  isActive = true
 ) => {
   const base = Layer.merge(
     MailboxDatabaseTestLayer,
@@ -82,6 +99,7 @@ const testLive = (
   );
   const dependencies = Layer.mergeAll(
     lifecycle,
+    operationalLayers(isActive),
     Layer.succeed(MailboxOutboundDispatcher, dispatcher),
     Layer.succeed(
       MailboxOutboundAlarmScheduler,
@@ -136,6 +154,40 @@ const runOutcome = (
 };
 
 describe("outbound alarm dispatch", () => {
+  it("leaves queued work untouched while the organization is suspended", async () => {
+    let providerCalls = 0;
+    const live = testLive(
+      MailboxOutboundDispatcher.of({
+        dispatch: () => {
+          providerCalls += 1;
+          return Effect.succeed(acceptance);
+        },
+      }),
+      alarmNow,
+      () => null,
+      false
+    );
+    const row = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedDelivery("delivery-suspended");
+        const alarm = yield* MailboxOutboundAlarmDispatch;
+        yield* alarm.handle;
+        const db = yield* MailboxDatabase;
+        const [delivery] = yield* db
+          .select()
+          .from(outboundDelivery)
+          .where(eq(outboundDelivery.id, "delivery-suspended"));
+        return delivery;
+      }).pipe(Effect.provide(live))
+    );
+    expect({
+      attempts: row?.attemptCount,
+      providerCalls,
+      status: row?.status,
+    }).toStrictEqual({ attempts: 0, providerCalls: 0, status: "scheduled" });
+  });
+
   it("persists provider acceptance and invokes the provider exactly once", async () => {
     let calls = 0;
     let reconciliations = 0;
@@ -493,7 +545,9 @@ describe("outbound alarm dispatch", () => {
           })
         )
       ),
-      Layer.provideMerge(Layer.merge(lifecycle, scheduler))
+      Layer.provideMerge(
+        Layer.mergeAll(lifecycle, scheduler, operationalLayers())
+      )
     );
 
     await Effect.runPromise(

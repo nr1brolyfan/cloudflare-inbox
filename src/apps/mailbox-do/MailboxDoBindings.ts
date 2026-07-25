@@ -1,4 +1,5 @@
 import type * as CloudflareWorkers from "@cloudflare/workers-types";
+import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -24,6 +25,7 @@ export interface MailboxDoBindingsShape {
     MailboxEmailBinding,
     DeliveryProviderUnavailableError
   >;
+  readonly controlPlane: Effect.Effect<D1EffectQbDatabaseLike>;
   readonly rawMessages: Effect.Effect<RawMessagesBinding>;
 }
 
@@ -43,6 +45,10 @@ const isRawMessagesBinding = (value: unknown): value is RawMessagesBinding =>
 
 const isMailboxEmailBinding = (value: unknown): value is MailboxEmailBinding =>
   hasMethod(value, "send");
+const isControlPlaneBinding = (
+  value: unknown
+): value is D1EffectQbDatabaseLike =>
+  hasMethod(value, "prepare") && hasMethod(value, "batch");
 
 /** Captures the Worker environment while keeping optional binding access lazy. */
 export const MailboxDoBindingsLayer = Layer.effect(
@@ -50,6 +56,23 @@ export const MailboxDoBindingsLayer = Layer.effect(
   Effect.gen(function* () {
     const workerEnvironment: unknown = yield* Cloudflare.WorkerEnvironment;
     return MailboxDoBindings.of({
+      controlPlane: Effect.gen(function* () {
+        if (!isObject(workerEnvironment)) {
+          return yield* Effect.die(
+            new Error("MailboxDO Worker environment is unavailable")
+          );
+        }
+        const controlPlane: unknown = Reflect.get(
+          workerEnvironment,
+          "ControlPlane"
+        );
+        if (!isControlPlaneBinding(controlPlane)) {
+          return yield* Effect.die(
+            new Error("MailboxDO ControlPlane binding is unavailable")
+          );
+        }
+        return controlPlane;
+      }),
       email: Effect.gen(function* () {
         const environment = yield* Schema.decodeUnknownEffect(
           Schema.Struct({

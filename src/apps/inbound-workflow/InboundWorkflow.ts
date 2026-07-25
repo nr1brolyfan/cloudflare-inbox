@@ -39,8 +39,13 @@ import {
   InboundMessageCommitter,
   InboundProcessingRecorder,
 } from "#/modules/mailbox/ports/MailboxInboundRepository";
+import { MailboxOperationalStatus } from "#/modules/mailbox/ports/MailboxOperationalStatus";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
-import { RawMessagesBucket } from "#/platform/cloudflare/Resources";
+import { mailboxOperationalStatusD1Layer } from "#/modules/organization/adapters/d1/MailboxOperationalStatusD1";
+import {
+  ControlPlaneDatabase as ControlPlaneDatabaseResource,
+  RawMessagesBucket,
+} from "#/platform/cloudflare/Resources";
 
 const encodedManifest = (manifest: ParsedInboundMessageV1Type) =>
   JSON.stringify(Schema.encodeSync(ParsedInboundMessageV1)(manifest));
@@ -372,9 +377,26 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
 
         const committed = yield* Cloudflare.Workflows.task(
           `commit-inbound-message-${taskSuffix}`,
-          InboundMessageCommitter.pipe(
-            Effect.flatMap((committer) =>
-              committer.commit({
+          Effect.gen(function* () {
+            const operationalStatus = yield* MailboxOperationalStatus;
+            const fence = {
+              mailboxId: params.mailboxId,
+              operationId: params.inboundIngestId,
+              operationKind: "inbound-commit" as const,
+            };
+            const acquired = yield* operationalStatus
+              .acquire(fence)
+              .pipe(
+                Effect.catchTag("MailboxOperationalStatusError", (error) =>
+                  Effect.die(new InboundRetryableStepError(error))
+                )
+              );
+            if (!acquired) {
+              return null;
+            }
+            const committer = yield* InboundMessageCommitter;
+            return yield* committer
+              .commit({
                 envelope: params.envelope,
                 ...(params.formatVersion === 1
                   ? { formatVersion: 1 as const }
@@ -387,7 +409,14 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
                 message: parsed.value,
                 receivedAt: params.receivedAt,
               })
-            ),
+              .pipe(
+                Effect.ensuring(
+                  operationalStatus
+                    .release({ ...fence, holderId: acquired })
+                    .pipe(Effect.orDie)
+                )
+              );
+          }).pipe(
             Effect.matchEffect({
               onFailure: (
                 error: MailboxDomainError | MailboxRepositoryError
@@ -400,7 +429,11 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
                       _tag: "Rejected",
                     }),
               onSuccess: (value) =>
-                Effect.succeed({ _tag: "Success" as const, value }),
+                Effect.succeed(
+                  value === null
+                    ? ({ _tag: "Rejected" } as const)
+                    : ({ _tag: "Success", value } as const)
+                ),
             })
           ),
           processingTaskConfig
@@ -489,6 +522,9 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
 
 export const inboundWorkflowImplementation = Effect.gen(function* () {
   const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
+  const controlPlane = yield* Cloudflare.D1.QueryDatabase(
+    ControlPlaneDatabaseResource
+  );
   const mailboxDataPlane = yield* MailboxDO;
   const asyncRuleWorkflow = yield* AsyncRuleWorkflow;
   const rawMessageClientLayer = Layer.succeed(
@@ -545,15 +581,21 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
           .pipe(Effect.provide(RuntimeContext.phantom)),
     })
   );
-  const instanceApplicationLayer = InboundWorkflowApplicationLayer.pipe(
-    Layer.provide(
-      Layer.mergeAll(
-        rawMessageClientLayer,
-        attachmentClientLayer,
-        mailboxDoNamespaceLayer,
-        asyncRuleWorkflowClientLayer
+  const controlPlaneDatabase = yield* controlPlane.raw.pipe(
+    Effect.provide(RuntimeContext.phantom)
+  );
+  const instanceApplicationLayer = Layer.merge(
+    InboundWorkflowApplicationLayer.pipe(
+      Layer.provide(
+        Layer.mergeAll(
+          rawMessageClientLayer,
+          attachmentClientLayer,
+          mailboxDoNamespaceLayer,
+          asyncRuleWorkflowClientLayer
+        )
       )
-    )
+    ),
+    mailboxOperationalStatusD1Layer(controlPlaneDatabase)
   );
   const program = yield* inboundWorkflowProgram;
 

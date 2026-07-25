@@ -16,6 +16,7 @@ import {
 import {
   applyControlPlaneMigrations,
   insertFreshCutoverOrganization,
+  insertOrganizationLifecycleAudit,
   makeTestD1Database,
 } from "../../../../support/d1";
 
@@ -49,6 +50,33 @@ describe("mailbox registry D1", () => {
       database.exec(`insert into app_mailbox
         (id, display_name, status, created_by_user_id, created_at, updated_at)
         values ('primary', 'Inbox', 'active', 'user-a', 1000, 1000)`);
+      await expect(exists(database)).resolves.toBeTruthy();
+
+      insertOrganizationLifecycleAudit(database, {
+        action: "suspend",
+        afterVersion: 2,
+        beforeVersion: 1,
+        occurredAt: 2000,
+        organizationId: "legacy_default_v1",
+      });
+      database.exec(`
+        update app_organization
+           set status = 'suspended', updated_at = 2000, version = 2
+         where id = 'legacy_default_v1';
+      `);
+      await expect(exists(database)).resolves.toBeFalsy();
+      insertOrganizationLifecycleAudit(database, {
+        action: "resume",
+        afterVersion: 3,
+        beforeVersion: 2,
+        occurredAt: 3000,
+        organizationId: "legacy_default_v1",
+      });
+      database.exec(`
+        update app_organization
+           set status = 'active', updated_at = 3000, version = 3
+         where id = 'legacy_default_v1';
+      `);
       await expect(exists(database)).resolves.toBeTruthy();
 
       database.exec(`
