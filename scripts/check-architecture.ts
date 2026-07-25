@@ -74,6 +74,7 @@ const integrationTestFiles = new Set([
   "tests/integration/mailbox/mailbox-mail-data-sqlite.test.ts",
   "tests/integration/mailbox/mailbox-restore-rehearsal.test.ts",
   "tests/integration/organization/mailbox-legacy-organization-assignment-d1.test.ts",
+  "tests/integration/organization/mailbox-organization-d1.test.ts",
   "tests/integration/organization/organization-legacy-cutover-d1.test.ts",
   "tests/integration/organization/organization-member-schema-d1.test.ts",
   "tests/integration/organization/organization-owner-assignment-d1.test.ts",

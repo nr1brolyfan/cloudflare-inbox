@@ -165,6 +165,12 @@ export class LegacyMailDomainClaimReconciler extends Context.Service<
         const snapshot = yield* store.inspect.pipe(
           Effect.mapError(() => initializationError("storage"))
         );
+        if (
+          snapshot.mailboxOrganizationGeneration.length !== 1 ||
+          snapshot.mailboxOrganizationGeneration[0]?.valid !== 1
+        ) {
+          return yield* initializationError("invalid-storage-state");
+        }
         const cutover = yield* decodeOne(
           Schema.decodeUnknownSync(ClaimCutoverRow),
           snapshot.claimCutovers,
@@ -221,6 +227,9 @@ export class LegacyMailDomainClaimReconciler extends Context.Service<
         );
         if (
           snapshot.mailboxes[0]?.id !== "primary" ||
+          snapshot.mailboxes[0]?.organizationId !==
+            LEGACY_DEFAULT_ORGANIZATION_ID ||
+          snapshot.mailboxes[0]?.organizationId !== ancestry.organizationId ||
           snapshot.organizations[0]?.id !== LEGACY_DEFAULT_ORGANIZATION_ID
         ) {
           return yield* initializationError("invalid-storage-state");

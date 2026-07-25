@@ -23,6 +23,7 @@ import {
   MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
   MailDomainClaimReceipt,
 } from "#/modules/organization/domain/MailDomain";
+import { canonicalMailboxAncestryPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import {
   LegacyMailDomainClaimStore,
   LegacyMailDomainClaimStoreError,
@@ -175,7 +176,14 @@ export const LegacyMailDomainClaimStoreD1Layer = Layer.effect(
           database.select().from(appMailDomainClaimReceipt).limit(2),
           database.select().from(appMailDomainClaimCutover).limit(2),
           database.select().from(appMailDomain).limit(2),
-          database.select({ id: appMailbox.id }).from(appMailbox).limit(2),
+          database
+            .select({
+              id: appMailbox.id,
+              organizationId: appMailbox.organizationId,
+            })
+            .from(appMailbox)
+            .where(canonicalMailboxAncestryPredicate(database, appMailbox.id))
+            .limit(2),
           database
             .select({ id: appOrganization.id })
             .from(appOrganization)
@@ -185,6 +193,59 @@ export const LegacyMailDomainClaimStoreD1Layer = Layer.effect(
             .from(appOrganizationOwnerAssignmentReceipt)
             .limit(2),
           legacyPrimaryMailboxAddressClaimsStatement(database),
+          database.all(sql`
+            select case when
+              (select count(*) from app_mailbox_organization_generation) = 1
+              and exists (select 1 from app_mailbox_organization_generation
+                where id = 1 and schema_version = 1
+                  and json_array_length(artifact_sql_json) = 22
+                  and artifact_sql_json = (select json_group_array(json_object(
+                    'type', type, 'name', name, 'tbl_name', tbl_name, 'sql', sql
+                  )) from (
+                    select type, name, tbl_name, sql from sqlite_master
+                    where name in (
+                      'app_mailbox_legacy_organization_assignment',
+                      'app_mailbox_legacy_organization_assignment_cutover',
+                      'app_mailbox_legacy_organization_assignment_binding',
+                      'app_mailbox_legacy_organization_assignment_no_replace',
+                      'app_mailbox_legacy_organization_assignment_no_update',
+                      'app_mailbox_legacy_organization_assignment_no_delete',
+                      'app_mailbox_legacy_organization_assignment_cutover_no_insert',
+                      'app_mailbox_legacy_organization_assignment_cutover_no_update',
+                      'app_mailbox_legacy_organization_assignment_cutover_no_delete',
+                      'app_mailbox_organization_status_idx',
+                      'app_mailbox_organization_insert_contract',
+                      'app_mailbox_organization_materialize_fresh',
+                      'app_mailbox_organization_immutable',
+                      'app_mailbox_identity_immutable',
+                      'app_mailbox_no_replace',
+                      'app_mailbox_no_delete',
+                      'app_mailbox_organization_consistent_after_update',
+                      'app_mailbox_organization_successor_fence',
+                      'app_mailbox_organization_generation',
+                      'app_mailbox_organization_generation_no_replace',
+                      'app_mailbox_organization_generation_no_update',
+                      'app_mailbox_organization_generation_no_delete'
+                    ) order by type, name
+                  ))
+                  and column_json = (select json_group_array(json_object(
+                    'cid', cid, 'name', name, 'type', type,
+                    'notnull', "notnull", 'dflt_value', dflt_value,
+                    'pk', pk, 'hidden', hidden
+                  )) from (
+                    select * from pragma_table_xinfo('app_mailbox')
+                    where name = 'organization_id' order by cid
+                  ))
+                  and foreign_key_json = (select json_group_array(json_object(
+                    'id', id, 'seq', seq, 'table', "table", 'from', "from",
+                    'to', "to", 'on_update', on_update,
+                    'on_delete', on_delete, 'match', match
+                  )) from (
+                    select * from pragma_foreign_key_list('app_mailbox')
+                    where "from" = 'organization_id' order by id, seq
+                  )))
+              then 1 else 0 end as valid
+          `),
         ])
         .pipe(Effect.mapError(storageError));
       const ancestry = yield* resultRows(results, 0);
@@ -200,6 +261,7 @@ export const LegacyMailDomainClaimStoreD1Layer = Layer.effect(
       const organizations = yield* resultRows(results, 10);
       const ownerAssignments = yield* resultRows(results, 11);
       const routes = yield* resultRows(results, 12);
+      const mailboxOrganizationGeneration = yield* resultRows(results, 13);
       return {
         ancestry,
         bootstrapAudits,
@@ -213,6 +275,7 @@ export const LegacyMailDomainClaimStoreD1Layer = Layer.effect(
         claimReceipts,
         domains,
         mailboxes,
+        mailboxOrganizationGeneration,
         organizations,
         ownerAssignments,
         routes,
@@ -250,8 +313,12 @@ export const LegacyMailDomainClaimStoreD1Layer = Layer.effect(
                   and address.created_at = ${command.effectiveAt}
                   and address.updated_at = ${command.effectiveAt})
               and exists (select 1
-                from app_mailbox_legacy_organization_assignment ancestry
-                where ancestry.mailbox_id = 'primary'
+                from app_mailbox mailbox
+                join app_mailbox_legacy_organization_assignment ancestry
+                  on ancestry.mailbox_id = mailbox.id
+                 and ancestry.organization_id = mailbox.organization_id
+                where mailbox.id = 'primary'
+                  and mailbox.organization_id = 'legacy_default_v1'
                   and ancestry.organization_id = 'legacy_default_v1'
                   and ancestry.effective_at = ${command.effectiveAt}
                   and ancestry.schema_version = 1)

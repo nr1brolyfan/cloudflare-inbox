@@ -11,6 +11,7 @@ import {
   appOrganization,
   appOrganizationLegacyCutover,
 } from "../adapters/d1/OrganizationSchema";
+import { canonicalMailboxAncestryPredicate } from "./OrganizationD1Predicates";
 
 /** Bounded current claims for first-release single-domain reconciliation. */
 export const currentMailDomainClaimsStatement = (
@@ -40,6 +41,7 @@ export const mailboxBootstrapStateStatement = (
   database
     .select({ mailboxId: appMailbox.id })
     .from(appMailbox)
+    .where(canonicalMailboxAncestryPredicate(database, appMailbox.id))
     .orderBy(asc(appMailbox.id))
     .limit(2);
 

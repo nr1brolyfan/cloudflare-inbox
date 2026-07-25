@@ -60,6 +60,8 @@ import {
   MAIL_DOMAIN_CANONICALIZATION_PROFILE_ID,
   MAIL_DOMAIN_CANONICALIZATION_VERSION,
 } from "#/modules/organization/domain/MailDomain";
+import { LEGACY_DEFAULT_ORGANIZATION_ID } from "#/modules/organization/domain/Organization";
+import { canonicalMailboxAncestryPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import { legacyDefaultOrganizationBootstrapInsertStatement } from "#/modules/organization/integration/OrganizationD1Statements";
 import { MailboxAdministrationTransaction } from "#/modules/organization/ports/MailboxAdministrationTransaction";
 import { appAuthorizationGuard } from "#/platform/control-plane-d1/AuthorizationGuardSchema";
@@ -287,6 +289,7 @@ const ReceiptRow = Schema.Struct({
 
 const ReadReceiptRow = Schema.Struct({
   ...ReceiptRow.fields,
+  ancestry_valid: Schema.Literal(1),
   bootstrap_initial_address: Schema.NullOr(Schema.String),
   bootstrap_schema_version: Schema.NullOr(Schema.Literal(2)),
   legacy_initial_address: Schema.NullOr(Schema.String),
@@ -299,7 +302,7 @@ const ReadReceiptRow = Schema.Struct({
       row.operation_kind === "bootstrap-owner"
         ? hasLegacyIntent !== hasV2Intent
         : !hasLegacyIntent && !hasV2Intent;
-    return v2PairValid && intentSourcesValid
+    return row.ancestry_valid && v2PairValid && intentSourcesValid
       ? undefined
       : "mailbox bootstrap receipt intent source is inconsistent";
   })
@@ -438,6 +441,10 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
     ) =>
       database
         .select({
+          ancestry_valid: canonicalMailboxAncestryPredicate(
+            database,
+            appMailboxAdministrationReceipt.mailboxId
+          ),
           actor_user_id: appMailboxAdministrationReceipt.actorUserId,
           committed_at: appMailboxAdministrationReceipt.committedAt,
           display_name: appMailboxAdministrationReceipt.displayName,
@@ -683,7 +690,8 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
           const createdMailbox = and(
             eq(appMailbox.id, mailboxId),
             eq(appMailbox.createdByUserId, validated.actor.userId),
-            eq(appMailbox.createdAt, timestamp)
+            eq(appMailbox.createdAt, timestamp),
+            canonicalMailboxAncestryPredicate(database, appMailbox.id)
           );
           const mailboxCreated = exists(
             database
@@ -728,6 +736,9 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                     ),
                     displayName: sql`${displayName}`.as("display_name"),
                     id: sql`${mailboxId}`.as("id"),
+                    organizationId: sql`${LEGACY_DEFAULT_ORGANIZATION_ID}`.as(
+                      "organization_id"
+                    ),
                     updatedAt: sql`${timestamp}`.as("updated_at"),
                   })
                   .from(appAuthorizationGuard)
@@ -1148,7 +1159,11 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
               .where(
                 and(
                   eq(appMailbox.id, location.mailboxId),
-                  eq(appMailbox.status, "active")
+                  eq(appMailbox.status, "active"),
+                  canonicalMailboxAncestryPredicate(
+                    database,
+                    location.mailboxId
+                  )
                 )
               )
           );
@@ -1160,7 +1175,11 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                 and(
                   eq(appMailbox.id, location.mailboxId),
                   eq(appMailbox.status, "active"),
-                  eq(appMailbox.version, input.expectedVersion)
+                  eq(appMailbox.version, input.expectedVersion),
+                  canonicalMailboxAncestryPredicate(
+                    database,
+                    location.mailboxId
+                  )
                 )
               )
           );
@@ -1201,6 +1220,10 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                   eq(appMailbox.id, location.mailboxId),
                   eq(appMailbox.status, "active"),
                   eq(appMailbox.version, input.expectedVersion),
+                  canonicalMailboxAncestryPredicate(
+                    database,
+                    location.mailboxId
+                  ),
                   authorized
                 )
               )
@@ -1245,6 +1268,10 @@ const MailboxAdministrationTransactionD1Layer = Layer.effect(
                       eq(appMailbox.id, location.mailboxId),
                       eq(appMailbox.status, "active"),
                       eq(appMailbox.version, input.expectedVersion + 1),
+                      canonicalMailboxAncestryPredicate(
+                        database,
+                        location.mailboxId
+                      ),
                       authorized
                     )
                   )

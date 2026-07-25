@@ -860,14 +860,7 @@ describe("mailbox legacy organization assignment migration", () => {
       const database = new DatabaseSync(":memory:");
       try {
         await applyControlPlaneMigrations(database);
-        database.exec(
-          "drop trigger app_mailbox_legacy_organization_assignment_from_fresh_mailbox"
-        );
-        if (handoff === "organization-column") {
-          database.exec(
-            "alter table app_mailbox add column organization_id text"
-          );
-        } else {
+        if (handoff === "successor-marker") {
           database.exec(`create table app_mailbox_organization_cutover (
             id integer primary key check (id = 1)
           )`);

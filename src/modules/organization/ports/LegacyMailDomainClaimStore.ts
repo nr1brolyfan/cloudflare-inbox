@@ -29,6 +29,7 @@ export interface LegacyMailDomainClaimSnapshot {
   readonly domains: readonly Record<string, unknown>[];
   readonly bootstrapAudits: readonly Record<string, unknown>[];
   readonly mailboxes: readonly Record<string, unknown>[];
+  readonly mailboxOrganizationGeneration: readonly Record<string, unknown>[];
   readonly organizations: readonly Record<string, unknown>[];
   readonly ownerAssignments: readonly Record<string, unknown>[];
   readonly routes: readonly Record<string, unknown>[];

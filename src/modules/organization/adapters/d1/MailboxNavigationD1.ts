@@ -14,6 +14,7 @@ import {
   MailboxNavigationResult,
 } from "#/modules/organization/application/MailboxNavigation";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
+import { canonicalMailboxAncestryPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import { MailboxNavigationReader } from "#/modules/organization/ports/MailboxNavigationReader";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
@@ -47,6 +48,10 @@ const MailboxNavigationReaderD1Layer = Layer.effect(
         const actor = yield* CurrentActor;
         const [row] = yield* controlPlane
           .select({
+            ancestryValid: canonicalMailboxAncestryPredicate(
+              controlPlane,
+              appMailboxMember.mailboxId
+            ),
             displayName: appMailbox.displayName,
             id: appMailbox.id,
           })
@@ -65,6 +70,9 @@ const MailboxNavigationReaderD1Layer = Layer.effect(
 
         if (row === undefined) {
           return yield* navigationError("not-found");
+        }
+        if (!row.ancestryValid) {
+          return yield* navigationError("storage");
         }
 
         const mailbox = yield* Schema.decodeUnknownEffect(

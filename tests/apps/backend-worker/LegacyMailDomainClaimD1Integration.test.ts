@@ -221,6 +221,10 @@ const makeLegacyDatabase = async (
   );
   if (applyClaimMigration) {
     await applyControlPlaneMigration(database, migration);
+    await applyControlPlaneMigration(
+      database,
+      "1027_app_mailbox_organization.sql"
+    );
   }
   return database;
 };
@@ -274,6 +278,101 @@ const inspect = (
 };
 
 describe("legacy mail domain claim", () => {
+  it.each(["bridge-source", "cutover-outcome"] as const)(
+    "fails startup reconciliation on restored-schema %s disagreement",
+    async (corruption) => {
+      const database = await makeLegacyDatabase("example.test");
+      try {
+        if (corruption === "bridge-source") {
+          withoutTriggers(
+            database,
+            ["app_mailbox_legacy_organization_assignment_no_update"],
+            () =>
+              database.exec(`update app_mailbox_legacy_organization_assignment
+                set source = 'fresh-bootstrap' where mailbox_id = 'primary'`)
+          );
+        } else {
+          withoutTriggers(
+            database,
+            ["app_organization_legacy_cutover_no_update"],
+            () =>
+              database.exec(`update app_organization_legacy_cutover
+                set outcome = 'fresh-empty', source_mailbox_id = null,
+                    source_created_at = null, organization_id = null
+                where id = 1`)
+          );
+        }
+
+        await expect(
+          initialize(database, "example.test")
+        ).rejects.toMatchObject({
+          _tag: "LegacyMailDomainClaimInitializationError",
+        });
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it.each(["missing-index", "changed-trigger"] as const)(
+    "fails startup reconciliation on ORG-010 generation %s",
+    async (corruption) => {
+      const database = await makeLegacyDatabase("example.test");
+      try {
+        if (corruption === "missing-index") {
+          database.exec("drop index app_mailbox_organization_status_idx");
+        } else {
+          database.exec(`
+            drop trigger app_mailbox_organization_immutable;
+            create trigger app_mailbox_organization_immutable
+            before update of organization_id on app_mailbox begin select 1; end;
+          `);
+        }
+        await expect(
+          initialize(database, "example.test")
+        ).rejects.toMatchObject({
+          _tag: "LegacyMailDomainClaimInitializationError",
+        });
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it.each(["null", "disagreement", "missing-trigger"] as const)(
+    "fails startup reconciliation on canonical mailbox ancestry %s corruption",
+    async (corruption) => {
+      const database = await makeLegacyDatabase("example.test");
+      try {
+        if (corruption === "missing-trigger") {
+          database.exec("drop trigger app_mailbox_organization_immutable");
+        } else {
+          database.exec(`
+            drop trigger app_mailbox_organization_immutable;
+            drop trigger app_mailbox_organization_consistent_after_update;
+          `);
+          if (corruption === "disagreement") {
+            database.exec(`insert into app_organization
+              (id, created_at, updated_at) values ('other', 1000, 1000)`);
+          }
+          database
+            .prepare(
+              "update app_mailbox set organization_id = ? where id = 'primary'"
+            )
+            .run(corruption === "null" ? null : "other");
+        }
+
+        await expect(
+          initialize(database, "example.test")
+        ).rejects.toMatchObject({
+          _tag: "LegacyMailDomainClaimInitializationError",
+        });
+      } finally {
+        database.close();
+      }
+    }
+  );
+
   it.each(["example.test", "xn--bcher-kva.example"])(
     "reconciles the pinned TypeScript canonical domain %s",
     async (domain) => {
@@ -684,13 +783,15 @@ describe("legacy mail domain claim", () => {
     }
   );
 
-  it("validates and deterministically reapplies an exact generation", async () => {
+  it("rejects predecessor reapplication after the ORG-010 generation", async () => {
     const database = await makeLegacyDatabase("example.test");
     try {
       const manifestBefore = database
         .prepare("select * from app_mail_domain_claim_trigger_manifest")
         .get();
-      await applyControlPlaneMigration(database, migration);
+      await expect(
+        applyControlPlaneMigration(database, migration)
+      ).rejects.toThrow(/constraint/iu);
       expect(
         database
           .prepare("select * from app_mail_domain_claim_trigger_manifest")

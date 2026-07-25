@@ -290,6 +290,12 @@ export const appMailbox = sqliteTable(
     updatedAt: integer("updated_at").notNull(),
     deletedAt: integer("deleted_at"),
     version: integer("version").notNull().default(1),
+    // ORG-010 expands with a nullable SQLite column, but committed rows are
+    // logically required to have exact retained-bridge ancestry.
+    organizationId: text("organization_id").references(
+      () => appOrganization.id,
+      { onDelete: "restrict", onUpdate: "restrict" }
+    ),
   },
   (t) => [
     primaryKey({ name: "app_mailbox_pkey", columns: [t.id] }),
@@ -323,6 +329,9 @@ export const appMailbox = sqliteTable(
       .where(sql`deleted_at is null`),
     index("app_mailbox_creator_idx").on(t.createdByUserId, t.createdAt),
     uniqueIndex("app_mailbox_singleton_idx").on(sql`(1)`),
+    index("app_mailbox_organization_status_idx")
+      .on(t.organizationId, t.status, t.id)
+      .where(sql`deleted_at is null`),
   ]
 );
 

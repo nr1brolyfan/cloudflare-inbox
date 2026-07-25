@@ -40,17 +40,17 @@ export const MailboxSenderIdentityD1Layer = Layer.effect(
           .select({
             address: appMailboxAddress.address,
             displayName: appMailboxAddress.displayName,
+            mailboxActive: activeOrganizationMailboxPredicate(
+              database,
+              appMailboxAddress.mailboxId
+            ),
           })
           .from(appMailboxAddress)
           .where(
             and(
               eq(appMailboxAddress.mailboxId, mailboxId),
               eq(appMailboxAddress.isPrimary, true),
-              eq(appMailboxAddress.enabled, true),
-              activeOrganizationMailboxPredicate(
-                database,
-                appMailboxAddress.mailboxId
-              )
+              eq(appMailboxAddress.enabled, true)
             )
           )
           .limit(2)
@@ -72,6 +72,9 @@ export const MailboxSenderIdentityD1Layer = Layer.effect(
                 );
               }
               const [row] = rows;
+              if (!row?.mailboxActive) {
+                return Effect.fail(senderIdentityError(mailboxId, "not-found"));
+              }
               return Schema.decodeUnknownEffect(MailAddress)({
                 address: row.address,
                 ...(row.displayName === null

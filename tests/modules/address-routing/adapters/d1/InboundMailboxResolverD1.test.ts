@@ -67,6 +67,10 @@ const insertRoute = (
     .run("primary", "active", null);
   if (mailboxId !== "primary") {
     database.exec("drop trigger app_organization_mailbox_creation_provenance");
+    database.exec("drop trigger app_mailbox_identity_immutable");
+    database.exec(
+      "drop trigger app_mailbox_organization_consistent_after_update"
+    );
     // Deliberately forge a pre-validation corruption that retained ancestry now
     // prevents in normal operation.
     database.exec("pragma foreign_keys = off");
@@ -171,7 +175,7 @@ describe("inbound mailbox resolver", () => {
 
       await expect(
         resolve(database, "Owner@example.test")
-      ).rejects.toMatchObject({ reason: "processing-unavailable" });
+      ).rejects.toMatchObject({ reason: "unknown-recipient" });
     } finally {
       database.close();
     }

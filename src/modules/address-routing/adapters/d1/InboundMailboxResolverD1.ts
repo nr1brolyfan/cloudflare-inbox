@@ -33,7 +33,13 @@ export const InboundMailboxResolverD1Layer = Layer.effect(
     return InboundMailboxResolver.of({
       resolve: (recipient) =>
         database
-          .select({ mailboxId: appMailboxAddress.mailboxId })
+          .select({
+            mailboxId: appMailboxAddress.mailboxId,
+            mailboxActive: activeOrganizationMailboxPredicate(
+              database,
+              appMailboxAddress.mailboxId
+            ),
+          })
           .from(appMailboxAddress)
           .where(
             and(
@@ -41,11 +47,7 @@ export const InboundMailboxResolverD1Layer = Layer.effect(
                 appMailboxAddress.normalizedAddress,
                 normalizeEmailAddressDomain(recipient)
               ),
-              eq(appMailboxAddress.enabled, true),
-              activeOrganizationMailboxPredicate(
-                database,
-                appMailboxAddress.mailboxId
-              )
+              eq(appMailboxAddress.enabled, true)
             )
           )
           .limit(1)
@@ -56,11 +58,13 @@ export const InboundMailboxResolverD1Layer = Layer.effect(
             Effect.flatMap(([row]) =>
               row === undefined
                 ? Effect.fail(resolutionError("unknown-recipient"))
-                : Schema.decodeUnknownEffect(MailboxId)(row.mailboxId).pipe(
-                    Effect.mapError((cause) =>
-                      resolutionError("processing-unavailable", cause)
+                : row.mailboxActive
+                  ? Schema.decodeUnknownEffect(MailboxId)(row.mailboxId).pipe(
+                      Effect.mapError((cause) =>
+                        resolutionError("processing-unavailable", cause)
+                      )
                     )
-                  )
+                  : Effect.fail(resolutionError("unknown-recipient"))
             )
           ),
     });

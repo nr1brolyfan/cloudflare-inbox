@@ -1,3 +1,4 @@
+/* oxlint-disable vitest/max-expects -- Integration cases verify atomic cross-table states. */
 import { DatabaseSync } from "node:sqlite";
 
 import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
@@ -133,7 +134,7 @@ const insertCurrentSession = (
 ) => {
   database
     .prepare(
-      `insert into auth_user
+      `insert or ignore into auth_user
         (id, created_at, updated_at)
        values (?, ?, ?)`
     )
@@ -554,11 +555,12 @@ describe("mailbox administration", () => {
           )
         )
       );
-      await applyControlPlaneMigration(
-        database,
-        "1023_app_organization_legacy_cutover.sql"
-      );
-
+      await expect(
+        applyControlPlaneMigration(
+          database,
+          "1023_app_organization_legacy_cutover.sql"
+        )
+      ).rejects.toThrow(/constraint/iu);
       expect(mailbox).toMatchObject({
         createdByUserId: "user-a",
         displayName: "Inbox",
@@ -1014,6 +1016,8 @@ describe("mailbox administration", () => {
         database,
         "1021_app_mail_domain.sql"
       );
+      database.exec(`insert into auth_user (id, created_at, updated_at)
+        values ('user-a', ${now}, ${now})`);
       seedHistoricalBootstrapReceipt(database);
       await applyControlPlaneMigration(
         database,
@@ -1023,6 +1027,34 @@ describe("mailbox administration", () => {
         database,
         "1023_app_organization_legacy_cutover.sql"
       );
+      database.exec(`
+        insert into app_mailbox_member
+          (mailbox_id, user_id, created_at, updated_at)
+        values ('primary', 'user-a', ${now}, ${now});
+        insert into auth_role_grant
+          (subject_type, subject_id, role_id, scope_type, scope_id_present,
+           scope_id)
+        values ('user', 'user-a', 'owner', 'mailbox', 1, 'primary');
+        insert into app_administrative_audit_event
+          (event_id, schema_version, event_version, operation_id, action,
+           outcome, actor_type, actor_id, tenant_scope_type, tenant_scope_id,
+           resource_type, resource_id, reason_code, change_type,
+           resource_version_before, resource_version_after, occurred_at)
+        values ('admin-audit-sha256:${"a".repeat(64)}', 1, 1,
+          '00000000-0000-4000-8000-000000000010',
+          'mailbox.owner-bootstrap', 'succeeded', 'user', 'user-a',
+          'legacy-mailbox', 'primary', 'mailbox', 'primary',
+          'owner-bootstrap', 'mailbox-bootstrapped', null, 1, ${now});
+      `);
+      for (const file of [
+        "1024_app_mailbox_legacy_organization_assignment.sql",
+        "1025_app_organization_owner_assignment.sql",
+        "1026_app_legacy_mail_domain_claim.sql",
+        "1027_app_mailbox_organization.sql",
+      ]) {
+        // oxlint-disable-next-line eslint/no-await-in-loop -- Migration generations are ordered.
+        await applyControlPlaneMigration(database, file);
+      }
       const organizationBefore = {
         ...database.prepare("select * from app_organization").get(),
       };
@@ -1121,6 +1153,60 @@ describe("mailbox administration", () => {
       database.close();
     }
   });
+
+  it.each(["null", "wrong", "missing-bridge", "changed-cutover"] as const)(
+    "reports receipt ancestry %s corruption as storage",
+    async (corruption) => {
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        seedHistoricalBootstrapReceipt(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+
+        if (corruption === "null" || corruption === "wrong") {
+          database.exec(`
+            drop trigger app_mailbox_organization_immutable;
+            drop trigger app_mailbox_organization_consistent_after_update;
+          `);
+          if (corruption === "wrong") {
+            database.exec(`insert into app_organization
+              (id, created_at, updated_at) values ('other', ${now}, ${now})`);
+          }
+          database
+            .prepare(
+              "update app_mailbox set organization_id = ? where id = 'primary'"
+            )
+            .run(corruption === "null" ? null : "other");
+        } else if (corruption === "missing-bridge") {
+          database.exec(`
+            drop trigger app_mailbox_legacy_organization_assignment_no_delete;
+            delete from app_mailbox_legacy_organization_assignment;
+          `);
+        } else {
+          database.exec(`
+            drop trigger app_organization_legacy_cutover_no_update;
+            update app_organization_legacy_cutover
+               set outcome = 'legacy-primary', source_mailbox_id = 'primary',
+                   source_created_at = ${now},
+                   organization_id = 'legacy_default_v1'
+             where id = 1;
+          `);
+        }
+
+        await expect(
+          Effect.runPromise(
+            readOperation(makeTestD1Database(database), validated)
+          )
+        ).rejects.toMatchObject({
+          _tag: "MailboxAdministrationError",
+          reason: "storage",
+        });
+      } finally {
+        database.close();
+      }
+    }
+  );
 
   it.each(["missing-both", "both-present"] as const)(
     "fails historical V1 receipt readback safely for %s intent sources",

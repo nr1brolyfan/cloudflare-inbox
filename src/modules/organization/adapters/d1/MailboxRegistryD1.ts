@@ -3,6 +3,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { MailboxRegistry } from "#/modules/mailbox/ports/MailboxRegistry";
+import { activeOrganizationMailboxPredicate } from "#/modules/organization/integration/OrganizationD1Predicates";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { appMailbox } from "./OrganizationSchema";
@@ -19,7 +20,11 @@ export const MailboxRegistryD1Layer = Layer.effect(
           .select({ id: appMailbox.id })
           .from(appMailbox)
           .where(
-            and(eq(appMailbox.id, mailboxId), eq(appMailbox.status, "active"))
+            and(
+              eq(appMailbox.id, mailboxId),
+              eq(appMailbox.status, "active"),
+              activeOrganizationMailboxPredicate(controlPlane, mailboxId)
+            )
           )
           .limit(1)
           .pipe(Effect.map((rows) => rows.length === 1)),
