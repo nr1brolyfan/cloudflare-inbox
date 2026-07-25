@@ -14,6 +14,7 @@ import {
   OutboundProviderMessageId,
   outboundMaxRecipientCount,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { OutboundThreadingMetadata } from "#/modules/mailbox/domain/MailboxThreading";
 import { MailAddress } from "#/shared/MailAddress";
 import type { UnixMillis } from "#/shared/Temporal";
 
@@ -70,6 +71,11 @@ export type OutboundEmailAttachment = Schema.Schema.Type<
   typeof OutboundEmailAttachment
 >;
 
+export const OutboundEmailThreading = OutboundThreadingMetadata;
+export type OutboundEmailThreading = Schema.Schema.Type<
+  typeof OutboundEmailThreading
+>;
+
 export const OutboundEmailMessage = Schema.Struct({
   attachments: Schema.Array(OutboundEmailAttachment),
   bcc: Schema.Array(MailAddress),
@@ -78,6 +84,7 @@ export const OutboundEmailMessage = Schema.Struct({
   sender: MailAddress,
   subject: MessageSubject,
   text: Schema.optional(Schema.String),
+  threading: Schema.optional(OutboundEmailThreading),
   to: Schema.Array(MailAddress),
 }).check(
   Schema.makeFilter((message) => {

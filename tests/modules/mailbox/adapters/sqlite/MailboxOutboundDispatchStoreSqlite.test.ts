@@ -31,6 +31,49 @@ const testLive = MailboxOutboundDispatchStoreSqliteLayer.pipe(
   ),
   Layer.provideMerge(MailboxDatabaseTestLayer)
 );
+const deliveryId = Schema.decodeUnknownSync(OutboundDeliveryId)("delivery-1");
+
+const seedMinimalSnapshot = (
+  inReplyTo: string | null,
+  referencesJson: string
+) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    yield* db.insert(folder).values({
+      createdAt: 0,
+      id: "scheduled",
+      kind: "scheduled",
+      name: "Scheduled",
+      updatedAt: 0,
+    });
+    yield* db.insert(message).values({
+      activityAt: 500,
+      bccJson: "[]",
+      ccJson: "[]",
+      createdAt: 200,
+      direction: "outbound",
+      folderId: "scheduled",
+      id: "message-1",
+      inReplyTo,
+      outboundDeliveryId: "delivery-1",
+      recipientsJson: '[{"address":"to@example.com"}]',
+      referencesJson,
+      senderJson: '{"address":"sender@example.com"}',
+      subject: "Snapshot",
+      textBody: "Body",
+      threadId: "thread-1",
+      toJson: '[{"address":"to@example.com"}]',
+      updatedAt: 200,
+    });
+    yield* db.insert(outboundDelivery).values({
+      createdAt: 200,
+      id: "delivery-1",
+      messageId: "message-1",
+      sendAt: 500,
+      status: "scheduled",
+      updatedAt: 200,
+    });
+  });
 
 describe("outbound dispatch SQLite snapshot store", () => {
   it("loads the frozen sender, recipient buckets, bodies, and attachment locator", async () => {
@@ -79,12 +122,13 @@ describe("outbound dispatch SQLite snapshot store", () => {
           outboundDeliveryId: "delivery-1",
           recipientsJson:
             '[{"address":"to@example.com"},{"address":"cc@example.com"},{"address":"bcc@example.com"}]',
-          referencesJson: "[]",
           senderJson: '{"address":"sender@example.com","displayName":"Sender"}',
           snippet: "Hello",
           subject: "Frozen subject",
           textBody: "Hello",
           threadId: "thread-1",
+          inReplyTo: "<parent@example.com>",
+          referencesJson: '["<root@example.com>","<parent@example.com>"]',
           toJson: '[{"address":"to@example.com"}]',
           updatedAt: 200,
         });
@@ -112,9 +156,7 @@ describe("outbound dispatch SQLite snapshot store", () => {
           .set({ fileName: "mutated-source.txt", mimeType: "application/pdf" })
           .where(eq(draftAttachment.id, "draft-attachment-1"));
         const store = yield* MailboxOutboundDispatchStore;
-        const snapshot = yield* store.load(
-          Schema.decodeUnknownSync(OutboundDeliveryId)("delivery-1")
-        );
+        const snapshot = yield* store.load(deliveryId);
 
         expect(snapshot).toMatchObject({
           attachments: [
@@ -140,9 +182,74 @@ describe("outbound dispatch SQLite snapshot store", () => {
           sender: { address: "sender@example.com", displayName: "Sender" },
           subject: "Frozen subject",
           text: "Hello",
+          threading: {
+            inReplyTo: "<parent@example.com>",
+            references: ["<root@example.com>", "<parent@example.com>"],
+          },
           to: [{ address: "to@example.com" }],
         });
       }).pipe(Effect.provide(testLive))
     );
+  });
+
+  it.each([
+    ["malformed In-Reply-To", "parent@example.com", '["<parent@example.com>"]'],
+    [
+      "malformed References element",
+      "<parent@example.com>",
+      '["root@example.com","<parent@example.com>"]',
+    ],
+    ["non-array References JSON", "<parent@example.com>", "{}"],
+    [
+      "missing parent in References",
+      "<parent@example.com>",
+      '["<root@example.com>"]',
+    ],
+    [
+      "duplicate References",
+      "<parent@example.com>",
+      '["<root@example.com>","<parent@example.com>","<parent@example.com>"]',
+    ],
+    [
+      "parent not final in References",
+      "<parent@example.com>",
+      '["<parent@example.com>","<root@example.com>"]',
+    ],
+    [
+      "overlimit serialized References",
+      "<parent@example.com>",
+      JSON.stringify([
+        `<${"a".repeat(700)}@example.com>`,
+        `<${"b".repeat(700)}@example.com>`,
+        `<${"c".repeat(700)}@example.com>`,
+        "<parent@example.com>",
+      ]),
+    ],
+    ["References with null In-Reply-To", null, '["<parent@example.com>"]'],
+  ])("rejects %s corruption", async (_, inReplyTo, referencesJson) => {
+    const error = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* seedMinimalSnapshot(inReplyTo, referencesJson);
+        const store = yield* MailboxOutboundDispatchStore;
+        return yield* store.load(deliveryId).pipe(Effect.flip);
+      }).pipe(Effect.provide(testLive))
+    );
+
+    expect(error).toMatchObject({
+      outboundDeliveryId: "delivery-1",
+      reason: "invalid-snapshot",
+    });
+  });
+
+  it("hydrates ordinary compose without threading metadata", async () => {
+    const snapshot = await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* seedMinimalSnapshot(null, "[]");
+        const store = yield* MailboxOutboundDispatchStore;
+        return yield* store.load(deliveryId);
+      }).pipe(Effect.provide(testLive))
+    );
+
+    expect(snapshot).not.toHaveProperty("threading");
   });
 });

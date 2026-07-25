@@ -10,6 +10,7 @@ import {
   outboundDelivery,
 } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import type { OutboundDeliveryId } from "#/modules/mailbox/domain/Mailbox";
+import { RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import {
   MailboxOutboundDispatchStore,
@@ -19,6 +20,7 @@ import {
 import { MailAddress } from "#/shared/MailAddress";
 
 const AddressList = Schema.Array(MailAddress);
+const RfcMessageIdList = Schema.Array(RfcMessageId);
 
 const snapshotError = (
   outboundDeliveryId: OutboundDeliveryId,
@@ -65,9 +67,11 @@ export const MailboxOutboundDispatchStoreSqliteLayer = Layer.effect(
             messageDirection: message.direction,
             messageHtmlBody: message.htmlBody,
             messageId: message.id,
+            messageInReplyTo: message.inReplyTo,
             messageOutboundDeliveryId: message.outboundDeliveryId,
             messageSenderJson: message.senderJson,
             messageSubject: message.subject,
+            messageReferencesJson: message.referencesJson,
             messageTextBody: message.textBody,
             messageToJson: message.toJson,
           })
@@ -112,6 +116,18 @@ export const MailboxOutboundDispatchStoreSqliteLayer = Layer.effect(
                       "Outbound delivery and message identity do not match"
                     );
                   }
+                  const references = decodeJson(
+                    RfcMessageIdList,
+                    first.messageReferencesJson
+                  );
+                  if (
+                    first.messageInReplyTo === null &&
+                    references.length > 0
+                  ) {
+                    throw new Error(
+                      "Outbound References cannot exist without In-Reply-To"
+                    );
+                  }
 
                   return Schema.decodeUnknownSync(
                     OutboundDispatchSnapshotSchema
@@ -145,6 +161,14 @@ export const MailboxOutboundDispatchStoreSqliteLayer = Layer.effect(
                     sender: decodeJson(MailAddress, first.messageSenderJson),
                     subject: first.messageSubject,
                     text: first.messageTextBody ?? undefined,
+                    ...(first.messageInReplyTo === null
+                      ? {}
+                      : {
+                          threading: {
+                            inReplyTo: first.messageInReplyTo,
+                            references,
+                          },
+                        }),
                     to: decodeJson(AddressList, first.messageToJson),
                   });
                 },

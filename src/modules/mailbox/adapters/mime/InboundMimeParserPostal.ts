@@ -25,6 +25,7 @@ import type {
   ExtractedInboundMessageV1 as ExtractedInboundMessageV1Type,
   ParsedInboundMessageV1 as ParsedInboundMessageV1Type,
 } from "#/modules/mailbox/domain/MailboxInbound";
+import { isProviderSafeRfcMessageId } from "#/modules/mailbox/domain/MailboxThreading";
 import {
   InboundMimeAttachmentExtractor,
   InboundMimeParser,
@@ -90,37 +91,10 @@ const decodeAddresses = (addresses: readonly PostalAddress[] | undefined) =>
     return decoded === undefined ? [] : [decoded];
   });
 
-const maximumThreadingMessageIdBytes = 998;
-
-/** Conservative provider-safe profile, not the complete RFC 5322 msg-id grammar. */
-const decodeThreadingMessageId = (candidate: string) => {
-  if (
-    new TextEncoder().encode(candidate).byteLength >
-      maximumThreadingMessageIdBytes ||
-    !/^<[A-Za-z0-9!#$%&'*+\-/=?^_`{|}~.]+@[A-Za-z0-9.-]+>$/u.test(candidate)
-  ) {
-    return;
-  }
-  const separator = candidate.indexOf("@");
-  const idLeft = candidate.slice(1, separator);
-  const idRight = candidate.slice(separator + 1, -1);
-  const labels = idRight.split(".");
-  if (
-    idLeft.startsWith(".") ||
-    idLeft.endsWith(".") ||
-    idLeft.includes("..") ||
-    labels.some(
-      (label) =>
-        label.length === 0 ||
-        label.length > 63 ||
-        label.startsWith("-") ||
-        label.endsWith("-")
-    )
-  ) {
-    return;
-  }
-  return decodeOptional(RfcMessageId, candidate);
-};
+const decodeThreadingMessageId = (candidate: string) =>
+  isProviderSafeRfcMessageId(candidate)
+    ? decodeOptional(RfcMessageId, candidate)
+    : undefined;
 
 const messageIds = (value: string | undefined) =>
   (value?.match(/(?<![<>])<[^<>]*>(?![<>])/gu) ?? []).flatMap((candidate) => {

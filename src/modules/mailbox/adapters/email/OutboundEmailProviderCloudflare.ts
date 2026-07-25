@@ -12,12 +12,12 @@ import {
   DeliveryRejectedError,
   DeliveryTemporaryFailureError,
   OutboundEmailProvider,
+  OutboundEmailMessage,
   OutboundProviderAcceptance,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";
 import type {
   DeliveryProviderUnavailableError,
   OutboundEmailAttachment,
-  OutboundEmailMessage,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";
 import type { MailAddress } from "#/shared/MailAddress";
 
@@ -116,6 +116,14 @@ const emailMessageBuilder = (
       : { attachments: message.attachments.map(attachment) }),
     ...(message.html === undefined ? {} : { html: message.html }),
     ...(message.text === undefined ? {} : { text: message.text }),
+    ...(message.threading === undefined
+      ? {}
+      : {
+          headers: {
+            "In-Reply-To": message.threading.inReplyTo,
+            References: message.threading.references.join(" "),
+          },
+        }),
     from: mailAddress(message.sender),
     subject: message.subject,
   };
@@ -219,6 +227,13 @@ const malformedAcceptance = (cause: unknown) =>
     message: "Email provider returned a malformed acceptance",
   });
 
+const invalidOutboundMessage = (cause: unknown) =>
+  new DeliveryRejectedError({
+    cause,
+    message: "Email provider rejected an invalid message",
+    reason: "invalid-message",
+  });
+
 export const OutboundEmailProviderCloudflareLayer = Layer.effect(
   OutboundEmailProvider,
   Effect.gen(function* () {
@@ -226,8 +241,13 @@ export const OutboundEmailProviderCloudflareLayer = Layer.effect(
 
     return OutboundEmailProvider.of({
       send: (message) =>
-        client.send(emailMessageBuilder(message)).pipe(
-          Effect.mapError(providerError),
+        Schema.decodeUnknownEffect(OutboundEmailMessage)(message).pipe(
+          Effect.mapError(invalidOutboundMessage),
+          Effect.flatMap((validated) =>
+            client
+              .send(emailMessageBuilder(validated))
+              .pipe(Effect.mapError(providerError))
+          ),
           Effect.flatMap((result) =>
             Schema.decodeUnknownEffect(OutboundProviderAcceptance)({
               providerMessageId: result.messageId,

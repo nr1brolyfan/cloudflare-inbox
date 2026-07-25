@@ -63,6 +63,7 @@ import {
   GetOutboundDeliveryInput,
   ResendOutboundInput,
   ScheduleOutboundInput,
+  ScheduleOutboundResult,
   outboundUndoWindowMillis,
 } from "#/modules/mailbox/domain/MailboxOutbound";
 import { MailDataRpcResponse } from "#/modules/mailbox/ports/MailboxDoProtocol";
@@ -248,6 +249,7 @@ const seedMessages = Effect.gen(function* () {
       starred: 0,
       needsReply: 1,
       size: 10,
+      rfcMessageId: "<m1@example.com>",
       referencesJson: "[]",
       toJson: '[{"address":"owner@example.com"}]',
       ccJson: "[]",
@@ -1281,29 +1283,296 @@ describe("Mailbox mail data SQLite", () => {
           address: "current-primary@example.com",
           displayName: "Current Primary",
         });
+        const scheduleInput = Schema.decodeUnknownSync(ScheduleOutboundInput)({
+          ...explicitConfirmation,
+          draftId: reply.id,
+          expectedVersion: reply.version,
+          mailboxId,
+          operationId: "send-reply",
+          sender: currentPrimarySender,
+        });
+        const scheduled = yield* scheduleOutbound(scheduleInput);
+        yield* db
+          .update(message)
+          .set({
+            inReplyTo: "<changed-root@example.com>",
+            referencesJson: '["<changed-root@example.com>"]',
+            rfcMessageId: "<changed-parent@example.com>",
+          })
+          .where(eq(message.id, "m1"));
+        const replay = yield* scheduleOutbound(scheduleInput);
+        yield* db
+          .update(outboundDelivery)
+          .set({
+            failureAt: 1000,
+            failureCode: "provider_rejected",
+            status: "failed",
+          })
+          .where(eq(outboundDelivery.id, scheduled.delivery.id));
+        const resent = yield* resendOutbound(
+          Schema.decodeUnknownSync(ResendOutboundInput)({
+            ...explicitConfirmation,
+            acknowledgeDuplicateRisk: true,
+            expectedVersion: 1,
+            mailboxId,
+            operationId: "resend-reply",
+            outboundDeliveryId: scheduled.delivery.id,
+          })
+        );
+        const [outbound] = yield* db
+          .select({
+            inReplyTo: message.inReplyTo,
+            referencesJson: message.referencesJson,
+            rfcMessageId: message.rfcMessageId,
+            senderJson: message.senderJson,
+            recipientsJson: message.recipientsJson,
+          })
+          .from(message)
+          .where(eq(message.id, scheduled.delivery.messageId));
+        const [resendSnapshot] = yield* db
+          .select({
+            inReplyTo: message.inReplyTo,
+            referencesJson: message.referencesJson,
+            rfcMessageId: message.rfcMessageId,
+          })
+          .from(message)
+          .where(eq(message.id, resent.delivery.messageId));
+
+        expect(outbound).toStrictEqual({
+          inReplyTo: "<m1@example.com>",
+          referencesJson: '["<m1@example.com>"]',
+          rfcMessageId: null,
+          senderJson: JSON.stringify(currentPrimarySender),
+          recipientsJson: JSON.stringify(reply.to),
+        });
+        expect(outbound?.senderJson).not.toContain("sender@example.com");
+        expect(
+          JSON.stringify(Schema.encodeSync(ScheduleOutboundResult)(replay))
+        ).toBe(
+          JSON.stringify(Schema.encodeSync(ScheduleOutboundResult)(scheduled))
+        );
+        expect(resendSnapshot).toStrictEqual({
+          inReplyTo: "<m1@example.com>",
+          referencesJson: '["<m1@example.com>"]',
+          rfcMessageId: null,
+        });
+        expect({
+          messageIdChanged:
+            resent.delivery.messageId !== scheduled.delivery.messageId,
+          deliveryIdChanged: resent.delivery.id !== scheduled.delivery.id,
+          resendOf: resent.delivery.resendOf,
+        }).toStrictEqual({
+          deliveryIdChanged: true,
+          messageIdChanged: true,
+          resendOf: scheduled.delivery.id,
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("freezes deduplicated standard reply ancestry and trims oldest UTF-8 bytes", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        const old = `<${"o".repeat(700)}@example.com>`;
+        const middle = `<${"m".repeat(700)}@example.com>`;
+        const recent = `<${"r".repeat(700)}@example.com>`;
+        yield* db
+          .update(message)
+          .set({
+            inReplyTo: "<fallback@example.com>",
+            referencesJson: JSON.stringify([
+              old,
+              "<m1@example.com>",
+              middle,
+              recent,
+              recent,
+            ]),
+          })
+          .where(eq(message.id, "m1"));
+        const reply = yield* createReplyDraft(
+          Schema.decodeUnknownSync(CreateReplyDraftInput)({
+            _tag: "Folder",
+            folderId: "inbox",
+            mailboxId,
+            messageId: "m1",
+            operationId: "bounded-reply",
+            threadId: "thread-1",
+          })
+        );
         const scheduled = yield* scheduleOutbound(
           Schema.decodeUnknownSync(ScheduleOutboundInput)({
             ...explicitConfirmation,
             draftId: reply.id,
             expectedVersion: reply.version,
             mailboxId,
-            operationId: "send-reply",
-            sender: currentPrimarySender,
+            operationId: "bounded-send",
+            sender,
           })
         );
-        const [outbound] = yield* db
+        const [snapshot] = yield* db
           .select({
-            senderJson: message.senderJson,
-            recipientsJson: message.recipientsJson,
+            inReplyTo: message.inReplyTo,
+            referencesJson: message.referencesJson,
           })
           .from(message)
           .where(eq(message.id, scheduled.delivery.messageId));
+        const references = JSON.parse(
+          snapshot?.referencesJson ?? "null"
+        ) as string[];
 
-        expect(outbound).toStrictEqual({
-          senderJson: JSON.stringify(currentPrimarySender),
-          recipientsJson: JSON.stringify(reply.to),
-        });
-        expect(outbound?.senderJson).not.toContain("sender@example.com");
+        expect(snapshot?.inReplyTo).toBe("<m1@example.com>");
+        expect(references).toStrictEqual([middle, recent, "<m1@example.com>"]);
+        expect(
+          new TextEncoder().encode(references.join(" ")).byteLength
+        ).toBeLessThanOrEqual(2048);
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("ignores malformed legacy parent In-Reply-To when nonempty References is selected", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(message)
+          .set({
+            inReplyTo: "legacy-parent-without-brackets@example.com",
+            referencesJson: '["<root@example.com>"]',
+          })
+          .where(eq(message.id, "m1"));
+        const reply = yield* createReplyDraft(
+          Schema.decodeUnknownSync(CreateReplyDraftInput)({
+            _tag: "Folder",
+            folderId: "inbox",
+            mailboxId,
+            messageId: "m1",
+            operationId: "legacy-selected-ancestry-reply",
+            threadId: "thread-1",
+          })
+        );
+        const scheduled = yield* scheduleOutbound(
+          Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...explicitConfirmation,
+            draftId: reply.id,
+            expectedVersion: reply.version,
+            mailboxId,
+            operationId: "legacy-selected-ancestry-send",
+            sender,
+          })
+        );
+        const [snapshot] = yield* db
+          .select({ referencesJson: message.referencesJson })
+          .from(message)
+          .where(eq(message.id, scheduled.delivery.messageId));
+
+        expect(snapshot?.referencesJson).toBe(
+          '["<root@example.com>","<m1@example.com>"]'
+        );
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it("uses parent In-Reply-To only when References is empty", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(message)
+          .set({ inReplyTo: "<root@example.com>", referencesJson: "[]" })
+          .where(eq(message.id, "m1"));
+        const reply = yield* createReplyDraft(
+          Schema.decodeUnknownSync(CreateReplyDraftInput)({
+            _tag: "Folder",
+            folderId: "inbox",
+            mailboxId,
+            messageId: "m1",
+            operationId: "fallback-reply",
+            threadId: "thread-1",
+          })
+        );
+        const scheduled = yield* scheduleOutbound(
+          Schema.decodeUnknownSync(ScheduleOutboundInput)({
+            ...explicitConfirmation,
+            draftId: reply.id,
+            expectedVersion: reply.version,
+            mailboxId,
+            operationId: "fallback-send",
+            sender,
+          })
+        );
+        const [snapshot] = yield* db
+          .select({ referencesJson: message.referencesJson })
+          .from(message)
+          .where(eq(message.id, scheduled.delivery.messageId));
+
+        expect(snapshot?.referencesJson).toBe(
+          '["<root@example.com>","<m1@example.com>"]'
+        );
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
+  it.each([
+    ["missing or cross-mailbox", { deleteParent: true }],
+    ["cross-thread", { threadId: "other-thread" }],
+    ["outbound", { direction: "outbound" as const }],
+    ["missing RFC ID", { rfcMessageId: null }],
+    ["malformed RFC ID", { rfcMessageId: "legacy-id@example.com" }],
+    ["malformed ancestry", { referencesJson: '["bad@example.com"]' }],
+    [
+      "malformed selected fallback ancestry",
+      { inReplyTo: "bad@example.com", referencesJson: "[]" },
+    ],
+  ])("fails closed for a %s reply parent", async (_, mutation) => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        const reply = yield* createReplyDraft(
+          Schema.decodeUnknownSync(CreateReplyDraftInput)({
+            _tag: "Folder",
+            folderId: "inbox",
+            mailboxId,
+            messageId: "m1",
+            operationId: `invalid-parent-${String(_)}`,
+            threadId: "thread-1",
+          })
+        );
+        yield* "deleteParent" in mutation
+          ? db
+              .update(message)
+              .set({ deletedAt: 999 })
+              .where(eq(message.id, "m1"))
+          : db.update(message).set(mutation).where(eq(message.id, "m1"));
+        const result = failure(
+          yield* Effect.result(
+            scheduleOutbound(
+              Schema.decodeUnknownSync(ScheduleOutboundInput)({
+                ...explicitConfirmation,
+                draftId: reply.id,
+                expectedVersion: reply.version,
+                mailboxId,
+                operationId: `invalid-send-${String(_)}`,
+                sender,
+              })
+            )
+          )
+        );
+        const [draftAfter] = yield* db
+          .select({ deletedAt: draft.deletedAt })
+          .from(draft)
+          .where(eq(draft.id, reply.id));
+
+        expect(result).toMatchObject({ reason: "invalid-state" });
+        expect(draftAfter).toStrictEqual({ deletedAt: null });
       }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );
   });
@@ -1623,7 +1892,12 @@ describe("Mailbox mail data SQLite", () => {
           })
         );
         const [messageBefore] = yield* db
-          .select({ replyToJson: message.replyToJson, size: message.size })
+          .select({
+            inReplyTo: message.inReplyTo,
+            referencesJson: message.referencesJson,
+            replyToJson: message.replyToJson,
+            size: message.size,
+          })
           .from(message)
           .where(eq(message.id, scheduled.delivery.messageId));
         const [snapshotBefore] = yield* db
@@ -1676,7 +1950,12 @@ describe("Mailbox mail data SQLite", () => {
           snapshotAfter,
           snapshotBefore,
         }).toMatchObject({
-          messageBefore: { replyToJson: null, size: 9 },
+          messageBefore: {
+            inReplyTo: null,
+            referencesJson: "[]",
+            replyToJson: null,
+            size: 9,
+          },
           resendMessage: {
             replyToJson: '[{"address":"snapshot@example.com"}]',
           },

@@ -17,6 +17,7 @@ import {
   Sha256Digest,
 } from "#/modules/mailbox/domain/Mailbox";
 import { outboundMaxRecipientCount } from "#/modules/mailbox/domain/MailboxOutbound";
+import { OutboundThreadingMetadata } from "#/modules/mailbox/domain/MailboxThreading";
 import { MailAddress } from "#/shared/MailAddress";
 
 export class OutboundDraftAttachmentLocation extends Schema.Class<OutboundDraftAttachmentLocation>(
@@ -60,6 +61,7 @@ export class OutboundDispatchSnapshot extends Schema.Class<OutboundDispatchSnaps
   sender: MailAddress,
   subject: MessageSubject,
   text: Schema.optional(Schema.String),
+  threading: Schema.optional(OutboundThreadingMetadata),
   to: Schema.Array(MailAddress),
 }) {}
 

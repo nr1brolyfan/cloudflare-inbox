@@ -15,7 +15,10 @@ import {
   OutboundEmailMessage,
   OutboundEmailProvider,
 } from "#/modules/mailbox/ports/OutboundEmailProvider";
-import type { OutboundEmailProviderService } from "#/modules/mailbox/ports/OutboundEmailProvider";
+import type {
+  OutboundEmailMessage as OutboundEmailMessageType,
+  OutboundEmailProviderService,
+} from "#/modules/mailbox/ports/OutboundEmailProvider";
 
 const baseMessage = Schema.decodeUnknownSync(OutboundEmailMessage)({
   attachments: [],
@@ -83,6 +86,10 @@ describe("Cloudflare outbound email provider", () => {
       sender: { address: "sender@example.com", displayName: "Mailbox" },
       subject: "Hello",
       text: "Hello",
+      threading: {
+        inReplyTo: "<parent@example.com>",
+        references: ["<root@example.com>", "<parent@example.com>"],
+      },
       to: [{ address: "recipient@example.com", displayName: "Recipient" }],
     });
     const acceptance = await runProvider(
@@ -117,10 +124,63 @@ describe("Cloudflare outbound email provider", () => {
       bcc: ["audit@example.com"],
       from: { email: "sender@example.com", name: "Mailbox" },
       html: '<img src="cid:logo-1">',
+      headers: {
+        "In-Reply-To": "<parent@example.com>",
+        References: "<root@example.com> <parent@example.com>",
+      },
       subject: "Hello",
       text: "Hello",
       to: [{ email: "recipient@example.com", name: "Recipient" }],
     });
+    expect(builder).not.toHaveProperty("headers.Message-ID");
+  });
+
+  it("omits all headers for ordinary compose", async () => {
+    let builder: CloudflareWorkers.EmailMessageBuilder | undefined;
+    await runProvider(
+      MailboxEmailSendClient.of({
+        send: (input) => {
+          builder = input;
+          return Effect.succeed({ messageId: "provider-message-1" });
+        },
+      }),
+      (provider) => provider.send(baseMessage)
+    );
+
+    expect(builder).not.toHaveProperty("headers");
+  });
+
+  it("rejects overlimit threading before transport", async () => {
+    let sends = 0;
+    const error = await runProvider(
+      MailboxEmailSendClient.of({
+        send: () => {
+          sends += 1;
+          return Effect.succeed({ messageId: "provider-message-1" });
+        },
+      }),
+      (provider) =>
+        provider
+          .send({
+            ...baseMessage,
+            threading: {
+              inReplyTo: "<parent@example.com>",
+              references: [
+                `<${"a".repeat(700)}@example.com>`,
+                `<${"b".repeat(700)}@example.com>`,
+                `<${"c".repeat(700)}@example.com>`,
+                "<parent@example.com>",
+              ],
+            },
+          } as unknown as OutboundEmailMessageType)
+          .pipe(Effect.flip)
+    );
+
+    expect(error).toMatchObject({
+      _tag: "DeliveryRejectedError",
+      reason: "invalid-message",
+    });
+    expect(sends).toBe(0);
   });
 
   it("supports a message whose only recipients are CC", async () => {

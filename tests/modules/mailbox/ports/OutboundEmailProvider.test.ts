@@ -65,6 +65,53 @@ describe("outbound email provider contract", () => {
     expect(fifty.to.length + fifty.cc.length + fifty.bcc.length).toBe(50);
   });
 
+  it("accepts unique threading References ending in the immediate parent", () => {
+    const message = Schema.decodeUnknownSync(OutboundEmailMessage)({
+      attachments: [],
+      bcc: [],
+      cc: [],
+      sender: address("sender@example.com"),
+      subject: "Reply",
+      text: "Reply",
+      threading: {
+        inReplyTo: "<parent@example.com>",
+        references: ["<root@example.com>", "<parent@example.com>"],
+      },
+      to: [address("recipient@example.com")],
+    });
+
+    expect(message.threading?.references).toStrictEqual([
+      "<root@example.com>",
+      "<parent@example.com>",
+    ]);
+  });
+
+  it.each([
+    [
+      "duplicate IDs",
+      ["<root@example.com>", "<parent@example.com>", "<parent@example.com>"],
+      /unique/u,
+    ],
+    [
+      "a non-final parent",
+      ["<parent@example.com>", "<root@example.com>"],
+      /end with/u,
+    ],
+  ])("rejects threading References with %s", (_, references, expected) => {
+    expect(() =>
+      Schema.decodeUnknownSync(OutboundEmailMessage)({
+        attachments: [],
+        bcc: [],
+        cc: [],
+        sender: address("sender@example.com"),
+        subject: "Reply",
+        text: "Reply",
+        threading: { inReplyTo: "<parent@example.com>", references },
+        to: [address("recipient@example.com")],
+      })
+    ).toThrow(expected);
+  });
+
   it.each([
     ["without recipients", { bcc: [], cc: [], text: "Hello", to: [] }],
     [

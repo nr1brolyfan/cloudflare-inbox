@@ -67,6 +67,7 @@ export class OutboundDeliveryFailure extends Schema.Class<OutboundDeliveryFailur
   failedAt: UnixMillis,
 }) {}
 
+/** Conservative local decode bound for an untrusted provider candidate, pending live equality evidence. */
 export const OutboundProviderMessageId = Schema.Trimmed.pipe(
   Schema.check(Schema.isLengthBetween(1, 998)),
   Schema.brand("cloudflare-inbox/OutboundProviderMessageId")

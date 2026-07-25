@@ -6,6 +6,7 @@ import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import { DraftId, MailboxId } from "#/modules/mailbox/domain/Mailbox";
+import type { RfcMessageId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   CancelOutboundDeliveryInput,
@@ -23,6 +24,11 @@ import type {
   GetOutboundDeliveryInput,
   ScheduleOutboundInput,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import {
+  isProviderSafeRfcMessageId,
+  maximumThreadingHeaderBytes,
+  serializeThreadingReferences,
+} from "#/modules/mailbox/domain/MailboxThreading";
 import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
@@ -133,6 +139,100 @@ const ScheduleOutboundRequestIdentity = Schema.Struct({
   operationId: OperationId,
 });
 
+const invalidReplyParent = (draftId: string, errorMessage: string) =>
+  new MailboxDomainError({
+    operation: "schedule-outbound",
+    reason: "invalid-state",
+    message: errorMessage,
+    resourceType: "draft",
+    resourceId: draftId,
+  });
+
+const deriveReplyThreading = (
+  sourceDraft: typeof draft.$inferSelect,
+  parent: typeof message.$inferSelect | undefined
+) => {
+  if (sourceDraft.inReplyToMessageId === null) {
+    return { inReplyTo: null, referencesJson: "[]" };
+  }
+  if (parent === undefined) {
+    throw invalidReplyParent(
+      sourceDraft.id,
+      "Reply parent message was not found"
+    );
+  }
+  if (
+    sourceDraft.threadId === null ||
+    parent.threadId !== sourceDraft.threadId ||
+    parent.direction !== "inbound"
+  ) {
+    throw invalidReplyParent(
+      sourceDraft.id,
+      "Reply parent must be an inbound message in the same mailbox thread"
+    );
+  }
+  const parentId = parent.rfcMessageId;
+  if (parentId === null || !isProviderSafeRfcMessageId(parentId)) {
+    throw invalidReplyParent(
+      sourceDraft.id,
+      "Reply parent has no provider-safe RFC message ID"
+    );
+  }
+  let parentReferences: readonly string[];
+  try {
+    parentReferences = decodeJson(StringList, parent.referencesJson);
+  } catch (error) {
+    throw invalidReplyParent(
+      sourceDraft.id,
+      `Reply parent threading metadata is corrupt: ${String(error)}`
+    );
+  }
+  if (parentReferences.some((value) => !isProviderSafeRfcMessageId(value))) {
+    throw invalidReplyParent(
+      sourceDraft.id,
+      "Reply parent threading metadata is not provider-safe"
+    );
+  }
+  const ancestry = parentReferences.length > 0 ? parentReferences : [];
+  if (
+    ancestry.length === 0 &&
+    parent.inReplyTo !== null &&
+    !isProviderSafeRfcMessageId(parent.inReplyTo)
+  ) {
+    throw invalidReplyParent(
+      sourceDraft.id,
+      "Reply parent threading metadata is not provider-safe"
+    );
+  }
+  const selectedAncestry =
+    ancestry.length > 0
+      ? ancestry
+      : parent.inReplyTo === null
+        ? []
+        : [parent.inReplyTo];
+  const references = [
+    ...new Set(selectedAncestry.filter((value) => value !== parentId)),
+    parentId,
+  ] as RfcMessageId[];
+  while (
+    new TextEncoder().encode(serializeThreadingReferences(references))
+      .byteLength > maximumThreadingHeaderBytes
+  ) {
+    const oldestAncestor = references.findIndex((value) => value !== parentId);
+    if (oldestAncestor === -1) {
+      throw invalidReplyParent(
+        sourceDraft.id,
+        "Reply parent threading metadata exceeds the provider header limit"
+      );
+    }
+    references.splice(oldestAncestor, 1);
+  }
+  return {
+    inReplyTo: parentId,
+    referencesJson: encodeJson(StringList, references),
+  };
+};
+
 const scheduleOutbound = (
   mailboxId: MailboxId,
   input: ScheduleOutboundInput,
@@ -202,6 +302,29 @@ const scheduleOutbound = (
             ),
           });
         }
+        const [replyParent] =
+          sourceDraft.inReplyToMessageId === null
+            ? []
+            : yield* tx
+                .select()
+                .from(message)
+                .where(
+                  and(
+                    eq(message.id, sourceDraft.inReplyToMessageId),
+                    isNull(message.deletedAt)
+                  )
+                )
+                .limit(1);
+        const threading = yield* Effect.try({
+          try: () => deriveReplyThreading(sourceDraft, replyParent),
+          catch: (cause) =>
+            cause instanceof MailboxDomainError
+              ? cause
+              : invalidReplyParent(
+                  input.draftId,
+                  "Reply parent threading metadata is corrupt"
+                ),
+        });
         const recipients = [
           ...decodeJson(AddressList, sourceDraft.toJson),
           ...decodeJson(AddressList, sourceDraft.ccJson),
@@ -283,7 +406,8 @@ const scheduleOutbound = (
           snippet: body.slice(0, 500),
           activityAt: sendAt,
           size: snapshotSize,
-          referencesJson: "[]",
+          inReplyTo: threading.inReplyTo,
+          referencesJson: threading.referencesJson,
           toJson: sourceDraft.toJson,
           ccJson: sourceDraft.ccJson,
           bccJson: sourceDraft.bccJson,
@@ -611,7 +735,7 @@ const resendOutbound = (
           starred: sourceMessage.starred,
           needsReply: 0,
           size: sourceMessage.size,
-          rfcMessageId: sourceMessage.rfcMessageId,
+          rfcMessageId: null,
           inReplyTo: sourceMessage.inReplyTo,
           referencesJson: sourceMessage.referencesJson,
           toJson: sourceMessage.toJson,

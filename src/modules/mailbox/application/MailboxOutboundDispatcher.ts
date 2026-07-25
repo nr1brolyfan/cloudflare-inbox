@@ -87,6 +87,9 @@ export class MailboxOutboundDispatcher extends Context.Service<
                   ? { text: "" }
                   : {}
                 : { text: snapshot.text }),
+              ...(snapshot.threading === undefined
+                ? {}
+                : { threading: snapshot.threading }),
               to: snapshot.to,
             });
           }).pipe(

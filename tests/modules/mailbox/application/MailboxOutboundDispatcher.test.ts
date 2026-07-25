@@ -41,6 +41,10 @@ const snapshot = Schema.decodeUnknownSync(OutboundDispatchSnapshotSchema)({
   outboundDeliveryId: "delivery-1",
   sender: { address: "sender@example.com", displayName: "Sender" },
   subject: "Hello",
+  threading: {
+    inReplyTo: "<parent@example.com>",
+    references: ["<root@example.com>", "<parent@example.com>"],
+  },
   to: [{ address: "to@example.com" }],
 });
 
@@ -152,6 +156,10 @@ describe("mailbox outbound dispatcher", () => {
       sender: { address: "sender@example.com", displayName: "Sender" },
       subject: "Hello",
       text: "",
+      threading: {
+        inReplyTo: "<parent@example.com>",
+        references: ["<root@example.com>", "<parent@example.com>"],
+      },
       to: [{ address: "to@example.com" }],
     });
     expect(result).toBe(acceptance);
