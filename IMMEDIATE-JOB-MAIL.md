@@ -6,8 +6,8 @@ Minimalny plan uruchomienia prywatnej skrzynki `szymon@szymondlugolecki.com` do 
 
 - Ostatnia aktualizacja: 2026-07-25
 - Stan: `IN PROGRESS`
-- Aktualne zadanie: `JOB-BOOT-003` private enrollment endpoint and UI
-- Następne zadanie: `JOB-BOOT-004` first-owner denial matrix
+- Aktualne zadanie: `JOB-BOOT-004` first-owner denial matrix
+- Następne zadanie: `JOB-ATT-001` authorized inbound attachment download
 - Docelowy tryb: private single-owner beta
 - Adres pocztowy: `szymon@szymondlugolecki.com`
 - Website origin: `https://mail.szymondlugolecki.com`
@@ -73,7 +73,7 @@ Do przejścia całego gate'a nie wysyłamy prawdziwych aplikacji o pracę z tej 
 
 - [x] JOB-BOOT-001 Dodać kontrakt jednorazowego first-owner password enrollment. Istniejący magic link lub email OTP tworzy verified effect-auth usera. Nowa operacja przyjmuje wyłącznie `{operationId,password}` i nie przyjmuje emaila, user ID, organization ID ani mailbox ID od klienta. Dopuszcza tylko unrestricted, token-bound session z maksymalnie pięciominutowym matching email proof, dokładnie jednym adresem w `MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST`, pustym deploymentem i brakiem wcześniejszego credential/recovery/owner state.
 - [x] JOB-BOOT-002 Dodać forward-only storage seal, immutable receipt, metadata-only audit i jedną atomiczną D1 batch tworzącą password credential. Exact replay zwraca receipt, changed intent jest konfliktem, unknown commit wykonuje receipt readback, a równoległe próby mogą utworzyć dokładnie jeden credential i singleton seal.
-- [ ] JOB-BOOT-003 Dodać prywatny `no-store` endpoint i UI prowadzące przez: magic link/OTP, pierwsze hasło, istniejący password step-up, external recovery, UV passkey, recovery codes i istniejący mailbox bootstrap. Hasło nie jest zapisywane w local storage i jest czyszczone po step-up.
+- [x] JOB-BOOT-003 Dodać prywatny `no-store` endpoint i UI prowadzące przez: magic link/OTP, pierwsze hasło, istniejący password step-up, external recovery, UV passkey, recovery codes i istniejący mailbox bootstrap. Hasło nie jest zapisywane w local storage i jest czyszczone po step-up.
 - [ ] JOB-BOOT-004 Udowodnić testami, że publiczny signup, generic password set, nieallowlistowany lub managed-domain login, stale/wrong proof, drugi właściciel, session race, receipt/audit collision i częściowy zapis pozostają odrzucone.
 
 ### Otrzymane załączniki

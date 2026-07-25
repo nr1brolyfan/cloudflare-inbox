@@ -5,6 +5,7 @@ import { forwardPrivateAuthResponse } from "#/routes/auth/$";
 describe("website auth proxy response policy", () => {
   it.each([
     ["success", 200],
+    ["created enrollment", 201],
     ["client error", 400],
     ["rate denial", 429],
     ["internal error", 500],

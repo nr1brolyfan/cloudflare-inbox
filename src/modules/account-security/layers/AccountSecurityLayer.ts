@@ -22,6 +22,10 @@ import {
   ExternalRecoveryIdentityD1Layer,
   ExternalRecoveryIdentityRuntimeLayer,
 } from "#/modules/account-security/adapters/d1/ExternalRecoveryIdentityD1";
+import {
+  FirstOwnerPasswordEnrollmentD1Layer,
+  FirstOwnerPasswordEnrollmentRuntimeLayer,
+} from "#/modules/account-security/adapters/d1/FirstOwnerPasswordEnrollmentD1";
 import { PasskeyAuthenticationIdentityD1Layer } from "#/modules/account-security/adapters/d1/PasskeyAuthenticationIdentityD1";
 import {
   PasskeyCredentialAdministrationD1Layer,
@@ -167,6 +171,11 @@ export const AccountSecurityLayer = Layer.unwrap(
         )
       )
     );
+    const firstOwnerPasswordEnrollmentLayer =
+      FirstOwnerPasswordEnrollmentD1Layer.pipe(
+        Layer.provide(effectAuthLayer),
+        Layer.provide(FirstOwnerPasswordEnrollmentRuntimeLayer)
+      );
     const passkeyEnrollmentLayer = PasskeyEnrollmentD1Layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -228,6 +237,7 @@ export const AccountSecurityLayer = Layer.unwrap(
       requestSessionAuthenticatorLayer,
       passwordResetEligibilityLayer,
       recoveryIdentityLayer,
+      firstOwnerPasswordEnrollmentLayer,
       passkeyEnrollmentLayer,
       passkeyCredentialAdministrationLayer,
       recoveryCodeAdministrationLayer,

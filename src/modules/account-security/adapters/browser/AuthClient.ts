@@ -14,6 +14,7 @@ import {
   ReadExternalRecoveryIdentityOperationQuery,
   VerifyExternalRecoveryIdentityCommand,
 } from "#/modules/account-security/application/ExternalRecoveryIdentityManagement";
+import { EnrollFirstOwnerPasswordCommand } from "#/modules/account-security/application/FirstOwnerPasswordEnrollment";
 import {
   ReadPasskeyRevocationQuery,
   RevokePasskeyCredentialCommand,
@@ -37,6 +38,19 @@ import {
 const applicationAuthExtension = defineAuthHttpApiExtension(
   ApplicationAuthClientExtensionApi,
   ({ run }) => ({
+    enrollFirstOwnerPassword: (
+      payload: Schema.Codec.Encoded<typeof EnrollFirstOwnerPasswordCommand>,
+      options?: AuthClientRequestOptions
+    ) =>
+      run(
+        (client) =>
+          client.firstOwnerPasswordEnrollment.enroll({
+            payload: Schema.decodeUnknownSync(EnrollFirstOwnerPasswordCommand)(
+              payload
+            ),
+          }),
+        options
+      ),
     completeAccountRecovery: (
       payload: Schema.Codec.Encoded<typeof CompleteAccountRecoveryCommand>,
       options?: AuthClientRequestOptions

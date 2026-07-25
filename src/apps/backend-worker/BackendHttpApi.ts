@@ -2,6 +2,7 @@ import { AccountRecoveryGroup } from "#/modules/account-security/adapters/http/A
 import { ApplicationAuthHttpApi } from "#/modules/account-security/adapters/http/AccountSecurityAuthHttpApi";
 import { DevEmailGroup } from "#/modules/account-security/adapters/http/DevEmailHttpApi";
 import { ExternalRecoveryIdentityGroup } from "#/modules/account-security/adapters/http/ExternalRecoveryIdentityHttpApi";
+import { FirstOwnerPasswordEnrollmentGroup } from "#/modules/account-security/adapters/http/FirstOwnerPasswordEnrollmentHttpApi";
 import { PasskeyAuthenticationGroup } from "#/modules/account-security/adapters/http/PasskeyAuthenticationHttpApi";
 import { PasskeyCredentialManagementGroup } from "#/modules/account-security/adapters/http/PasskeyCredentialManagementHttpApi";
 import { PasskeyEnrollmentGroup } from "#/modules/account-security/adapters/http/PasskeyEnrollmentHttpApi";
@@ -23,6 +24,7 @@ export const BackendHttpApi = ApplicationAuthHttpApi.add(
   OrganizationGroup,
   DevEmailGroup,
   ExternalRecoveryIdentityGroup,
+  FirstOwnerPasswordEnrollmentGroup,
   PasskeyEnrollmentGroup,
   PasskeyAuthenticationGroup,
   PasskeyCredentialManagementGroup,

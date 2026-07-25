@@ -33,6 +33,7 @@ import {
 } from "#/modules/account-security/adapters/http/AuthStepUpHttpOperations";
 import { DevEmailHttpHandlersLayer } from "#/modules/account-security/adapters/http/DevEmailHttpHandlers";
 import { ExternalRecoveryIdentityHttpHandlersLayer } from "#/modules/account-security/adapters/http/ExternalRecoveryIdentityHttpHandlers";
+import { FirstOwnerPasswordEnrollmentHttpHandlersLayer } from "#/modules/account-security/adapters/http/FirstOwnerPasswordEnrollmentHttpHandlers";
 import { PasskeyAuthenticationHttpHandlersLayer } from "#/modules/account-security/adapters/http/PasskeyAuthenticationHttpHandlers";
 import { PasskeyCredentialManagementHttpHandlersLayer } from "#/modules/account-security/adapters/http/PasskeyCredentialManagementHttpHandlers";
 import {
@@ -127,6 +128,10 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
         Layer.provide(requestValidationLayer)
       ),
       ExternalRecoveryIdentityHttpHandlersLayer.pipe(
+        Layer.provide(accountSecurityLayer),
+        Layer.provide(protectedHttpDependencies)
+      ),
+      FirstOwnerPasswordEnrollmentHttpHandlersLayer.pipe(
         Layer.provide(accountSecurityLayer),
         Layer.provide(protectedHttpDependencies)
       ),

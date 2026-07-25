@@ -35,8 +35,14 @@ const usePasskeySupport = () =>
 
 const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
   const [stepUpPassword, setStepUpPassword] = useState("");
+  const [firstPassword, setFirstPassword] = useState("");
+  const [firstPasswordConfirmation, setFirstPasswordConfirmation] =
+    useState("");
+  const [firstPasswordCommitted, setFirstPasswordCommitted] = useState(false);
+  const [secureSetupStarted, setSecureSetupStarted] = useState(false);
   const [stepUpComplete, setStepUpComplete] = useState(false);
   const [operationId] = useState(() => crypto.randomUUID());
+  const [passwordEnrollmentOperationId] = useState(() => crypto.randomUUID());
   const mailboxBootstrap = useMutation({
     mutationFn: async () => {
       const readback = async () => {
@@ -67,14 +73,14 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
       if (!result.ok && result.status === 401) {
         await clearCachedAuthSession(queryClient);
       }
+      if (!result.ok && result.error.code === "step_up_required") {
+        setStepUpComplete(false);
+      }
     },
     retry: false,
   });
-  const stepUpRequired =
-    mailboxBootstrap.data?.ok === false &&
-    mailboxBootstrap.data.error.code === "step_up_required";
   const stepUpOptions = useQuery({
-    enabled: stepUpRequired,
+    enabled: secureSetupStarted && !stepUpComplete,
     queryFn: () => authClient.stepUp.options(),
     queryKey: ["auth", "step-up-options", userId] as const,
     retry: false,
@@ -82,36 +88,150 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
   const passwordStepUp = useMutation({
     mutationFn: () =>
       authClient.stepUp.password.verify({ password: stepUpPassword }),
+    onSettled: () => setStepUpPassword(""),
     onSuccess: async () => {
-      setStepUpPassword("");
       setStepUpComplete(true);
-      mailboxBootstrap.reset();
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
+    },
+    retry: false,
+  });
+  const firstPasswordEnrollment = useMutation({
+    mutationFn: async () => {
+      if (firstPassword !== firstPasswordConfirmation) {
+        throw new Error("Passwords do not match");
+      }
+      await authClient.extensions.enrollFirstOwnerPassword({
+        operationId: passwordEnrollmentOperationId,
+        password: firstPassword,
+      });
+      setFirstPasswordCommitted(true);
+      await authClient.stepUp.password.verify({ password: firstPassword });
+    },
+    onSettled: async (_result, error) => {
+      setFirstPassword("");
+      setFirstPasswordConfirmation("");
+      if (error !== null) {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: authSessionQueryKey }),
+          queryClient.invalidateQueries({
+            queryKey: ["auth", "step-up-options", userId],
+          }),
+        ]);
+      }
+    },
+    onSuccess: async () => {
+      setStepUpComplete(true);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: authSessionQueryKey }),
+        queryClient.invalidateQueries({
+          queryKey: ["auth", "step-up-options", userId],
+        }),
+      ]);
     },
     retry: false,
   });
 
   return {
-    handleBootstrap: () => {
-      setStepUpComplete(false);
-      mailboxBootstrap.mutate();
-    },
+    firstPassword,
+    firstPasswordCommitted,
+    firstPasswordConfirmation,
+    firstPasswordEnrollment,
+    handleFirstPasswordChange: setFirstPassword,
+    handleFirstPasswordConfirmationChange: setFirstPasswordConfirmation,
+    handleBeginSecureSetup: () => setSecureSetupStarted(true),
     handlePasskeyStepUp: () => {
       setStepUpComplete(true);
-      mailboxBootstrap.reset();
     },
+    handleBootstrap: () => mailboxBootstrap.mutate(),
     handleStepUpPasswordChange: setStepUpPassword,
     mailboxBootstrap,
     passwordStepUp,
+    secureSetupStarted,
     stepUpComplete,
     stepUpOptions,
     stepUpPassword,
     stepUpPasswordAvailable:
-      stepUpOptions.data?.factors.some(
+      firstPasswordCommitted ||
+      (stepUpOptions.data?.factors.some(
         (factor) => factor.type === "password"
-      ) ?? false,
+      ) ??
+        false),
   };
 };
+
+function FirstOwnerPasswordPanel({
+  confirmation,
+  enrollmentError,
+  isPending,
+  onConfirmationChange,
+  onPasswordChange,
+  onSubmit,
+  password,
+}: {
+  readonly confirmation: string;
+  readonly enrollmentError: Error | null;
+  readonly isPending: boolean;
+  readonly onConfirmationChange: (password: string) => void;
+  readonly onPasswordChange: (password: string) => void;
+  readonly onSubmit: () => void;
+  readonly password: string;
+}) {
+  return (
+    <div className="mt-8 rounded-2xl border border-[var(--line)] bg-white/70 p-5">
+      <p className="island-kicker">First owner security</p>
+      <h3 className="mt-2 text-xl font-bold">Create your first password</h3>
+      <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+        Your recent email sign-in proves ownership. Create a password now so it
+        can immediately confirm the primary inbox setup.
+      </p>
+      <form
+        className="mt-5 space-y-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          onSubmit();
+        }}
+      >
+        <label className="block space-y-2 text-sm font-bold">
+          <span>New password</span>
+          <input
+            type="password"
+            required
+            autoComplete="new-password"
+            value={password}
+            onChange={(event) => onPasswordChange(event.target.value)}
+            className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
+          />
+        </label>
+        <label className="block space-y-2 text-sm font-bold">
+          <span>Confirm password</span>
+          <input
+            type="password"
+            required
+            autoComplete="new-password"
+            value={confirmation}
+            onChange={(event) => onConfirmationChange(event.target.value)}
+            className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
+          />
+        </label>
+        {enrollmentError ? (
+          <ErrorNotice>{authErrorMessage(enrollmentError)}</ErrorNotice>
+        ) : null}
+        <button
+          type="submit"
+          disabled={isPending}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg disabled:opacity-50"
+        >
+          {isPending ? (
+            <LoaderCircle className="animate-spin" size={17} />
+          ) : (
+            <ShieldCheck size={17} />
+          )}
+          Create password and confirm
+        </button>
+      </form>
+    </div>
+  );
+}
 
 function StepUpPanel({
   description = "Creating the primary inbox grants ownership and configures its initial address. Re-enter your password to continue.",
@@ -287,8 +407,8 @@ function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
   });
   const passwordStepUp = useMutation({
     mutationFn: () => authClient.stepUp.password.verify({ password }),
+    onSettled: () => setPassword(""),
     onSuccess: async () => {
-      setPassword("");
       enrollment.reset();
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
     },
@@ -297,7 +417,7 @@ function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
 
   return (
     <section className="mt-8 border-t border-[var(--line)] pt-8">
-      <p className="island-kicker">Recovery safety</p>
+      <p className="island-kicker">Step 1 / Recovery safety</p>
       <h3 className="mt-2 text-xl font-bold">External recovery address</h3>
       <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
         Use a personal address outside the managed mail domain. It remains
@@ -403,8 +523,8 @@ function PasskeyEnrollment({ userId }: { readonly userId: string }) {
   });
   const passwordStepUp = useMutation({
     mutationFn: () => authClient.stepUp.password.verify({ password }),
+    onSettled: () => setPassword(""),
     onSuccess: async () => {
-      setPassword("");
       enrollment.reset();
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
     },
@@ -413,7 +533,7 @@ function PasskeyEnrollment({ userId }: { readonly userId: string }) {
 
   return (
     <section className="mt-8 border-t border-[var(--line)] pt-8">
-      <p className="island-kicker">Passkey-first access</p>
+      <p className="island-kicker">Step 2 / Passkey-first access</p>
       <h3 className="mt-2 text-xl font-bold">Enroll a passkey</h3>
       <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
         Enrollment requires recent authentication and a verified external
@@ -568,8 +688,8 @@ function PasskeyCredentialManagement({ userId }: { readonly userId: string }) {
   });
   const passwordStepUp = useMutation({
     mutationFn: () => authClient.stepUp.password.verify({ password }),
+    onSettled: () => setPassword(""),
     onSuccess: async () => {
-      setPassword("");
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
       if (revokeCommand !== null) {
         revocation.mutate(revokeCommand);
@@ -725,8 +845,8 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
   });
   const passwordStepUp = useMutation({
     mutationFn: () => authClient.stepUp.password.verify({ password }),
+    onSettled: () => setPassword(""),
     onSuccess: async () => {
-      setPassword("");
       generation.reset();
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
     },
@@ -735,7 +855,7 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
 
   return (
     <section className="mt-8 border-t border-[var(--line)] pt-8">
-      <p className="island-kicker">Account recovery</p>
+      <p className="island-kicker">Step 3 / Account recovery</p>
       <h3 className="mt-2 text-xl font-bold">Recovery codes</h3>
       <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
         Generating a set immediately invalidates every previous unused code.
@@ -828,6 +948,7 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
   );
 }
 
+// oxlint-disable-next-line eslint/complexity -- The bootstrap surface exhaustively selects mailbox, step-up, and one-time first-owner states.
 export function SignedInOwnerBootstrap({
   isLogoutPending,
   onLogout,
@@ -838,14 +959,21 @@ export function SignedInOwnerBootstrap({
   readonly userId: string;
 }) {
   const queryClient = useQueryClient();
+  const [operatorReady, setOperatorReady] = useState(false);
   const ownerBootstrap = useOwnerBootstrap(queryClient, userId);
   const bootstrapResult = ownerBootstrap.mailboxBootstrap.data;
   const mailboxExists =
     bootstrapResult?.ok === false && bootstrapResult.status === 409;
   const mailboxKnown = bootstrapResult?.ok === true || mailboxExists;
-  const stepUpRequired =
-    bootstrapResult?.ok === false &&
-    bootstrapResult.error.code === "step_up_required";
+  const firstPasswordNeeded =
+    ownerBootstrap.secureSetupStarted &&
+    !ownerBootstrap.stepUpComplete &&
+    !ownerBootstrap.firstPasswordCommitted &&
+    ownerBootstrap.stepUpOptions.isSuccess &&
+    !hasStepUpFactor(ownerBootstrap.stepUpOptions.data, "password") &&
+    !hasStepUpFactor(ownerBootstrap.stepUpOptions.data, "passkey");
+  const secureSetupPending = ownerBootstrap.secureSetupStarted === false;
+  const stepUpPending = ownerBootstrap.stepUpComplete === false;
 
   return (
     <div>
@@ -860,32 +988,67 @@ export function SignedInOwnerBootstrap({
         Mailbox access is verified when you open the workspace. Session
         principal: <code>{userId.slice(0, 12)}...</code>
       </p>
+      <div className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--sand)]/60 p-5">
+        <p className="font-bold">Complete the launch checklist in order</p>
+        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-[var(--sea-ink-soft)]">
+          <li>Verify an external recovery address.</li>
+          <li>Create a user-verified passkey.</li>
+          <li>Generate and securely save recovery codes.</li>
+          <li>Launch the mailbox only after the first three steps succeed.</li>
+        </ol>
+        <p className="mt-3 text-xs leading-5 text-[var(--sea-ink-soft)]">
+          This page guides the acceptance sequence; each service below remains
+          authoritative for whether its requirement is satisfied.
+        </p>
+      </div>
       <div className="mt-6">
         {bootstrapResult?.ok ? (
           <div className="space-y-3">
             <Notice>
-              Primary inbox ready: {bootstrapResult.mailbox.displayName}
+              Primary inbox created: {bootstrapResult.mailbox.displayName}
             </Notice>
             <p className="text-sm leading-6 text-[var(--sea-ink-soft)]">
-              Open the responsive workspace to continue to your mailbox.
+              Finish the security checklist below before launching it.
             </p>
           </div>
         ) : mailboxExists ? (
           <Notice>
-            A primary inbox already exists. Open it to verify your access.
+            A primary inbox already exists. Finish the security checklist below
+            before launching it.
           </Notice>
-        ) : bootstrapResult && !stepUpRequired ? (
+        ) : bootstrapResult ? (
           <ErrorNotice>{bootstrapResult.error.message}</ErrorNotice>
         ) : ownerBootstrap.mailboxBootstrap.error ? (
           <ErrorNotice>Mailbox setup request failed. Try again.</ErrorNotice>
         ) : null}
         {ownerBootstrap.stepUpComplete ? (
           <Notice>
-            Identity confirmed for five minutes. Create the inbox when ready.
+            Identity confirmed. Complete the security steps below before the
+            five-minute confirmation expires.
           </Notice>
         ) : null}
       </div>
-      {stepUpRequired ? (
+      {secureSetupPending ? (
+        <button
+          type="button"
+          onClick={ownerBootstrap.handleBeginSecureSetup}
+          className="mt-8 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5"
+        >
+          <ShieldCheck size={17} /> Begin secure setup
+        </button>
+      ) : firstPasswordNeeded ? (
+        <FirstOwnerPasswordPanel
+          confirmation={ownerBootstrap.firstPasswordConfirmation}
+          enrollmentError={ownerBootstrap.firstPasswordEnrollment.error}
+          isPending={ownerBootstrap.firstPasswordEnrollment.isPending}
+          onConfirmationChange={
+            ownerBootstrap.handleFirstPasswordConfirmationChange
+          }
+          onPasswordChange={ownerBootstrap.handleFirstPasswordChange}
+          onSubmit={() => ownerBootstrap.firstPasswordEnrollment.mutate()}
+          password={ownerBootstrap.firstPassword}
+        />
+      ) : stepUpPending ? (
         <StepUpPanel
           isPending={ownerBootstrap.passwordStepUp.isPending}
           onPasswordChange={ownerBootstrap.handleStepUpPasswordChange}
@@ -901,33 +1064,69 @@ export function SignedInOwnerBootstrap({
           passwordAvailable={ownerBootstrap.stepUpPasswordAvailable}
           passwordError={ownerBootstrap.passwordStepUp.error}
         />
-      ) : mailboxKnown ? null : (
-        <button
-          type="button"
-          onClick={ownerBootstrap.handleBootstrap}
-          disabled={ownerBootstrap.mailboxBootstrap.isPending}
-          className="mt-8 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
-        >
-          {ownerBootstrap.mailboxBootstrap.isPending ? (
-            <LoaderCircle className="animate-spin" size={17} />
-          ) : (
-            <Mail size={17} />
-          )}
-          Create primary inbox
-        </button>
+      ) : (
+        <>
+          <ExternalRecoveryEnrollment userId={userId} />
+          <PasskeyEnrollment userId={userId} />
+          <RecoveryCodeManagement userId={userId} />
+          <PasskeyCredentialManagement userId={userId} />
+          <section className="mt-8 border-t border-[var(--line)] pt-8">
+            <p className="island-kicker">Step 4 / Mailbox creation</p>
+            {mailboxKnown ? (
+              <>
+                <h3 className="mt-2 text-xl font-bold">
+                  Open the primary inbox
+                </h3>
+                <Link
+                  to="/inbox"
+                  className="mt-5 flex w-fit items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white no-underline shadow-lg hover:-translate-y-0.5 hover:text-white"
+                >
+                  <Mail size={17} /> Open inbox
+                </Link>
+              </>
+            ) : (
+              <>
+                <h3 className="mt-2 text-xl font-bold">
+                  Create the primary inbox
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+                  This acknowledgement records only your operator confirmation;
+                  it does not query or prove backend readiness. `JOB-CF-005`
+                  remains the authoritative live onboarding gate.
+                </p>
+                <label className="mt-5 flex items-start gap-3 rounded-xl border border-[var(--line)] bg-white/70 p-4 text-sm leading-6">
+                  <input
+                    type="checkbox"
+                    checked={operatorReady}
+                    onChange={(event) => setOperatorReady(event.target.checked)}
+                    className="mt-1 size-4 shrink-0"
+                  />
+                  <span>
+                    I confirm that the external recovery address is verified, at
+                    least one user-verified passkey is active, and recovery
+                    codes are saved offline.
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={ownerBootstrap.handleBootstrap}
+                  disabled={
+                    !operatorReady || ownerBootstrap.mailboxBootstrap.isPending
+                  }
+                  className="mt-5 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
+                >
+                  {ownerBootstrap.mailboxBootstrap.isPending ? (
+                    <LoaderCircle className="animate-spin" size={17} />
+                  ) : (
+                    <Mail size={17} />
+                  )}
+                  Create primary inbox
+                </button>
+              </>
+            )}
+          </section>
+        </>
       )}
-      {mailboxKnown ? (
-        <Link
-          to="/inbox"
-          className="mt-8 flex w-fit items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white no-underline shadow-lg hover:-translate-y-0.5 hover:text-white"
-        >
-          <Mail size={17} /> Open inbox
-        </Link>
-      ) : null}
-      <ExternalRecoveryEnrollment userId={userId} />
-      <PasskeyEnrollment userId={userId} />
-      <PasskeyCredentialManagement userId={userId} />
-      <RecoveryCodeManagement userId={userId} />
       <button
         type="button"
         onClick={onLogout}
