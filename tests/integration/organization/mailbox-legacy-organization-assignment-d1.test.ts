@@ -12,6 +12,13 @@ import {
 
 const migration = "1024_app_mailbox_legacy_organization_assignment.sql";
 
+const setDefensiveMode = (database: DatabaseSync, active: boolean): void => {
+  const { enableDefensive } = database as DatabaseSync & {
+    enableDefensive?: (active: boolean) => void;
+  };
+  enableDefensive?.call(database, active);
+};
+
 const make1022Database = async () => {
   const database = new DatabaseSync(":memory:");
   await applyControlPlaneMigrationsThrough(
@@ -828,6 +835,7 @@ describe("mailbox legacy organization assignment migration", () => {
       const database = new DatabaseSync(":memory:");
       try {
         await applyControlPlaneMigrations(database);
+        setDefensiveMode(database, false);
         database.exec("pragma writable_schema = on");
         database
           .prepare(
@@ -837,6 +845,7 @@ describe("mailbox legacy organization assignment migration", () => {
           )
           .run(target, replacement, table);
         database.exec("pragma writable_schema = off");
+        setDefensiveMode(database, true);
 
         expect(
           database

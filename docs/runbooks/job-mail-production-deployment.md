@@ -32,11 +32,12 @@ Run `bun run config:production`; success prints only `production-config ok`, whi
 
 1. Export a content-free inventory of every existing DNS record for `szymondlugolecki.com`, including type, owner/name, TTL/proxy state, provider/lock ownership, and a digest of values where values are sensitive.
 2. Identify existing Website hostname records, Email Routing MX records, SPF TXT records, DKIM selectors, DMARC, verification records, and provider-locked records. Do not create a duplicate SPF or DMARC record.
-3. Confirm the zone is in the intended Cloudflare account and inspect the current zone-wide Email Routing enabled state, Routing status, catch-all enabled state/action, and every existing custom rule.
-4. Understand the ownership boundary before continuing: Alchemy's `Email.Routing` and `Email.CatchAll` providers silently manage/adopt existing per-zone shared singletons without `--adopt`. Deployment assumes management ownership and can mutate zone-wide Routing or disable/change the existing catch-all. `--adopt` does not protect these singleton resources.
+3. Confirm the zone is in the intended Cloudflare account and inspect the current zone-wide Email Routing enabled state, Routing status, catch-all enabled state/action, and every existing custom rule. Enable Email Routing manually and require status `ready` before deployment; the scoped API token can manage rules but Cloudflare's legacy settings endpoint does not accept it.
+4. Understand the ownership boundary before continuing: the stack deliberately does not declare `Email.Routing`, so it cannot enable, disable, adopt, or restore that zone-wide setting. Alchemy's `Email.CatchAll` provider does manage/adopt the existing per-zone catch-all singleton without `--adopt` and can disable/change it. `--adopt` does not protect this singleton resource.
 5. Require the reviewed baseline to be Routing suitable for commissioning and catch-all exactly disabled with drop action. After recording content-free inventory evidence, set `JOB_MAIL_SHARED_ROUTING_STATE_CONFIRMED=disabled-drop-reviewed`. Never infer or prefill this acknowledgement.
 6. Run the dry-run only after that acknowledgement. Compare it to the manual dashboard inventory. Stop if it proposes an unexplained shared-state mutation, deletion/replacement, another mail route change, or unrelated DNS.
 7. Destroy and stack contraction are forbidden because singleton restoration/deletion semantics can mutate shared zone-wide mail state. Never delete and recreate DNS or routing to simplify state ownership.
+8. This launch assumes `JobMailRouting` was never deployed into production Alchemy state. Before the first plan, run `bun run state:production`; the exact required result is `(no resources in CloudflareInbox/production)`. Also confirm the account inventory contains no production CloudflareInbox Website, Backend, D1, R2, Workflow, AI Gateway, or exact mail rule. Any listed state resource, prior production resource, or `JobMailRouting` entry is a mandatory stop: do not let a plan contract or delete it, and reconcile state under independent review first. The inspection command uses a graph-free stack facade so it cannot evaluate or reconcile application resources.
 
 ## Gmail Destination Verification
 
@@ -51,7 +52,7 @@ Cloudflare destination-address verification is manual and account-level. This st
 1. Pin and record the reviewed release commit. Ensure the tracked and untracked worktree is clean and `.env.production` corresponds to it.
 2. Run `bun run release:check`, then `bun run config:production`. The production wrapper constructs a scrubbed child environment containing only exact parsed file values plus the reviewed executable/profile/Cloudflare-auth allowlist; inherited application values and all `ALCHEMY_DEV`/`ALCHEMY_STATE` representations are absent.
 3. Run `bun run deploy:production:dry-run`. The wrapper invokes Alchemy as `deploy --stage production --env-file .env.production --dry-run`; it cannot use ambient values to complete a missing file key.
-4. Review that the plan contains the production Website custom domain, private Backend, D1, R2, Durable Objects, Workflows, restricted send bindings, Email Routing, disabled/drop catch-all, and one exact literal inbound Worker rule with `enabled=false`. Confirm no Gmail Address or SendingSubdomain resource exists.
+4. Review that the plan contains the production Website custom domain, private Backend, D1, R2, Durable Objects, Workflows, restricted send bindings, disabled/drop catch-all, and one exact literal inbound Worker rule with `enabled=false`. Confirm no Email Routing settings singleton, Gmail Address, or SendingSubdomain resource exists.
 5. Run `bun run deploy:production`. It reruns release preflight and remains interactive; do not add `--yes`.
 6. Treat this only as an uncommissioned core-resource deploy. Do not change `JOB_MAIL_INBOUND_ROUTE_ENABLED` and do not call the system commissioned until the mandatory manual apex Email Sending and exact `p=none` DMARC checks pass.
 
@@ -108,7 +109,7 @@ Activation is forbidden until the following commissioning sequence has completed
 
 ## Rollback And Forward Fix
 
-- There is no production destroy command. Never use `alchemy destroy`, contract the production stack, or manually tear it down as rollback; shared Routing/CatchAll ownership makes those operations zone-wide hazards.
+- There is no production destroy command. Never use `alchemy destroy`, contract the production stack, or manually tear it down as rollback; catch-all singleton ownership and retained application data make those operations unsafe. The manually managed Email Routing setting must not be disabled as application rollback.
 - For inbound containment, set `JOB_MAIL_INBOUND_ROUTE_ENABLED=false`, run release check and dry-run, review an enabled-state-only change, then deploy interactively.
 - For Website/application regressions, forward-fix from the last reviewed release or deploy a reviewed corrective commit. Preserve D1, R2, Durable Objects, Workflows, DNS ownership, and manual verification state.
 - For sending incidents, disable application sending through the reviewed operational control/provider dashboard while preserving records and evidence; do not remove apex onboarding records as a first response.

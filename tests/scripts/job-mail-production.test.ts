@@ -171,7 +171,7 @@ describe("job mail production resource structure", () => {
           name: "Inbound job mail",
         },
       ],
-      routing: { enabled: true, zone: "szymondlugolecki.com" },
+      routing: { zone: "szymondlugolecki.com" },
       senders: {
         auth: ["auth@szymondlugolecki.com"],
         mailbox: ["szymon@szymondlugolecki.com"],
@@ -188,8 +188,20 @@ describe("job mail production resource structure", () => {
 
   it("does not declare account-level address or subdomain sending resources", () => {
     const source = readRoot("alchemy.run.ts");
+    expect(source).not.toContain("Cloudflare.Email.Routing");
     expect(source).not.toContain("Email.Address");
     expect(source).not.toContain("SendingSubdomain");
+  });
+
+  it("inspects production state through the deployment credential boundary", () => {
+    const source = readRoot("scripts/check-production-state.ts");
+    expect(source).toContain("readProductionEnvFile");
+    expect(source).toContain("productionAlchemyChildEnv");
+    expect(source).toContain('"scripts/cloudflare-state-inspection.ts"');
+    expect(source).toContain('"CloudflareInbox"');
+    expect(source).toContain('"production"');
+    expect(source).toContain('".env.production"');
+    expect(source).not.toContain('".env"');
   });
 
   it("keeps the Backend private", () => {
@@ -221,6 +233,9 @@ describe("production command and environment safety", () => {
     );
     expect(packageJson.scripts["config:production"]).toBe(
       "bun scripts/check-production-config.ts"
+    );
+    expect(packageJson.scripts["state:production"]).toBe(
+      "bun scripts/check-production-state.ts"
     );
     expect(packageJson.scripts["deploy:production"]).not.toContain("--yes");
     expect(

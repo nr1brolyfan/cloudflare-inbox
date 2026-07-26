@@ -79,19 +79,16 @@ export default Alchemy.Stack(
     }
     const backend = yield* Backend;
     if (productionConfig !== undefined) {
-      const routing = yield* Cloudflare.Email.Routing("JobMailRouting", {
-        ...JobMailProductionTopology.routing,
-      });
       yield* Cloudflare.Email.CatchAll("JobMailCatchAll", {
         ...JobMailProductionTopology.catchAll,
-        zone: routing.zoneId,
+        zone: JobMailProductionTopology.routing.zone,
       });
       yield* Cloudflare.Email.Rule("JobMailInboundRoute", {
         ...jobMailInboundRuleProps(
           backend.workerName,
           productionConfig.routeEnabled
         ),
-        zone: routing.zoneId,
+        zone: JobMailProductionTopology.routing.zone,
       });
     }
     const website = yield* isProduction ? ProductionWebsite : Website;

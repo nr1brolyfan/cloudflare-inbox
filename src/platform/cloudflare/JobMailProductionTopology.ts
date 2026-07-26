@@ -18,7 +18,6 @@ export const JobMailProductionTopology = {
     },
   ],
   routing: {
-    enabled: true,
     zone: "szymondlugolecki.com",
   },
   senders: {

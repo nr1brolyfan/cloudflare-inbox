@@ -10,6 +10,7 @@
     "dev:vite": "vite dev --port 3000",
     "config:production": "bun scripts/check-production-config.ts",
     "release:check": "bun scripts/release-check.ts",
+    "state:production": "bun scripts/check-production-state.ts",
     "deploy:production:dry-run": "bun run release:check && bun run config:production && bun scripts/run-production-alchemy.ts plan",
     "deploy:production": "bun run release:check && bun run config:production && bun scripts/run-production-alchemy.ts deploy",
     "generate:auth-migrations": "bun scripts/write-auth-migrations.ts",

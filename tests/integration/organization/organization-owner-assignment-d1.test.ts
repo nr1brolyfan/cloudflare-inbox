@@ -16,6 +16,13 @@ const renameOperationId = "00000000-0000-4000-8000-000000000020";
 
 type History = "none" | "audit" | "receipt";
 
+const setDefensiveMode = (database: DatabaseSync, active: boolean): void => {
+  const { enableDefensive } = database as DatabaseSync & {
+    enableDefensive?: (active: boolean) => void;
+  };
+  enableDefensive?.call(database, active);
+};
+
 const makeLegacyDatabase = async (history: History = "none") => {
   const database = new DatabaseSync(":memory:");
   await applyControlPlaneMigrationsThrough(
@@ -1142,6 +1149,7 @@ describe("organization owner assignment migration", () => {
       if (variant.reapply) {
         await applyControlPlaneMigration(database, migration);
       }
+      setDefensiveMode(database, false);
       database.exec("pragma writable_schema = on");
       database
         .prepare(
@@ -1155,6 +1163,7 @@ describe("organization owner assignment migration", () => {
           variant.artifact
         );
       database.exec("pragma writable_schema = off");
+      setDefensiveMode(database, true);
 
       await expect(
         applyControlPlaneMigration(database, migration)
