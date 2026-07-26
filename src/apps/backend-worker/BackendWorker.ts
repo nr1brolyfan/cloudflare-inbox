@@ -142,7 +142,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     },
     url: false,
     env: {
-      MAILBOX_OUTBOUND_PROVIDER_DISABLED: process.env.ALCHEMY_DEV === "true",
+      MAILBOX_OUTBOUND_PROVIDER_DISABLED: ALCHEMY_DEV,
     },
   },
   Effect.gen(function* () {

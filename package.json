@@ -8,8 +8,10 @@
   "scripts": {
     "dev": "ALCHEMY_STATE=local alchemy dev",
     "dev:vite": "vite dev --port 3000",
-    "deploy": "alchemy deploy",
-    "destroy": "alchemy destroy",
+    "config:production": "bun scripts/check-production-config.ts",
+    "release:check": "bun scripts/release-check.ts",
+    "deploy:production:dry-run": "bun run release:check && bun run config:production && bun scripts/run-production-alchemy.ts plan",
+    "deploy:production": "bun run release:check && bun run config:production && bun scripts/run-production-alchemy.ts deploy",
     "generate:auth-migrations": "bun scripts/write-auth-migrations.ts",
     "check:auth-migrations": "bun scripts/write-auth-migrations.ts --check",
     "generate:auth-schema": "bun scripts/write-auth-schema.ts",

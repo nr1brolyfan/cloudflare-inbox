@@ -17,12 +17,12 @@ import {
 const authConfig = Schema.decodeUnknownSync(AuthRuntimeConfigSchema)({
   delivery: { _tag: "development" },
   emailFrom: "auth@example.test",
-  publicOrigin: "http://localhost:3000/path-is-normalized",
+  publicOrigin: "http://localhost:3000",
   rateLimitNamespace: {},
   secrets: {
-    challenge: Redacted.make("challenge"),
-    privacy: Redacted.make("privacy"),
-    session: Redacted.make("session"),
+    challenge: Redacted.make("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA"),
+    privacy: Redacted.make("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA"),
+    session: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
   },
 });
 

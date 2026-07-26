@@ -48,12 +48,12 @@ describe("production account recovery email delivery", () => {
         },
       },
       emailFrom: "auth@inbox.test",
-      publicOrigin: "https://inbox.test/deployment-path",
+      publicOrigin: "https://inbox.test",
       rateLimitNamespace: {},
       secrets: {
-        challenge: Redacted.make("challenge"),
-        privacy: Redacted.make("privacy"),
-        session: Redacted.make("session"),
+        challenge: Redacted.make("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA"),
+        privacy: Redacted.make("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA"),
+        session: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
       },
     });
     const layer = AccountRecoveryDeliveryEmailLayer.pipe(

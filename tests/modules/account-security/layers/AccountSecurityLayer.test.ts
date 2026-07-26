@@ -43,25 +43,65 @@ import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/Rec
 const baseConfig = {
   delivery: { _tag: "development" },
   emailFrom: "auth@example.test",
-  publicOrigin: "https://inbox.test/some/deployment/path?ignored=true",
+  publicOrigin: "https://inbox.test",
   rateLimitNamespace: {},
   secrets: {
-    challenge: Redacted.make("challenge"),
-    privacy: Redacted.make("privacy"),
-    session: Redacted.make("session"),
+    challenge: Redacted.make("BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBA"),
+    privacy: Redacted.make("CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCA"),
+    session: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"),
   },
 } as const;
 const unusedEffectAuthOperation = () =>
   Effect.die("service operation is not used");
 
 describe("auth runtime config", () => {
-  it("decodes an absolute origin whose origin is normalized", () => {
+  it("decodes an exact absolute root origin", () => {
     const config = Schema.decodeUnknownSync(AuthRuntimeConfigSchema)(
       baseConfig
     );
 
     expect(config.publicOrigin.origin).toBe("https://inbox.test");
     expect(config.publicOrigin.href).toBe("https://inbox.test/");
+  });
+
+  it.each([
+    "https://user:password@inbox.test",
+    "https://inbox.test/path",
+    "https://inbox.test?query=true",
+    "https://inbox.test#fragment",
+  ])("rejects a non-origin URL without normalizing it: %s", (publicOrigin) => {
+    expect(() =>
+      Schema.decodeUnknownSync(AuthRuntimeConfigSchema)({
+        ...baseConfig,
+        publicOrigin,
+      })
+    ).toThrow(/exact HTTP\(S\) root origin/u);
+  });
+
+  it("rejects malformed or repeated auth secrets without rendering them", () => {
+    const privateValue = "private-secret-that-must-not-appear";
+    const renderedErrors = [
+      { ...baseConfig.secrets, session: Redacted.make(privateValue) },
+      {
+        challenge: baseConfig.secrets.session,
+        privacy: baseConfig.secrets.privacy,
+        session: baseConfig.secrets.session,
+      },
+    ].map((secrets) => {
+      try {
+        Schema.decodeUnknownSync(AuthRuntimeConfigSchema)({
+          ...baseConfig,
+          secrets,
+        });
+        return privateValue;
+      } catch (error) {
+        return String(error);
+      }
+    });
+    expect(renderedErrors).toHaveLength(2);
+    expect(
+      renderedErrors.every((error) => !error.includes(privateValue))
+    ).toBeTruthy();
   });
 
   it("rejects relative and non-HTTP public origins", () => {

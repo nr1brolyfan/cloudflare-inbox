@@ -4,8 +4,8 @@ import { EmailSchema } from "@effect-auth/core/Identifiers";
 import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import type * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import * as SchemaGetter from "effect/SchemaGetter";
 
 export type AuthEmailSendClient = Effect.Success<
   ReturnType<typeof Cloudflare.Email.Send>
@@ -13,13 +13,16 @@ export type AuthEmailSendClient = Effect.Success<
 
 const PublicOriginSchema = Schema.URLFromString.pipe(
   Schema.refine(
-    (url): url is URL => url.protocol === "https:" || url.protocol === "http:",
-    { message: "Public origin must be an absolute HTTP(S) URL" }
-  ),
-  Schema.decode({
-    decode: SchemaGetter.transform((url) => new URL(url.origin)),
-    encode: SchemaGetter.transform((url) => new URL(url.origin)),
-  })
+    (url): url is URL =>
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.username === "" &&
+      url.password === "" &&
+      url.pathname === "/" &&
+      url.search === "" &&
+      url.hash === "" &&
+      url.href === `${url.origin}/`,
+    { message: "Public origin must be an exact HTTP(S) root origin" }
+  )
 );
 
 const AuthEmailSendClientSchema = Schema.declare<AuthEmailSendClient>(
@@ -34,12 +37,30 @@ const RateLimitNamespaceSchema =
   );
 
 const AuthSecretsSchema = Schema.declare<AuthSecretsShape>(
-  (value): value is AuthSecretsShape =>
-    typeof value === "object" &&
-    value !== null &&
-    "challenge" in value &&
-    "privacy" in value &&
-    "session" in value
+  (value): value is AuthSecretsShape => {
+    if (
+      typeof value !== "object" ||
+      value === null ||
+      !("challenge" in value) ||
+      !("privacy" in value) ||
+      !("session" in value)
+    ) {
+      return false;
+    }
+    try {
+      const secrets = [value.challenge, value.privacy, value.session].map(
+        (secret) => Redacted.value(secret as Redacted.Redacted<string>)
+      );
+      return (
+        secrets.every((secret) =>
+          /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u.test(secret)
+        ) && new Set(secrets).size === secrets.length
+      );
+    } catch {
+      return false;
+    }
+  },
+  { message: "Auth secrets must satisfy the runtime secret policy" }
 );
 
 export const AuthRuntimeConfigSchema = Schema.Struct({

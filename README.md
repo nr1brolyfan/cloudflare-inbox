@@ -104,15 +104,17 @@ bun run check
 bun run check:mail-domain-config
 bun run format
 bun run generate:auth-migrations
-bun run deploy
-bun run destroy
+bun run config:production
+bun run release:check
+bun run deploy:production:dry-run
+bun run deploy:production
 ```
 
 Run `bun run generate:auth-migrations` after changing `@effect-auth/core`. Committed migrations are verified automatically by `bun run check`. Because migration 1017 recognizes the vendor's credential-bearing challenge types and metadata keys, every effect-auth upgrade also requires an explicit compatibility review of that interlock.
 
 Alchemy runs the mail-domain configuration preflight through its own `ConfigProvider` before provisioning, including deployments using `--env-file`. V1 accepts ASCII domains and canonical A-labels only; Unicode U-label input requires a future versioned profile. Backend initialization additionally reconciles or validates the persisted fixed claim against configuration and retained route provenance before serving work.
 
-Production deployment uses Alchemy's Cloudflare state store. Local development sets `ALCHEMY_STATE=local` and keeps generated state under the ignored `.alchemy` directory.
+Production deployment uses Alchemy's Cloudflare state store. Local development alone sets `ALCHEMY_STATE=local` through `bun run dev`; there are no remote development deploy or destroy scripts. `config:production` strictly parses only `.env.production`, rejects duplicate/malformed/unexpected/Alchemy keys, and validates through an isolated Effect config provider that ignores ambient application values. The production Alchemy wrapper passes only those parsed values plus a narrow executable/profile/Cloudflare-auth environment allowlist; it omits inherited `ALCHEMY_DEV`, `ALCHEMY_STATE`, and unrelated application variables. `release:check` is the mandatory clean-worktree release gate: it records HEAD and runs check, typecheck, the full test suite, the restore rehearsal, build, and diff/cleanliness checks. Production preparation, shared Email Routing ownership checks, manual apex Email Sending, activation, and non-destructive rollback are documented in [`docs/runbooks/job-mail-production-deployment.md`](docs/runbooks/job-mail-production-deployment.md). There is intentionally no production destroy command.
 
 ## Structure
 

@@ -1,0 +1,423 @@
+/* oxlint-disable vitest/max-expects -- Structural safety tests intentionally assert the complete deployment contract together. */
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+import * as Effect from "effect/Effect";
+import * as Redacted from "effect/Redacted";
+import { describe, expect, it } from "vitest";
+
+import {
+  COMMITTED_AUTH_SECRET_PATTERNS,
+  JobMailProductionConfigError,
+  parseJobMailProductionConfig,
+} from "#/modules/organization/application/JobMailProductionConfig";
+import {
+  JOB_MAIL_PRODUCTION_STAGE,
+  JobMailProductionTopology,
+  isJobMailProductionStage,
+  jobMailInboundRuleProps,
+} from "#/platform/cloudflare/JobMailProductionTopology";
+
+import { validateProductionConfigFile } from "../../scripts/check-production-config";
+import {
+  PRODUCTION_APPLICATION_KEYS,
+  ProductionEnvFileError,
+  parseProductionEnv,
+} from "../../scripts/production-env";
+import {
+  PRODUCTION_OPERATIONAL_ENV_KEYS,
+  productionAlchemyArgs,
+  productionAlchemyChildEnv,
+} from "../../scripts/run-production-alchemy";
+
+const root = fileURLToPath(new URL("../..", import.meta.url));
+const readRoot = (file: string) => readFileSync(path.join(root, file), "utf-8");
+const validInput = {
+  archiveRecipient: "archive@gmail.com",
+  authEmailFrom: "auth@szymondlugolecki.com",
+  challengeSecret: Redacted.make("DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA"),
+  initialAddress: "szymon@szymondlugolecki.com",
+  ownerAllowlist: '["owner@example.com"]',
+  privacySecret: Redacted.make("EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEA"),
+  publicOrigin: "https://mail.szymondlugolecki.com",
+  routeEnabled: false,
+  sessionSecret: Redacted.make("FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA"),
+  sharedRoutingStateConfirmed: "disabled-drop-reviewed",
+} as const;
+const validProductionEnv = [
+  'PUBLIC_ORIGIN="https://mail.szymondlugolecki.com"',
+  "AUTH_EMAIL_FROM=auth@szymondlugolecki.com",
+  'MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST=[ "owner@example.com" ]',
+  "MAILBOX_INITIAL_ADDRESS=szymon@szymondlugolecki.com",
+  "MAILBOX_ARCHIVE_RECIPIENT=archive@gmail.com",
+  "JOB_MAIL_INBOUND_ROUTE_ENABLED=false",
+  "JOB_MAIL_SHARED_ROUTING_STATE_CONFIRMED=disabled-drop-reviewed",
+  "AUTH_SESSION_SECRET=FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFA",
+  "AUTH_CHALLENGE_SECRET=DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDA",
+  "AUTH_PRIVACY_SECRET=EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEA",
+].join("\n");
+
+describe("job mail production configuration", () => {
+  it("accepts the exact commissioning configuration with routing disabled", () => {
+    expect(
+      Effect.runSync(parseJobMailProductionConfig(validInput))
+    ).toStrictEqual({ routeEnabled: false });
+  });
+
+  it.each([
+    ["publicOrigin", "https://mail.szymondlugolecki.com/path", "public-origin"],
+    ["initialAddress", "other@szymondlugolecki.com", "initial-address"],
+    ["authEmailFrom", "other@szymondlugolecki.com", "auth-email-from"],
+    ["ownerAllowlist", "[]", "owner-allowlist"],
+    [
+      "ownerAllowlist",
+      '["one@example.com","two@example.net"]',
+      "owner-allowlist",
+    ],
+    ["ownerAllowlist", '["owner@szymondlugolecki.com"]', "owner-allowlist"],
+    ["archiveRecipient", "archive@szymondlugolecki.com", "archive-recipient"],
+    ["archiveRecipient", "archive@outlook.com", "archive-recipient"],
+    ["routeEnabled", undefined, "route-enabled"],
+    ["routeEnabled", "false", "route-enabled"],
+    ["sharedRoutingStateConfirmed", undefined, "shared-routing-state"],
+    ["sessionSecret", Redacted.make("private-invalid-secret"), "auth-secrets"],
+    ["privacySecret", validInput.sessionSecret, "auth-secrets"],
+  ] as const)(
+    "rejects %s with a bounded reason and no private value",
+    (field, value, reason) => {
+      const error = Effect.runSync(
+        Effect.flip(
+          parseJobMailProductionConfig({ ...validInput, [field]: value })
+        )
+      );
+      expect(error).toBeInstanceOf(JobMailProductionConfigError);
+      expect(error).toStrictEqual(expect.objectContaining({ reason }));
+      expect(new Set(Object.keys(error))).toStrictEqual(
+        new Set(["_tag", "reason"])
+      );
+      expect(JSON.stringify(error)).not.toContain("archive@gmail.com");
+      expect(JSON.stringify(error)).not.toContain("owner@example.com");
+      expect(JSON.stringify(error)).not.toContain("private-invalid-secret");
+    }
+  );
+
+  it.each(["1", "yes", "on", "random"])(
+    "rejects every present development/local mode representation: %s",
+    (value) => {
+      for (const field of ["alchemyDev", "alchemyState"] as const) {
+        expect(
+          Effect.runSync(
+            Effect.flip(
+              parseJobMailProductionConfig({
+                ...validInput,
+                [field]: value,
+              })
+            )
+          )
+        ).toStrictEqual(expect.objectContaining({ reason: "deployment-mode" }));
+      }
+    }
+  );
+
+  it("explicitly rejects every committed example/default secret pattern", () => {
+    for (const secret of COMMITTED_AUTH_SECRET_PATTERNS) {
+      const error = Effect.runSync(
+        Effect.flip(
+          parseJobMailProductionConfig({
+            ...validInput,
+            sessionSecret: Redacted.make(secret),
+          })
+        )
+      );
+      expect(error).toStrictEqual(
+        expect.objectContaining({ reason: "auth-secrets" })
+      );
+    }
+  });
+});
+
+describe("job mail production resource structure", () => {
+  it("branches on the actual stack stage before production preflight/resources", () => {
+    const source = readRoot("alchemy.run.ts");
+    const stage = source.indexOf("const stack = yield* Alchemy.Stack");
+    const preflight = source.indexOf("yield* jobMailProductionConfig");
+    const backend = source.indexOf("const backend = yield* Backend");
+    expect(source).toContain("isJobMailProductionStage(stack.stage)");
+    expect(stage).toBeLessThan(preflight);
+    expect(preflight).toBeLessThan(backend);
+    expect(source).not.toContain("backendUrl:");
+  });
+
+  it("defines one exact production topology consumed by Alchemy", () => {
+    expect(JOB_MAIL_PRODUCTION_STAGE).toBe("production");
+    expect(isJobMailProductionStage("production")).toBeTruthy();
+    expect(isJobMailProductionStage("development")).toBeFalsy();
+    expect(JobMailProductionTopology).toStrictEqual({
+      catchAll: {
+        actions: [{ type: "drop" }],
+        enabled: false,
+        name: "Drop unmatched job mail",
+      },
+      routes: [
+        {
+          action: { type: "worker" },
+          matcher: {
+            field: "to",
+            type: "literal",
+            value: "szymon@szymondlugolecki.com",
+          },
+          name: "Inbound job mail",
+        },
+      ],
+      routing: { enabled: true, zone: "szymondlugolecki.com" },
+      senders: {
+        auth: ["auth@szymondlugolecki.com"],
+        mailbox: ["szymon@szymondlugolecki.com"],
+      },
+      website: { domain: "mail.szymondlugolecki.com" },
+    });
+    expect(jobMailInboundRuleProps("exact-worker", false)).toStrictEqual({
+      actions: [{ type: "worker", value: ["exact-worker"] }],
+      enabled: false,
+      matchers: [JobMailProductionTopology.routes[0]?.matcher],
+      name: "Inbound job mail",
+    });
+  });
+
+  it("does not declare account-level address or subdomain sending resources", () => {
+    const source = readRoot("alchemy.run.ts");
+    expect(source).not.toContain("Email.Address");
+    expect(source).not.toContain("SendingSubdomain");
+  });
+
+  it("keeps the Backend private", () => {
+    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    expect(backend).toContain("url: false");
+    expect(backend).toContain(
+      "MAILBOX_OUTBOUND_PROVIDER_DISABLED: ALCHEMY_DEV"
+    );
+    expect(backend).not.toContain(
+      "MAILBOX_OUTBOUND_PROVIDER_DISABLED: process.env.ALCHEMY_DEV"
+    );
+  });
+});
+
+describe("production command and environment safety", () => {
+  it("uses explicit fixed stages and has no ambiguous deploy or production destroy", () => {
+    const packageJson = JSON.parse(readRoot("package.json")) as {
+      scripts: Record<string, string>;
+    };
+    expect(packageJson.scripts.deploy).toBeUndefined();
+    expect(packageJson.scripts.destroy).toBeUndefined();
+    expect(packageJson.scripts["deploy:development"]).toBeUndefined();
+    expect(packageJson.scripts["destroy:development"]).toBeUndefined();
+    expect(packageJson.scripts["deploy:production:dry-run"]).toBe(
+      "bun run release:check && bun run config:production && bun scripts/run-production-alchemy.ts plan"
+    );
+    expect(packageJson.scripts["deploy:production"]).toBe(
+      "bun run release:check && bun run config:production && bun scripts/run-production-alchemy.ts deploy"
+    );
+    expect(packageJson.scripts["config:production"]).toBe(
+      "bun scripts/check-production-config.ts"
+    );
+    expect(packageJson.scripts["deploy:production"]).not.toContain("--yes");
+    expect(
+      Object.entries(packageJson.scripts).some(
+        ([name, command]) =>
+          name.includes("destroy") && command.includes("production")
+      )
+    ).toBeFalsy();
+  });
+
+  it("parses only the strict production application contract", () => {
+    const parsed = parseProductionEnv(validProductionEnv);
+    expect([...parsed.keys()]).toStrictEqual(PRODUCTION_APPLICATION_KEYS);
+    expect(parsed.get("PUBLIC_ORIGIN")).toBe(
+      "https://mail.szymondlugolecki.com"
+    );
+    expect(parsed.get("MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST")).toBe(
+      '["owner@example.com"]'
+    );
+  });
+
+  it.each([
+    [
+      `${validProductionEnv}\nAUTH_EMAIL_FROM=private-duplicate`,
+      "duplicate-key",
+    ],
+    [
+      validProductionEnv.replace(
+        "AUTH_EMAIL_FROM=",
+        "ALCHEMY_DEV=1\nAUTH_EMAIL_FROM="
+      ),
+      "forbidden-key",
+    ],
+    [
+      validProductionEnv.replace(
+        "AUTH_EMAIL_FROM=",
+        "ALCHEMY_STATE=local\nAUTH_EMAIL_FROM="
+      ),
+      "forbidden-key",
+    ],
+    [
+      `${validProductionEnv}\nUNEXPECTED_APPLICATION_KEY=private`,
+      "unexpected-key",
+    ],
+    [
+      validProductionEnv.replace(
+        "AUTH_EMAIL_FROM=",
+        "malformed-private-line\nAUTH_EMAIL_FROM="
+      ),
+      "malformed-line",
+    ],
+    [
+      validProductionEnv.replace(
+        'MAILBOX_BOOTSTRAP_OWNER_EMAIL_ALLOWLIST=[ "owner@example.com" ]\n',
+        ""
+      ),
+      "missing-key",
+    ],
+    [
+      validProductionEnv.replace('[ "owner@example.com" ]', "private-not-json"),
+      "invalid-json",
+    ],
+  ] as const)(
+    "rejects strict env defect %# without leaking values",
+    (source, reason) => {
+      let thrown: unknown;
+      try {
+        parseProductionEnv(source);
+      } catch (error) {
+        thrown = error;
+      }
+      expect(thrown).toBeInstanceOf(ProductionEnvFileError);
+      expect(thrown).toStrictEqual(expect.objectContaining({ reason }));
+      expect(String(thrown)).not.toContain("private");
+      expect(JSON.stringify(thrown)).not.toContain("private");
+    }
+  );
+
+  it("uses only file values and never fills a missing key from ambient env", async () => {
+    const directory = mkdtempSync(path.join(tmpdir(), "production-env-"));
+    const file = path.join(directory, ".env.production");
+    const previousOrigin = process.env.PUBLIC_ORIGIN;
+    const previousSecret = process.env.AUTH_SESSION_SECRET;
+    try {
+      process.env.PUBLIC_ORIGIN = "https://ambient.invalid";
+      process.env.AUTH_SESSION_SECRET =
+        "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGA";
+      writeFileSync(file, validProductionEnv);
+      await expect(validateProductionConfigFile(file)).resolves.toBeTruthy();
+
+      writeFileSync(
+        file,
+        validProductionEnv.replace(/^AUTH_SESSION_SECRET=.*\n/mu, "")
+      );
+      await expect(validateProductionConfigFile(file)).resolves.toBeFalsy();
+    } finally {
+      if (previousOrigin === undefined) {
+        delete process.env.PUBLIC_ORIGIN;
+      } else {
+        process.env.PUBLIC_ORIGIN = previousOrigin;
+      }
+      if (previousSecret === undefined) {
+        delete process.env.AUTH_SESSION_SECRET;
+      } else {
+        process.env.AUTH_SESSION_SECRET = previousSecret;
+      }
+      rmSync(directory, { recursive: true });
+    }
+  });
+
+  it("scrubs the Alchemy child environment and fixes interactive arguments", () => {
+    const parsed = parseProductionEnv(validProductionEnv);
+    const child = productionAlchemyChildEnv(parsed, {
+      ALCHEMY_DEV: "private-dev",
+      ALCHEMY_PROFILE: "reviewed-profile",
+      ALCHEMY_STATE: "private-state",
+      CLOUDFLARE_ACCOUNT_ID: "reviewed-account",
+      CLOUDFLARE_API_TOKEN: "reviewed-token",
+      HOME: "/operator/home",
+      PATH: "/operator/bin",
+      PUBLIC_ORIGIN: "https://ambient.invalid",
+      RANDOM_APPLICATION_SECRET: "private-random",
+      USER: "operator",
+    });
+    expect(new Set(Object.keys(child))).toStrictEqual(
+      new Set([
+        ...PRODUCTION_APPLICATION_KEYS,
+        "ALCHEMY_PROFILE",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "CLOUDFLARE_API_TOKEN",
+        "HOME",
+        "PATH",
+        "USER",
+      ])
+    );
+    expect(child.PUBLIC_ORIGIN).toBe("https://mail.szymondlugolecki.com");
+    expect(child.ALCHEMY_DEV).toBeUndefined();
+    expect(child.ALCHEMY_STATE).toBeUndefined();
+    expect(child.RANDOM_APPLICATION_SECRET).toBeUndefined();
+    expect(PRODUCTION_OPERATIONAL_ENV_KEYS).not.toContain("ALCHEMY_DEV");
+    expect(productionAlchemyArgs("plan")).toStrictEqual([
+      "deploy",
+      "--stage",
+      "production",
+      "--env-file",
+      ".env.production",
+      "--dry-run",
+    ]);
+    expect(productionAlchemyArgs("deploy")).toStrictEqual([
+      "deploy",
+      "--stage",
+      "production",
+      "--env-file",
+      ".env.production",
+    ]);
+    expect(productionAlchemyArgs("deploy")).not.toContain("--yes");
+  });
+
+  it("ignores the real production env and tracks only placeholder instructions", () => {
+    expect(readRoot(".gitignore").split(/\r?\n/u)).toContain(".env.production");
+    const productionExample = readRoot(".env.production.example");
+    expect(productionExample).toContain("JOB_MAIL_INBOUND_ROUTE_ENABLED=false");
+    expect(productionExample).toContain(
+      "JOB_MAIL_SHARED_ROUTING_STATE_CONFIRMED=<set-to-disabled-drop-reviewed-after-manual-inventory>"
+    );
+    expect(productionExample).toContain("<external-owner-address>");
+    expect(productionExample).toContain(
+      "<verified-external-gmail-archive-address>"
+    );
+    expect(productionExample).not.toContain("@gmail.com");
+    const secretLines = [readRoot(".env.example"), productionExample].flatMap(
+      (example) =>
+        example
+          .split(/\r?\n/u)
+          .filter(
+            (value) => value.startsWith("AUTH_") && value.includes("SECRET")
+          )
+    );
+    expect(secretLines).toHaveLength(6);
+    for (const line of secretLines) {
+      expect(line.split("=")[1]).not.toMatch(
+        /^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$/u
+      );
+    }
+  });
+
+  it("makes release check a clean-tree full gate that records HEAD", () => {
+    const source = readRoot("scripts/release-check.ts");
+    expect(source).toContain(
+      '"status", "--porcelain=v1", "--untracked-files=all"'
+    );
+    expect(source).toContain('run("bun", ["run", "check"])');
+    expect(source).toContain('run("bun", ["run", "typecheck"])');
+    expect(source).toContain('run("bun", ["run", "test"])');
+    expect(source).toContain('run("bun", ["run", "test:mailbox-restore"])');
+    expect(source).toContain('run("bun", ["run", "build"])');
+    expect(source).toContain('run("git", ["diff", "--check"])');
+    expect(source).toContain("release-check ok head=");
+  });
+});

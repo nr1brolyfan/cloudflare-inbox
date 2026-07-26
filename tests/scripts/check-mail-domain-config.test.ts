@@ -267,6 +267,6 @@ describe("mailbox bootstrap configuration preflight", () => {
     const preflight = alchemy.indexOf("yield* mailDomainConfigPreflight");
     expect(preflight).toBeGreaterThan(-1);
     expect(preflight).toBeLessThan(alchemy.indexOf("yield* Backend"));
-    expect(preflight).toBeLessThan(alchemy.indexOf("yield* Website"));
+    expect(preflight).toBeLessThan(alchemy.indexOf("const website = yield*"));
   });
 });
