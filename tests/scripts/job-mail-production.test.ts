@@ -1,11 +1,19 @@
 /* oxlint-disable vitest/max-expects -- Structural safety tests intentionally assert the complete deployment contract together. */
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  globSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
+import * as TypeScript from "typescript";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -148,6 +156,84 @@ describe("job mail production resource structure", () => {
     expect(stage).toBeLessThan(preflight);
     expect(preflight).toBeLessThan(backend);
     expect(source).not.toContain("backendUrl:");
+  });
+
+  it("maps extensionless source aliases to Node ESM module files", () => {
+    const packageJson = JSON.parse(readRoot("package.json")) as {
+      imports: Record<string, string>;
+    };
+    const mappings = Object.entries(packageJson.imports);
+    const specifiers = new Set<string>();
+    for (const file of globSync("{src,tests}/**/*.{ts,tsx}", { cwd: root })) {
+      const source = readRoot(file);
+      const sourceFile = TypeScript.createSourceFile(
+        file,
+        source,
+        TypeScript.ScriptTarget.Latest,
+        false,
+        file.endsWith(".tsx")
+          ? TypeScript.ScriptKind.TSX
+          : TypeScript.ScriptKind.TS
+      );
+      const visit = (node: TypeScript.Node): void => {
+        const [dynamicImportArgument] = TypeScript.isCallExpression(node)
+          ? node.arguments
+          : [];
+        if (
+          TypeScript.isImportDeclaration(node) &&
+          TypeScript.isStringLiteral(node.moduleSpecifier) &&
+          node.moduleSpecifier.text.startsWith("#/")
+        ) {
+          specifiers.add(node.moduleSpecifier.text);
+        } else if (
+          TypeScript.isCallExpression(node) &&
+          node.expression.kind === TypeScript.SyntaxKind.ImportKeyword &&
+          node.arguments.length === 1 &&
+          dynamicImportArgument !== undefined &&
+          TypeScript.isStringLiteral(dynamicImportArgument) &&
+          dynamicImportArgument.text.startsWith("#/")
+        ) {
+          specifiers.add(dynamicImportArgument.text);
+        }
+        TypeScript.forEachChild(node, visit);
+      };
+      visit(sourceFile);
+    }
+
+    expect(specifiers.size).toBeGreaterThan(100);
+    for (const specifier of specifiers) {
+      let mapping: [string, string] | undefined;
+      for (const current of mappings) {
+        const [key] = current;
+        const wildcard = key.indexOf("*");
+        const matches =
+          wildcard === -1
+            ? key === specifier
+            : specifier.startsWith(key.slice(0, wildcard)) &&
+              specifier.endsWith(key.slice(wildcard + 1));
+        if (
+          matches &&
+          (mapping === undefined || key.length > mapping[0].length)
+        ) {
+          mapping = current;
+        }
+      }
+      if (mapping === undefined) {
+        throw new Error(`Missing package import mapping for ${specifier}`);
+      }
+      const [key, target] = mapping;
+      const wildcard = key.indexOf("*");
+      const replacement =
+        wildcard === -1
+          ? ""
+          : specifier.slice(
+              wildcard,
+              specifier.length - (key.length - wildcard - 1)
+            );
+      const resolved = target.replace("*", replacement).replace(/^\.\//u, "");
+      expect(resolved).toMatch(/\.tsx?$/u);
+      expect(existsSync(path.join(root, resolved))).toBeTruthy();
+    }
   });
 
   it("defines one exact production topology consumed by Alchemy", () => {
