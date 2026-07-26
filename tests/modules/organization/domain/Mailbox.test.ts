@@ -93,6 +93,10 @@ describe("organization mailbox contracts", () => {
     "protocolGeneration",
     "protocolMarker",
     "protocolVersion",
+    "recoveryCodeCount",
+    "recoveryReady",
+    "passkeyCount",
+    "securitySetupReady",
   ])("rejects public bootstrap authority field %s", (field) => {
     expect(
       decodeSucceeds(BootstrapOrganizationCommand, {

@@ -1107,6 +1107,8 @@ describe("Website mailbox Backend forwarding", () => {
       (operations) =>
         operations.bootstrapOwner({
           command: Schema.decodeUnknownSync(BootstrapOrganizationCommand)({
+            acknowledgedRecoveryCodeRotationOperationId:
+              "00000000-0000-4000-8000-000000000105",
             displayName: "Inbox",
             operationId: "00000000-0000-4000-8000-000000000010",
           }),
@@ -1128,6 +1130,8 @@ describe("Website mailbox Backend forwarding", () => {
       userAgent: forwarded?.headers.get("user-agent"),
     }).toStrictEqual({
       body: {
+        acknowledgedRecoveryCodeRotationOperationId:
+          "00000000-0000-4000-8000-000000000105",
         displayName: "Inbox",
         operationId: "00000000-0000-4000-8000-000000000010",
       },
@@ -1308,6 +1312,43 @@ describe("Website mailbox Backend forwarding", () => {
       status: 403,
     });
     expect(requests).toBe(1);
+  });
+
+  it("preserves only the fixed bootstrap security-setup guidance", async () => {
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { origin: "https://inbox.test" },
+    });
+    const result = await runForward(
+      () =>
+        Promise.resolve(
+          Response.json(
+            {
+              _tag: "AuthPolicyDeniedError",
+              code: "policy_denied",
+              message: "Security setup required",
+            },
+            { status: 403 }
+          )
+        ),
+      (operations) =>
+        operations.bootstrapOwner({
+          command: Schema.decodeUnknownSync(BootstrapOrganizationCommand)({
+            displayName: "Inbox",
+            operationId: "00000000-0000-4000-8000-000000000010",
+          }),
+          incoming,
+        })
+    );
+
+    expect(result).toStrictEqual({
+      error: {
+        _tag: "AuthPolicyDeniedError",
+        code: "policy_denied",
+        message: "Security setup required",
+      },
+      ok: false,
+      status: 403,
+    });
   });
 
   it("does not expose administration denial messages to mailbox reads", async () => {

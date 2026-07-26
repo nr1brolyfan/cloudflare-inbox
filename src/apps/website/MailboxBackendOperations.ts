@@ -293,6 +293,7 @@ const policyDeniedMessage = (body: object, operation: string) => {
     operation === "website.mailbox.rename";
   return administrativeOperation &&
     (body.message === "Mailbox owner account required" ||
+      body.message === "Security setup required" ||
       body.message === "Complete account verification and sign in again")
     ? body.message
     : publicErrors.policy_denied.message;

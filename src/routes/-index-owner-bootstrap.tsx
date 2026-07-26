@@ -10,7 +10,7 @@ import {
   ShieldCheck,
   Trash2,
 } from "lucide-react";
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   bootstrapMailboxOwner,
@@ -44,7 +44,7 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
   const [operationId] = useState(() => crypto.randomUUID());
   const [passwordEnrollmentOperationId] = useState(() => crypto.randomUUID());
   const mailboxBootstrap = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (acknowledgedRecoveryCodeRotationOperationId: string) => {
       const readback = async () => {
         const result = await readMailboxAdministrationOperation({
           data: { operationId },
@@ -55,7 +55,11 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
       };
       try {
         const result = await bootstrapMailboxOwner({
-          data: { displayName: "Inbox", operationId },
+          data: {
+            acknowledgedRecoveryCodeRotationOperationId,
+            displayName: "Inbox",
+            operationId,
+          },
         });
         if (!result.ok && (result.status === 500 || result.status === 502)) {
           return (await readback()) ?? result;
@@ -142,7 +146,8 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
     handlePasskeyStepUp: () => {
       setStepUpComplete(true);
     },
-    handleBootstrap: () => mailboxBootstrap.mutate(),
+    handleBootstrap: (acknowledgedRecoveryCodeRotationOperationId: string) =>
+      mailboxBootstrap.mutate(acknowledgedRecoveryCodeRotationOperationId),
     handleStepUpPasswordChange: setStepUpPassword,
     mailboxBootstrap,
     passwordStepUp,
@@ -799,10 +804,24 @@ function PasskeyCredentialManagement({ userId }: { readonly userId: string }) {
   );
 }
 
-function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
+function RecoveryCodeManagement({
+  acknowledgedOperationId,
+  setAcknowledgedOperationId,
+  setPlaintextOperationId,
+  userId,
+}: {
+  readonly acknowledgedOperationId: string | null;
+  readonly setAcknowledgedOperationId: (operationId: string | null) => void;
+  readonly setPlaintextOperationId: (operationId: string | null) => void;
+  readonly userId: string;
+}) {
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
   const [operationId, setOperationId] = useState(() => crypto.randomUUID());
+  const clearPlaintextAuthority = () => {
+    setPlaintextOperationId(null);
+    setAcknowledgedOperationId(null);
+  };
   const generation = useMutation({
     gcTime: 0,
     mutationFn: async (activeOperationId: string) => {
@@ -834,8 +853,24 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
         };
       }
     },
+    onMutate: clearPlaintextAuthority,
+    onError: clearPlaintextAuthority,
+    onSuccess: (result) => {
+      if (result._tag === "RecoveryCodesGenerated") {
+        setPlaintextOperationId(result.receipt.operationId);
+      } else {
+        clearPlaintextAuthority();
+      }
+    },
     retry: false,
   });
+  useEffect(
+    () => () => {
+      setPlaintextOperationId(null);
+      setAcknowledgedOperationId(null);
+    },
+    [setAcknowledgedOperationId, setPlaintextOperationId]
+  );
   const stepUpRequired = hasAuthErrorCode(generation.error, "step_up_required");
   const options = useQuery({
     enabled: stepUpRequired,
@@ -847,6 +882,7 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
     mutationFn: () => authClient.stepUp.password.verify({ password }),
     onSettled: () => setPassword(""),
     onSuccess: async () => {
+      clearPlaintextAuthority();
       generation.reset();
       await queryClient.invalidateQueries({ queryKey: authSessionQueryKey });
     },
@@ -877,12 +913,33 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
           <button
             type="button"
             onClick={() => {
-              setOperationId(crypto.randomUUID());
-              generation.reset();
+              const activeGeneration = generation.data;
+              if (activeGeneration?._tag === "RecoveryCodesGenerated") {
+                setAcknowledgedOperationId(
+                  activeGeneration.receipt.operationId
+                );
+              }
             }}
+            disabled={
+              acknowledgedOperationId === generation.data.receipt.operationId
+            }
             className="mt-5 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-bold text-amber-950"
           >
-            I saved these codes
+            {acknowledgedOperationId === generation.data.receipt.operationId
+              ? "Codes saved offline"
+              : "I saved these codes"}
+          </button>
+          <button
+            type="button"
+            disabled={generation.isPending}
+            onClick={() => {
+              const freshOperationId = crypto.randomUUID();
+              setOperationId(freshOperationId);
+              generation.mutate(freshOperationId);
+            }}
+            className="mt-5 ml-3 rounded-xl border border-amber-400 bg-white px-4 py-2 text-sm font-bold text-amber-950 disabled:opacity-50"
+          >
+            Generate replacement codes
           </button>
         </div>
       ) : generation.data?._tag === "RecoveryCodesAlreadyGenerated" ? (
@@ -934,7 +991,10 @@ function RecoveryCodeManagement({ userId }: { readonly userId: string }) {
           description="Use a recently established password or passkey before replacing your recovery codes."
           isPending={passwordStepUp.isPending}
           onPasswordChange={setPassword}
-          onPasskeySuccess={() => generation.reset()}
+          onPasskeySuccess={() => {
+            clearPlaintextAuthority();
+            generation.reset();
+          }}
           onSubmit={() => passwordStepUp.mutate()}
           optionsError={options.error}
           optionsPending={options.isPending}
@@ -959,7 +1019,10 @@ export function SignedInOwnerBootstrap({
   readonly userId: string;
 }) {
   const queryClient = useQueryClient();
-  const [operatorReady, setOperatorReady] = useState(false);
+  const [acknowledgedRecoveryOperationId, setAcknowledgedRecoveryOperationId] =
+    useState<string | null>(null);
+  const [plaintextRecoveryOperationId, setPlaintextRecoveryOperationId] =
+    useState<string | null>(null);
   const ownerBootstrap = useOwnerBootstrap(queryClient, userId);
   const bootstrapResult = ownerBootstrap.mailboxBootstrap.data;
   const mailboxExists =
@@ -992,13 +1055,14 @@ export function SignedInOwnerBootstrap({
         <p className="font-bold">Complete the launch checklist in order</p>
         <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-[var(--sea-ink-soft)]">
           <li>Verify an external recovery address.</li>
-          <li>Create a user-verified passkey.</li>
+          <li>Create at least two user-verified passkeys.</li>
           <li>Generate and securely save recovery codes.</li>
           <li>Launch the mailbox only after the first three steps succeed.</li>
         </ol>
         <p className="mt-3 text-xs leading-5 text-[var(--sea-ink-soft)]">
-          This page guides the acceptance sequence; each service below remains
-          authoritative for whether its requirement is satisfied.
+          The mailbox server rechecks every security requirement atomically
+          before creation. This page does not report readiness counts or
+          credential identifiers.
         </p>
       </div>
       <div className="mt-6">
@@ -1017,7 +1081,11 @@ export function SignedInOwnerBootstrap({
             before launching it.
           </Notice>
         ) : bootstrapResult ? (
-          <ErrorNotice>{bootstrapResult.error.message}</ErrorNotice>
+          <ErrorNotice>
+            {bootstrapResult.error.message === "Security setup required"
+              ? "Security setup is incomplete. Verify external recovery, keep two active passkeys, and generate a current set of ten unused recovery codes before trying again."
+              : bootstrapResult.error.message}
+          </ErrorNotice>
         ) : ownerBootstrap.mailboxBootstrap.error ? (
           <ErrorNotice>Mailbox setup request failed. Try again.</ErrorNotice>
         ) : null}
@@ -1068,7 +1136,12 @@ export function SignedInOwnerBootstrap({
         <>
           <ExternalRecoveryEnrollment userId={userId} />
           <PasskeyEnrollment userId={userId} />
-          <RecoveryCodeManagement userId={userId} />
+          <RecoveryCodeManagement
+            acknowledgedOperationId={acknowledgedRecoveryOperationId}
+            setAcknowledgedOperationId={setAcknowledgedRecoveryOperationId}
+            setPlaintextOperationId={setPlaintextRecoveryOperationId}
+            userId={userId}
+          />
           <PasskeyCredentialManagement userId={userId} />
           <section className="mt-8 border-t border-[var(--line)] pt-8">
             <p className="island-kicker">Step 4 / Mailbox creation</p>
@@ -1090,28 +1163,30 @@ export function SignedInOwnerBootstrap({
                   Create the primary inbox
                 </h3>
                 <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
-                  This acknowledgement records only your operator confirmation;
-                  it does not query or prove backend readiness. `JOB-CF-005`
-                  remains the authoritative live onboarding gate.
+                  The server is authoritative for recovery, passkey, and
+                  recovery-code readiness. The acknowledgement below records
+                  only that you saved the one-time plaintext codes offline,
+                  which the server cannot prove.
                 </p>
-                <label className="mt-5 flex items-start gap-3 rounded-xl border border-[var(--line)] bg-white/70 p-4 text-sm leading-6">
-                  <input
-                    type="checkbox"
-                    checked={operatorReady}
-                    onChange={(event) => setOperatorReady(event.target.checked)}
-                    className="mt-1 size-4 shrink-0"
-                  />
-                  <span>
-                    I confirm that the external recovery address is verified, at
-                    least one user-verified passkey is active, and recovery
-                    codes are saved offline.
-                  </span>
-                </label>
+                <p className="mt-5 rounded-xl border border-[var(--line)] bg-white/70 p-4 text-sm leading-6">
+                  Create becomes available only after you save and acknowledge
+                  the exact recovery-code generation still shown in this browser
+                  session.
+                </p>
                 <button
                   type="button"
-                  onClick={ownerBootstrap.handleBootstrap}
+                  onClick={() => {
+                    if (acknowledgedRecoveryOperationId !== null) {
+                      ownerBootstrap.handleBootstrap(
+                        acknowledgedRecoveryOperationId
+                      );
+                    }
+                  }}
                   disabled={
-                    !operatorReady || ownerBootstrap.mailboxBootstrap.isPending
+                    plaintextRecoveryOperationId === null ||
+                    acknowledgedRecoveryOperationId !==
+                      plaintextRecoveryOperationId ||
+                    ownerBootstrap.mailboxBootstrap.isPending
                   }
                   className="mt-5 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
                 >

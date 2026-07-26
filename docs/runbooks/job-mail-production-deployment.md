@@ -79,12 +79,32 @@ Installed Alchemy supports `SendingSubdomain` only. The required sender is apex 
 
 ## Activation
 
-1. Reconfirm Website health/startup, Email Routing ready, exact disabled route, disabled/drop catch-all, Gmail destination verification, manual apex Email Sending ready, sender bindings, provider DNS, and exactly one effective DMARC policy at `p=none`.
-2. Keep the exact same pinned release commit and clean worktree used for commissioning. Any source, resource, dependency, generated output, build input, staged, unstaged, untracked, or HEAD drift blocks activation.
-3. Change only ignored `.env.production` from `JOB_MAIL_INBOUND_ROUTE_ENABLED=false` to `JOB_MAIL_INBOUND_ROUTE_ENABLED=true`; every other operator input remains byte-for-byte unchanged.
-4. Run `bun run release:check`, `bun run config:production`, then `bun run deploy:production:dry-run`.
-5. Verify the plan changes only the exact inbound rule enabled state. Any resource, source, or Worker/build drift blocks activation. Run `bun run deploy:production` interactively.
-6. Explicitly recheck the exact rule is enabled and the catch-all remains disabled/drop before beginning content-free live acceptance.
+Activation is forbidden until the following commissioning sequence has completed in order. Do not parallelize or reorder account-security and mailbox steps.
+
+1. Deploy the reviewed core graph with `JOB_MAIL_INBOUND_ROUTE_ENABLED=false` as described above. Recheck the exact route is disabled and catch-all is disabled/drop. Stop if either check differs.
+2. Run the exact startup/readiness probe:
+
+   ```sh
+   curl --fail-with-body --silent --show-error \
+     https://mail.szymondlugolecki.com/api/health \
+     --output /tmp/job-mail-production-health.json
+   bun -e 'const h=await Bun.file("/tmp/job-mail-production-health.json").json();const expected=["authRateLimit","authorization","controlPlane","mailboxDataPlane","rawMessages"];const keys=Object.keys(h.storage??{}).sort();if(h.service!=="backend"||h.status!=="ok"||keys.length!==expected.length||keys.some((key,index)=>key!==expected[index])||Object.values(h.storage).some((value)=>value!=="ok"))process.exit(1)'
+   ```
+
+   A successful response proves the Website-to-Backend request crossed required Backend startup and all five bounded storage probes. Stop on transport failure, non-JSON, any non-`ok` value, unexpected/missing storage keys, startup/reconciliation errors in Workers Logs, or config/deployment disagreement. Do not retry around a deterministic startup failure.
+
+3. In the private first-owner UI, complete the first-owner password enrollment for the exact allowlisted signed-in actor and perform the required recent password step-up. Stop on any actor, allowlist, session, receipt, or replay disagreement.
+4. Enroll and verify the external recovery identity. Open the verification link through the intended external account, return to a fresh unrestricted session, and stop unless the UI and subsequent protected operation both accept the verified recovery state.
+5. Enroll two separate UV passkeys. Independently test each authenticator in a fresh authentication/step-up ceremony before continuing; do not count two records backed by one untested authenticator or a non-UV ceremony. Stop if either independent test fails or either credential is revoked.
+6. Generate one current set of exactly ten recovery codes. While the plaintext is still shown in that browser session, save it to the approved offline store and click `I saved these codes` for that exact generation. Any retry, replacement, receipt-only result, reload, remount, or lost plaintext invalidates the acknowledgement; generate and save a fresh set instead.
+7. Create mailbox `primary` only after the exact-generation acknowledgement enables the final action and the server accepts its atomic readiness recheck. The browser sends that generation's rotation operation ID only as expected state; the server compares it to the current actor-bound rotation receipt/set, so a rotation from another tab makes the acknowledgement stale and requires saving and acknowledging the newly shown plaintext generation. Stop on `Security setup required`, conflict without an exact receipt replay, or any ambiguous result until receipt readback is reconciled.
+8. Open the created mailbox and verify the displayed primary address is exactly `szymon@szymondlugolecki.com`. Exercise the primary mailbox Durable Object through the authenticated inbox read, then rerun both exact health commands from step 2 and require every result to remain `ok`. Stop on address disagreement, primary mailbox/DO failure, degraded health, or startup/log errors.
+9. Reconfirm Email Routing ready, exact disabled route, disabled/drop catch-all, Gmail destination verification, manual apex Email Sending ready, sender bindings, provider DNS, and exactly one effective DMARC policy at `p=none`.
+10. Keep the exact same pinned release commit and clean worktree used for commissioning. Any source, resource, dependency, generated output, build input, staged, unstaged, untracked, or HEAD drift blocks activation.
+11. Change only ignored `.env.production` from `JOB_MAIL_INBOUND_ROUTE_ENABLED=false` to `JOB_MAIL_INBOUND_ROUTE_ENABLED=true`; every other operator input remains byte-for-byte unchanged.
+12. Run `bun run release:check`, `bun run config:production`, then `bun run deploy:production:dry-run`.
+13. Verify the activation dry-run changes only the exact inbound rule enabled state. Any resource, source, Worker/build, mailbox, or security-state drift blocks activation. Run `bun run deploy:production` interactively.
+14. Explicitly recheck the exact rule is enabled and the catch-all remains disabled/drop before beginning content-free live acceptance.
 
 ## Rollback And Forward Fix
 
@@ -97,3 +117,17 @@ Installed Alchemy supports `SendingSubdomain` only. The required sender is apex 
 ## Evidence Record
 
 Record release commit, stage (`production`), command/gate outcomes, reviewed plan digest, resource/status booleans, DNS inventory digest, Routing/Sending readiness timestamps, catch-all disabled check, exact route disabled/activated checks, sender-restriction checks, rollback decision, and reviewer identities. Never record private owner/archive addresses, secret material, message headers, bodies, attachment names/bytes, cookies, or verification links.
+
+| Mandatory evidence | Content-free record |
+| --- | --- |
+| Disabled core deployment | release commit, plan digest, deploy timestamp, exact-route-disabled and catch-all-disabled/drop booleans |
+| Startup and initial health | both command exit statuses, probe timestamp, Backend `ok`, five storage `ok` booleans, startup-log review boolean |
+| First-owner password | completion timestamp, exact-actor-match boolean, receipt/replay outcome without user or credential IDs |
+| External recovery | verification timestamp and verified/active boolean without address or identity ID |
+| UV passkey 1 | enrollment timestamp and independent UV authentication result without credential ID |
+| UV passkey 2 | enrollment timestamp and independent UV authentication result without credential ID |
+| Recovery codes | generated-count-is-ten boolean, exact-generation browser acknowledgement timestamp, approved-offline-store boolean; never record codes or set/operation IDs |
+| Primary creation | completion/readback outcome, mailbox-is-primary boolean, exact-public-address-match boolean |
+| Primary DO and post-create health | authenticated primary inbox-read outcome, repeated health command exits, Backend/five-storage `ok` booleans |
+| Activation review | Routing/Sending/DMARC/binding booleans and activation dry-run digest showing enabled-state-only change |
+| Activated route | deploy timestamp, exact-route-enabled and catch-all-still-disabled/drop booleans |

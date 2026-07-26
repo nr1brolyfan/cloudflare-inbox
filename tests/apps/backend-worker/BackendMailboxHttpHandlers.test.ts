@@ -1830,6 +1830,43 @@ describe("protected mailbox API", () => {
     }
   });
 
+  it("passes the recovery rotation operation only as bootstrap expected state", async () => {
+    let command: unknown;
+    const { dispose, handler } = makeHandler(
+      makeAdministration({
+        bootstrapOwner: (input) => {
+          command = input;
+          return Effect.succeed(mailbox);
+        },
+      })
+    );
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/bootstrap-owner", "POST", {
+          body: {
+            acknowledgedRecoveryCodeRotationOperationId:
+              "00000000-0000-4000-8000-000000000105",
+            displayName: "Inbox",
+            operationId: "00000000-0000-4000-8000-000000000010",
+          },
+        })
+      );
+
+      expect(response.status).toBe(201);
+      expect(command).toStrictEqual({
+        acknowledgedRecoveryCodeRotationOperationId:
+          "00000000-0000-4000-8000-000000000105",
+        displayName: "Inbox",
+        operationId: "00000000-0000-4000-8000-000000000010",
+      });
+      expect(JSON.stringify(await response.json())).not.toContain(
+        "acknowledgedRecoveryCodeRotationOperationId"
+      );
+    } finally {
+      await dispose();
+    }
+  });
+
   it.each([
     ["actorUserId", "user-attacker"],
     ["initialAddress", "attacker@external.test"],
@@ -1842,6 +1879,10 @@ describe("protected mailbox API", () => {
     ["protocolGeneration", 2],
     ["protocolMarker", "attacker-marker"],
     ["protocolVersion", 2],
+    ["recoveryCodeCount", 10],
+    ["recoveryReady", true],
+    ["passkeyCount", 2],
+    ["securitySetupReady", true],
   ] as const)(
     "rejects public authority field %s before invoking bootstrap",
     async (field, value) => {
@@ -2077,6 +2118,41 @@ describe("protected mailbox API", () => {
         message: "Recent authentication required",
       });
       expect(JSON.stringify(body)).not.toContain("internal policy detail");
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("returns a privacy-safe typed security-setup response for owner bootstrap", async () => {
+    const { dispose, handler } = makeHandler(
+      makeAdministration({
+        bootstrapOwner: () =>
+          Effect.fail(
+            new OrganizationBootstrapError({
+              cause: new Error("passkey and recovery row details"),
+              message: "internal readiness detail",
+              operation: "bootstrap-owner",
+              reason: "security-setup-required",
+            })
+          ),
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/bootstrap-owner", "POST")
+      );
+      const body = await response.json();
+
+      expect(response.status).toBe(403);
+      expect(body).toStrictEqual({
+        _tag: "AuthPolicyDeniedError",
+        code: "policy_denied",
+        message: "Security setup required",
+      });
+      expect(JSON.stringify(body)).not.toMatch(
+        /internal readiness|row details|credential|count/iu
+      );
     } finally {
       await dispose();
     }

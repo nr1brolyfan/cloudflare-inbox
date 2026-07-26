@@ -128,6 +128,14 @@ const mapAdministrationError = (
         })
       );
     }
+    case "security-setup-required": {
+      return Effect.fail(
+        new AuthPolicyDeniedError({
+          code: "policy_denied",
+          message: "Security setup required",
+        })
+      );
+    }
     case "step-up-required": {
       return Effect.fail(
         new AuthStepUpRequiredError({

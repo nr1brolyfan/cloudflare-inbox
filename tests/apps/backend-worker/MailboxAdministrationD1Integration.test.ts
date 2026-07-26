@@ -133,7 +133,8 @@ const makeValidatedSession = (
 
 const insertCurrentSession = (
   database: DatabaseSync,
-  validated: ValidatedSession
+  validated: ValidatedSession,
+  seedSecuritySetup = true
 ) => {
   database
     .prepare(
@@ -177,6 +178,295 @@ const insertCurrentSession = (
       validated.issued.aal,
       JSON.stringify(validated.issued.amr),
       validated.issued.rotatedAt ?? null
+    );
+  if (seedSecuritySetup) {
+    seedFreshSecuritySetup(database, validated.actor.userId);
+  }
+};
+
+const seedFreshSecuritySetup = (
+  database: DatabaseSync,
+  userId: string,
+  options: {
+    readonly includeSeal?: boolean;
+    readonly setupAt?: number;
+  } = {}
+) => {
+  const hasCurrentSchema = database
+    .prepare(
+      `select 1 from sqlite_master
+        where type = 'table' and name = 'app_first_owner_password_enrollment'`
+    )
+    .get();
+  if (hasCurrentSchema === undefined) {
+    return;
+  }
+  const hasSeal = (
+    database
+      .prepare(
+        `select count(*) as count from app_first_owner_password_enrollment`
+      )
+      .get() as { count: number }
+  ).count;
+  if (hasSeal !== 0) {
+    return;
+  }
+  const setupAt = options.setupAt ?? now - 1000;
+  const recoverySetId = "00000000-0000-4000-8000-000000000104";
+  if (options.includeSeal !== false) {
+    const firstOwnerOperationId = "00000000-0000-4000-8000-000000000100";
+    const enrollmentSessionId = "first-owner-enrollment-session";
+    const proofEvent = {
+      identityId: `identity-${userId}`,
+      type: "magic_link",
+      verifiedAt: setupAt,
+      version: 1,
+    } as const;
+    database
+      .prepare(
+        `insert into auth_session
+        (id, user_id, secret_hash, created_at, expires_at, auth_time,
+         authentication_events, aal, amr)
+       values (?, ?, 'enrollment-hash', ?, ?, ?, ?, 'aal1', ?)`
+      )
+      .run(
+        enrollmentSessionId,
+        userId,
+        setupAt,
+        setupAt + 60_000,
+        setupAt,
+        JSON.stringify([proofEvent]),
+        JSON.stringify(["magic_link"])
+      );
+    database
+      .prepare(
+        `insert into auth_credential
+        (id, user_id, type, password_hash, created_at, updated_at)
+       values ('first-owner-password', ?, 'password', 'hash', ?, ?)`
+      )
+      .run(userId, setupAt, setupAt);
+    const firstOwnerAudit = JSON.stringify({
+      actor: { sessionId: enrollmentSessionId, type: "user", userId },
+      occurredAt: setupAt,
+      payload: {
+        credentialId: "first-owner-password",
+        operationId: firstOwnerOperationId,
+        proofType: "magic_link",
+        proofVerifiedAt: setupAt,
+      },
+      subject: { type: "user", userId },
+      type: "app.first_owner.password_enrolled",
+      version: 1,
+    });
+    database
+      .prepare(
+        `insert into auth_audit_log
+        (id, type, user_id, actor_user_id, occurred_at, event, created_at)
+       values (?, 'app.first_owner.password_enrolled', ?, ?, ?, ?, ?)`
+      )
+      .run(
+        `first-owner-password-enrollment:${firstOwnerOperationId}`,
+        userId,
+        userId,
+        setupAt,
+        firstOwnerAudit,
+        setupAt
+      );
+    database
+      .prepare(
+        `insert into app_first_owner_password_enrollment
+        (singleton_key, operation_id, actor_user_id, session_id,
+         login_identity_id, credential_id, proof_type, proof_verified_at,
+         password_intent_digest, committed_at, schema_version)
+       values (1, ?, ?, ?, ?,
+          'first-owner-password', 'magic_link', ?, ?, ?, 1)`
+      )
+      .run(
+        firstOwnerOperationId,
+        userId,
+        enrollmentSessionId,
+        `identity-${userId}`,
+        setupAt,
+        "a".repeat(43),
+        setupAt
+      );
+  }
+  const recoveryChallengeExpiresAt = setupAt + 60_000;
+  database
+    .prepare(
+      `insert into auth_verification
+        (id, type, subject, secret_hash, created_at, expires_at, metadata)
+       values ('bootstrap-recovery-challenge',
+         'external-recovery-identity-verification', 'bootstrap-recovery',
+         'recovery-secret-hash', ?, ?, json_object('userId', ?))`
+    )
+    .run(setupAt - 1, recoveryChallengeExpiresAt, userId);
+  database
+    .prepare(
+      `insert into app_external_recovery_identity
+        (id, user_id, address, normalized_address, comparison_key, status,
+         challenge_id, challenge_expires_at, enrollment_operation_id,
+         created_at, updated_at, verified_at, revoked_at, version)
+       values ('bootstrap-recovery', ?, 'recovery@external.test',
+         'recovery@external.test', 'recovery@external.test', 'pending',
+         'bootstrap-recovery-challenge', ?,
+         '00000000-0000-4000-8000-000000000103', ?, ?, null, null, 1)`
+    )
+    .run(userId, recoveryChallengeExpiresAt, setupAt - 1, setupAt - 1);
+  database
+    .prepare(
+      `update auth_verification set consumed_at = ?
+        where id = 'bootstrap-recovery-challenge'`
+    )
+    .run(setupAt);
+  database
+    .prepare(
+      `update app_external_recovery_identity
+          set status = 'verified', updated_at = ?, verified_at = ?, version = 2
+        where id = 'bootstrap-recovery'`
+    )
+    .run(setupAt, setupAt);
+  const insertPasskey = database.prepare(
+    `insert into auth_passkey_credential
+      (id, user_id, credential_id, public_key, sign_count, created_at,
+       revoked_at)
+     values (?, ?, ?, 'public-key', 0, ?, null)`
+  );
+  const insertPasskeyReceipt = database.prepare(
+    `insert into app_passkey_enrollment_receipt
+      (operation_id, mode, actor_user_id, challenge_id,
+       recovery_identity_id, recovery_identity_version, client_intent_digest,
+       verified_intent_digest, credential_record_id, committed_at,
+       schema_version)
+     values (?, 'normal', ?, ?, 'bootstrap-recovery', 2, ?, ?, ?, ?, 1)`
+  );
+  for (const index of [1, 2]) {
+    const credentialId = `bootstrap-passkey-${index}`;
+    const operationId = `00000000-0000-4000-8000-00000000010${index}`;
+    const challengeId = `bootstrap-passkey-challenge-${index}`;
+    insertPasskey.run(
+      credentialId,
+      userId,
+      `webauthn-bootstrap-${index}`,
+      setupAt
+    );
+    database
+      .prepare(
+        `insert into auth_verification
+          (id, type, subject, secret_hash, created_at, expires_at, metadata,
+           consumed_at)
+         values (?, 'passkey-registration', ?, 'passkey-secret-hash', ?, ?,
+           json_object('operationId', ?,
+             'recoveryIdentityId', 'bootstrap-recovery',
+             'recoveryIdentityVersion', 2, 'authorization', 'step-up'), ?)`
+      )
+      .run(
+        challengeId,
+        userId,
+        setupAt - 1,
+        setupAt + 60_000,
+        operationId,
+        setupAt
+      );
+    database
+      .prepare(
+        `insert into auth_audit_log
+          (id, type, user_id, actor_user_id, occurred_at, event, created_at)
+         values (?, 'app.passkey.enrolled', ?, ?, ?, ?, ?)`
+      )
+      .run(
+        `passkey-enrollment:${operationId}`,
+        userId,
+        userId,
+        setupAt,
+        JSON.stringify({
+          actor: { type: "user", userId },
+          occurredAt: setupAt,
+          payload: { credentialRecordId: credentialId, operationId },
+          subject: { type: "user", userId },
+          type: "app.passkey.enrolled",
+          version: 1,
+        }),
+        setupAt
+      );
+    insertPasskeyReceipt.run(
+      operationId,
+      userId,
+      challengeId,
+      "b".repeat(43),
+      "c".repeat(43),
+      credentialId,
+      setupAt
+    );
+  }
+  const insertCode = database.prepare(
+    `insert into auth_recovery_code
+      (id, user_id, code_hash, created_at, used_at, revoked_at, metadata)
+     values (?, ?, ?, ?, null, null, json_object('setId', ?))`
+  );
+  for (let index = 0; index < 10; index += 1) {
+    insertCode.run(
+      `bootstrap-recovery-code-${index}`,
+      userId,
+      `sha256:bootstrap-${index}`,
+      setupAt,
+      recoverySetId
+    );
+  }
+  database
+    .prepare(
+      `insert into app_recovery_code_rotation_receipt
+        (operation_id, user_id, expected_previous_set_id, resulting_set_id,
+         generated_at, committed_at, code_count, schema_version)
+       values ('00000000-0000-4000-8000-000000000105', ?, null, ?, ?, ?, 10, 1)`
+    )
+    .run(userId, recoverySetId, setupAt, setupAt);
+};
+
+const rotateRecoveryCodes = (
+  database: DatabaseSync,
+  userId: string,
+  operationId: string,
+  setId: string,
+  expectedPreviousSetId?: string
+) => {
+  const generatedAt = now + 1;
+  if (expectedPreviousSetId !== undefined) {
+    database
+      .prepare(
+        `update auth_recovery_code set revoked_at = ?
+          where user_id = ? and used_at is null and revoked_at is null`
+      )
+      .run(generatedAt, userId);
+  }
+  const insert = database.prepare(
+    `insert into auth_recovery_code
+      (id, user_id, code_hash, created_at, metadata)
+     values (?, ?, ?, ?, json_object('setId', ?))`
+  );
+  for (let index = 0; index < 10; index += 1) {
+    insert.run(
+      `${setId}:${index}`,
+      userId,
+      `sha256:rotated-${index}`,
+      generatedAt,
+      setId
+    );
+  }
+  database
+    .prepare(
+      `insert into app_recovery_code_rotation_receipt
+        (operation_id, user_id, expected_previous_set_id, resulting_set_id,
+         generated_at, committed_at, code_count, schema_version)
+       values (?, ?, ?, ?, ?, ?, 10, 1)`
+    )
+    .run(
+      operationId,
+      userId,
+      expectedPreviousSetId ?? null,
+      setId,
+      generatedAt,
+      generatedAt
     );
 };
 
@@ -334,8 +624,10 @@ const bootstrap = (
     canonicalTestAddress(ownerEmail),
   ],
   trustedOverrides?: {
+    readonly acknowledgedRecoveryCodeRotationOperationId?: string;
     readonly initialAddress?: string;
     readonly initialDomain?: string;
+    readonly omitAcknowledgement?: boolean;
     readonly ownerEmailAllowlist?: readonly string[];
   }
 ) =>
@@ -349,6 +641,15 @@ const bootstrap = (
       if (trustedOverrides !== undefined) {
         const transaction = yield* OrganizationBootstrapTransaction;
         return yield* transaction.bootstrap({
+          ...(trustedOverrides.omitAcknowledgement === true
+            ? {}
+            : {
+                acknowledgedRecoveryCodeRotationOperationId:
+                  Schema.decodeUnknownSync(AdministrativeOperationId)(
+                    trustedOverrides.acknowledgedRecoveryCodeRotationOperationId ??
+                      "00000000-0000-4000-8000-000000000105"
+                  ),
+              }),
           displayName: trustedDisplayName,
           initialAddress: Schema.decodeUnknownSync(
             MailboxBootstrapConfigValue.fields.initialAddress
@@ -373,6 +674,9 @@ const bootstrap = (
       }
       const organizationBootstrap = yield* OrganizationBootstrap;
       return yield* organizationBootstrap.bootstrap({
+        acknowledgedRecoveryCodeRotationOperationId: Schema.decodeUnknownSync(
+          AdministrativeOperationId
+        )("00000000-0000-4000-8000-000000000105"),
         displayName: trustedDisplayName,
         operationId: trustedOperationId,
       });
@@ -418,6 +722,28 @@ const bootstrap = (
       )
     ),
     validated
+  );
+
+const bootstrapWithAcknowledgement = (
+  database: D1EffectQbDatabaseLike,
+  validated: ValidatedSession,
+  acknowledgedOperationId: string | undefined,
+  operationId = "00000000-0000-4000-8000-000000000010"
+) =>
+  bootstrap(
+    database,
+    validated,
+    "bootstrap-guard",
+    "user-a@example.test",
+    operationId,
+    "Inbox",
+    "user-a@example.test",
+    ["user-a@example.test"],
+    acknowledgedOperationId === undefined
+      ? { omitAcknowledgement: true }
+      : {
+          acknowledgedRecoveryCodeRotationOperationId: acknowledgedOperationId,
+        }
   );
 
 const rename = (
@@ -552,7 +878,43 @@ const bootstrapClosureCounts = (database: DatabaseSync) => ({
     "app_organization_owner_assignment_receipt"
   ),
   receiptV2: countRows(database, "app_mailbox_bootstrap_receipt_v2"),
+  securityIntents: countRows(database, "app_mailbox_bootstrap_security_intent"),
 });
+
+const emptyBootstrapClosure = {
+  addresses: 0,
+  ancestry: 0,
+  audits: 0,
+  domainIntents: 0,
+  domainReceipts: 0,
+  domains: 0,
+  grants: 0,
+  mailboxMembers: 0,
+  mailboxReceipts: 0,
+  mailboxes: 0,
+  organizationMembers: 0,
+  organizations: 0,
+  ownerReceipts: 0,
+  receiptV2: 0,
+  securityIntents: 0,
+} as const;
+
+const expectSecuritySetupRequired = async (
+  database: DatabaseSync,
+  d1: D1EffectQbDatabaseLike,
+  validated: ValidatedSession,
+  ownerEmail = "user-a@example.test"
+) => {
+  const error = await Effect.runPromise(
+    bootstrap(d1, validated, "bootstrap-guard", ownerEmail).pipe(Effect.flip)
+  );
+  expect(error).toMatchObject({
+    operation: "bootstrap-owner",
+    reason: "security-setup-required",
+  });
+  expect(bootstrapClosureCounts(database)).toStrictEqual(emptyBootstrapClosure);
+  expect(countRows(database, "app_authorization_guard")).toBe(0);
+};
 
 const seedHistoricalBootstrapReceipt = (
   database: DatabaseSync,
@@ -663,6 +1025,10 @@ describe("mailbox administration", () => {
         ),
         receiptV2: countRows(database, "app_mailbox_bootstrap_receipt_v2"),
         receipts: countRows(database, "app_mailbox_administration_receipt"),
+        securityIntents: countRows(
+          database,
+          "app_mailbox_bootstrap_security_intent"
+        ),
       }).toStrictEqual({
         addresses: 1,
         auditEvents: 1,
@@ -724,6 +1090,7 @@ describe("mailbox administration", () => {
         },
         receiptV1: 0,
         receiptV2: 1,
+        securityIntents: 1,
         receipts: 1,
       });
       expect(
@@ -846,6 +1213,471 @@ describe("mailbox administration", () => {
         organizations: 1,
         ownerReceipts: 1,
         receiptV2: 1,
+        securityIntents: 1,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each([
+    ["zero", [1, 2]],
+    ["one", [2]],
+  ] as const)(
+    "requires at least two active receipt-backed passkeys: %s",
+    async (_, revoked) => {
+      expect.hasAssertions();
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+        for (const index of revoked) {
+          database
+            .prepare(
+              `update auth_passkey_credential set revoked_at = ? where id = ?`
+            )
+            .run(now, `bootstrap-passkey-${index}`);
+        }
+
+        await expectSecuritySetupRequired(database, d1, validated);
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it.each([
+    [
+      "singleton seal",
+      `update app_first_owner_password_enrollment set actor_user_id = 'user-b'`,
+    ],
+    [
+      "passkey enrollment receipt",
+      `delete from app_passkey_enrollment_receipt
+        where credential_record_id = 'bootstrap-passkey-2'`,
+    ],
+    [
+      "recovery rotation receipt",
+      `delete from app_recovery_code_rotation_receipt`,
+    ],
+  ] as const)(
+    "retained integrity blocks a pre-batch %s removal race",
+    async (_, mutation) => {
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        const baseD1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+        let raceBlocked = false;
+        const racedD1: D1EffectQbDatabaseLike = {
+          batch: (statements) => {
+            try {
+              database.exec(mutation);
+            } catch {
+              raceBlocked = true;
+            }
+            return baseD1.batch(statements);
+          },
+          prepare: baseD1.prepare,
+        };
+
+        const result = await Effect.runPromise(
+          bootstrap(racedD1, validated, "bootstrap-guard")
+        );
+
+        expect({ raceBlocked, result }).toMatchObject({
+          raceBlocked: true,
+          result: { id: "primary" },
+        });
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it("rejects a request-session actor binding changed immediately before the batch", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const baseD1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      database.exec(`insert into auth_user (id, created_at, updated_at)
+        values ('user-b', ${now}, ${now})`);
+      const racedD1: D1EffectQbDatabaseLike = {
+        batch: (statements) => {
+          database.exec(`update auth_session set user_id = 'user-b'
+            where id = 'session-a'`);
+          return baseD1.batch(statements);
+        },
+        prepare: baseD1.prepare,
+      };
+
+      const error = await Effect.runPromise(
+        bootstrap(racedD1, validated, "bootstrap-guard").pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({ reason: "session-recheck" });
+      expect(bootstrapClosureCounts(database)).toStrictEqual(
+        emptyBootstrapClosure
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("does not count an active passkey without its persisted verification receipt", async () => {
+    expect.hasAssertions();
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      database.exec(`
+        update auth_passkey_credential set revoked_at = ${now}
+         where id = 'bootstrap-passkey-2';
+        insert into auth_passkey_credential
+          (id, user_id, credential_id, public_key, sign_count, created_at)
+        values ('unverified-passkey', 'user-a', 'unverified-webauthn',
+          'unverified-public-key', 0, ${now - 1000});
+      `);
+
+      await expectSecuritySetupRequired(database, d1, validated);
+    } finally {
+      database.close();
+    }
+  });
+
+  it.each(["unverified", "revoked"] as const)(
+    "requires one active verified external recovery identity: %s",
+    async (state) => {
+      expect.hasAssertions();
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+        database
+          .prepare(
+            `update app_external_recovery_identity
+                set status = 'revoked', revoked_at = ?, updated_at = ?,
+                    version = 3
+              where id = 'bootstrap-recovery'`
+          )
+          .run(now, now);
+        if (state === "unverified") {
+          database.exec(`
+            insert into auth_verification
+              (id, type, subject, secret_hash, created_at, expires_at, metadata)
+            values ('pending-recovery-challenge',
+              'external-recovery-identity-verification', 'pending-recovery',
+              'pending-secret-hash', ${now}, ${now + 60_000},
+              json_object('userId', 'user-a'));
+            insert into app_external_recovery_identity
+              (id, user_id, address, normalized_address, comparison_key, status,
+               challenge_id, challenge_expires_at, enrollment_operation_id,
+               created_at, updated_at, version)
+            values ('pending-recovery', 'user-a', 'pending@external.test',
+              'pending@external.test', 'pending@external.test', 'pending',
+              'pending-recovery-challenge', ${now + 60_000},
+              '00000000-0000-4000-8000-000000000106', ${now}, ${now}, 1);
+          `);
+        }
+
+        await expectSecuritySetupRequired(database, d1, validated);
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it.each([
+    ["9 codes", "delete"],
+    ["11 codes", "insert"],
+    ["old set", "old"],
+    ["used code", "used"],
+    ["revoked code", "revoked"],
+  ] as const)(
+    "requires exactly the current intact ten-code set: %s",
+    async (_, mutation) => {
+      expect.hasAssertions();
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+        if (mutation === "delete") {
+          database.exec(
+            `delete from auth_recovery_code where id = 'bootstrap-recovery-code-9'`
+          );
+        } else if (mutation === "insert") {
+          database.exec(`insert into auth_recovery_code
+          (id, user_id, code_hash, created_at, metadata)
+          values ('bootstrap-recovery-code-10', 'user-a', 'sha256:extra', 1000,
+            json_object('setId', '00000000-0000-4000-8000-000000000104'))`);
+        } else if (mutation === "old") {
+          database.exec(`update auth_recovery_code
+          set metadata = json_object('setId',
+            '00000000-0000-4000-8000-000000000099')
+          where id = 'bootstrap-recovery-code-0'`);
+        } else {
+          database.exec(`update auth_recovery_code
+          set ${mutation === "used" ? "used_at" : "revoked_at"} = ${now}
+          where id = 'bootstrap-recovery-code-0'`);
+        }
+
+        await expectSecuritySetupRequired(database, d1, validated);
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it.each(["missing", "stale", "foreign", "arbitrary"] as const)(
+    "treats a %s acknowledged recovery rotation token only as expected state",
+    async (kind) => {
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        const d1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+        let acknowledgedOperationId: string | undefined;
+        if (kind === "stale") {
+          rotateRecoveryCodes(
+            database,
+            "user-a",
+            "00000000-0000-4000-8000-000000000205",
+            "00000000-0000-4000-8000-000000000206",
+            "00000000-0000-4000-8000-000000000104"
+          );
+          acknowledgedOperationId = "00000000-0000-4000-8000-000000000105";
+        } else if (kind === "foreign") {
+          database.exec(`insert into auth_user (id, created_at, updated_at)
+            values ('user-b', ${now}, ${now})`);
+          rotateRecoveryCodes(
+            database,
+            "user-b",
+            "00000000-0000-4000-8000-000000000207",
+            "00000000-0000-4000-8000-000000000208"
+          );
+          acknowledgedOperationId = "00000000-0000-4000-8000-000000000207";
+        } else if (kind === "arbitrary") {
+          acknowledgedOperationId = "00000000-0000-4000-8000-000000000209";
+        }
+
+        const error = await Effect.runPromise(
+          bootstrapWithAcknowledgement(
+            d1,
+            validated,
+            acknowledgedOperationId
+          ).pipe(Effect.flip)
+        );
+
+        expect(error).toMatchObject({ reason: "security-setup-required" });
+        expect(bootstrapClosureCounts(database)).toStrictEqual(
+          emptyBootstrapClosure
+        );
+      } finally {
+        database.close();
+      }
+    }
+  );
+
+  it("detects a changed-tab recovery rotation immediately before the atomic batch", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const baseD1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      const racedD1: D1EffectQbDatabaseLike = {
+        batch: (statements) => {
+          rotateRecoveryCodes(
+            database,
+            "user-a",
+            "00000000-0000-4000-8000-000000000205",
+            "00000000-0000-4000-8000-000000000206",
+            "00000000-0000-4000-8000-000000000104"
+          );
+          return baseD1.batch(statements);
+        },
+        prepare: baseD1.prepare,
+      };
+
+      const error = await Effect.runPromise(
+        bootstrapWithAcknowledgement(
+          racedD1,
+          validated,
+          "00000000-0000-4000-8000-000000000105"
+        ).pipe(Effect.flip)
+      );
+
+      expect(error).toMatchObject({ reason: "security-setup-required" });
+      expect(bootstrapClosureCounts(database)).toStrictEqual(
+        emptyBootstrapClosure
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("accepts only the exact current acknowledged rotation operation", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      rotateRecoveryCodes(
+        database,
+        "user-a",
+        "00000000-0000-4000-8000-000000000205",
+        "00000000-0000-4000-8000-000000000206",
+        "00000000-0000-4000-8000-000000000104"
+      );
+
+      const result = await Effect.runPromise(
+        bootstrapWithAcknowledgement(
+          makeTestD1Database(database),
+          validated,
+          "00000000-0000-4000-8000-000000000205"
+        )
+      );
+
+      expect(result.id).toBe("primary");
+      expect(
+        database
+          .prepare("select * from app_mailbox_bootstrap_security_intent")
+          .get()
+      ).toMatchObject({
+        actor_user_id: "user-a",
+        recovery_rotation_operation_id: "00000000-0000-4000-8000-000000000205",
+        schema_version: 1,
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects a request actor different from the singleton sealed actor", async () => {
+    expect.hasAssertions();
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      insertCurrentSession(
+        database,
+        makeValidatedSession("user-a", "session-a")
+      );
+      const validated = makeValidatedSession("user-b", "session-b");
+      insertCurrentSession(database, validated);
+
+      await expectSecuritySetupRequired(
+        database,
+        makeTestD1Database(database),
+        validated,
+        "user-b@example.test"
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects a current-schema fresh bootstrap without the singleton seal", async () => {
+    expect.hasAssertions();
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated, false);
+      seedFreshSecuritySetup(database, validated.actor.userId, {
+        includeSeal: false,
+      });
+
+      expect({
+        passkeys: countRows(database, "app_passkey_enrollment_receipt"),
+        recoveryCodes: countRows(database, "auth_recovery_code"),
+        recoveryIdentities: countRows(
+          database,
+          "app_external_recovery_identity"
+        ),
+        rotationReceipts: countRows(
+          database,
+          "app_recovery_code_rotation_receipt"
+        ),
+        seals: countRows(database, "app_first_owner_password_enrollment"),
+      }).toStrictEqual({
+        passkeys: 2,
+        recoveryCodes: 10,
+        recoveryIdentities: 1,
+        rotationReceipts: 1,
+        seals: 0,
+      });
+
+      await expectSecuritySetupRequired(
+        database,
+        makeTestD1Database(database),
+        validated
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rejects otherwise trigger-valid security setup rows timestamped after database time", async () => {
+    expect.hasAssertions();
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated, false);
+      seedFreshSecuritySetup(database, validated.actor.userId, {
+        setupAt: Date.now() + 60_000,
+      });
+
+      await expectSecuritySetupRequired(
+        database,
+        makeTestD1Database(database),
+        validated
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("feeds retained trigger-bound security producer rows into a successful bootstrap consumer", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      const retainedTriggers = database
+        .prepare(
+          `select name from sqlite_master where type = 'trigger' and name in (
+            'app_first_owner_password_enrollment_binding',
+            'app_external_recovery_identity_insert_contract',
+            'app_passkey_enrollment_receipt_binding',
+            'app_recovery_code_rotation_receipt_binding') order by name`
+        )
+        .all();
+
+      const result = await Effect.runPromise(
+        bootstrap(makeTestD1Database(database), validated, "bootstrap-guard")
+      );
+
+      expect({ retainedTriggers, result }).toMatchObject({
+        retainedTriggers: [
+          { name: "app_external_recovery_identity_insert_contract" },
+          { name: "app_first_owner_password_enrollment_binding" },
+          { name: "app_passkey_enrollment_receipt_binding" },
+          { name: "app_recovery_code_rotation_receipt_binding" },
+        ],
+        result: { id: "primary", status: "active" },
       });
     } finally {
       database.close();
@@ -1135,18 +1967,86 @@ describe("mailbox administration", () => {
           "update auth_session set authentication_events = '[]', amr = '[]' where id = 'session-a'"
         )
         .run();
+      database.exec(`
+        update auth_passkey_credential set revoked_at = ${now};
+        update auth_recovery_code set used_at = ${now};
+        update app_external_recovery_identity
+           set status = 'revoked', revoked_at = ${now}, updated_at = ${now},
+               version = version + 1
+         where id = 'bootstrap-recovery';
+      `);
+      rotateRecoveryCodes(
+        database,
+        "user-a",
+        "00000000-0000-4000-8000-000000000205",
+        "00000000-0000-4000-8000-000000000206",
+        "00000000-0000-4000-8000-000000000104"
+      );
 
       const replay = await Effect.runPromise(
         bootstrap(d1, validated, "unused-guard")
       );
+      const changedAcknowledgement = await Effect.runPromise(
+        bootstrapWithAcknowledgement(
+          d1,
+          validated,
+          "00000000-0000-4000-8000-000000000205"
+        ).pipe(Effect.flip)
+      );
 
       expect(replay).toStrictEqual(first);
+      expect(changedAcknowledgement).toMatchObject({
+        reason: "operation-conflict",
+      });
       expect(countRows(database, "app_administrative_audit_event")).toBe(1);
       expect(countRows(database, "app_mailbox_administration_receipt")).toBe(1);
     } finally {
       database.close();
     }
   });
+
+  it.each([
+    [
+      "external recovery",
+      `update app_external_recovery_identity
+          set status = 'revoked', revoked_at = ${now}, updated_at = ${now},
+              version = version + 1
+        where id = 'bootstrap-recovery'`,
+    ],
+    [
+      "passkey",
+      `update auth_passkey_credential set revoked_at = ${now}
+        where id = 'bootstrap-passkey-2'`,
+    ],
+    [
+      "recovery code",
+      `update auth_recovery_code set used_at = ${now}
+        where id = 'bootstrap-recovery-code-0'`,
+    ],
+  ] as const)(
+    "rechecks %s readiness inside the same atomic batch",
+    async (_, mutation) => {
+      expect.hasAssertions();
+      const database = new DatabaseSync(":memory:");
+      try {
+        await applyControlPlaneMigrations(database);
+        const baseD1 = makeTestD1Database(database);
+        const validated = makeValidatedSession("user-a", "session-a");
+        insertCurrentSession(database, validated);
+        const racedD1: D1EffectQbDatabaseLike = {
+          batch: (statements) => {
+            database.exec(mutation);
+            return baseD1.batch(statements);
+          },
+          prepare: baseD1.prepare,
+        };
+
+        await expectSecuritySetupRequired(database, racedD1, validated);
+      } finally {
+        database.close();
+      }
+    }
+  );
 
   it("serializes concurrent exact bootstrap attempts into one organization and receipt", async () => {
     const database = new DatabaseSync(":memory:");
@@ -1669,7 +2569,7 @@ describe("mailbox administration", () => {
                      'primary', 'Wrong', 'active', 'user-a', ?, ?, 1, ?, 1)`
           )
           .run("00000000-0000-4000-8000-000000000099", now, now, now)
-      ).toThrow("invalid mailbox administration receipt binding");
+      ).toThrow("sealed mailbox bootstrap security intent is required");
     } finally {
       database.close();
     }
@@ -1800,6 +2700,7 @@ describe("mailbox administration", () => {
         organizations: 0,
         ownerReceipts: 0,
         receiptV2: 0,
+        securityIntents: 0,
       });
       expect(countRows(database, "app_authorization_guard")).toBe(0);
     } finally {
@@ -3143,6 +4044,10 @@ describe("mailbox administration", () => {
                       mailbox_available: 0,
                       operation_available: 0,
                       owner_eligible: 0,
+                      passkeys_ready: 0,
+                      recovery_codes_ready: 0,
+                      recovery_ready: 0,
+                      seal_actor_valid: 0,
                       step_up_valid: 0,
                     },
                   ],

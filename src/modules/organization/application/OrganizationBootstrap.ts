@@ -17,6 +17,9 @@ import type { RequestCorrelation } from "#/shared/RequestCorrelation";
 import { MailboxBootstrapConfig } from "../contracts/MailboxBootstrapConfig";
 
 export const BootstrapOrganizationCommand = Schema.Struct({
+  acknowledgedRecoveryCodeRotationOperationId: Schema.optional(
+    AdministrativeOperationId
+  ),
   actorUserId: Schema.optional(Schema.Never),
   displayName: MailboxDisplayName,
   initialAddress: Schema.optional(Schema.Never),
@@ -30,6 +33,10 @@ export const BootstrapOrganizationCommand = Schema.Struct({
   protocolGeneration: Schema.optional(Schema.Never),
   protocolMarker: Schema.optional(Schema.Never),
   protocolVersion: Schema.optional(Schema.Never),
+  passkeyCount: Schema.optional(Schema.Never),
+  recoveryCodeCount: Schema.optional(Schema.Never),
+  recoveryReady: Schema.optional(Schema.Never),
+  securitySetupReady: Schema.optional(Schema.Never),
 });
 export type BootstrapOrganizationCommand = Schema.Schema.Type<
   typeof BootstrapOrganizationCommand
@@ -50,6 +57,7 @@ export class OrganizationBootstrapError extends Data.TaggedError(
     | "not-found"
     | "operation-conflict"
     | "owner-not-eligible"
+    | "security-setup-required"
     | "session-recheck"
     | "step-up-required"
     | "storage";
@@ -90,6 +98,12 @@ export class OrganizationBootstrap extends Context.Service<
       bootstrap: (input) =>
         transaction
           .bootstrap({
+            ...(input.acknowledgedRecoveryCodeRotationOperationId === undefined
+              ? {}
+              : {
+                  acknowledgedRecoveryCodeRotationOperationId:
+                    input.acknowledgedRecoveryCodeRotationOperationId,
+                }),
             displayName: input.displayName,
             initialAddress: config.initialAddress,
             initialDomain: config.initialDomain,

@@ -12,6 +12,9 @@ import type { CurrentRequestAuth } from "#/shared/RequestAuth";
 import type { RequestCorrelation } from "#/shared/RequestCorrelation";
 
 export const TrustedBootstrapOrganizationCommand = Schema.Struct({
+  acknowledgedRecoveryCodeRotationOperationId: Schema.optional(
+    AdministrativeOperationId
+  ),
   displayName: MailboxDisplayName,
   initialAddress: NormalizedEmailAddress,
   initialDomain: CanonicalMailDomain,
@@ -34,6 +37,7 @@ export interface OrganizationBootstrapTransactionError {
     | "not-found"
     | "operation-conflict"
     | "owner-not-eligible"
+    | "security-setup-required"
     | "session-recheck"
     | "step-up-required"
     | "storage";

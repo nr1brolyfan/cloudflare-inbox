@@ -100,6 +100,7 @@ export class MailboxAdministrationError extends Data.TaggedError(
     | "not-found"
     | "operation-conflict"
     | "owner-not-eligible"
+    | "security-setup-required"
     | "session-recheck"
     | "step-up-required"
     | "storage";
