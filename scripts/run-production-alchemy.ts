@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { PRODUCTION_ENV_FILE, readProductionEnvFile } from "./production-env";
 import type { ProductionEnvironment } from "./production-env";
@@ -43,6 +43,33 @@ export const productionAlchemyArgs = (mode: "deploy" | "plan"): string[] => [
   ...(mode === "plan" ? ["--dry-run"] : []),
 ];
 
+interface AlchemyCliRuntime {
+  readonly command: string;
+  readonly isBun: boolean;
+}
+
+export const alchemyCliInvocation = (
+  args: readonly string[],
+  runtime?: AlchemyCliRuntime
+) => {
+  const selectedRuntime = runtime ?? {
+    command: process.execPath,
+    isBun:
+      typeof (process.versions as NodeJS.ProcessVersions & { bun?: string })
+        .bun === "string",
+  };
+  if (!selectedRuntime.isBun) {
+    throw new Error("production Alchemy requires Bun");
+  }
+  return {
+    args: [
+      fileURLToPath(import.meta.resolve("alchemy/bin/alchemy.js")),
+      ...args,
+    ],
+    command: selectedRuntime.command,
+  };
+};
+
 export const runProductionAlchemy = (
   mode: "deploy" | "plan",
   filePath = PRODUCTION_ENV_FILE
@@ -55,7 +82,8 @@ export const runProductionAlchemy = (
     return 1;
   }
 
-  const result = spawnSync("alchemy", productionAlchemyArgs(mode), {
+  const invocation = alchemyCliInvocation(productionAlchemyArgs(mode));
+  const result = spawnSync(invocation.command, invocation.args, {
     env: productionAlchemyChildEnv(production, process.env),
     stdio: "inherit",
   });

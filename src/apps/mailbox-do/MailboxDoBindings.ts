@@ -1,5 +1,6 @@
 import type * as CloudflareWorkers from "@cloudflare/workers-types";
 import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
+import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
@@ -33,6 +34,26 @@ export class MailboxDoBindings extends Context.Service<
   MailboxDoBindings,
   MailboxDoBindingsShape
 >()("cloudflare-inbox/MailboxDoBindings") {}
+
+/** Adapts Alchemy binding clients without materializing runtime bindings at plan time. */
+export const mailboxDoBindingsFromClients = (
+  controlPlane: Cloudflare.D1.QueryDatabaseClient,
+  rawMessages: Cloudflare.R2.ReadWriteBucketClient,
+  email?: Cloudflare.Email.SendClient
+): MailboxDoBindingsShape =>
+  MailboxDoBindings.of({
+    controlPlane: controlPlane.raw.pipe(Effect.provide(RuntimeContext.phantom)),
+    rawMessages: rawMessages.raw.pipe(Effect.provide(RuntimeContext.phantom)),
+    email:
+      email === undefined
+        ? Effect.fail(
+            new DeliveryProviderUnavailableError({
+              cause: new Error("MailboxEmail binding is disabled"),
+              message: "Outbound email provider is unavailable",
+            })
+          )
+        : email.raw.pipe(Effect.provide(RuntimeContext.phantom)),
+  });
 
 const isObject = (value: unknown): value is object =>
   typeof value === "object" && value !== null;

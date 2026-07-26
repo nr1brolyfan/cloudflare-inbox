@@ -1,6 +1,7 @@
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { sql } from "drizzle-orm";
+import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -15,9 +16,17 @@ import { MailboxOutboundAlarmDispatch } from "#/modules/mailbox/application/Mail
 import { MailboxOutboundAlarmScheduler } from "#/modules/mailbox/application/MailboxOutboundAlarmScheduler";
 import { MailboxOutboundLifecycleStore } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 import { mailboxOperationalStatusD1Layer } from "#/modules/organization/adapters/d1/MailboxOperationalStatusD1";
+import {
+  ControlPlaneDatabase,
+  MailboxEmailSender,
+  RawMessagesBucket,
+} from "#/platform/cloudflare/Resources";
 
 import { MailboxDoApplicationLayer } from "./MailboxDoApplicationLayer";
-import { MailboxDoBindings, MailboxDoBindingsLayer } from "./MailboxDoBindings";
+import {
+  MailboxDoBindings,
+  mailboxDoBindingsFromClients,
+} from "./MailboxDoBindings";
 
 const mailboxDoImplementation = Effect.gen(function* () {
   const database = yield* MailboxDatabase;
@@ -58,23 +67,39 @@ const mailboxDoImplementation = Effect.gen(function* () {
 });
 
 const mailboxDoRuntime = Effect.gen(function* () {
-  const bindings = yield* MailboxDoBindings;
-  const controlPlaneDatabase = yield* bindings.controlPlane;
-  const operationalStatusLayer =
-    mailboxOperationalStatusD1Layer(controlPlaneDatabase);
+  const controlPlane = yield* Cloudflare.D1.QueryDatabase(ControlPlaneDatabase);
+  const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
+  const email = yield* Cloudflare.Email.Send(MailboxEmailSender);
 
-  return mailboxDoImplementation.pipe(
-    Effect.provide(
-      MailboxDoApplicationLayer.pipe(
-        Layer.provide(operationalStatusLayer),
-        Layer.provide(
-          Layer.succeed(MailboxDoBindings, MailboxDoBindings.of(bindings))
+  return Effect.gen(function* () {
+    const providerDisabled = yield* Config.boolean(
+      "MAILBOX_OUTBOUND_PROVIDER_DISABLED"
+    );
+    const bindings = mailboxDoBindingsFromClients(
+      controlPlane,
+      rawMessages,
+      providerDisabled ? undefined : email
+    );
+    const controlPlaneDatabase = yield* bindings.controlPlane;
+    const operationalStatusLayer =
+      mailboxOperationalStatusD1Layer(controlPlaneDatabase);
+
+    return yield* mailboxDoImplementation.pipe(
+      Effect.provide(
+        MailboxDoApplicationLayer.pipe(
+          Layer.provide(operationalStatusLayer),
+          Layer.provide(Layer.succeed(MailboxDoBindings, bindings))
         )
-      )
-    ),
-    Effect.orDie
-  );
-}).pipe(Effect.provide(MailboxDoBindingsLayer), Effect.orDie);
+      ),
+      Effect.orDie
+    );
+  }).pipe(Effect.orDie);
+}).pipe(
+  Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
+  Effect.provide(Cloudflare.Email.SendBinding),
+  Effect.provide(Cloudflare.R2.ReadWriteBucketBinding),
+  Effect.orDie
+);
 
 /** SQLite-backed data-plane object with migrations completed before RPC starts. */
 export class MailboxDO extends Cloudflare.DurableObject<MailboxDO>()(

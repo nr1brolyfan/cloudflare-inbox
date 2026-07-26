@@ -1,4 +1,5 @@
 /* oxlint-disable vitest/max-expects -- Structural safety tests intentionally assert the complete deployment contract together. */
+import { spawnSync } from "node:child_process";
 import {
   existsSync,
   globSync,
@@ -36,6 +37,7 @@ import {
 } from "../../scripts/production-env";
 import {
   PRODUCTION_OPERATIONAL_ENV_KEYS,
+  alchemyCliInvocation,
   productionAlchemyArgs,
   productionAlchemyChildEnv,
 } from "../../scripts/run-production-alchemy";
@@ -478,6 +480,43 @@ describe("production command and environment safety", () => {
       ".env.production",
     ]);
     expect(productionAlchemyArgs("deploy")).not.toContain("--yes");
+    const invocation = alchemyCliInvocation(productionAlchemyArgs("plan"), {
+      command: "/reviewed/bun",
+      isBun: true,
+    });
+    expect(invocation.command).toBe("/reviewed/bun");
+    const [cliPath] = invocation.args;
+    if (cliPath === undefined) {
+      throw new Error("Alchemy CLI path is missing");
+    }
+    expect(
+      path
+        .normalize(cliPath)
+        .endsWith(path.join("node_modules", "alchemy", "bin", "alchemy.js"))
+    ).toBeTruthy();
+    expect(invocation.args.slice(1)).toStrictEqual(
+      productionAlchemyArgs("plan")
+    );
+    expect(() =>
+      alchemyCliInvocation(productionAlchemyArgs("plan"), {
+        command: process.execPath,
+        isBun: false,
+      })
+    ).toThrow("production Alchemy requires Bun");
+
+    const bunImport = spawnSync(
+      "bun",
+      [
+        "--eval",
+        'await import("./src/modules/mailbox/domain/MailboxResource.ts")',
+      ],
+      {
+        cwd: root,
+        encoding: "utf-8",
+        env: { HOME: process.env.HOME, PATH: process.env.PATH },
+      }
+    );
+    expect(bunImport.status).toBe(0);
   });
 
   it("ignores the real production env and tracks only placeholder instructions", () => {
