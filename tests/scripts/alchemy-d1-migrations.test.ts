@@ -4,10 +4,17 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
+import * as Duration from "effect/Duration";
+import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
 import { splitSqlStatements } from "../../node_modules/alchemy/src/Cloudflare/D1/ApplyMigrations";
-import { resolveImportInit } from "../../node_modules/alchemy/src/Cloudflare/D1/ImportDatabase";
+import {
+  d1ImportUploadTimeoutMillis,
+  nextImportBookmark,
+  pollD1Import,
+  resolveImportInit,
+} from "../../node_modules/alchemy/src/Cloudflare/D1/ImportDatabase";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const migrationFiles = () =>
@@ -83,7 +90,7 @@ describe("patched Alchemy D1 migration batching", () => {
       "rollback;",
     ]) {
       expect(() => splitSqlStatements(sql)).toThrow(
-        "Migration transaction control is incompatible with D1 batch"
+        "Migration transaction control is incompatible with D1 import"
       );
     }
   });
@@ -129,6 +136,62 @@ describe("patched Alchemy D1 migration batching", () => {
     expect(
       resolveImportInit({ error: "failed" }, "fallback.sql")
     ).toStrictEqual({ _tag: "error", message: "failed" });
+    expect(
+      resolveImportInit({ status: "complete" }, "fallback.sql")
+    ).toStrictEqual({
+      _tag: "error",
+      message: "D1 import complete result missing",
+    });
+    expect(
+      resolveImportInit({ status: "error" }, "fallback.sql")
+    ).toStrictEqual({ _tag: "error", message: "D1 import failed" });
+    expect(nextImportBookmark("retained")).toBe("retained");
+    expect(nextImportBookmark("retained", null)).toBe("retained");
+    expect(nextImportBookmark("retained", "replacement")).toBe("replacement");
+  });
+
+  it("retains polling bookmarks, adopts replacements, backs off, and times out", async () => {
+    const bookmarks: string[] = [];
+    const delays: number[] = [];
+    const responses = [
+      {},
+      { at_bookmark: "replacement" },
+      {
+        filename: "complete.sql",
+        result: { num_queries: 24 },
+        status: "complete" as const,
+      },
+    ];
+    const result = await Effect.runPromise(
+      pollD1Import({
+        bookmark: "retained",
+        fallbackFilename: "fallback.sql",
+        request: (bookmark) =>
+          Effect.sync(() => {
+            bookmarks.push(bookmark);
+            return responses.shift() ?? { status: "error" as const };
+          }),
+        sleep: (delay) => Effect.sync(() => void delays.push(delay)),
+        timeout: Duration.seconds(1),
+      })
+    );
+
+    expect(result).toStrictEqual({ filename: "complete.sql", numQueries: 24 });
+    expect(bookmarks).toStrictEqual(["retained", "retained", "replacement"]);
+    expect(delays).toStrictEqual([1000, 2000]);
+    const timeout = await Effect.runPromiseExit(
+      pollD1Import({
+        bookmark: "retained",
+        fallbackFilename: "fallback.sql",
+        request: () => Effect.never,
+        timeout: Duration.millis(1),
+      })
+    );
+    expect(timeout._tag).toBe("Failure");
+    expect(d1ImportUploadTimeoutMillis(100 * 1024)).toBe(5 * 60 * 1000);
+    expect(d1ImportUploadTimeoutMillis(5 * 1024 * 1024 * 1024)).toBe(
+      5120 * 2000
+    );
   });
 
   it("resumes the production ledger after 1007 and reaches final integrity", () => {

@@ -1,5 +1,5 @@
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
-index abf4a2e53a8793ad521ed70719bde153f72511de..b1741b34d22f9e5513dff4e5785b0bdf51d73d2c 100644
+index abf4a2e53a8793ad521ed70719bde153f72511de..81fba110365042160bb554901e70a5ca75d88fc8 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
 @@ -3,6 +3,7 @@ import * as d1 from "@distilled.cloud/cloudflare/d1";
@@ -63,7 +63,7 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..b1741b34d22f9e5513dff4e5785b0bdf
 +  const appendStatement = (statement: string) => {
 +    if (prefix[0] !== undefined && transactionControl.has(prefix[0])) {
 +      throw new Error(
-+        "Migration transaction control is incompatible with D1 batch",
++        "Migration transaction control is incompatible with D1 import",
 +      );
 +    }
 +    statements.push(statement);
@@ -180,10 +180,27 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..b1741b34d22f9e5513dff4e5785b0bdf
    accountId: string,
    databaseId: string,
 diff --git a/src/Cloudflare/D1/ImportDatabase.ts b/src/Cloudflare/D1/ImportDatabase.ts
-index 14755c9e4a411a28ce48378f68b6d477da7f3462..77122e35aa289abeae9581dc5a40291ec6495880 100644
+index 14755c9e4a411a28ce48378f68b6d477da7f3462..758db533761fb637ec27eac62959a07a57567227 100644
 --- a/src/Cloudflare/D1/ImportDatabase.ts
 +++ b/src/Cloudflare/D1/ImportDatabase.ts
-@@ -34,6 +34,41 @@ interface ImportPollingResponse {
+@@ -3,6 +3,7 @@ import {
+   formatHeaders,
+ } from "@distilled.cloud/cloudflare/Credentials";
+ import * as d1 from "@distilled.cloud/cloudflare/d1";
++import * as Duration from "effect/Duration";
+ import * as Effect from "effect/Effect";
+ import * as HttpClient from "effect/unstable/http/HttpClient";
+ import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+@@ -20,7 +21,7 @@ export interface ImportDatabaseResult {
+   numQueries: number;
+ }
+
+-interface ImportPollingResponse {
++export interface ImportPollingResponse {
+   at_bookmark?: string | null;
+   error?: string | null;
+   filename?: string | null;
+@@ -34,6 +35,100 @@ interface ImportPollingResponse {
    upload_url?: string | null;
  }
 
@@ -201,13 +218,21 @@ index 14755c9e4a411a28ce48378f68b6d477da7f3462..77122e35aa289abeae9581dc5a40291e
 +  | { _tag: "upload"; filename: string; uploadUrl: string }
 +  | { _tag: "error"; message: string } => {
 +  const filename = init.filename ?? fallbackFilename;
-+  if (init.status === "complete" && init.result) {
++  if (init.status === "complete") {
++    return init.result
++      ? {
++          _tag: "complete",
++          result: {
++            filename,
++            numQueries: init.result.numQueries ?? 0,
++          },
++        }
++      : { _tag: "error", message: "D1 import complete result missing" };
++  }
++  if (init.status === "error") {
 +    return {
-+      _tag: "complete",
-+      result: {
-+        filename,
-+        numQueries: init.result.numQueries ?? 0,
-+      },
++      _tag: "error",
++      message: init.error ?? "D1 import failed",
 +    };
 +  }
 +  if (init.atBookmark) {
@@ -222,43 +247,84 @@ index 14755c9e4a411a28ce48378f68b6d477da7f3462..77122e35aa289abeae9581dc5a40291e
 +  };
 +};
 +
++export const nextImportBookmark = (
++  current: string,
++  next?: string | null,
++): string => next ?? current;
++
++export const d1ImportUploadTimeoutMillis = (byteLength: number): number =>
++  Math.max(
++    5 * 60 * 1000,
++    Math.ceil(byteLength / (1024 * 1024)) * 2000,
++  );
++
++export const pollD1Import = (options: {
++  readonly bookmark: string;
++  readonly fallbackFilename: string;
++  readonly request: (
++    bookmark: string,
++  ) => Effect.Effect<ImportPollingResponse, never, never>;
++  readonly sleep?: (delayMillis: number) => Effect.Effect<void, never, never>;
++  readonly timeout?: Duration.Input;
++}): Effect.Effect<ImportDatabaseResult, never, never> => {
++  const sleep = options.sleep ?? ((delay) => Effect.sleep(Duration.millis(delay)));
++  const loop = (
++    bookmark: string,
++    delayMillis: number,
++  ): Effect.Effect<ImportDatabaseResult, never, never> =>
++    Effect.gen(function* () {
++      const data = yield* options.request(bookmark);
++      if (data.status === "complete") {
++        return data.result
++          ? {
++              filename: data.filename ?? options.fallbackFilename,
++              numQueries: data.result.num_queries ?? 0,
++            }
++          : yield* Effect.die("D1 import complete result missing");
++      }
++      if (data.status === "error") {
++        return yield* Effect.die(data.error ?? "Error during D1 import");
++      }
++      yield* sleep(delayMillis);
++      return yield* loop(
++        nextImportBookmark(bookmark, data.at_bookmark),
++        Math.min(delayMillis * 2, 10_000),
++      );
++    });
++
++  return loop(options.bookmark, 1000).pipe(
++    Effect.timeout(options.timeout ?? Duration.minutes(15)),
++    Effect.orDie,
++  );
++};
++
  /**
   * Import SQL into a D1 database via the multi-step Cloudflare flow:
   *   1. POST `action: "init"` -> returns presigned `upload_url`
-@@ -73,6 +108,30 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
+@@ -71,6 +166,17 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
+         const text = yield* res.text.pipe(Effect.orDie);
+         const json = JSON.parse(text) as { result: ImportPollingResponse };
          return json.result;
++      }).pipe(Effect.timeout(Duration.seconds(30)), Effect.orDie);
++
++    const poll = (bookmark: string, fallbackFilename: string) =>
++      pollD1Import({
++        bookmark,
++        fallbackFilename,
++        request: (currentBookmark) =>
++          postJson({
++            action: "poll",
++            current_bookmark: currentBookmark,
++          }),
        });
 
-+    const poll = (
-+      bookmark: string,
-+      fallbackFilename: string,
-+    ): Effect.Effect<ImportDatabaseResult, never, never> =>
-+      Effect.gen(function* () {
-+        const data = yield* postJson({
-+          action: "poll",
-+          current_bookmark: bookmark,
-+        });
-+        if (data.status === "complete" && data.result) {
-+          return {
-+            filename: data.filename ?? fallbackFilename,
-+            numQueries: data.result.num_queries ?? 0,
-+          };
-+        }
-+        if (data.status === "error") {
-+          return yield* Effect.die(data.error ?? "Error during D1 import");
-+        }
-+        if (!data.at_bookmark) {
-+          return yield* Effect.die("D1 import poll missing bookmark");
-+        }
-+        return yield* poll(data.at_bookmark, fallbackFilename);
-+      });
-+
      const etag = yield* md5(options.sqlData);
-
-     // Step 1: init via the typed d1 client
-@@ -84,19 +143,27 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
+@@ -82,24 +188,36 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
+       databaseId: options.databaseId,
+       action: "init",
        etag,
-     });
+-    });
++    }).pipe(Effect.timeout(Duration.seconds(30)), Effect.orDie);
 
 -    if (!init.uploadUrl) {
 -      return yield* Effect.die(
@@ -273,11 +339,11 @@ index 14755c9e4a411a28ce48378f68b6d477da7f3462..77122e35aa289abeae9581dc5a40291e
 +    }
 +    if (initDecision._tag === "poll") {
 +      return yield* poll(initDecision.bookmark, initDecision.filename);
-     }
--    const uploadFilename = options.filename ?? init.filename ?? "import.sql";
++    }
 +    if (initDecision._tag === "error") {
 +      return yield* Effect.die(initDecision.message);
-+    }
+     }
+-    const uploadFilename = options.filename ?? init.filename ?? "import.sql";
 +    const uploadFilename = initDecision.filename;
 
      // Step 2: PUT to the presigned upload URL
@@ -286,25 +352,38 @@ index 14755c9e4a411a28ce48378f68b6d477da7f3462..77122e35aa289abeae9581dc5a40291e
          ? new TextEncoder().encode(options.sqlData)
          : options.sqlData;
 -    const putReq = HttpClientRequest.put(init.uploadUrl).pipe(
++    const uploadTimeoutMillis = d1ImportUploadTimeoutMillis(bytes.byteLength);
 +    const putReq = HttpClientRequest.put(initDecision.uploadUrl).pipe(
        HttpClientRequest.bodyUint8Array(bytes, "application/sql"),
      );
-     const putRes = yield* client.execute(putReq).pipe(Effect.orDie);
-@@ -113,37 +180,19 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
+-    const putRes = yield* client.execute(putReq).pipe(Effect.orDie);
++    const putRes = yield* client.execute(putReq).pipe(
++      Effect.timeout(Duration.millis(uploadTimeoutMillis)),
++      Effect.orDie,
++    );
+     if (putRes.status < 200 || putRes.status >= 300) {
+       const text = yield* putRes.text.pipe(Effect.orElseSucceed(() => ""));
+       return yield* Effect.die(
+@@ -113,37 +231,24 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
        etag,
        filename: init.filename,
      });
-+    if (ingest.status === "complete" && ingest.result) {
-+      return {
-+        filename: ingest.filename ?? uploadFilename,
-+        numQueries: ingest.result.num_queries ?? 0,
-+      };
++    if (ingest.status === "complete") {
++      return ingest.result
++        ? {
++            filename: ingest.filename ?? uploadFilename,
++            numQueries: ingest.result.num_queries ?? 0,
++          }
++        : yield* Effect.die("D1 import complete result missing");
++    }
++    if (ingest.status === "error") {
++      return yield* Effect.die(ingest.error ?? "D1 import failed");
 +    }
      if (!ingest.at_bookmark) {
        return yield* Effect.die(
          ingest.error ?? "Ingest response missing bookmark",
        );
-       }
+     }
 
 -    // Step 4: poll until complete
 -    const poll = (
