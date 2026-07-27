@@ -3,10 +3,12 @@ import { spawnSync } from "node:child_process";
 import { readProductionEnvFile } from "./production-env";
 import {
   alchemyCliInvocation,
+  ensureProductionAlchemyProfile,
   productionAlchemyChildEnv,
 } from "./run-production-alchemy";
 
 const production = readProductionEnvFile();
+ensureProductionAlchemyProfile(process.env.HOME);
 
 const invocation = alchemyCliInvocation([
   "state",

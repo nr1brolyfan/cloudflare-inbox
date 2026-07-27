@@ -1,0 +1,192 @@
+diff --git a/node_modules/alchemy/.bun-tag-5f4a9230865b4969 b/.bun-tag-5f4a9230865b4969
+new file mode 100644
+index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
+index abf4a2e53a8793ad521ed70719bde153f72511de..63bed3770da78786c8655618362147ebfeb23b71 100644
+--- a/src/Cloudflare/D1/ApplyMigrations.ts
++++ b/src/Cloudflare/D1/ApplyMigrations.ts
+@@ -30,15 +30,16 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+       if (applied.has(migration.id)) continue;
+       const migrationId = nextSeq.toString().padStart(5, "0");
+       nextSeq += 1;
+-      // D1 over HTTP doesn't support transactions; run migration + record
+-      // in a single batched query.
+-      yield* executeSQL(
++      // The SQL-string endpoint misparses trigger bodies when they are joined
++      // with other statements. Keep complete triggers intact and use D1's
++      // transactional batch shape for the migration and ledger write.
++      yield* executeBatchSQL(
+         accountId,
+         databaseId,
+         [
+-          migration.sql,
++          ...splitSqlStatements(migration.sql),
+           `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
+-        ].join("\n"),
++        ],
+       );
+     }
+   });
+@@ -71,6 +72,162 @@ const executeSQL = (
+     return yield* queryDb({ accountId, databaseId, sql });
+   });
+ 
++const executeBatchSQL = (
++  accountId: string,
++  databaseId: string,
++  statements: readonly string[],
++): Effect.Effect<
++  d1.QueryDatabaseResponse,
++  d1.QueryDatabaseError,
++  Credentials | HttpClient.HttpClient
++> =>
++  Effect.gen(function* () {
++    const queryDb = yield* d1.queryDatabase;
++    return yield* queryDb({
++      accountId,
++      databaseId,
++      batch: statements.map((sql) => ({ sql })),
++    });
++  });
++
++/** Split SQLite SQL while retaining complete trigger bodies as one statement. */
++export const splitSqlStatements = (sql: string): string[] => {
++  const statements: string[] = [];
++  let start = 0;
++  let word = "";
++  let quote: "'" | '"' | "`" | "]" | undefined;
++  let lineComment = false;
++  let blockComment = false;
++  let trigger = false;
++  let triggerBody = false;
++  let triggerDepth = 0;
++  let statementToken = false;
++  const prefix: string[] = [];
++  const transactionControl = new Set([
++    "BEGIN",
++    "COMMIT",
++    "END",
++    "RELEASE",
++    "ROLLBACK",
++    "SAVEPOINT",
++  ]);
++
++  const appendStatement = (statement: string) => {
++    if (prefix[0] !== undefined && transactionControl.has(prefix[0])) {
++      throw new Error(
++        "Migration transaction control is incompatible with D1 batch",
++      );
++    }
++    statements.push(statement);
++  };
++
++  const consumeWord = () => {
++    if (word === "") return;
++    const token = word.toUpperCase();
++    word = "";
++    statementToken = true;
++    if (!trigger && prefix.length < 4) {
++      prefix.push(token);
++      trigger =
++        prefix[0] === "CREATE" &&
++        token === "TRIGGER" &&
++        prefix.slice(1, -1).every((part) =>
++          ["TEMP", "TEMPORARY"].includes(part),
++        );
++    }
++    if (!trigger) return;
++    if (!triggerBody && token === "BEGIN") {
++      triggerBody = true;
++      triggerDepth = 1;
++    } else if (triggerBody && token === "CASE") {
++      triggerDepth += 1;
++    } else if (triggerBody && token === "END" && triggerDepth > 0) {
++      triggerDepth -= 1;
++    }
++  };
++
++  const resetStatement = (nextStart: number) => {
++    start = nextStart;
++    trigger = false;
++    triggerBody = false;
++    triggerDepth = 0;
++    statementToken = false;
++    prefix.length = 0;
++  };
++
++  for (let index = 0; index < sql.length; index += 1) {
++    const current = sql[index]!;
++    const next = sql[index + 1];
++
++    if (lineComment) {
++      if (current === "\n") lineComment = false;
++      continue;
++    }
++    if (blockComment) {
++      if (current === "*" && next === "/") {
++        blockComment = false;
++        index += 1;
++      }
++      continue;
++    }
++    if (quote !== undefined) {
++      if (quote === "]") {
++        if (current === "]" && next === "]") {
++          index += 1;
++        } else if (current === "]") {
++          quote = undefined;
++        }
++      } else if (current === quote && next === quote) {
++        index += 1;
++      } else if (current === quote) {
++        quote = undefined;
++      }
++      continue;
++    }
++    if (current === "-" && next === "-") {
++      consumeWord();
++      lineComment = true;
++      index += 1;
++      continue;
++    }
++    if (current === "/" && next === "*") {
++      consumeWord();
++      blockComment = true;
++      index += 1;
++      continue;
++    }
++    if (current === "'" || current === '"' || current === "`") {
++      consumeWord();
++      statementToken = true;
++      quote = current;
++      continue;
++    }
++    if (current === "[") {
++      consumeWord();
++      statementToken = true;
++      quote = "]";
++      continue;
++    }
++    if (/[A-Za-z0-9_]/u.test(current)) {
++      word += current;
++      continue;
++    }
++    consumeWord();
++    if (current !== ";") continue;
++    if (trigger && (!triggerBody || triggerDepth > 0)) continue;
++    const statement = sql.slice(start, index + 1).trim();
++    if (statementToken && statement !== "") appendStatement(statement);
++    resetStatement(index + 1);
++  }
++  consumeWord();
++  if (trigger && triggerDepth > 0) {
++    throw new Error("Incomplete SQLite trigger statement");
++  }
++  const trailing = sql.slice(start).trim();
++  if (statementToken && trailing !== "") appendStatement(trailing);
++  return statements;
++};
++
+ const detectSchema = (
+   accountId: string,
+   databaseId: string,

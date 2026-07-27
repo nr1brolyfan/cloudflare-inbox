@@ -1,11 +1,13 @@
 /* oxlint-disable vitest/max-expects -- Structural safety tests intentionally assert the complete deployment contract together. */
 import { spawnSync } from "node:child_process";
 import {
+  chmodSync,
   existsSync,
   globSync,
   mkdtempSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,8 +38,11 @@ import {
   parseProductionEnv,
 } from "../../scripts/production-env";
 import {
+  JOB_MAIL_PRODUCTION_CLOUDFLARE_ACCOUNT_ID,
+  JOB_MAIL_PRODUCTION_ALCHEMY_PROFILE,
   PRODUCTION_OPERATIONAL_ENV_KEYS,
   alchemyCliInvocation,
+  ensureProductionAlchemyProfile,
   productionAlchemyArgs,
   productionAlchemyChildEnv,
 } from "../../scripts/run-production-alchemy";
@@ -440,8 +445,10 @@ describe("production command and environment safety", () => {
       ALCHEMY_DEV: "private-dev",
       ALCHEMY_PROFILE: "reviewed-profile",
       ALCHEMY_STATE: "private-state",
-      CLOUDFLARE_ACCOUNT_ID: "reviewed-account",
+      CLOUDFLARE_ACCOUNT_ID: JOB_MAIL_PRODUCTION_CLOUDFLARE_ACCOUNT_ID,
       CLOUDFLARE_API_TOKEN: "reviewed-token",
+      CLOUDFLARE_API_KEY: "must-not-pass",
+      CLOUDFLARE_EMAIL: "must-not-pass",
       HOME: "/operator/home",
       PATH: "/operator/bin",
       PUBLIC_ORIGIN: "https://ambient.invalid",
@@ -460,10 +467,16 @@ describe("production command and environment safety", () => {
       ])
     );
     expect(child.PUBLIC_ORIGIN).toBe("https://mail.szymondlugolecki.com");
+    expect(child.ALCHEMY_PROFILE).toBe(JOB_MAIL_PRODUCTION_ALCHEMY_PROFILE);
+    expect(child.ALCHEMY_PROFILE).not.toBe("reviewed-profile");
+    expect(child.CI).toBeUndefined();
+    expect(child.CLOUDFLARE_API_KEY).toBeUndefined();
+    expect(child.CLOUDFLARE_EMAIL).toBeUndefined();
     expect(child.ALCHEMY_DEV).toBeUndefined();
     expect(child.ALCHEMY_STATE).toBeUndefined();
     expect(child.RANDOM_APPLICATION_SECRET).toBeUndefined();
     expect(PRODUCTION_OPERATIONAL_ENV_KEYS).not.toContain("ALCHEMY_DEV");
+    expect(PRODUCTION_OPERATIONAL_ENV_KEYS).not.toContain("ALCHEMY_PROFILE");
     expect(productionAlchemyArgs("plan")).toStrictEqual([
       "deploy",
       "--stage",
@@ -517,6 +530,79 @@ describe("production command and environment safety", () => {
       }
     );
     expect(bunImport.status).toBe(0);
+  });
+
+  it("fails closed on wrong Cloudflare auth or production profile drift", () => {
+    const parsed = parseProductionEnv(validProductionEnv);
+    expect(() =>
+      productionAlchemyChildEnv(parsed, {
+        CLOUDFLARE_ACCOUNT_ID: "00000000000000000000000000000000",
+        CLOUDFLARE_API_TOKEN: "reviewed-token",
+      })
+    ).toThrow("production Cloudflare authentication is invalid");
+    expect(() =>
+      productionAlchemyChildEnv(parsed, {
+        CLOUDFLARE_ACCOUNT_ID: JOB_MAIL_PRODUCTION_CLOUDFLARE_ACCOUNT_ID,
+        CLOUDFLARE_API_KEY: "global-key-must-not-fallback",
+        CLOUDFLARE_EMAIL: "operator@example.com",
+      })
+    ).toThrow("production Cloudflare authentication is invalid");
+
+    const home = mkdtempSync(path.join(tmpdir(), "production-profile-"));
+    try {
+      const directory = path.join(home, ".alchemy");
+      ensureProductionAlchemyProfile(home);
+      expect(
+        JSON.parse(readFileSync(path.join(directory, "profiles.json"), "utf-8"))
+          .profiles[JOB_MAIL_PRODUCTION_ALCHEMY_PROFILE]
+      ).toStrictEqual({ Cloudflare: { method: "env" } });
+      writeFileSync(
+        path.join(directory, "profiles.json"),
+        JSON.stringify({
+          version: 0,
+          profiles: {
+            [JOB_MAIL_PRODUCTION_ALCHEMY_PROFILE]: {
+              Cloudflare: { method: "oauth" },
+            },
+          },
+        })
+      );
+      expect(() => ensureProductionAlchemyProfile(home)).toThrow(
+        "production Alchemy profile is invalid"
+      );
+      writeFileSync(
+        path.join(directory, "profiles.json"),
+        JSON.stringify({
+          version: 0,
+          profiles: {
+            [JOB_MAIL_PRODUCTION_ALCHEMY_PROFILE]: {
+              Cloudflare: { method: "env" },
+            },
+          },
+        })
+      );
+      chmodSync(path.join(directory, "profiles.json"), 0o644);
+      expect(() => ensureProductionAlchemyProfile(home)).not.toThrow();
+      expect(
+        statSync(path.join(directory, "profiles.json")).mode % 0o1000
+      ).toBe(0o600);
+      writeFileSync(
+        path.join(directory, "profiles.json"),
+        JSON.stringify({ version: 1, profiles: {} })
+      );
+      expect(() => ensureProductionAlchemyProfile(home)).toThrow(
+        "production Alchemy profile is invalid"
+      );
+      writeFileSync(
+        path.join(directory, "profiles.json"),
+        JSON.stringify({ version: 0, profiles: [] })
+      );
+      expect(() => ensureProductionAlchemyProfile(home)).toThrow(
+        "production Alchemy profile is invalid"
+      );
+    } finally {
+      rmSync(home, { recursive: true });
+    }
   });
 
   it("ignores the real production env and tracks only placeholder instructions", () => {
