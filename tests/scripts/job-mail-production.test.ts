@@ -394,6 +394,29 @@ describe("job mail production resource structure", () => {
     expect(application).not.toContain("EffectAuthStorageD1Layer");
     expect(route).not.toContain("@effect-auth/core/HttpApi");
   });
+
+  it("keeps magic-link verify separate from the complete Backend graph", () => {
+    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const application = readRoot(
+      "src/apps/backend-worker/BackendMagicLinkVerifyApplicationLayer.ts"
+    );
+    const route = readRoot(
+      "src/modules/account-security/adapters/http/AuthMagicLinkVerifyHttpRoute.ts"
+    );
+
+    expect(backend).toContain(
+      'requestUrl.pathname === "/auth/magic-link/verify"'
+    );
+    expect(backend).toContain(
+      'import("./BackendMagicLinkVerifyApplicationLayer")'
+    );
+    expect(application).toContain("AuthMagicLinkVerifyHttpRouteLayer");
+    expect(application).toContain("AccountSecurityEffectAuthLayer");
+    expect(application).not.toContain("BackendApplicationLayer");
+    expect(application).not.toContain("AccountSecurityHttpLayer");
+    expect(route).toContain('"/auth/magic-link/verify"');
+    expect(route).not.toContain("@effect-auth/core/HttpApi");
+  });
 });
 
 describe("production command and environment safety", () => {
