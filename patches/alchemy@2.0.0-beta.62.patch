@@ -1,5 +1,5 @@
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
-index abf4a2e53a8793ad521ed70719bde153f72511de..81fba110365042160bb554901e70a5ca75d88fc8 100644
+index abf4a2e53a8793ad521ed70719bde153f72511de..2eea29c278c96b48556eff57768da3d1714ebe69 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
 @@ -3,6 +3,7 @@ import * as d1 from "@distilled.cloud/cloudflare/d1";
@@ -17,16 +17,17 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..81fba110365042160bb554901e70a5ca
 -      // D1 over HTTP doesn't support transactions; run migration + record
 -      // in a single batched query.
 -      yield* executeSQL(
-+      // Validate transaction boundaries locally, then use D1's import flow.
++      // Validate and compile D1-compatible scratch objects, then use import.
 +      // The /query parser rejects complete compound trigger statements even
 +      // when each trigger is isolated in an explicit batch member.
-+      splitSqlStatements(migration.sql);
++      const migrationSql = compileD1ImportSql(migration.sql, migration.id);
 +      yield* importD1Database({
          accountId,
          databaseId,
 -        [
+-          migration.sql,
 +        sqlData: [
-           migration.sql,
++          migrationSql,
            `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
          ].join("\n"),
 -      );
@@ -34,10 +35,10 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..81fba110365042160bb554901e70a5ca
      }
    });
 
-@@ -71,6 +74,144 @@ const executeSQL = (
+@@ -71,6 +74,379 @@ const executeSQL = (
      return yield* queryDb({ accountId, databaseId, sql });
    });
- 
+
 +/** Split SQLite SQL while retaining complete trigger bodies as one statement. */
 +export const splitSqlStatements = (sql: string): string[] => {
 +  const statements: string[] = [];
@@ -174,6 +175,241 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..81fba110365042160bb554901e70a5ca
 +  const trailing = sql.slice(start).trim();
 +  if (statementToken && trailing !== "") appendStatement(trailing);
 +  return statements;
++};
++
++const leadingTrivia = String.raw`(?:\s|--[^\n]*(?:\n|$)|\/\*[\s\S]*?\*\/)*`;
++const unsupportedCommand = new RegExp(
++  `^${leadingTrivia}(?:pragma|attach|detach|vacuum|reindex)\\b`,
++  "iu",
++);
++const schemaWrite = new RegExp(
++  `^${leadingTrivia}(?:insert(?:\\s+or\\s+\\w+)?\\s+into|replace\\s+into|update|delete\\s+from)\\s+(?:(?:main|["'\`]main["'\`]|\\[main\\])\\s*\\.\\s*)?(?:sqlite_master|sqlite_schema|["'\`]sqlite_(?:master|schema)["'\`]|\\[sqlite_(?:master|schema)\\])`,
++  "iu",
++);
++const cteSchemaWrite = new RegExp(
++  `^${leadingTrivia}with\\b(?=[\\s\\S]*(?:insert|replace|update|delete)\\b)(?=[\\s\\S]*sqlite_(?:master|schema)\\b)`,
++  "iu",
++);
++const tempObject = new RegExp(
++  `^(${leadingTrivia}create\\s+)temp(?:orary)?(\\s+(?:table|view)\\b)(\\s+)([A-Z_]\\w*)(?=\\s*(?:\\(|as\\b))`,
++  "iu",
++);
++const anyTempDeclaration = new RegExp(
++  `^${leadingTrivia}create\\s+temp(?:orary)?\\b`,
++  "iu",
++);
++const scratchMigrationIds = new Set([
++  "1020_app_authorization_catalog_v2.sql",
++  "1022_app_mailbox_bootstrap_receipt_v2.sql",
++  "1023_app_organization_legacy_cutover.sql",
++  "1024_app_mailbox_legacy_organization_assignment.sql",
++  "1025_app_organization_owner_assignment.sql",
++  "1026_app_legacy_mail_domain_claim.sql",
++  "1027_app_mailbox_organization.sql",
++  "1028_app_user_organization_preference.sql",
++  "1029_app_organization_lifecycle.sql",
++  "1030_app_first_owner_password_enrollment.sql",
++]);
++
++const nextSqlCodeIndex = (sql: string, start: number): number => {
++  let index = start;
++  while (index < sql.length) {
++    if (/\s/u.test(sql[index]!)) {
++      index += 1;
++    } else if (sql[index] === "-" && sql[index + 1] === "-") {
++      index = sql.indexOf("\n", index + 2);
++      if (index === -1) return sql.length;
++    } else if (sql[index] === "/" && sql[index + 1] === "*") {
++      const end = sql.indexOf("*/", index + 2);
++      if (end === -1) return sql.length;
++      index = end + 2;
++    } else {
++      return index;
++    }
++  }
++  return index;
++};
++
++const rewriteScratchIdentifiers = (
++  sql: string,
++  scratchNames: ReadonlyMap<string, string>,
++) => {
++  let output = "";
++  let quote: "'" | '"' | "`" | "]" | undefined;
++  let lineComment = false;
++  let blockComment = false;
++  let quotedValue = "";
++  for (let index = 0; index < sql.length; index += 1) {
++    const current = sql[index]!;
++    const next = sql[index + 1];
++    if (lineComment) {
++      output += current;
++      if (current === "\n") lineComment = false;
++      continue;
++    }
++    if (blockComment) {
++      output += current;
++      if (current === "*" && next === "/") {
++        output += next;
++        blockComment = false;
++        index += 1;
++      }
++      continue;
++    }
++    if (quote !== undefined) {
++      output += current;
++      if (quote === "]") {
++        if (current === "]" && next === "]") {
++          output += next;
++          quotedValue += current;
++          index += 1;
++        } else if (current === "]") {
++          const following = nextSqlCodeIndex(sql, index + 1);
++          if (quotedValue.toLowerCase() === "temp" && sql[following] === ".") {
++            throw new Error(
++              "TEMP schema references are incompatible with D1 import",
++            );
++          }
++          quote = undefined;
++        } else quotedValue += current;
++      } else if (current === quote && next === quote) {
++        output += next;
++        quotedValue += current;
++        index += 1;
++      } else if (current === quote) {
++        const following = nextSqlCodeIndex(sql, index + 1);
++        if (
++          quotedValue.toLowerCase() === "temp" &&
++          sql[following] === "."
++        ) {
++          throw new Error("TEMP schema references are incompatible with D1 import");
++        }
++        quote = undefined;
++      } else quotedValue += current;
++      continue;
++    }
++    if (current === "-" && next === "-") {
++      output += current + next;
++      lineComment = true;
++      index += 1;
++      continue;
++    }
++    if (current === "/" && next === "*") {
++      output += current + next;
++      blockComment = true;
++      index += 1;
++      continue;
++    }
++    if (["'", '"', "`", "["].includes(current)) {
++      output += current;
++      quotedValue = "";
++      quote = current === "[" ? "]" : (current as "'" | '"' | "`");
++      continue;
++    }
++    if (/[A-Z_]/iu.test(current)) {
++      let end = index + 1;
++      while (end < sql.length && /\w/u.test(sql[end]!)) end += 1;
++      const identifier = sql.slice(index, end);
++      const following = nextSqlCodeIndex(sql, end);
++      if (identifier.toLowerCase() === "temp" && sql[following] === ".") {
++        throw new Error("TEMP schema references are incompatible with D1 import");
++      }
++      output += scratchNames.get(identifier.toLowerCase()) ?? identifier;
++      index = end - 1;
++      continue;
++    }
++    output += current;
++  }
++  return output;
++};
++
++const stripSqlComments = (sql: string): string => {
++  let output = "";
++  let quote: "'" | '"' | "`" | "]" | undefined;
++  let lineComment = false;
++  let blockComment = false;
++  for (let index = 0; index < sql.length; index += 1) {
++    const current = sql[index]!;
++    const next = sql[index + 1];
++    if (lineComment) {
++      if (current === "\n") {
++        output += current;
++        lineComment = false;
++      }
++      continue;
++    }
++    if (blockComment) {
++      if (current === "*" && next === "/") {
++        output += " ";
++        blockComment = false;
++        index += 1;
++      }
++      continue;
++    }
++    if (quote !== undefined) {
++      output += current;
++      if (quote === "]") {
++        if (current === "]" && next === "]") output += sql[++index]!;
++        else if (current === "]") quote = undefined;
++      } else if (current === quote && next === quote) {
++        output += sql[++index]!;
++      } else if (current === quote) quote = undefined;
++      continue;
++    }
++    if (current === "-" && next === "-") {
++      lineComment = true;
++      index += 1;
++      continue;
++    }
++    if (current === "/" && next === "*") {
++      blockComment = true;
++      index += 1;
++      continue;
++    }
++    output += current;
++    if (["'", '"', "`", "["].includes(current)) {
++      quote = current === "[" ? "]" : (current as "'" | '"' | "`");
++    }
++  }
++  return output;
++};
++
++/** Compile migration scratch objects for D1 import without changing source files. */
++export const compileD1ImportSql = (sql: string, migrationId: string): string => {
++  const statements = splitSqlStatements(sql);
++  const scratchNames = new Map<string, string>();
++  for (const statement of statements) {
++    const match = tempObject.exec(statement);
++    if (
++      anyTempDeclaration.test(stripSqlComments(statement)) &&
++      match === null
++    ) {
++      throw new Error("Unsupported TEMP object declaration for D1 import");
++    }
++    if (match?.[4] !== undefined) {
++      scratchNames.set(match[4].toLowerCase(), `__d1_scratch_${match[4]}`);
++    }
++  }
++  if (scratchNames.size > 0 && !scratchMigrationIds.has(migrationId)) {
++    throw new Error(`TEMP objects are not approved for migration ${migrationId}`);
++  }
++  return statements
++    .map((statement) => {
++      const guardedStatement = stripSqlComments(statement);
++      if (
++        unsupportedCommand.test(guardedStatement) ||
++        schemaWrite.test(guardedStatement) ||
++        cteSchemaWrite.test(guardedStatement)
++      ) {
++        throw new Error("Migration statement is incompatible with D1 import");
++      }
++      const compiled = rewriteScratchIdentifiers(
++        statement.replace(tempObject, "$1$2$3$4"),
++        scratchNames,
++      );
++      return compiled.endsWith(";") ? compiled : `${compiled}\n;`;
++    })
++    .join("\n");
 +};
 +
  const detectSchema = (

@@ -8,7 +8,10 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
 
-import { splitSqlStatements } from "../../node_modules/alchemy/src/Cloudflare/D1/ApplyMigrations";
+import {
+  compileD1ImportSql,
+  splitSqlStatements,
+} from "../../node_modules/alchemy/src/Cloudflare/D1/ApplyMigrations";
 import {
   d1ImportUploadTimeoutMillis,
   nextImportBookmark,
@@ -27,30 +30,48 @@ const createLedger = (database: DatabaseSync) =>
     applied_at text not null
   )`);
 
-const applyMigrationBatch = (
+const schemaSql = (database: DatabaseSync) =>
+  database
+    .prepare(
+      "select type,name,tbl_name,sql from sqlite_schema order by type,name"
+    )
+    .all();
+
+const applySqlBatch = (
   database: DatabaseSync,
-  file: string,
-  sequence: number
+  source: string,
+  name: string,
+  sequence: number,
+  compileForD1 = false
 ) => {
-  const statements = splitSqlStatements(
-    readFileSync(path.join(root, file), "utf-8")
-  );
+  const migrationSql = compileForD1 ? compileD1ImportSql(source, name) : source;
+  const payload = [
+    migrationSql,
+    `insert into d1_migrations (id,name,applied_at) values ('${sequence.toString().padStart(5, "0")}','${name}',datetime('now'));`,
+  ].join("\n");
   database.exec("begin immediate");
   try {
-    for (const statement of statements) {
-      database.exec(statement);
-    }
-    database
-      .prepare(
-        "insert into d1_migrations (id,name,applied_at) values (?,?,datetime('now'))"
-      )
-      .run(sequence.toString().padStart(5, "0"), path.basename(file));
+    database.exec(payload);
     database.exec("commit");
   } catch (error) {
     database.exec("rollback");
     throw error;
   }
 };
+
+const applyMigrationBatch = (
+  database: DatabaseSync,
+  file: string,
+  sequence: number,
+  compileForD1 = false
+) =>
+  applySqlBatch(
+    database,
+    readFileSync(path.join(root, file), "utf-8"),
+    path.basename(file),
+    sequence,
+    compileForD1
+  );
 
 describe("patched Alchemy D1 migration batching", () => {
   it("keeps trigger bodies, quoted semicolons, and comments complete", () => {
@@ -93,6 +114,72 @@ describe("patched Alchemy D1 migration batching", () => {
         "Migration transaction control is incompatible with D1 import"
       );
     }
+  });
+
+  it("compiles temp scratch objects without rewriting comments or values", () => {
+    const compiled = compileD1ImportSql(
+      `
+        -- create temp table ignored (value text);
+        create temp table scratch (value text);
+        insert into scratch values ('create temp view ignored as select 1');
+        create temporary view scratch_view as select value from scratch;
+        drop view scratch_view;
+        drop table scratch;
+      `,
+      "1020_app_authorization_catalog_v2.sql"
+    );
+
+    expect(compiled).toContain("create  table __d1_scratch_scratch");
+    expect(compiled).toContain("create  view __d1_scratch_scratch_view");
+    expect(compiled).toContain("select value from __d1_scratch_scratch");
+    expect(compiled).toContain("-- create temp table ignored");
+    expect(compiled).toContain("'create temp view ignored as select 1'");
+    for (const sql of [
+      "pragma foreign_keys = off;",
+      "attach database 'other.db' as other;",
+      "delete from sqlite_schema;",
+    ]) {
+      expect(() => compileD1ImportSql(sql, "safe.sql")).toThrow(
+        "Migration statement is incompatible with D1 import"
+      );
+    }
+    for (const sql of [
+      'create temp table "quoted" (value text);',
+      "create temp table if not exists conditional (value text);",
+      "create temp table qualified (value text); select * from temp.qualified;",
+      "create temp trigger unsupported after insert on anything begin select 1; end;",
+      'create temp table qualified (value text); select * from "temp".qualified;',
+      "create/**/temp table commented (value text);",
+      "create temp table qualified (value text); select * from 'temp'/**/.qualified;",
+    ]) {
+      expect(() =>
+        compileD1ImportSql(sql, "1020_app_authorization_catalog_v2.sql")
+      ).toThrow(/incompatible|unsupported/iu);
+    }
+    expect(() =>
+      compileD1ImportSql(
+        "create temp table future_scratch (value text);",
+        "future.sql"
+      )
+    ).toThrow("TEMP objects are not approved for migration future.sql");
+    expect(() =>
+      compileD1ImportSql('delete from "sqlite_schema";', "safe.sql")
+    ).toThrow("Migration statement is incompatible with D1 import");
+    expect(
+      compileD1ImportSql("create table final (value text)", "safe.sql")
+    ).toBe("create table final (value text)\n;");
+    expect(
+      compileD1ImportSql("select 'temp.foo' -- trailing", "safe.sql")
+    ).toBe("select 'temp.foo' -- trailing\n;");
+    expect(() =>
+      compileD1ImportSql("delete/**/from 'sqlite_schema';", "safe.sql")
+    ).toThrow("Migration statement is incompatible with D1 import");
+    expect(() =>
+      compileD1ImportSql(
+        "with doomed as (select 1) delete from sqlite_schema;",
+        "safe.sql"
+      )
+    ).toThrow("Migration statement is incompatible with D1 import");
   });
 
   it("resumes cached D1 imports without requiring another upload URL", () => {
@@ -194,13 +281,13 @@ describe("patched Alchemy D1 migration batching", () => {
     );
   });
 
-  it("resumes the production ledger after 1007 and reaches final integrity", () => {
+  it("resumes D1 import from production ledger 1019 and reaches final integrity", () => {
     const database = new DatabaseSync(":memory:");
     const files = migrationFiles();
     try {
       createLedger(database);
       for (const [index, file] of files.entries()) {
-        if (index === 37) {
+        if (index === 49) {
           break;
         }
         applyMigrationBatch(database, file, index + 1);
@@ -209,13 +296,16 @@ describe("patched Alchemy D1 migration batching", () => {
         database
           .prepare("select id,name from d1_migrations order by id desc limit 1")
           .get()
-      ).toMatchObject({ id: "00037", name: "1007_app_ai_tool_audit.sql" });
+      ).toMatchObject({
+        id: "00049",
+        name: "1019_app_organization_member.sql",
+      });
 
       for (const [index, file] of files.entries()) {
-        if (index < 37) {
+        if (index < 49) {
           continue;
         }
-        applyMigrationBatch(database, file, index + 1);
+        applyMigrationBatch(database, file, index + 1, true);
       }
 
       expect(files).toHaveLength(61);
@@ -240,37 +330,59 @@ describe("patched Alchemy D1 migration batching", () => {
       expect(database.prepare("pragma quick_check").get()).toMatchObject({
         quick_check: "ok",
       });
+      expect(
+        database
+          .prepare(
+            "select count(*) as count from sqlite_schema where name glob '__d1_scratch_*'"
+          )
+          .get()
+      ).toMatchObject({ count: 0 });
+
+      const expected = new DatabaseSync(":memory:");
+      try {
+        createLedger(expected);
+        for (const [index, file] of files.entries()) {
+          applyMigrationBatch(expected, file, index + 1);
+        }
+        expect(schemaSql(database)).toStrictEqual(schemaSql(expected));
+      } finally {
+        expected.close();
+      }
     } finally {
       database.close();
     }
   });
 
-  it("rolls back schema writes and the ledger when a batch statement fails", () => {
+  it("rolls back compiled scratch, schema writes, and ledger on failure", () => {
     const database = new DatabaseSync(":memory:");
     try {
       createLedger(database);
-      database.exec("create table example (value text not null)");
-      expect(() => {
-        database.exec("begin immediate");
-        try {
-          database.exec(
-            "insert into example (value) values ('before-failure')"
-          );
-          database.exec("insert into missing_table (value) values ('failure')");
-          database.exec(
-            "insert into d1_migrations (id,name,applied_at) values ('00001','failed.sql',datetime('now'))"
-          );
-          database.exec("commit");
-        } catch (error) {
-          database.exec("rollback");
-          throw error;
-        }
-      }).toThrow(/no such table/u);
-      expect(
-        database.prepare("select count(*) as count from example").get()
-      ).toMatchObject({ count: 0 });
+      database.exec(`create trigger fail_ledger
+        before insert on d1_migrations
+        begin
+          select raise(abort, 'ledger failure');
+        end;`);
+      expect(() =>
+        applySqlBatch(
+          database,
+          `create temp table scratch (value text);
+           create table example (value text not null);
+           insert into example values ('before-failure');
+           drop table scratch;`,
+          "1020_app_authorization_catalog_v2.sql",
+          1,
+          true
+        )
+      ).toThrow(/ledger failure/u);
       expect(
         database.prepare("select count(*) as count from d1_migrations").get()
+      ).toMatchObject({ count: 0 });
+      expect(
+        database
+          .prepare(
+            "select count(*) as count from sqlite_schema where name in ('example','__d1_scratch_scratch')"
+          )
+          .get()
       ).toMatchObject({ count: 0 });
     } finally {
       database.close();
@@ -283,9 +395,11 @@ describe("patched Alchemy D1 migration batching", () => {
       "utf-8"
     );
     expect(patch).toContain("yield* importD1Database({");
+    expect(patch).toContain("compileD1ImportSql(migration.sql, migration.id)");
+    expect(patch).toContain("__d1_scratch_");
     expect(patch).toContain("sqlData:");
     expect(patch).toContain('initDecision._tag === "poll"');
-    expect(patch.indexOf("migration.sql")).toBeLessThan(
+    expect(patch.indexOf("migrationSql")).toBeLessThan(
       patch.search(/INSERT INTO \$\{migrationsTable\}/u)
     );
     expect(patch).not.toContain("batch: statements.map");
