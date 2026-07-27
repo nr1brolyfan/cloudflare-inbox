@@ -495,6 +495,9 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
             const isCurrentSessionRequest =
               request.method === "GET" &&
               requestUrl.pathname === "/auth/session";
+            const isMagicLinkStartRequest =
+              request.method === "POST" &&
+              requestUrl.pathname === "/auth/magic-link/start";
             const BackendRequestApplicationLayer =
               requestUrl.pathname === "/api/health"
                 ? (yield* Effect.promise(
@@ -510,18 +513,26 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
                       Layer.provide(databaseBinding),
                       Layer.provide(AuthRuntimeConfigLayer)
                     )
-                  : (yield* Effect.promise(
-                      () => import("./BackendApplicationLayer")
-                    )).BackendApplicationLayer.pipe(
-                      Layer.provide(databaseBinding),
-                      Layer.provide(BackendBindingsLayer),
-                      Layer.provide(
-                        Layer.succeed(
-                          CurrentBackendRequestContext,
-                          CurrentBackendRequestContext.of(requestContext)
-                        )
+                  : isMagicLinkStartRequest
+                    ? (yield* Effect.promise(
+                        () => import("./BackendMagicLinkStartApplicationLayer")
+                      )).BackendMagicLinkStartApplicationLayer.pipe(
+                        Layer.provide(databaseBinding),
+                        Layer.provide(AuthRuntimeConfigLayer),
+                        Layer.provide(MailboxBootstrapConfigLayer)
                       )
-                    );
+                    : (yield* Effect.promise(
+                        () => import("./BackendApplicationLayer")
+                      )).BackendApplicationLayer.pipe(
+                        Layer.provide(databaseBinding),
+                        Layer.provide(BackendBindingsLayer),
+                        Layer.provide(
+                          Layer.succeed(
+                            CurrentBackendRequestContext,
+                            CurrentBackendRequestContext.of(requestContext)
+                          )
+                        )
+                      );
             const handler = yield* HttpRouter.toHttpEffect(
               BackendRequestApplicationLayer
             );

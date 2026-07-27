@@ -362,6 +362,38 @@ describe("job mail production resource structure", () => {
     expect(application).not.toContain("SessionHttpOperationsLive");
     expect(route).not.toContain("@effect-auth/core/HttpApi");
   });
+
+  it("keeps magic-link start separate from the complete auth graph", () => {
+    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const application = readRoot(
+      "src/apps/backend-worker/BackendMagicLinkStartApplicationLayer.ts"
+    );
+    const route = readRoot(
+      "src/modules/account-security/adapters/http/AuthMagicLinkStartHttpRoute.ts"
+    );
+    const starter = readRoot(
+      "src/modules/account-security/adapters/effect-auth/MagicLinkStartEffectAuth.ts"
+    );
+
+    expect(backend).toContain('request.method === "POST"');
+    expect(backend).toContain(
+      'requestUrl.pathname === "/auth/magic-link/start"'
+    );
+    expect(backend).toContain(
+      'import("./BackendMagicLinkStartApplicationLayer")'
+    );
+    expect(application).toContain("AuthMagicLinkStartHttpRouteLayer");
+    expect(application).toContain("MagicLinkStarterLayer");
+    expect(application).toContain("AuthRateLimitStandardLive");
+    expect(application).toContain("RecoverySafeIdentityD1Layer");
+    expect(route).toContain('"/auth/magic-link/start"');
+    expect(starter).toContain('type: "magic-link"');
+    expect(starter).toContain('"/auth-complete/magic-link"');
+    expect(application).not.toContain("AccountSecurityLayer");
+    expect(application).not.toContain("AccountSecurityHttpLayer");
+    expect(application).not.toContain("EffectAuthStorageD1Layer");
+    expect(route).not.toContain("@effect-auth/core/HttpApi");
+  });
 });
 
 describe("production command and environment safety", () => {
