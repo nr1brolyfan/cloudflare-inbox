@@ -1,16 +1,18 @@
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
-index abf4a2e53a8793ad521ed70719bde153f72511de..2eea29c278c96b48556eff57768da3d1714ebe69 100644
+index abf4a2e53a8793ad521ed70719bde153f72511de..832cc1cb4152298a4e3990960101bfebbb5fbd39 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
-@@ -3,6 +3,7 @@ import * as d1 from "@distilled.cloud/cloudflare/d1";
+@@ -2,7 +2,9 @@ import type { Credentials } from "@distilled.cloud/cloudflare/Credentials";
+ import * as d1 from "@distilled.cloud/cloudflare/d1";
  import * as Effect from "effect/Effect";
  import type * as HttpClient from "effect/unstable/http/HttpClient";
++import { createHash } from "node:crypto";
  import type { SqlFile } from "../../Sql/SqlFile.ts";
 +import { importD1Database } from "./ImportDatabase.ts";
 
  export interface ApplyMigrationsOptions {
    accountId: string;
-@@ -30,16 +31,18 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+@@ -30,16 +32,18 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
        if (applied.has(migration.id)) continue;
        const migrationId = nextSeq.toString().padStart(5, "0");
        nextSeq += 1;
@@ -35,7 +37,7 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..2eea29c278c96b48556eff57768da3d1
      }
    });
 
-@@ -71,6 +74,379 @@ const executeSQL = (
+@@ -71,6 +75,622 @@ const executeSQL = (
      return yield* queryDb({ accountId, databaseId, sql });
    });
 
@@ -374,9 +376,252 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..2eea29c278c96b48556eff57768da3d1
 +  return output;
 +};
 +
++interface SqlToken {
++  end: number;
++  start: number;
++  value: string;
++}
++
++const sqlTokens = (sql: string): SqlToken[] => {
++  const tokens: SqlToken[] = [];
++  for (let index = 0; index < sql.length; ) {
++    const start = index;
++    const current = sql[index]!;
++    const next = sql[index + 1];
++    if (/\s/u.test(current)) {
++      index += 1;
++    } else if (current === "-" && next === "-") {
++      index = sql.indexOf("\n", index + 2);
++      if (index === -1) index = sql.length;
++    } else if (current === "/" && next === "*") {
++      const end = sql.indexOf("*/", index + 2);
++      index = end === -1 ? sql.length : end + 2;
++    } else if (["'", '"', "`", "["].includes(current)) {
++      const close = current === "[" ? "]" : current;
++      index += 1;
++      while (index < sql.length) {
++        if (sql[index] === close && sql[index + 1] === close) index += 2;
++        else if (sql[index] === close) {
++          index += 1;
++          break;
++        } else index += 1;
++      }
++      tokens.push({ end: index, start, value: sql.slice(start, index) });
++    } else if (/[A-Z0-9_]/iu.test(current)) {
++      index += 1;
++      while (index < sql.length && /[A-Z0-9_]/iu.test(sql[index]!)) index += 1;
++      tokens.push({ end: index, start, value: sql.slice(start, index) });
++    } else {
++      index += 1;
++      tokens.push({ end: index, start, value: current });
++    }
++  }
++  return tokens;
++};
++
++const matchingParenthesis = (tokens: SqlToken[], open: number): number => {
++  let depth = 0;
++  for (let index = open; index < tokens.length; index += 1) {
++    if (tokens[index]!.value === "(") depth += 1;
++    else if (tokens[index]!.value === ")" && --depth === 0) return index;
++  }
++  throw new Error("Unbalanced SQL parentheses in D1 expression rewrite");
++};
++
++const booleanOperators = (
++  sql: string,
++  operator: "AND" | "OR",
++): SqlToken[] => {
++  const found: SqlToken[] = [];
++  const tokens = sqlTokens(sql);
++  let between = false;
++  let caseDepth = 0;
++  let depth = 0;
++  for (const token of tokens) {
++    const value = token.value.toUpperCase();
++    if (token.value === "(") depth += 1;
++    else if (token.value === ")") depth -= 1;
++    else if (depth === 0 && value === "CASE") caseDepth += 1;
++    else if (depth === 0 && value === "END" && caseDepth > 0) caseDepth -= 1;
++    else if (depth === 0 && caseDepth === 0 && value === "BETWEEN") {
++      between = true;
++    } else if (depth === 0 && caseDepth === 0 && value === "AND" && between) {
++      between = false;
++    } else if (depth === 0 && caseDepth === 0 && value === operator) {
++      found.push(token);
++    }
++  }
++  return found;
++};
++
++const balancedBooleanChain = (
++  operands: string[],
++  operators: string[],
++  start = 0,
++  end = operands.length,
++): string => {
++  if (end - start === 1) return operands[start]!;
++  const middle = Math.floor((start + end) / 2);
++  return `(${balancedBooleanChain(operands, operators, start, middle)}${operators[middle - 1]}${balancedBooleanChain(operands, operators, middle, end)})`;
++};
++
++const rewriteParenthesizedExpressions = (sql: string): string => {
++  const tokens = sqlTokens(sql);
++  let output = "";
++  let cursor = 0;
++  for (let index = 0; index < tokens.length; index += 1) {
++    const token = tokens[index]!;
++    if (token.value !== "(") continue;
++    const closeIndex = matchingParenthesis(tokens, index);
++    const close = tokens[closeIndex]!;
++    const content = sql.slice(token.end, close.start);
++    const first = sqlTokens(content)[0]?.value.toUpperCase();
++    const rewritten =
++      first === "SELECT"
++        ? rewriteSelectWherePredicates(content)
++        : rebalanceSqlBooleanExpression(content);
++    output += sql.slice(cursor, token.end) + rewritten + ")";
++    cursor = close.end;
++    index = closeIndex;
++  }
++  return output + sql.slice(cursor);
++};
++
++const rewriteBooleanPrecedence = (
++  sql: string,
++  operator: "AND" | "OR",
++): string => {
++  const operators = booleanOperators(sql, operator);
++  if (operators.length === 0) {
++    return operator === "OR"
++      ? rewriteBooleanPrecedence(sql, "AND")
++      : rewriteParenthesizedExpressions(sql);
++  }
++  const operands: string[] = [];
++  const separators: string[] = [];
++  let start = 0;
++  for (const token of operators) {
++    const operand = sql.slice(start, token.start);
++    operands.push(
++      operator === "OR" ? rewriteBooleanPrecedence(operand, "AND") : operand,
++    );
++    separators.push(sql.slice(token.start, token.end));
++    start = token.end;
++  }
++  const operand = sql.slice(start);
++  operands.push(
++    operator === "OR" ? rewriteBooleanPrecedence(operand, "AND") : operand,
++  );
++  if (operator === "AND") {
++    for (let index = 0; index < operands.length; index += 1) {
++      operands[index] = rewriteParenthesizedExpressions(operands[index]!);
++    }
++  }
++  return balancedBooleanChain(operands, separators);
++};
++
++/** Reassociate homogeneous SQL boolean chains without changing precedence. */
++export const rebalanceSqlBooleanExpression = (sql: string): string =>
++  rewriteBooleanPrecedence(sql, "OR");
++
++const queryClause = new Set([
++  "EXCEPT",
++  "GROUP",
++  "HAVING",
++  "INTERSECT",
++  "LIMIT",
++  "ORDER",
++  "RETURNING",
++  "UNION",
++  "WINDOW",
++]);
++
++const rewriteSelectWherePredicates = (sql: string): string => {
++  const tokens = sqlTokens(sql);
++  let depth = 0;
++  for (let index = 0; index < tokens.length; index += 1) {
++    const token = tokens[index]!;
++    if (token.value === "(") depth += 1;
++    else if (token.value === ")") depth -= 1;
++    else if (depth === 0 && token.value.toUpperCase() === "WHERE") {
++      let end = sql.length;
++      for (let next = index + 1; next < tokens.length; next += 1) {
++        const candidate = tokens[next]!;
++        if (candidate.value === "(") depth += 1;
++        else if (candidate.value === ")") depth -= 1;
++        else if (
++          depth === 0 &&
++          queryClause.has(candidate.value.toUpperCase())
++        ) {
++          end = candidate.start;
++          break;
++        }
++      }
++      return (
++        sql.slice(0, token.end) +
++        rebalanceSqlBooleanExpression(sql.slice(token.end, end)) +
++        sql.slice(end)
++      );
++    }
++  }
++  return rewriteParenthesizedExpressions(sql);
++};
++
++const targetExpressionMigration = "1025_app_organization_owner_assignment.sql";
++const targetExpressionStatement = 23;
++const targetExpressionHash =
++  "649363a4e6dee14f953c03f4e070507c536e977737e44338af25a53035a9bf3b";
++
++const rewriteTargetCasePredicates = (statement: string): string => {
++  const tokens = sqlTokens(statement);
++  const ranges: Array<{ end: number; start: number }> = [];
++  let caseDepth = 0;
++  let predicateStart: number | undefined;
++  for (const token of tokens) {
++    const value = token.value.toUpperCase();
++    if (value === "CASE") caseDepth += 1;
++    else if (value === "END" && caseDepth > 0) caseDepth -= 1;
++    else if (value === "WHEN" && caseDepth === 1) predicateStart = token.end;
++    else if (value === "THEN" && caseDepth === 1 && predicateStart !== undefined) {
++      ranges.push({ end: token.start, start: predicateStart });
++      predicateStart = undefined;
++    }
++  }
++  if (ranges.length !== 3) {
++    throw new Error("Expected three CASE WHEN predicates in D1 expression rewrite");
++  }
++  let rewritten = statement;
++  for (const range of ranges.reverse()) {
++    rewritten =
++      rewritten.slice(0, range.start) +
++      rebalanceSqlBooleanExpression(rewritten.slice(range.start, range.end)) +
++      rewritten.slice(range.end);
++  }
++  return rewritten;
++};
++
++const rewriteD1ExpressionDepthBlocker = (
++  statements: string[],
++  migrationId: string,
++): void => {
++  if (migrationId !== targetExpressionMigration) return;
++  const statement = statements[targetExpressionStatement];
++  const hash =
++    statement === undefined
++      ? "missing"
++      : createHash("sha256").update(statement).digest("hex");
++  if (hash !== targetExpressionHash) {
++    throw new Error(
++      `Refusing D1 expression rewrite for ${migrationId} statement ${targetExpressionStatement + 1}: expected SHA-256 ${targetExpressionHash}, received ${hash}`,
++    );
++  }
++  statements[targetExpressionStatement] = rewriteTargetCasePredicates(statement);
++};
++
 +/** Compile migration scratch objects for D1 import without changing source files. */
 +export const compileD1ImportSql = (sql: string, migrationId: string): string => {
 +  const statements = splitSqlStatements(sql);
++  rewriteD1ExpressionDepthBlocker(statements, migrationId);
 +  const scratchNames = new Map<string, string>();
 +  for (const statement of statements) {
 +    const match = tempObject.exec(statement);
