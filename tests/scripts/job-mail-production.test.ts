@@ -286,6 +286,12 @@ describe("job mail production resource structure", () => {
     expect(source).not.toContain("SendingSubdomain");
   });
 
+  it("serves hashed assets before the SSR Website worker", () => {
+    const source = readRoot("alchemy.run.ts");
+    expect(source).toContain('runWorkerFirst: ["/*", "!/assets/*"]');
+    expect(source).not.toContain("runWorkerFirst: true");
+  });
+
   it("inspects production state through the deployment credential boundary", () => {
     const source = readRoot("scripts/check-production-state.ts");
     expect(source).toContain("readProductionEnvFile");

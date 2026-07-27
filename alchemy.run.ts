@@ -27,7 +27,7 @@ const websiteProps = {
     DEV_EMAIL_INBOX_ENABLED: ALCHEMY_DEV,
   },
   assets: {
-    runWorkerFirst: true,
+    runWorkerFirst: ["/*", "!/assets/*"],
   },
   observability: {
     enabled: true,
