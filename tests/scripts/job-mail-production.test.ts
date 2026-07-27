@@ -307,6 +307,25 @@ describe("job mail production resource structure", () => {
       "MAILBOX_OUTBOUND_PROVIDER_DISABLED: process.env.ALCHEMY_DEV"
     );
   });
+
+  it("keeps health startup separate from the complete Backend graph", () => {
+    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const health = readRoot(
+      "src/apps/backend-worker/BackendHealthApplicationLayer.ts"
+    );
+    expect(backend).not.toContain(
+      'import { BackendApplicationLayer } from "./BackendApplicationLayer"'
+    );
+    expect(backend).toContain('requestUrl.pathname === "/api/health"');
+    expect(backend).toContain('import("./BackendHealthApplicationLayer")');
+    expect(backend).toContain('import("./BackendApplicationLayer")');
+    expect(backend).toContain("Layer.provide(MailboxBootstrapConfigLayer)");
+    expect(health).toContain("BackendHealthHttpApi");
+    expect(health).toContain("BackendHealthHttpHandlersLayer");
+    expect(health).toContain("BackendHealthLayer");
+    expect(health).toContain("MailPermissionsEffectAuthLayer");
+    expect(health).toContain("EffectAuthStorageD1Layer");
+  });
 });
 
 describe("production command and environment safety", () => {

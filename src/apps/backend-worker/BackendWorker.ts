@@ -91,7 +91,6 @@ import {
   CurrentBackendRequestContext,
 } from "#/platform/observability/BackendRequestContext";
 
-import { BackendApplicationLayer } from "./BackendApplicationLayer";
 import { BackendHealthBindings } from "./BackendHealthLayer";
 import { handleCloudflareEmailRoutingMessage } from "./CloudflareEmailRoutingIntegration";
 import { LegacyMailDomainClaimStoreD1Layer } from "./LegacyMailDomainClaimD1Integration";
@@ -322,6 +321,18 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               )
             )
           );
+    const MailboxBootstrapConfigLayer = Layer.succeed(
+      MailboxBootstrapConfig,
+      MailboxBootstrapConfig.of(bootstrapConfig)
+    );
+    const BackendHealthBindingsLayer = Layer.succeed(
+      BackendHealthBindings,
+      BackendHealthBindings.of({
+        authRateLimit,
+        mailboxDataPlane,
+        rawMessages,
+      })
+    );
     const BackendBindingsLayer = Layer.mergeAll(
       AuthRuntimeConfigLayer,
       InboundWorkflowClientLayer,
@@ -334,22 +345,12 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         MailboxArchiveConfig,
         MailboxArchiveConfig.of(archiveConfig)
       ),
-      Layer.succeed(
-        MailboxBootstrapConfig,
-        MailboxBootstrapConfig.of(bootstrapConfig)
-      ),
+      MailboxBootstrapConfigLayer,
       Layer.succeed(
         MailboxDoNamespace,
         MailboxDoNamespace.of(mailboxDataPlane)
       ),
-      Layer.succeed(
-        BackendHealthBindings,
-        BackendHealthBindings.of({
-          authRateLimit,
-          mailboxDataPlane,
-          rawMessages,
-        })
-      ),
+      BackendHealthBindingsLayer,
       Layer.succeed(DevEmailConfig, DevEmailConfig.of({ isDevelopment }))
     );
     const initializeLegacyMailDomainClaim =
@@ -367,7 +368,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               Layer.provide(LegacyMailDomainClaimStoreD1Layer),
               Layer.provide(ControlPlaneD1Layer),
               Layer.provide(databaseBinding),
-              Layer.provide(BackendBindingsLayer)
+              Layer.provide(MailboxBootstrapConfigLayer)
             );
           const reconciler = yield* LegacyMailDomainClaimReconciler.pipe(
             Effect.provide(reconciliationLayer)
@@ -487,23 +488,30 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               backendRequestContextAnnotations(requestContext)
             );
             const controlPlaneDatabase = yield* controlPlane.raw;
-            const BackendRequestApplicationLayer = BackendApplicationLayer.pipe(
-              Layer.provide(
-                Layer.succeed(
-                  ControlPlaneD1Binding,
-                  ControlPlaneD1Binding.of({
-                    database: controlPlaneDatabase,
-                  })
-                )
-              ),
-              Layer.provide(BackendBindingsLayer),
-              Layer.provide(
-                Layer.succeed(
-                  CurrentBackendRequestContext,
-                  CurrentBackendRequestContext.of(requestContext)
-                )
-              )
+            const databaseBinding = Layer.succeed(
+              ControlPlaneD1Binding,
+              ControlPlaneD1Binding.of({ database: controlPlaneDatabase })
             );
+            const BackendRequestApplicationLayer =
+              requestUrl.pathname === "/api/health"
+                ? (yield* Effect.promise(
+                    () => import("./BackendHealthApplicationLayer")
+                  )).BackendHealthApplicationLayer.pipe(
+                    Layer.provide(databaseBinding),
+                    Layer.provide(BackendHealthBindingsLayer)
+                  )
+                : (yield* Effect.promise(
+                    () => import("./BackendApplicationLayer")
+                  )).BackendApplicationLayer.pipe(
+                    Layer.provide(databaseBinding),
+                    Layer.provide(BackendBindingsLayer),
+                    Layer.provide(
+                      Layer.succeed(
+                        CurrentBackendRequestContext,
+                        CurrentBackendRequestContext.of(requestContext)
+                      )
+                    )
+                  );
             const handler = yield* HttpRouter.toHttpEffect(
               BackendRequestApplicationLayer
             );
