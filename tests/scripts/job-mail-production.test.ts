@@ -332,6 +332,36 @@ describe("job mail production resource structure", () => {
     expect(health).toContain("MailPermissionsEffectAuthLayer");
     expect(health).toContain("EffectAuthStorageD1Layer");
   });
+
+  it("keeps current-session startup separate from the complete auth graph", () => {
+    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const application = readRoot(
+      "src/apps/backend-worker/BackendAuthSessionApplicationLayer.ts"
+    );
+    const route = readRoot(
+      "src/modules/account-security/adapters/http/AuthCurrentSessionHttpRoute.ts"
+    );
+    const storage = readRoot(
+      "src/modules/account-security/adapters/d1/AuthSessionStoreD1.ts"
+    );
+
+    expect(backend).toContain('request.method === "GET"');
+    expect(backend).toContain('requestUrl.pathname === "/auth/session"');
+    expect(backend).toContain('import("./BackendAuthSessionApplicationLayer")');
+    expect(application).toContain("AuthCurrentSessionHttpRouteLayer");
+    expect(application).toContain("EffectAuthSessionStoreD1Layer");
+    expect(application).toContain("SessionsLive");
+    expect(application).toContain("externalRecoveryLinkEvidence.policy");
+    expect(route).toContain("router.add(");
+    expect(route).toContain('"GET"');
+    expect(route).toContain('"/auth/session"');
+    expect(storage).toContain("makeEffectQbSqliteSessionStore");
+    expect(application).not.toContain("AccountSecurityLayer");
+    expect(application).not.toContain("AccountSecurityHttpLayer");
+    expect(application).not.toContain("EffectAuthStorageD1Layer");
+    expect(application).not.toContain("SessionHttpOperationsLive");
+    expect(route).not.toContain("@effect-auth/core/HttpApi");
+  });
 });
 
 describe("production command and environment safety", () => {
