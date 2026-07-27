@@ -1,54 +1,43 @@
-diff --git a/node_modules/alchemy/.bun-tag-5f4a9230865b4969 b/.bun-tag-5f4a9230865b4969
-new file mode 100644
-index 0000000000000000000000000000000000000000..e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
-index abf4a2e53a8793ad521ed70719bde153f72511de..63bed3770da78786c8655618362147ebfeb23b71 100644
+index abf4a2e53a8793ad521ed70719bde153f72511de..b1741b34d22f9e5513dff4e5785b0bdf51d73d2c 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
-@@ -30,15 +30,16 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+@@ -3,6 +3,7 @@ import * as d1 from "@distilled.cloud/cloudflare/d1";
+ import * as Effect from "effect/Effect";
+ import type * as HttpClient from "effect/unstable/http/HttpClient";
+ import type { SqlFile } from "../../Sql/SqlFile.ts";
++import { importD1Database } from "./ImportDatabase.ts";
+
+ export interface ApplyMigrationsOptions {
+   accountId: string;
+@@ -30,16 +31,18 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
        if (applied.has(migration.id)) continue;
        const migrationId = nextSeq.toString().padStart(5, "0");
        nextSeq += 1;
 -      // D1 over HTTP doesn't support transactions; run migration + record
 -      // in a single batched query.
 -      yield* executeSQL(
-+      // The SQL-string endpoint misparses trigger bodies when they are joined
-+      // with other statements. Keep complete triggers intact and use D1's
-+      // transactional batch shape for the migration and ledger write.
-+      yield* executeBatchSQL(
++      // Validate transaction boundaries locally, then use D1's import flow.
++      // The /query parser rejects complete compound trigger statements even
++      // when each trigger is isolated in an explicit batch member.
++      splitSqlStatements(migration.sql);
++      yield* importD1Database({
          accountId,
          databaseId,
-         [
--          migration.sql,
-+          ...splitSqlStatements(migration.sql),
+-        [
++        sqlData: [
+           migration.sql,
            `INSERT INTO ${migrationsTable} (id, name, applied_at) VALUES ('${migrationId}', '${migration.id}', datetime('now'));`,
--        ].join("\n"),
-+        ],
-       );
+         ].join("\n"),
+-      );
++      });
      }
    });
-@@ -71,6 +72,162 @@ const executeSQL = (
+
+@@ -71,6 +74,144 @@ const executeSQL = (
      return yield* queryDb({ accountId, databaseId, sql });
    });
  
-+const executeBatchSQL = (
-+  accountId: string,
-+  databaseId: string,
-+  statements: readonly string[],
-+): Effect.Effect<
-+  d1.QueryDatabaseResponse,
-+  d1.QueryDatabaseError,
-+  Credentials | HttpClient.HttpClient
-+> =>
-+  Effect.gen(function* () {
-+    const queryDb = yield* d1.queryDatabase;
-+    return yield* queryDb({
-+      accountId,
-+      databaseId,
-+      batch: statements.map((sql) => ({ sql })),
-+    });
-+  });
-+
 +/** Split SQLite SQL while retaining complete trigger bodies as one statement. */
 +export const splitSqlStatements = (sql: string): string[] => {
 +  const statements: string[] = [];
@@ -190,3 +179,159 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..63bed3770da78786c8655618362147eb
  const detectSchema = (
    accountId: string,
    databaseId: string,
+diff --git a/src/Cloudflare/D1/ImportDatabase.ts b/src/Cloudflare/D1/ImportDatabase.ts
+index 14755c9e4a411a28ce48378f68b6d477da7f3462..77122e35aa289abeae9581dc5a40291ec6495880 100644
+--- a/src/Cloudflare/D1/ImportDatabase.ts
++++ b/src/Cloudflare/D1/ImportDatabase.ts
+@@ -34,6 +34,41 @@ interface ImportPollingResponse {
+   upload_url?: string | null;
+ }
+
++type ImportInitResponse = Pick<
++  d1.ImportDatabaseResponse,
++  "atBookmark" | "error" | "filename" | "result" | "status" | "uploadUrl"
++>;
++
++export const resolveImportInit = (
++  init: ImportInitResponse,
++  fallbackFilename: string,
++):
++  | { _tag: "complete"; result: ImportDatabaseResult }
++  | { _tag: "poll"; bookmark: string; filename: string }
++  | { _tag: "upload"; filename: string; uploadUrl: string }
++  | { _tag: "error"; message: string } => {
++  const filename = init.filename ?? fallbackFilename;
++  if (init.status === "complete" && init.result) {
++    return {
++      _tag: "complete",
++      result: {
++        filename,
++        numQueries: init.result.numQueries ?? 0,
++      },
++    };
++  }
++  if (init.atBookmark) {
++    return { _tag: "poll", bookmark: init.atBookmark, filename };
++  }
++  if (init.uploadUrl) {
++    return { _tag: "upload", filename, uploadUrl: init.uploadUrl };
++  }
++  return {
++    _tag: "error",
++    message: init.error ?? "Failed to initialize D1 import",
++  };
++};
++
+ /**
+  * Import SQL into a D1 database via the multi-step Cloudflare flow:
+  *   1. POST `action: "init"` -> returns presigned `upload_url`
+@@ -73,6 +108,30 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
+         return json.result;
+       });
+
++    const poll = (
++      bookmark: string,
++      fallbackFilename: string,
++    ): Effect.Effect<ImportDatabaseResult, never, never> =>
++      Effect.gen(function* () {
++        const data = yield* postJson({
++          action: "poll",
++          current_bookmark: bookmark,
++        });
++        if (data.status === "complete" && data.result) {
++          return {
++            filename: data.filename ?? fallbackFilename,
++            numQueries: data.result.num_queries ?? 0,
++          };
++        }
++        if (data.status === "error") {
++          return yield* Effect.die(data.error ?? "Error during D1 import");
++        }
++        if (!data.at_bookmark) {
++          return yield* Effect.die("D1 import poll missing bookmark");
++        }
++        return yield* poll(data.at_bookmark, fallbackFilename);
++      });
++
+     const etag = yield* md5(options.sqlData);
+
+     // Step 1: init via the typed d1 client
+@@ -84,19 +143,27 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
+       etag,
+     });
+
+-    if (!init.uploadUrl) {
+-      return yield* Effect.die(
+-        init.error ?? "Failed to get upload URL for D1 import",
+-      );
++    const initDecision = resolveImportInit(
++      init,
++      options.filename ?? "import.sql",
++    );
++    if (initDecision._tag === "complete") {
++      return initDecision.result;
++    }
++    if (initDecision._tag === "poll") {
++      return yield* poll(initDecision.bookmark, initDecision.filename);
+     }
+-    const uploadFilename = options.filename ?? init.filename ?? "import.sql";
++    if (initDecision._tag === "error") {
++      return yield* Effect.die(initDecision.message);
++    }
++    const uploadFilename = initDecision.filename;
+
+     // Step 2: PUT to the presigned upload URL
+     const bytes =
+       typeof options.sqlData === "string"
+         ? new TextEncoder().encode(options.sqlData)
+         : options.sqlData;
+-    const putReq = HttpClientRequest.put(init.uploadUrl).pipe(
++    const putReq = HttpClientRequest.put(initDecision.uploadUrl).pipe(
+       HttpClientRequest.bodyUint8Array(bytes, "application/sql"),
+     );
+     const putRes = yield* client.execute(putReq).pipe(Effect.orDie);
+@@ -113,37 +180,19 @@ export const importD1Database = (options: ImportDatabaseOptions) =>
+       etag,
+       filename: init.filename,
+     });
++    if (ingest.status === "complete" && ingest.result) {
++      return {
++        filename: ingest.filename ?? uploadFilename,
++        numQueries: ingest.result.num_queries ?? 0,
++      };
++    }
+     if (!ingest.at_bookmark) {
+       return yield* Effect.die(
+         ingest.error ?? "Ingest response missing bookmark",
+       );
+       }
+
+-    // Step 4: poll until complete
+-    const poll = (
+-      bookmark: string,
+-    ): Effect.Effect<ImportDatabaseResult, never, never> =>
+-      Effect.gen(function* () {
+-        const data = yield* postJson({
+-          action: "poll",
+-          current_bookmark: bookmark,
+-        });
+-        if (data.status === "complete" && data.result) {
+-          return {
+-            filename: data.filename ?? uploadFilename,
+-            numQueries: data.result.num_queries ?? 0,
+-          };
+-        }
+-        if (data.status === "error") {
+-          return yield* Effect.die(data.error ?? "Error during D1 import");
+-        }
+-        if (!data.at_bookmark) {
+-          return yield* Effect.die("D1 import poll missing bookmark");
+-        }
+-        return yield* poll(data.at_bookmark);
+-      });
+-
+-    return yield* poll(ingest.at_bookmark);
++    return yield* poll(ingest.at_bookmark, uploadFilename);
+   });
+
+ const importEndpoint = (

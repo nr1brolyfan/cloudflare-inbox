@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 import { splitSqlStatements } from "../../node_modules/alchemy/src/Cloudflare/D1/ApplyMigrations";
+import { resolveImportInit } from "../../node_modules/alchemy/src/Cloudflare/D1/ImportDatabase";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
 const migrationFiles = () =>
@@ -85,6 +86,49 @@ describe("patched Alchemy D1 migration batching", () => {
         "Migration transaction control is incompatible with D1 batch"
       );
     }
+  });
+
+  it("resumes cached D1 imports without requiring another upload URL", () => {
+    expect(
+      resolveImportInit(
+        {
+          atBookmark: "cached-bookmark",
+          filename: "server.sql",
+          status: "active",
+        },
+        "fallback.sql"
+      )
+    ).toStrictEqual({
+      _tag: "poll",
+      bookmark: "cached-bookmark",
+      filename: "server.sql",
+    });
+    expect(
+      resolveImportInit(
+        {
+          filename: "server.sql",
+          result: { numQueries: 12 },
+          status: "complete",
+        },
+        "fallback.sql"
+      )
+    ).toStrictEqual({
+      _tag: "complete",
+      result: { filename: "server.sql", numQueries: 12 },
+    });
+    expect(
+      resolveImportInit(
+        { filename: "server.sql", uploadUrl: "https://upload.invalid" },
+        "fallback.sql"
+      )
+    ).toStrictEqual({
+      _tag: "upload",
+      filename: "server.sql",
+      uploadUrl: "https://upload.invalid",
+    });
+    expect(
+      resolveImportInit({ error: "failed" }, "fallback.sql")
+    ).toStrictEqual({ _tag: "error", message: "failed" });
   });
 
   it("resumes the production ledger after 1007 and reaches final integrity", () => {
@@ -170,14 +214,17 @@ describe("patched Alchemy D1 migration batching", () => {
     }
   });
 
-  it("keeps the ledger insert last in one explicit D1 batch request", () => {
+  it("keeps the ledger insert last in one D1 import", () => {
     const patch = readFileSync(
       path.join(root, "patches/alchemy@2.0.0-beta.62.patch"),
       "utf-8"
     );
-    expect(patch).toContain("batch: statements.map((sql) => ({ sql }))");
-    expect(patch.indexOf("...splitSqlStatements(migration.sql)")).toBeLessThan(
+    expect(patch).toContain("yield* importD1Database({");
+    expect(patch).toContain("sqlData:");
+    expect(patch).toContain('initDecision._tag === "poll"');
+    expect(patch.indexOf("migration.sql")).toBeLessThan(
       patch.search(/INSERT INTO \$\{migrationsTable\}/u)
     );
+    expect(patch).not.toContain("batch: statements.map");
   });
 });
