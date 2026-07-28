@@ -417,6 +417,34 @@ describe("job mail production resource structure", () => {
     expect(route).toContain('"/auth/magic-link/verify"');
     expect(route).not.toContain("@effect-auth/core/HttpApi");
   });
+
+  it("keeps step-up options separate from the complete Backend graph", () => {
+    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const application = readRoot(
+      "src/apps/backend-worker/BackendStepUpOptionsApplicationLayer.ts"
+    );
+    const route = readRoot(
+      "src/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.ts"
+    );
+
+    expect(backend).toContain('request.method === "GET"');
+    expect(backend).toContain(
+      'requestUrl.pathname === "/auth/step-up/options"'
+    );
+    expect(backend).toContain(
+      'import("./BackendStepUpOptionsApplicationLayer")'
+    );
+    expect(application).toContain("AuthStepUpOptionsHttpRouteLayer");
+    expect(application).toContain("PasskeyAuthenticationIdentityD1Layer");
+    expect(application).toContain("StepUpFactorReaderD1Layer");
+    expect(application).not.toContain("PasskeyAuthentication.layerNoDeps");
+    expect(application).not.toContain("AccountSecurityEffectAuthLayer");
+    expect(application).not.toContain("EffectAuthStorageD1Layer");
+    expect(application).not.toContain("BackendApplicationLayer");
+    expect(application).not.toContain("AccountSecurityHttpLayer");
+    expect(route).toContain('"/auth/step-up/options"');
+    expect(route).not.toContain("@effect-auth/core/HttpApi");
+  });
 });
 
 describe("production command and environment safety", () => {
