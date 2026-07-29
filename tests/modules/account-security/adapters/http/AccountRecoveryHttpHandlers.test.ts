@@ -97,10 +97,12 @@ const makeHandler = (options: {
     ),
     AuthSchemaErrorMiddlewareLive,
     AuthOriginCheckMiddlewareLive({
-      allowMissingOrigin: false,
-      allowedOrigins: [publicOrigin],
+      mode: "secure",
+      origins: [publicOrigin],
     }),
-    AuthRequestMetadataMiddlewareLive({ trustProxyHeaders: true })
+    AuthRequestMetadataMiddlewareLive({
+      ipSource: { _tag: "XForwardedFor", trustedHops: 1 },
+    })
   );
   const groupLayer = AccountRecoveryHttpHandlersLayer.pipe(
     Layer.provide(

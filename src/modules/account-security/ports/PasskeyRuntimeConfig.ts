@@ -45,7 +45,21 @@ export const PasskeyRuntimeConfigSchema = Schema.Struct({
     residentKey: Schema.Literal("required"),
     userVerification: Schema.Literal("required"),
   }),
-  expectedOrigin: PasskeyExpectedOrigin,
+  expectedOrigins: Schema.Array(PasskeyExpectedOrigin).pipe(
+    Schema.check(
+      Schema.makeFilter((origins) =>
+        origins.length === 1
+          ? undefined
+          : "must contain exactly one production origin"
+      )
+    )
+  ),
+  pubKeyCredParams: Schema.Array(
+    Schema.Struct({
+      alg: Schema.Literals([-8, -7, -36, -37, -38, -39, -257, -258, -259]),
+      type: Schema.Literal("public-key"),
+    })
+  ),
   relyingParty: Schema.Struct({
     id: PasskeyRelyingPartyId,
     name: Schema.Literal("Cloudflare Inbox"),

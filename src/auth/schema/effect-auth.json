@@ -26,8 +26,8 @@
     "relations.ts",
     "index.ts"
   ],
-  "fingerprint": "fnv1a32:c4ae545a",
-  "generatorVersion": "1.5.0",
+  "fingerprint": "fnv1a32:0521b088",
+  "generatorVersion": "1.12.0",
   "package": "@effect-auth/core",
   "request": {
     "database": "sqlite",
@@ -65,6 +65,6 @@
       }
     ]
   },
-  "schemaVersion": "0029_auth_oauth_device_authorization",
-  "version": "0.1.0-alpha.19"
+  "schemaVersion": "0039_auth_passkey_credential_hardening",
+  "version": "0.1.0-alpha.20"
 }

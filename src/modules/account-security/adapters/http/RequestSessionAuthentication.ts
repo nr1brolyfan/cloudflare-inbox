@@ -1,5 +1,6 @@
 /* oxlint-disable max-classes-per-file -- Normal and recovery-only request middleware share one session authentication boundary. */
 import { AuthSecrets } from "@effect-auth/core/AuthConfig";
+import type { SensitiveCookieError } from "@effect-auth/core/BrowserCookie";
 import { Crypto } from "@effect-auth/core/Crypto";
 import {
   AuthInternalError,
@@ -50,6 +51,8 @@ const validationError = (error: SessionValidateError) =>
         message: "Failed to validate session",
       });
 
+const cookieError = (_error: SensitiveCookieError) => unauthenticated();
+
 interface AuthenticatedRequest {
   readonly actor: CurrentActorShape;
   readonly principal: PermissionSubjectShape;
@@ -86,7 +89,7 @@ export const RequestSessionAuthenticatorEffectAuthLayer = Layer.effect(
         Effect.gen(function* () {
           const tokenOption = yield* sessionCookie
             .read(request)
-            .pipe(Effect.mapError(validationError));
+            .pipe(Effect.mapError(cookieError));
 
           if (Option.isNone(tokenOption)) {
             return yield* unauthenticated();

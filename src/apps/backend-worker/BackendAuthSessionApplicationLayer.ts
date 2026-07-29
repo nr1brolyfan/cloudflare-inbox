@@ -26,7 +26,7 @@ const AuthSessionCoreLayer = Layer.unwrap(
     return Layer.merge(
       SessionsLive().pipe(Layer.provide(sessionDependencies)),
       SessionCookieLive()
-    );
+    ).pipe(Layer.orDie);
   })
 );
 

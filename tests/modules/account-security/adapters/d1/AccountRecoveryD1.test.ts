@@ -251,12 +251,12 @@ const makeFixture = async (options: FixtureOptions = {}) => {
   const layer = AccountRecoveryD1Layer.pipe(
     Layer.provide([
       controlPlaneLive,
-      Layer.succeed(
+      Layer.effect(
         AuthSecrets,
         AuthSecrets.make({
-          challenge: Redacted.make("challenge-key"),
-          privacy: Redacted.make("privacy-key"),
-          session: Redacted.make("session-key"),
+          challenge: Redacted.make("c".repeat(32)),
+          privacy: Redacted.make("p".repeat(32)),
+          session: Redacted.make("s".repeat(32)),
         })
       ),
       Layer.mock(AuthFlowState, {
@@ -407,12 +407,12 @@ const makeStartFixture = async (options: StartFixtureOptions = {}) => {
   const layer = AccountRecoveryD1Layer.pipe(
     Layer.provide([
       controlPlaneLive,
-      Layer.succeed(
+      Layer.effect(
         AuthSecrets,
         AuthSecrets.make({
-          challenge: Redacted.make("challenge-key"),
-          privacy: Redacted.make("privacy-key"),
-          session: Redacted.make("session-key"),
+          challenge: Redacted.make("c".repeat(32)),
+          privacy: Redacted.make("p".repeat(32)),
+          session: Redacted.make("s".repeat(32)),
         })
       ),
       Layer.mock(AuthFlowState, {

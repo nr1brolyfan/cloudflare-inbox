@@ -57,7 +57,7 @@ const StepUpOptionsAuthLayer = Layer.unwrap(
       sessionsLayer,
       SessionCookieLive(),
       authRateLimitLayer
-    );
+    ).pipe(Layer.orDie);
   })
 );
 

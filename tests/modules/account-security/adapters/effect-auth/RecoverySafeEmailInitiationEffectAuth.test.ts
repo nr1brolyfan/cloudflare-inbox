@@ -1,11 +1,13 @@
+import type { EmailAuthProcessCredential } from "@effect-auth/core/EmailAuthProcess";
 import type { EmailOtpLoginService } from "@effect-auth/core/EmailOtp";
 import { EmailOtpLogin } from "@effect-auth/core/EmailOtp";
-import type { EmailVerificationFlowService } from "@effect-auth/core/EmailVerification";
-import { EmailVerificationFlow } from "@effect-auth/core/EmailVerification";
+import type { EmailVerificationCodeService } from "@effect-auth/core/EmailVerificationCode";
+import { EmailVerificationCode } from "@effect-auth/core/EmailVerificationCode";
 import {
   ChallengeId,
   Email,
   IdentityId,
+  SessionId,
   UnixMillis,
   UserId,
 } from "@effect-auth/core/Identifiers";
@@ -13,9 +15,11 @@ import type { MagicLinkLoginService } from "@effect-auth/core/MagicLink";
 import { MagicLinkLogin } from "@effect-auth/core/MagicLink";
 import type { IdentityStoreService } from "@effect-auth/core/Storage";
 import { IdentityStore, StorageError } from "@effect-auth/core/Storage";
+import * as Brand from "effect/Brand";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -26,7 +30,15 @@ import { RecoverySafeIdentityRejected } from "#/modules/account-security/domain/
 import { RecoverySafeIdentityPolicy } from "#/modules/account-security/ports/RecoverySafeIdentityPolicy";
 
 const identityId = IdentityId("identity-a");
+const sessionId = SessionId("session-a");
 const userId = UserId("user-a");
+const emailAuthProcessCredential =
+  Brand.nominal<EmailAuthProcessCredential>()("email-process-a");
+const authProcess = {
+  challengeId: ChallengeId("email-process-a"),
+  credential: Redacted.make(emailAuthProcessCredential),
+  expiresAt: UnixMillis(2000),
+};
 const identityInput = {
   kind: "email" as const,
   scope: { type: "global" as const },
@@ -59,6 +71,7 @@ const testLayer = (callbacks: TestCallbacks = {}) => {
       Effect.sync(() => {
         callbacks.onEmailOtpStart?.();
         return {
+          authProcess,
           challengeId: ChallengeId("otp-a"),
           email: Email("Person@external.test"),
           expiresAt: UnixMillis(2000),
@@ -78,18 +91,17 @@ const testLayer = (callbacks: TestCallbacks = {}) => {
       }),
     verify: () => Effect.die("magic-link verify is not used"),
   };
-  const verification: EmailVerificationFlowService = {
+  const verification: EmailVerificationCodeService = {
     start: (input) =>
       Effect.sync(() => {
         callbacks.onVerificationStart?.(input.metadata);
         return {
           challengeId: ChallengeId("verification-a"),
-          email: Email("Person@external.test"),
           expiresAt: UnixMillis(2000),
           identityId,
-          userId,
         };
       }),
+    verify: () => Effect.die("email verification is not used"),
   };
 
   return RecoverySafeEmailInitiationEffectAuthLayer.pipe(
@@ -97,7 +109,7 @@ const testLayer = (callbacks: TestCallbacks = {}) => {
       Layer.mergeAll(
         Layer.succeed(EmailOtpLogin, emailOtp),
         Layer.succeed(MagicLinkLogin, magicLink),
-        Layer.succeed(EmailVerificationFlow, verification),
+        Layer.succeed(EmailVerificationCode, verification),
         Layer.mock(IdentityStore, {
           findById:
             callbacks.findIdentity ??
@@ -126,14 +138,14 @@ const runServices = <A, E>(
   use: (services: {
     readonly emailOtp: EmailOtpLoginService;
     readonly magicLink: MagicLinkLoginService;
-    readonly verification: EmailVerificationFlowService;
+    readonly verification: EmailVerificationCodeService;
   }) => Effect.Effect<A, E>
 ) =>
   Effect.gen(function* () {
     return yield* use({
       emailOtp: yield* EmailOtpLogin,
       magicLink: yield* MagicLinkLogin,
-      verification: yield* EmailVerificationFlow,
+      verification: yield* EmailVerificationCode,
     });
   }).pipe(Effect.provide(testLayer(callbacks)));
 
@@ -157,7 +169,12 @@ describe("recovery-safe effect-auth email initiation", () => {
           Effect.gen(function* () {
             yield* emailOtp.start({ identity: identityInput });
             yield* magicLink.start({ identity: identityInput });
-            yield* verification.start({ identityId, metadata });
+            yield* verification.start({
+              identityId,
+              metadata,
+              sessionId,
+              userId,
+            });
           })
       )
     );
@@ -194,7 +211,9 @@ describe("recovery-safe effect-auth email initiation", () => {
             Effect.all([
               emailOtp.start({ identity: identityInput }).pipe(Effect.flip),
               magicLink.start({ identity: identityInput }).pipe(Effect.flip),
-              verification.start({ identityId }).pipe(Effect.flip),
+              verification
+                .start({ identityId, sessionId, userId })
+                .pipe(Effect.flip),
             ])
         )
       );
@@ -230,7 +249,9 @@ describe("recovery-safe effect-auth email initiation", () => {
           Effect.all([
             emailOtp.start({ identity: identityInput }).pipe(Effect.flip),
             magicLink.start({ identity: identityInput }).pipe(Effect.flip),
-            verification.start({ identityId }).pipe(Effect.flip),
+            verification
+              .start({ identityId, sessionId, userId })
+              .pipe(Effect.flip),
           ])
       )
     );
@@ -266,7 +287,9 @@ describe("recovery-safe effect-auth email initiation", () => {
             },
           },
           ({ verification }) =>
-            verification.start({ identityId }).pipe(Effect.flip)
+            verification
+              .start({ identityId, sessionId, userId })
+              .pipe(Effect.flip)
         )
       );
 
@@ -294,7 +317,9 @@ describe("recovery-safe effect-auth email initiation", () => {
           },
         },
         ({ verification }) =>
-          verification.start({ identityId }).pipe(Effect.flip)
+          verification
+            .start({ identityId, sessionId, userId })
+            .pipe(Effect.flip)
       )
     );
 

@@ -1,37 +1,20 @@
-import { emptyCustomEvidencePolicyRegistry } from "@effect-auth/core/Assurance";
-import { AuthResult } from "@effect-auth/core/AuthFlow";
-import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import { Challenge } from "@effect-auth/core/Challenge";
 import { EmailOtpLogin } from "@effect-auth/core/EmailOtp";
-import { EmailVerificationFlow } from "@effect-auth/core/EmailVerification";
+import { EmailVerificationCode } from "@effect-auth/core/EmailVerificationCode";
 import {
-  AuthHttp,
-  PasswordHttpOperations,
-  PasswordHttpOperationsLive,
-} from "@effect-auth/core/HttpApi";
-import {
-  AuthFlowId,
   IdentityId,
+  SessionId,
   UnixMillis,
   UserId,
 } from "@effect-auth/core/Identifiers";
 import { MagicLinkLogin } from "@effect-auth/core/MagicLink";
-import type { PasswordLoginService } from "@effect-auth/core/Password";
-import {
-  PasswordLogin,
-  PasswordManagement,
-  PasswordRegistration,
-  PasswordReset,
-} from "@effect-auth/core/Password";
-import { SessionCookie, Sessions } from "@effect-auth/core/Sessions";
+import { PasswordReset } from "@effect-auth/core/Password";
 import { IdentityStore } from "@effect-auth/core/Storage";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { describe, expect, it } from "vitest";
 
 import { AuthRuntimeConfigSchema } from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
@@ -149,34 +132,26 @@ describe("auth runtime config", () => {
 });
 
 describe("account-security effect-auth composition", () => {
-  it("enforces policy for verification started internally by password sign-in", async () => {
+  it("enforces policy for composed email-verification code starts", async () => {
     const identityId = IdentityId("identity-a");
     const userId = UserId("user-a");
+    const sessionId = SessionId("session-a");
     let policyChecks = 0;
     let rawStarts = 0;
-    const rawVerification = EmailVerificationFlow.of({
+    const rawVerification = EmailVerificationCode.of({
       start: () =>
         Effect.sync(() => {
           rawStarts += 1;
         }).pipe(Effect.andThen(Effect.die("raw verification must not start"))),
+      verify: unusedEffectAuthOperation,
     });
-    const password: PasswordLoginService = {
-      signIn: () =>
-        Effect.succeed(
-          AuthResult.RequiresEmailVerification({
-            flowId: AuthFlowId("flow-a"),
-            identityId,
-            userId,
-          })
-        ),
-    };
     const rawEffectAuth = Layer.mergeAll(
       Layer.mock(Challenge, {}),
       Layer.mock(EmailOtpLogin, {
         start: unusedEffectAuthOperation,
         verify: unusedEffectAuthOperation,
       }),
-      Layer.succeed(EmailVerificationFlow, rawVerification),
+      Layer.succeed(EmailVerificationCode, rawVerification),
       Layer.mock(MagicLinkLogin, {
         start: unusedEffectAuthOperation,
         verify: unusedEffectAuthOperation,
@@ -224,55 +199,16 @@ describe("account-security effect-auth composition", () => {
       ),
     });
 
-    const operationsLayer = PasswordHttpOperationsLive.pipe(
-      Layer.provide(
-        Layer.mergeAll(
-          composed,
-          Layer.succeed(PasswordLogin, password),
-          Layer.mock(PasswordManagement, {}),
-          Layer.mock(PasswordRegistration, {}),
-          Layer.mock(SessionCookie, {}),
-          Layer.mock(Sessions, {
-            customEvidencePolicies: emptyCustomEvidencePolicyRegistry,
-          }),
-          Layer.mock(AuthHttp, {
-            commitPasswordSignInResult: () =>
-              Effect.succeed(HttpServerResponse.empty({ status: 200 })),
-          }),
-          Layer.succeed(
-            AuthRateLimit,
-            AuthRateLimit.of({ require: () => Effect.void })
-          )
-        )
-      )
-    );
-
     const error = await Effect.runPromise(
       Effect.gen(function* () {
-        const operations = yield* PasswordHttpOperations;
-        return yield* operations
-          .signIn({
-            payload: {
-              identity: {
-                kind: "email",
-                scope: { type: "global" },
-                value: "person@example.test",
-              },
-              password: "password",
-            },
-            request: HttpServerRequest.fromWeb(
-              new Request("https://inbox.test/auth/password/sign-in")
-            ),
-          })
+        const verification = yield* EmailVerificationCode;
+        return yield* verification
+          .start({ identityId, sessionId, userId })
           .pipe(Effect.flip);
-      }).pipe(Effect.provide(operationsLayer))
+      }).pipe(Effect.provide(composed))
     );
 
-    expect(error).toMatchObject({
-      _tag: "AuthInternalError",
-      code: "internal_error",
-      message: "Failed to start email verification",
-    });
+    expect(error.message).toBe("Email initiation denied");
     expect(policyChecks).toBe(1);
     expect(rawStarts).toBe(0);
   });

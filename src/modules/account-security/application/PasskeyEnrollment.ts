@@ -3,6 +3,7 @@ import {
   ChallengeIdSchema,
   UnixMillisSchema,
 } from "@effect-auth/core/Identifiers";
+import { PasskeyRegistrationCredentialPayload } from "@effect-auth/core/PasskeyCredentialPayload";
 import type * as AuthPermission from "@effect-auth/core/Permission";
 import type { IssuedSession } from "@effect-auth/core/Sessions";
 import * as Context from "effect/Context";
@@ -19,17 +20,6 @@ import type { RequestCorrelation } from "#/shared/RequestCorrelation";
 import type { AccountSecurityCommitState } from "./AccountSecurityCommitState";
 import { RecoveryCodeText } from "./RecoveryCodeAdministration";
 
-export const PasskeyClientCredential = Schema.Struct({
-  authenticatorAttachment: Schema.optional(Schema.String),
-  clientExtensionResults: Schema.optional(
-    Schema.Record(Schema.String, Schema.Unknown)
-  ),
-  id: Schema.String,
-  rawId: Schema.optional(Schema.String),
-  response: Schema.Record(Schema.String, Schema.Unknown),
-  type: Schema.Literal("public-key"),
-});
-
 export const PasskeyEnrollmentReadbackSecret = Schema.String.pipe(
   Schema.check(Schema.isPattern(/^[A-Za-z0-9_-]{43}$/u)),
   Schema.brand("cloudflare-inbox/PasskeyEnrollmentReadbackSecret")
@@ -40,18 +30,18 @@ export const StartPasskeyEnrollmentCommand = Schema.Struct({
 });
 export const FinishPasskeyEnrollmentCommand = Schema.Struct({
   challengeId: ChallengeIdSchema,
-  credential: PasskeyClientCredential,
+  credential: PasskeyRegistrationCredentialPayload,
   operationId: AdministrativeOperationId,
   readbackSecret: Schema.optional(PasskeyEnrollmentReadbackSecret),
 });
 export const ReadPasskeyEnrollmentCommand = Schema.Struct({
   challengeId: ChallengeIdSchema,
-  credential: PasskeyClientCredential,
+  credential: PasskeyRegistrationCredentialPayload,
   operationId: AdministrativeOperationId,
 });
 export const ReadRecoveryPasskeyEnrollmentCommand = Schema.Struct({
   challengeId: ChallengeIdSchema,
-  credential: PasskeyClientCredential,
+  credential: PasskeyRegistrationCredentialPayload,
   operationId: AdministrativeOperationId,
   readbackSecret: PasskeyEnrollmentReadbackSecret,
 });

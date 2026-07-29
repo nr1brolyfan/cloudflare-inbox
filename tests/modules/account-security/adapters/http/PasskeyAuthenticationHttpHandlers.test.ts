@@ -56,6 +56,18 @@ const session = {
   token: SessionToken("session-a.secret"),
   userId: UserId("user-a"),
 };
+const credential = {
+  clientExtensionResults: {},
+  id: "YnJvd3Nlci1jcmVkZW50aWFsLWE",
+  rawId: "YnJvd3Nlci1jcmVkZW50aWFsLWE",
+  response: {
+    authenticatorData: "c2lnbmVkLWF1dGhlbnRpY2F0b3ItZGF0YQ",
+    clientDataJSON:
+      "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiWTJoaGJHeGxibWRsIiwib3JpZ2luIjoiaHR0cHM6Ly9pbmJveC50ZXN0In0",
+    signature: "c2lnbmF0dXJlLWE",
+  },
+  type: "public-key" as const,
+};
 
 const makeHandler = (options: {
   readonly finishSignIn?: PasskeyAuthenticationService["finishSignIn"];
@@ -75,10 +87,12 @@ const makeHandler = (options: {
     ),
     AuthSchemaErrorMiddlewareLive,
     AuthOriginCheckMiddlewareLive({
-      allowMissingOrigin: false,
-      allowedOrigins: [publicOrigin],
+      mode: "secure",
+      origins: [publicOrigin],
     }),
-    AuthRequestMetadataMiddlewareLive({ trustProxyHeaders: true })
+    AuthRequestMetadataMiddlewareLive({
+      ipSource: { _tag: "XForwardedFor", trustedHops: 1 },
+    })
   );
   const groupLayer = PasskeyAuthenticationHttpHandlersLayer.pipe(
     Layer.provide(
@@ -197,11 +211,7 @@ describe("passkey authentication API", () => {
       const response = await handler(
         request("/auth/passkey/authenticate/finish", {
           challengeId: started.challengeId,
-          credential: {
-            id: "browser-credential-a",
-            response: { authenticatorData: "signed" },
-            type: "public-key",
-          },
+          credential,
         })
       );
       const body = await response.json();
@@ -239,9 +249,9 @@ describe("passkey authentication API", () => {
         request("/auth/passkey/authenticate/finish", {
           challengeId: started.challengeId,
           credential: {
-            id: "unknown-credential",
-            response: {},
-            type: "public-key",
+            ...credential,
+            id: "dW5rbm93bi1jcmVkZW50aWFs",
+            rawId: "dW5rbm93bi1jcmVkZW50aWFs",
           },
         })
       );

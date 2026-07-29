@@ -1,4 +1,4 @@
-// Generated from @effect-auth/core@0.1.0-alpha.19.
+// Generated from @effect-auth/core@0.1.0-alpha.20.
 // Do not edit manually; run `bun run generate:auth-schema`.
 
 import { defineRelations } from "drizzle-orm";
@@ -62,6 +62,12 @@ export const relations = defineRelations(schema, (r) => ({
       to: r.authUser.id,
     }),
   },
+  authPasskeyCredentialQuarantine: {
+    user: r.one.authUser({
+      from: r.authPasskeyCredentialQuarantine.userId,
+      to: r.authUser.id,
+    }),
+  },
   authApiKey: {
     user: r.one.authUser({
       from: r.authApiKey.userId,
@@ -75,6 +81,16 @@ export const relations = defineRelations(schema, (r) => ({
     }),
     actorUser: r.one.authUser({
       from: r.authAuditLog.actorUserId,
+      to: r.authUser.id,
+    }),
+  },
+  authAuditLogQuarantine: {
+    user: r.one.authUser({
+      from: r.authAuditLogQuarantine.userId,
+      to: r.authUser.id,
+    }),
+    actorUser: r.one.authUser({
+      from: r.authAuditLogQuarantine.actorUserId,
       to: r.authUser.id,
     }),
   },
@@ -94,9 +110,21 @@ export const relations = defineRelations(schema, (r) => ({
       to: r.authUser.id,
     }),
   },
+  authLoginRiskHistoryQuarantine: {
+    user: r.one.authUser({
+      from: r.authLoginRiskHistoryQuarantine.userId,
+      to: r.authUser.id,
+    }),
+  },
   authTrustedDevice: {
     user: r.one.authUser({
       from: r.authTrustedDevice.userId,
+      to: r.authUser.id,
+    }),
+  },
+  authSecurityTimelineQuarantine: {
+    user: r.one.authUser({
+      from: r.authSecurityTimelineQuarantine.userId,
       to: r.authUser.id,
     }),
   },
@@ -126,6 +154,12 @@ export const relations = defineRelations(schema, (r) => ({
       to: r.authOauthAccount.id,
     }),
   },
+  authOauthProviderTokenRevocationOutbox: {
+    user: r.one.authUser({
+      from: r.authOauthProviderTokenRevocationOutbox.userId,
+      to: r.authUser.id,
+    }),
+  },
   authOauthAuthorizationCode: {
     client: r.one.authOauthClient({
       from: r.authOauthAuthorizationCode.clientId,
@@ -152,6 +186,16 @@ export const relations = defineRelations(schema, (r) => ({
     replacedBy: r.one.authOauthProviderModeToken({
       from: r.authOauthProviderModeToken.replacedByTokenHash,
       to: r.authOauthProviderModeToken.tokenHash,
+    }),
+    family: r.one.authOauthProviderModeRefreshFamily({
+      from: r.authOauthProviderModeToken.familyId,
+      to: r.authOauthProviderModeRefreshFamily.familyId,
+    }),
+  },
+  authOauthProviderModeRefreshFamily: {
+    client: r.one.authOauthClient({
+      from: r.authOauthProviderModeRefreshFamily.clientId,
+      to: r.authOauthClient.id,
     }),
   },
   authPermissionGrant: {

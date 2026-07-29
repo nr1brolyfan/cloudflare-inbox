@@ -151,15 +151,21 @@ describe("isolated magic-link start route", () => {
     }
   });
 
-  it("consumes rate-limit policy before rejecting caller-provided secrets", async () => {
+  it("ignores unrelated unknown fields without changing the start input", async () => {
     const { dispose, handler, require, start } = makeHandler();
 
     try {
-      const response = await handler(request({ ...payload, secret: "caller" }));
+      const response = await handler(
+        request({ ...payload, unknown: "caller" })
+      );
 
-      expect(response.status).toBe(400);
+      expect(response.status).toBe(200);
       expect(require).toHaveBeenCalledOnce();
-      expect(start).not.toHaveBeenCalled();
+      expect(start).toHaveBeenCalledWith({
+        identity: payload.identity,
+        locale: undefined,
+        metadata: undefined,
+      });
     } finally {
       await dispose();
     }

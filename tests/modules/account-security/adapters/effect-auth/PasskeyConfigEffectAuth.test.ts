@@ -46,7 +46,7 @@ describe("passkey runtime config", () => {
         residentKey: "required",
         userVerification: "required",
       },
-      expectedOrigin: "http://localhost:3000",
+      expectedOrigins: ["http://localhost:3000"],
       relyingParty: {
         id: "localhost",
         name: "Cloudflare Inbox",

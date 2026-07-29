@@ -81,6 +81,7 @@ import {
   appExternalRecoveryIdentity,
   appPasskeyEnrollmentReceipt,
 } from "./AccountSecuritySchema";
+import { normalizedAuthAuditEvent } from "./NormalizedAuthAuditEvent";
 
 export interface PasskeyEnrollmentRuntimeShape {
   readonly now: () => number;
@@ -518,6 +519,7 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
             .startRegistration({
               attestation: passkeyConfig.attestation,
               authenticatorSelection: passkeyConfig.authenticatorSelection,
+              expectedOrigins: passkeyConfig.expectedOrigins,
               metadata: {
                 authorization: recoveryMode
                   ? "recovery-remediation"
@@ -534,7 +536,9 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                 stepUpPolicyId: CONTROL_PLANE_STEP_UP_POLICY.id,
                 stepUpPolicyVersion: CONTROL_PLANE_STEP_UP_POLICY.version,
               },
+              pubKeyCredParams: passkeyConfig.pubKeyCredParams,
               relyingParty: passkeyConfig.relyingParty,
+              requireUserVerification: passkeyConfig.requireUserVerification,
               userDisplayName: userName,
               userId: requestAuth.validated.actor.userId,
               userName,
@@ -591,10 +595,14 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
               : undefined;
           const verified = yield* verifier
             .verifyRegistration({
-              expectedOrigin: passkeyConfig.expectedOrigin,
+              attestation: passkeyConfig.attestation,
+              expectedOrigin: passkeyConfig.expectedOrigins,
               relyingPartyId: passkeyConfig.relyingParty.id,
-              requireUserVerification: true,
+              requireUserVerification: passkeyConfig.requireUserVerification,
               response: command.credential,
+              supportedAlgorithmIDs: passkeyConfig.pubKeyCredParams.map(
+                ({ alg }) => alg
+              ),
               userId: requestAuth.validated.actor.userId,
             })
             .pipe(
@@ -822,6 +830,7 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
           }).pipe(
             Effect.mapError((cause) => error("finish", "storage", cause))
           );
+          const normalizedAudit = normalizedAuthAuditEvent(auditEvent);
           const remediationAuditEvent =
             remediation === undefined
               ? undefined
@@ -846,6 +855,10 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                 }).pipe(
                   Effect.mapError((cause) => error("finish", "storage", cause))
                 );
+          const normalizedRemediationAudit =
+            remediationAuditEvent === undefined
+              ? undefined
+              : normalizedAuthAuditEvent(remediationAuditEvent);
           const recoveryValid = exists(
             database
               .select({ value: sql`1` })
@@ -903,7 +916,8 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
               .where(eq(appAuthorizationGuard.nonce, nonce))
           );
           const remediationStatements: readonly ControlPlane.ControlPlaneStatement[] =
-            remediation === undefined || remediationAuditEvent === undefined
+            remediation === undefined ||
+            normalizedRemediationAudit === undefined
               ? []
               : [
                   database
@@ -1131,14 +1145,27 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                             "actor_user_id"
                           ),
                         createdAt: sql`${timestamp}`.as("created_at"),
-                        event: sql`${JSON.stringify(remediationAuditEvent)}`.as(
+                        event: sql`${normalizedRemediationAudit.event}`.as(
                           "event"
                         ),
+                        eventBytes:
+                          sql`${normalizedRemediationAudit.eventBytes}`.as(
+                            "event_bytes"
+                          ),
                         id: sql`${`account-recovery-completed:${metadata.operationId}`}`.as(
                           "id"
                         ),
-                        occurredAt: sql`${timestamp}`.as("occurred_at"),
-                        type: sql`${remediationAuditEvent.type}`.as("type"),
+                        normalizationVersion:
+                          sql`${normalizedRemediationAudit.normalizationVersion}`.as(
+                            "normalization_version"
+                          ),
+                        occurredAt:
+                          sql`${normalizedRemediationAudit.occurredAt}`.as(
+                            "occurred_at"
+                          ),
+                        type: sql`${normalizedRemediationAudit.type}`.as(
+                          "type"
+                        ),
                         userId: sql`${requestAuth.validated.actor.userId}`.as(
                           "user_id"
                         ),
@@ -1218,12 +1245,21 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
                     "actor_user_id"
                   ),
                   createdAt: sql`${timestamp}`.as("created_at"),
-                  event: sql`${JSON.stringify(auditEvent)}`.as("event"),
+                  event: sql`${normalizedAudit.event}`.as("event"),
+                  eventBytes: sql`${normalizedAudit.eventBytes}`.as(
+                    "event_bytes"
+                  ),
                   id: sql`${`passkey-enrollment:${metadata.operationId}`}`.as(
                     "id"
                   ),
-                  occurredAt: sql`${timestamp}`.as("occurred_at"),
-                  type: sql`${auditEvent.type}`.as("type"),
+                  normalizationVersion:
+                    sql`${normalizedAudit.normalizationVersion}`.as(
+                      "normalization_version"
+                    ),
+                  occurredAt: sql`${normalizedAudit.occurredAt}`.as(
+                    "occurred_at"
+                  ),
+                  type: sql`${normalizedAudit.type}`.as("type"),
                   userId: sql`${requestAuth.validated.actor.userId}`.as(
                     "user_id"
                   ),

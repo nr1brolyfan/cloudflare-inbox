@@ -10,7 +10,6 @@ import type { ChallengeService } from "@effect-auth/core/Challenge";
 import { Challenge, ChallengeVerifyError } from "@effect-auth/core/Challenge";
 import type { CryptoService } from "@effect-auth/core/Crypto";
 import { Crypto } from "@effect-auth/core/Crypto";
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   ChallengeId,
   CredentialId,
@@ -24,6 +23,10 @@ import {
   PasskeyOptions,
   PasskeyVerifier,
 } from "@effect-auth/core/Passkey";
+import type {
+  PasskeyRegistrationCredentialPayload,
+  PasskeyTransport,
+} from "@effect-auth/core/PasskeyCredentialPayload";
 import * as AuthPermission from "@effect-auth/core/Permission";
 import {
   RecoveryCode,
@@ -53,7 +56,6 @@ import {
   PasskeyEnrollmentReadbackSecret,
   PasskeyEnrollmentReceiptSchema,
 } from "#/modules/account-security/application/PasskeyEnrollment";
-import type { PasskeyClientCredential } from "#/modules/account-security/application/PasskeyEnrollment";
 import { externalRecoveryLinkEvidence } from "#/modules/account-security/domain/AccountRecovery";
 import {
   PasskeyRuntimeConfig,
@@ -76,7 +78,9 @@ import {
 
 const now = Date.now();
 const challengeSecret = "passkey-challenge-secret";
-const credentialPublicKey = "sensitive-passkey-public-key";
+const base64Url = (value: string) => Buffer.from(value).toString("base64url");
+const credentialPublicKey = base64Url("sensitive-passkey-public-key");
+type TestD1Database = ReturnType<typeof makeTestD1Database>;
 const operationId = Schema.decodeUnknownSync(AdministrativeOperationId)(
   "00000000-0000-4000-8000-000000000030"
 );
@@ -97,7 +101,8 @@ const passkeyConfig = Schema.decodeUnknownSync(PasskeyRuntimeConfigSchema)({
     residentKey: "required",
     userVerification: "required",
   },
-  expectedOrigin: "https://inbox.example.test",
+  expectedOrigins: ["https://inbox.example.test"],
+  pubKeyCredParams: [{ alg: -7, type: "public-key" }],
   relyingParty: {
     id: "inbox.example.test",
     name: "Cloudflare Inbox",
@@ -105,15 +110,16 @@ const passkeyConfig = Schema.decodeUnknownSync(PasskeyRuntimeConfigSchema)({
   requireUserVerification: true,
   userVerification: "required",
 });
-const clientCredential: Schema.Schema.Type<typeof PasskeyClientCredential> = {
+const clientCredential: PasskeyRegistrationCredentialPayload = {
   clientExtensionResults: {
     nested: { first: true, second: [1, { value: "extension" }] },
   },
-  id: "browser-credential",
-  rawId: "browser-credential-raw-id",
+  id: "YnJvd3Nlci1jcmVkZW50aWFs",
+  rawId: "YnJvd3Nlci1jcmVkZW50aWFs",
   response: {
-    attestationObject: "client-attestation",
-    clientDataJSON: "client-data-json",
+    attestationObject: "Y2xpZW50LWF0dGVzdGF0aW9u",
+    clientDataJSON:
+      "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiY0dGemMydGxlUzFqYUdGc2JHVnVaMlV0YzJWamNtVjAiLCJvcmlnaW4iOiJodHRwczovL2luYm94LmV4YW1wbGUudGVzdCJ9",
   },
   type: "public-key" as const,
 };
@@ -127,7 +133,7 @@ interface TestState {
   randomTokenCalls: number;
   rateLimitOperations: string[];
   signCount: number;
-  transports: readonly string[];
+  transports: readonly PasskeyTransport[];
   verifierCalls: number;
 }
 
@@ -368,6 +374,7 @@ const passkeyVerifierLive = (state: TestState) =>
   Layer.succeed(
     PasskeyVerifier,
     PasskeyVerifier.of({
+      readRegistrationChallenge: () => Effect.die("read is not used"),
       readAuthenticationCredentialId: () => Effect.die("read is not used"),
       verifyAuthentication: () => Effect.die("authentication is not used"),
       verifyRegistration: () =>
@@ -376,6 +383,7 @@ const passkeyVerifierLive = (state: TestState) =>
           return {
             backedUp: state.backedUp,
             challenge: challengeSecret,
+            credentialAlgorithm: -7,
             credentialId: PasskeyCredentialId(state.credentialId),
             metadata: state.metadata,
             publicKey: state.publicKey,
@@ -470,7 +478,7 @@ const sessionsService: SessionsService = {
 
 const enrollmentLive = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1Database,
   state: TestState
 ) => {
   const bindingLive = Layer.succeed(
@@ -496,9 +504,9 @@ const enrollmentLive = (
         challengeLive(database),
         Layer.succeed(Crypto, cryptoService(state)),
         AuthSecretsLive({
-          challenge: Redacted.make("challenge-key"),
-          privacy: Redacted.make("privacy-key"),
-          session: Redacted.make("session-key"),
+          challenge: Redacted.make("challenge-key-material-for-testing"),
+          privacy: Redacted.make("privacy-key-material-for-testing-1"),
+          session: Redacted.make("session-key-material-for-testing-12"),
         }),
         Layer.succeed(RecoveryCodes, recoveryCodesService),
         Layer.succeed(Sessions, sessionsService),
@@ -551,7 +559,7 @@ const provideRequestAuth = <A, E, R>(
 
 const start = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1Database,
   state: TestState,
   session: ValidatedSession
 ) =>
@@ -571,7 +579,7 @@ const start = (
 
 const finish = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1Database,
   state: TestState,
   session: ValidatedSession,
   challengeId: string,
@@ -596,7 +604,7 @@ const finish = (
 
 const readOperation = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1Database,
   state: TestState,
   session: ValidatedSession,
   challengeId: string,
@@ -616,7 +624,7 @@ const readOperation = (
 
 const readRecoveryOperation = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1Database,
   state: TestState,
   challengeId: string,
   secret = readbackSecret,
@@ -641,7 +649,7 @@ const countRows = (database: DatabaseSync, table: string) =>
 
 const makeState = (): TestState => ({
   backedUp: true,
-  credentialId: "passkey-credential-a",
+  credentialId: base64Url("passkey-credential-a"),
   metadata: {
     aaguid: "test-aaguid",
     nested: { first: 1, second: [{ left: true, right: false }] },
@@ -696,7 +704,7 @@ describe("guarded passkey enrollment", () => {
       insertVerifiedRecovery(database);
       const baseD1 = makeTestD1Database(database);
       let returningRows: readonly unknown[] | undefined;
-      const observedD1: D1EffectQbDatabaseLike = {
+      const observedD1: TestD1Database = {
         batch: async (statements) => {
           const results = await baseD1.batch(statements);
           returningRows = results[3]?.results;
@@ -813,10 +821,13 @@ describe("guarded passkey enrollment", () => {
         .prepare(
           `insert into auth_passkey_credential
             (id, user_id, credential_id, public_key, sign_count, created_at)
-           values ('old-passkey-a', 'user-a', 'old-passkey-credential-a',
-                   'old-public-key', 0, ?)`
+           values ('old-passkey-a', 'user-a', ?, ?, 0, ?)`
         )
-        .run(now - 1000);
+        .run(
+          base64Url("old-passkey-credential-a"),
+          base64Url("old-public-key"),
+          now - 1000
+        );
       database
         .prepare(
           `insert into auth_credential
@@ -1077,7 +1088,7 @@ describe("guarded passkey enrollment", () => {
       insertVerifiedRecovery(database);
       const baseD1 = makeTestD1Database(database);
       let changed = false;
-      const changedD1: D1EffectQbDatabaseLike = {
+      const changedD1: TestD1Database = {
         batch: (statements) => {
           if (!changed) {
             changed = true;
@@ -1134,7 +1145,7 @@ describe("guarded passkey enrollment", () => {
         start(database, baseD1, state, session)
       );
       let changed = false;
-      const changedD1: D1EffectQbDatabaseLike = {
+      const changedD1: TestD1Database = {
         batch: (statements) => {
           if (!changed) {
             changed = true;
@@ -1179,7 +1190,7 @@ describe("guarded passkey enrollment", () => {
       insertVerifiedRecovery(database);
       const baseD1 = makeTestD1Database(database);
       let changed = false;
-      const changedD1: D1EffectQbDatabaseLike = {
+      const changedD1: TestD1Database = {
         batch: (statements) => {
           if (!changed) {
             changed = true;
@@ -1317,8 +1328,8 @@ describe("guarded passkey enrollment", () => {
           id: clientCredential.id,
           rawId: clientCredential.rawId,
           response: {
-            clientDataJSON: "client-data-json",
-            attestationObject: "client-attestation",
+            clientDataJSON: clientCredential.response.clientDataJSON,
+            attestationObject: clientCredential.response.attestationObject,
           },
           type: "public-key",
         })
@@ -1340,7 +1351,8 @@ describe("guarded passkey enrollment", () => {
           ...clientCredential,
           response: {
             ...clientCredential.response,
-            clientDataJSON: "changed-client-data-json",
+            clientDataJSON:
+              "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiWTJoaGJtZGxaQzFqYUdGc2JHVnVaMlUiLCJvcmlnaW4iOiJodHRwczovL2luYm94LmV4YW1wbGUudGVzdCJ9",
           },
         }).pipe(Effect.flip)
       );
@@ -1571,7 +1583,10 @@ describe("guarded passkey enrollment", () => {
           readbackSecret,
           {
             ...clientCredential,
-            response: { attestationObject: "different-attestation" },
+            response: {
+              ...clientCredential.response,
+              attestationObject: "ZGlmZmVyZW50LWF0dGVzdGF0aW9u",
+            },
           }
         ).pipe(Effect.flip)
       );
@@ -1619,7 +1634,7 @@ describe("guarded passkey enrollment", () => {
       await Effect.runPromise(
         finish(database, d1, state, session, started.challengeId)
       );
-      state.publicKey = "different-sensitive-passkey-public-key";
+      state.publicKey = base64Url("different-sensitive-passkey-public-key");
 
       const conflict = await Effect.runPromise(
         finish(database, d1, state, session, started.challengeId).pipe(
@@ -1646,7 +1661,7 @@ describe("guarded passkey enrollment", () => {
       insertVerifiedRecovery(database);
       const baseD1 = makeTestD1Database(database);
       let failAfterCommit = true;
-      const unknownAfterCommit: D1EffectQbDatabaseLike = {
+      const unknownAfterCommit: TestD1Database = {
         batch: async (statements) => {
           const results = await baseD1.batch(statements);
           if (failAfterCommit) {
@@ -1693,8 +1708,8 @@ describe("guarded passkey enrollment", () => {
       let challengeId = "";
       let raced = false;
       const originalPublicKey = state.publicKey;
-      const changedPublicKey = "outer-different-public-key";
-      const racingD1: D1EffectQbDatabaseLike = {
+      const changedPublicKey = base64Url("outer-different-public-key");
+      const racingD1: TestD1Database = {
         batch: async (statements) => {
           if (!raced) {
             raced = true;
@@ -1738,7 +1753,7 @@ describe("guarded passkey enrollment", () => {
       insertVerifiedRecovery(database);
       const baseD1 = makeTestD1Database(database);
       let failAfterCommit = true;
-      const unknownAfterCommit: D1EffectQbDatabaseLike = {
+      const unknownAfterCommit: TestD1Database = {
         batch: async (statements) => {
           const results = await baseD1.batch(statements);
           if (failAfterCommit) {
@@ -1795,7 +1810,7 @@ describe("guarded passkey enrollment", () => {
         .get() as Record<string, unknown>;
       const serialized = JSON.stringify(stored);
 
-      expect(serialized).not.toContain("passkey-credential-a");
+      expect(serialized).not.toContain(base64Url("passkey-credential-a"));
       expect(serialized).not.toContain(clientCredential.id);
       expect(serialized).not.toContain("client-attestation");
       expect(serialized).not.toContain("client-data-json");

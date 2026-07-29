@@ -129,13 +129,15 @@ export const insertFreshCutoverOrganization = (
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
+interface TestPreparedStatement extends D1EffectQbPreparedStatementLike<TestPreparedStatement> {
+  readonly raw: <
+    Row extends readonly unknown[] = readonly unknown[],
+  >() => Promise<readonly Row[]>;
+}
+
 export const makeTestD1Database = (
   database: DatabaseSync
 ): D1EffectQbDatabaseLike => {
-  type TestPreparedStatement = D1EffectQbPreparedStatementLike & {
-    readonly raw: () => Promise<readonly (readonly unknown[])[]>;
-  };
-
   const makeStatement = (
     sql: string,
     values: readonly unknown[] = []
@@ -156,14 +158,16 @@ export const makeTestD1Database = (
       }
     },
     bind: (...boundValues) => makeStatement(sql, boundValues),
-    raw: () => {
+    raw: <Row extends readonly unknown[] = readonly unknown[]>() => {
       try {
         const rows = database
           .prepare(sql)
           .all(...(values as readonly SQLInputValue[])) as readonly Readonly<
           Record<string, unknown>
         >[];
-        return Promise.resolve(rows.map((row) => Object.values(row)));
+        return Promise.resolve(
+          rows.map((row) => Object.values(row)) as unknown as readonly Row[]
+        );
       } catch (error) {
         return Promise.reject(error);
       }

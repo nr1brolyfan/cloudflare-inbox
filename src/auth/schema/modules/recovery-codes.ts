@@ -1,4 +1,4 @@
-// Generated from @effect-auth/core@0.1.0-alpha.19.
+// Generated from @effect-auth/core@0.1.0-alpha.20.
 // Do not edit manually; run `bun run generate:auth-schema`.
 
 import { index, integer, primaryKey, sqliteTable, text } from "drizzle-orm/sqlite-core";

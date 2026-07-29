@@ -42,6 +42,7 @@ import {
   appExternalRecoveryIdentity,
   appRecoveryCodeRotationReceipt,
 } from "./AccountSecuritySchema";
+import { normalizedAuthAuditEvent } from "./NormalizedAuthAuditEvent";
 
 const failure = (
   operation: RecoveryCodeAdministrationError["operation"],
@@ -387,6 +388,7 @@ const RecoveryCodeAdministrationTransactionD1Layer = Layer.effect(
           }).pipe(
             Effect.mapError((cause) => failure("generate", "storage", cause))
           );
+          const normalizedAudit = normalizedAuthAuditEvent(auditEvent);
           const statements: ControlPlane.ControlPlaneStatements = [
             database.insert(appAuthorizationGuard).select(
               sql`select ${nonce} where ${trustedStepUpSession}
@@ -460,12 +462,21 @@ const RecoveryCodeAdministrationTransactionD1Layer = Layer.effect(
                 .select({
                   actorUserId: sql`${userId}`.as("actor_user_id"),
                   createdAt: sql`${generatedAt}`.as("created_at"),
-                  event: sql`${JSON.stringify(auditEvent)}`.as("event"),
+                  event: sql`${normalizedAudit.event}`.as("event"),
+                  eventBytes: sql`${normalizedAudit.eventBytes}`.as(
+                    "event_bytes"
+                  ),
                   id: sql`${`recovery-code-rotation:${command.operationId}`}`.as(
                     "id"
                   ),
-                  occurredAt: sql`${generatedAt}`.as("occurred_at"),
-                  type: sql`${auditEvent.type}`.as("type"),
+                  normalizationVersion:
+                    sql`${normalizedAudit.normalizationVersion}`.as(
+                      "normalization_version"
+                    ),
+                  occurredAt: sql`${normalizedAudit.occurredAt}`.as(
+                    "occurred_at"
+                  ),
+                  type: sql`${normalizedAudit.type}`.as("type"),
                   userId: sql`${userId}`.as("user_id"),
                 })
                 .from(appAuthorizationGuard)

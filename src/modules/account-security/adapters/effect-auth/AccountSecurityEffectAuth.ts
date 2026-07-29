@@ -5,16 +5,19 @@ import {
   AuthDomainConfigLive,
   AuthSecretsLive,
 } from "@effect-auth/core/AuthConfig";
-import { AuthFlowStateLive } from "@effect-auth/core/AuthFlow";
+import { layerNoDeps as authenticationCapabilitiesLayerNoDeps } from "@effect-auth/core/AuthenticationCapabilities";
+import {
+  AuthFlowStateLive,
+  makeEmailVerificationSessionPolicy,
+  makePermissiveAuthenticationCapabilities,
+} from "@effect-auth/core/AuthFlow";
 import { AuthKernelLive } from "@effect-auth/core/AuthKernel";
 import { AuthRateLimitStandardLive } from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import { AuthMailerFromDevEmailStoreLive } from "@effect-auth/core/DevEmail";
 import { EmailOtpDefaultLive } from "@effect-auth/core/EmailOtp";
-import {
-  EmailDeliveryFromAuthMailerLive,
-  EmailVerificationDefaultLive,
-} from "@effect-auth/core/EmailVerification";
+import { EmailDeliveryFromAuthMailerLive } from "@effect-auth/core/EmailVerification";
+import { EmailVerificationCodeLive } from "@effect-auth/core/EmailVerificationCode";
 import { IdentityKindRegistryDefaultLive } from "@effect-auth/core/Identity";
 import { LoginApprovalLive } from "@effect-auth/core/LoginApproval";
 import { MagicLinkLoginLive } from "@effect-auth/core/MagicLink";
@@ -120,21 +123,26 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
         )
       );
     })();
+    const authenticationCapabilitiesLayer =
+      authenticationCapabilitiesLayerNoDeps({
+        ...makePermissiveAuthenticationCapabilities(),
+        emailVerificationSessionPolicy: makeEmailVerificationSessionPolicy({
+          mode: "limited-session",
+        }),
+      }).pipe(Layer.orDie);
     const sessionLayer = AuthKernelLive.pipe(
       Layer.provide(
         CustomEvidencePoliciesLive([externalRecoveryLinkEvidence.policy]).pipe(
           Layer.orDie
         )
       ),
+      Layer.provide(authenticationCapabilitiesLayer),
       Layer.provideMerge(WebCryptoLive()),
-      Layer.provideMerge(AuthSecretsLive(options.secrets))
+      Layer.provideMerge(AuthSecretsLive(options.secrets)),
+      Layer.orDie
     );
     const baseLayer = sessionLayer.pipe(
-      Layer.provideMerge(
-        AuthDomainConfigLive({
-          emailVerificationSessionPolicy: { mode: "limited-session" },
-        })
-      ),
+      Layer.provideMerge(AuthDomainConfigLive()),
       Layer.merge(IdentityKindRegistryDefaultLive),
       Layer.merge(authMailerLayer)
     );
@@ -154,7 +162,7 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
     const emailDeliveryLayer = EmailDeliveryFromAuthMailerLive.pipe(
       Layer.provideMerge(baseLayer)
     );
-    const emailVerificationLayer = EmailVerificationDefaultLive().pipe(
+    const emailVerificationLayer = EmailVerificationCodeLive.pipe(
       Layer.provideMerge(emailDeliveryLayer)
     );
     const emailOtpLayer = EmailOtpDefaultLive().pipe(
@@ -194,6 +202,10 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
       authRateLimitLayer
     );
 
-    return Layer.merge(sessionLayer, requirementsLayer);
+    return Layer.mergeAll(
+      authenticationCapabilitiesLayer,
+      sessionLayer,
+      requirementsLayer
+    ).pipe(Layer.orDie);
   })
 );

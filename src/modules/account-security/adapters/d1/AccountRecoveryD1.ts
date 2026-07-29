@@ -57,6 +57,7 @@ import {
   appAccountRecoveryCompletionReceipt,
   appExternalRecoveryIdentity,
 } from "./AccountSecuritySchema";
+import { normalizedAuthAuditEvent } from "./NormalizedAuthAuditEvent";
 
 const FLOW_TTL = Duration.minutes(10);
 const PUBLIC_START_RESPONSE_FLOOR = Duration.millis(500);
@@ -628,6 +629,7 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
           }).pipe(
             Effect.mapError((cause) => failure("complete", "storage", cause))
           );
+          const normalizedAudit = normalizedAuthAuditEvent(auditEvent);
           const sessionMetadata = JSON.stringify({
             __effectAuthSession: {
               claims: prepared.row.claims,
@@ -702,12 +704,21 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
                 .select({
                   actorUserId: sql`${pending.userId}`.as("actor_user_id"),
                   createdAt: sql`${completedAt}`.as("created_at"),
-                  event: sql`${JSON.stringify(auditEvent)}`.as("event"),
+                  event: sql`${normalizedAudit.event}`.as("event"),
+                  eventBytes: sql`${normalizedAudit.eventBytes}`.as(
+                    "event_bytes"
+                  ),
                   id: sql`${`account-recovery:${command.operationId}`}`.as(
                     "id"
                   ),
-                  occurredAt: sql`${completedAt}`.as("occurred_at"),
-                  type: sql`${auditEvent.type}`.as("type"),
+                  normalizationVersion:
+                    sql`${normalizedAudit.normalizationVersion}`.as(
+                      "normalization_version"
+                    ),
+                  occurredAt: sql`${normalizedAudit.occurredAt}`.as(
+                    "occurred_at"
+                  ),
+                  type: sql`${normalizedAudit.type}`.as("type"),
                   userId: sql`${pending.userId}`.as("user_id"),
                 })
                 .from(appAuthorizationGuard)

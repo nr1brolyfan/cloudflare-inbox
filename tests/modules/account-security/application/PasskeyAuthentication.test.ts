@@ -57,14 +57,29 @@ import {
 } from "../../../support/d1";
 
 const now = Date.now();
+const base64Url = (value: string) => Buffer.from(value).toString("base64url");
 const challengeId = ChallengeId("passkey-authentication-challenge-a");
 const userId = UserId("user-a");
 const sessionId = SessionId("session-a");
 const credentialRecordId = CredentialId("passkey-record-a");
-const webauthnCredentialId = PasskeyCredentialId("webauthn-credential-a");
+const webauthnCredentialId = PasskeyCredentialId(
+  base64Url("webauthn-credential-a")
+);
 const clientCredential = {
-  id: "browser-credential-a",
-  response: { authenticatorData: "signed-authenticator-data" },
+  clientExtensionResults: {},
+  id: base64Url("browser-credential-a"),
+  rawId: base64Url("browser-credential-a"),
+  response: {
+    authenticatorData: base64Url("signed-authenticator-data"),
+    clientDataJSON: base64Url(
+      JSON.stringify({
+        challenge: base64Url("server-challenge"),
+        origin: "https://inbox.example.test",
+        type: "webauthn.get",
+      })
+    ),
+    signature: base64Url("credential-signature"),
+  },
   type: "public-key" as const,
 };
 const config = Schema.decodeUnknownSync(PasskeyRuntimeConfigSchema)({
@@ -74,7 +89,8 @@ const config = Schema.decodeUnknownSync(PasskeyRuntimeConfigSchema)({
     residentKey: "required",
     userVerification: "required",
   },
-  expectedOrigin: "https://inbox.example.test",
+  expectedOrigins: ["https://inbox.example.test"],
+  pubKeyCredParams: [{ alg: -7, type: "public-key" }],
   relyingParty: { id: "inbox.example.test", name: "Cloudflare Inbox" },
   requireUserVerification: true,
   userVerification: "required",
@@ -123,7 +139,7 @@ const credential = {
   createdAt: UnixMillis(now - 10_000),
   credentialId: webauthnCredentialId,
   id: credentialRecordId,
-  publicKey: "sensitive-public-key",
+  publicKey: base64Url("sensitive-public-key"),
   signCount: 7,
   userId,
 };

@@ -1,5 +1,4 @@
 import type * as CloudflareWorkers from "@cloudflare/workers-types";
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Context from "effect/Context";
@@ -26,7 +25,7 @@ export interface MailboxDoBindingsShape {
     MailboxEmailBinding,
     DeliveryProviderUnavailableError
   >;
-  readonly controlPlane: Effect.Effect<D1EffectQbDatabaseLike>;
+  readonly controlPlane: Effect.Effect<D1Database>;
   readonly rawMessages: Effect.Effect<RawMessagesBinding>;
 }
 
@@ -66,9 +65,7 @@ const isRawMessagesBinding = (value: unknown): value is RawMessagesBinding =>
 
 const isMailboxEmailBinding = (value: unknown): value is MailboxEmailBinding =>
   hasMethod(value, "send");
-const isControlPlaneBinding = (
-  value: unknown
-): value is D1EffectQbDatabaseLike =>
+const isControlPlaneBinding = (value: unknown): value is D1Database =>
   hasMethod(value, "prepare") && hasMethod(value, "batch");
 
 /** Captures the Worker environment while keeping optional binding access lazy. */

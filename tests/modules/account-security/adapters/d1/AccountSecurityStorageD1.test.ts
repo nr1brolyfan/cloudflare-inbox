@@ -3,11 +3,17 @@ import { DatabaseSync } from "node:sqlite";
 import { DevEmailStore, DevEmailStoreError } from "@effect-auth/core/DevEmail";
 import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import { Email, UnixMillis } from "@effect-auth/core/Identifiers";
+import { PasskeyCredentialStore } from "@effect-auth/core/Passkey";
+import { PermissionStore } from "@effect-auth/core/Permission";
+import { RecoveryCodeStore } from "@effect-auth/core/RecoveryCode";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
-import { DevEmailStoreD1Layer } from "#/modules/account-security/adapters/d1/AccountSecurityStorageD1";
+import {
+  DevEmailStoreD1Layer,
+  EffectAuthStorageD1Layer,
+} from "#/modules/account-security/adapters/d1/AccountSecurityStorageD1";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
 import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
@@ -43,6 +49,40 @@ const message = {
   subject: "Sign in",
   text: "Open the link",
 } as const;
+
+describe("D1 effect-auth storage", () => {
+  it("provides the native passkey, recovery-code, and permission stores", async () => {
+    const database = new DatabaseSync(":memory:");
+    await applyControlPlaneMigrations(database);
+    const binding = Layer.succeed(
+      ControlPlaneD1Binding,
+      ControlPlaneD1Binding.of({
+        database: makeTestD1Database(database) as unknown as D1Database,
+      })
+    );
+    const controlPlaneLive = Layer.merge(
+      binding,
+      ControlPlaneD1Layer.pipe(Layer.provide(binding))
+    );
+
+    try {
+      const services = await Effect.runPromise(
+        Effect.all([
+          PasskeyCredentialStore,
+          RecoveryCodeStore,
+          PermissionStore,
+        ]).pipe(
+          Effect.provide(
+            EffectAuthStorageD1Layer.pipe(Layer.provide(controlPlaneLive))
+          )
+        )
+      );
+      expect(services).toHaveLength(3);
+    } finally {
+      database.close();
+    }
+  });
+});
 
 describe("D1 development email store", () => {
   it("atomically upserts, filters, trims, and clears messages", async () => {

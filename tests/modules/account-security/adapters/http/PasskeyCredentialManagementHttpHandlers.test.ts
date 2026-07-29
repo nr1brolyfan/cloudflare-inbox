@@ -101,7 +101,7 @@ const makeAdministration = (
 
 const makeHandler = (administration: AdministrationService) => {
   const requestAuthLive = Layer.mergeAll(
-    Layer.succeed(SessionCookie, makeSessionCookie()),
+    Layer.effect(SessionCookie, makeSessionCookie()),
     Layer.succeed(
       Sessions,
       Sessions.of({
@@ -110,9 +110,9 @@ const makeHandler = (administration: AdministrationService) => {
     ),
     WebCryptoLive(),
     AuthSecretsLive({
-      challenge: Redacted.make("challenge-secret"),
-      privacy: Redacted.make("privacy-secret"),
-      session: Redacted.make("session-secret"),
+      challenge: Redacted.make("challenge-secret".repeat(3)),
+      privacy: Redacted.make("privacy-secret".repeat(3)),
+      session: Redacted.make("session-secret".repeat(3)),
     })
   );
   const middlewareLive = Layer.mergeAll(
@@ -126,8 +126,8 @@ const makeHandler = (administration: AdministrationService) => {
     ),
     AuthSchemaErrorMiddlewareLive,
     AuthOriginCheckMiddlewareLive({
-      allowMissingOrigin: false,
-      allowedOrigins: [publicOrigin],
+      mode: "secure",
+      origins: [publicOrigin],
     }),
     CurrentRequestAuthMiddlewareLayer.pipe(
       Layer.provide(

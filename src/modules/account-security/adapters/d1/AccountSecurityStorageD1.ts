@@ -1,14 +1,10 @@
+import { D1SqliteAccountAuthStorageLive } from "@effect-auth/core/D1SqliteAccountAuthStorage";
 import { DevEmailStore, DevEmailStoreError } from "@effect-auth/core/DevEmail";
 import type {
   DevEmailListOptions,
   DevEmailMessage,
   DevEmailStoreOperation,
 } from "@effect-auth/core/DevEmail";
-import { makeDrizzleEffectSqliteExecutor } from "@effect-auth/core/DrizzleEffectSqliteStorage";
-import {
-  EffectQbSqliteAuthStorageLive,
-  makeD1EffectQbSqliteAtomicPlanExecutor,
-} from "@effect-auth/core/EffectQbSqliteStorage";
 import { EmailSchema, UnixMillisSchema } from "@effect-auth/core/Identifiers";
 import { and, desc, eq, notInArray } from "drizzle-orm";
 import * as Effect from "effect/Effect";
@@ -22,6 +18,10 @@ import {
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import { appDevEmailMessage } from "./AccountSecuritySchema";
+import { effectAuthD1Database } from "./EffectAuthD1Database";
+import { PasskeyCredentialStoreD1Layer } from "./PasskeyCredentialStoreD1";
+import { PermissionStoreD1Layer } from "./PermissionStoreD1";
+import { RecoveryCodeStoreD1Layer } from "./RecoveryCodeStoreD1";
 
 const DevEmailKindSchema = Schema.Literals([
   "EmailAuth",
@@ -80,15 +80,19 @@ const decodeMessage = (
     Effect.mapError((cause) => storeError("list", cause))
   );
 
-/** Shared auth stores use Drizzle for queries and raw D1 only for atomic plans. */
+/** Account auth plus the passkey, permission, and recovery-code stores used by the app. */
 export const EffectAuthStorageD1Layer = Layer.unwrap(
   Effect.gen(function* () {
     const database = yield* ControlPlaneDatabase;
     const d1 = yield* ControlPlaneD1Binding;
-
-    return EffectQbSqliteAuthStorageLive(
-      makeDrizzleEffectSqliteExecutor(database),
-      makeD1EffectQbSqliteAtomicPlanExecutor(d1.database)
+    return Layer.mergeAll(
+      D1SqliteAccountAuthStorageLive(
+        effectAuthD1Database(d1.database),
+        database
+      ),
+      PasskeyCredentialStoreD1Layer,
+      PermissionStoreD1Layer,
+      RecoveryCodeStoreD1Layer
     );
   })
 );

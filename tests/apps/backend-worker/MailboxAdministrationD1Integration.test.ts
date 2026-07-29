@@ -261,8 +261,9 @@ const seedFreshSecuritySetup = (
     database
       .prepare(
         `insert into auth_audit_log
-        (id, type, user_id, actor_user_id, occurred_at, event, created_at)
-       values (?, 'app.first_owner.password_enrolled', ?, ?, ?, ?, ?)`
+        (id, type, user_id, actor_user_id, occurred_at, event,
+         normalization_version, event_bytes, created_at)
+       values (?, 'app.first_owner.password_enrolled', ?, ?, ?, ?, 1, ?, ?)`
       )
       .run(
         `first-owner-password-enrollment:${firstOwnerOperationId}`,
@@ -270,6 +271,7 @@ const seedFreshSecuritySetup = (
         userId,
         setupAt,
         firstOwnerAudit,
+        Buffer.byteLength(firstOwnerAudit),
         setupAt
       );
     database
@@ -330,7 +332,7 @@ const seedFreshSecuritySetup = (
     `insert into auth_passkey_credential
       (id, user_id, credential_id, public_key, sign_count, created_at,
        revoked_at)
-     values (?, ?, ?, 'public-key', 0, ?, null)`
+     values (?, ?, ?, 'cHVibGljLWtleQ', 0, ?, null)`
   );
   const insertPasskeyReceipt = database.prepare(
     `insert into app_passkey_enrollment_receipt
@@ -347,7 +349,9 @@ const seedFreshSecuritySetup = (
     insertPasskey.run(
       credentialId,
       userId,
-      `webauthn-bootstrap-${index}`,
+      index === 1
+        ? "d2ViYXV0aG4tYm9vdHN0cmFwLTE"
+        : "d2ViYXV0aG4tYm9vdHN0cmFwLTI",
       setupAt
     );
     database
@@ -368,25 +372,28 @@ const seedFreshSecuritySetup = (
         operationId,
         setupAt
       );
+    const passkeyAudit = JSON.stringify({
+      actor: { type: "user", userId },
+      occurredAt: setupAt,
+      payload: { credentialRecordId: credentialId, operationId },
+      subject: { type: "user", userId },
+      type: "app.passkey.enrolled",
+      version: 1,
+    });
     database
       .prepare(
         `insert into auth_audit_log
-          (id, type, user_id, actor_user_id, occurred_at, event, created_at)
-         values (?, 'app.passkey.enrolled', ?, ?, ?, ?, ?)`
+          (id, type, user_id, actor_user_id, occurred_at, event,
+           normalization_version, event_bytes, created_at)
+         values (?, 'app.passkey.enrolled', ?, ?, ?, ?, 1, ?, ?)`
       )
       .run(
         `passkey-enrollment:${operationId}`,
         userId,
         userId,
         setupAt,
-        JSON.stringify({
-          actor: { type: "user", userId },
-          occurredAt: setupAt,
-          payload: { credentialRecordId: credentialId, operationId },
-          subject: { type: "user", userId },
-          type: "app.passkey.enrolled",
-          version: 1,
-        }),
+        passkeyAudit,
+        Buffer.byteLength(passkeyAudit),
         setupAt
       );
     insertPasskeyReceipt.run(
@@ -1342,8 +1349,9 @@ describe("mailbox administration", () => {
          where id = 'bootstrap-passkey-2';
         insert into auth_passkey_credential
           (id, user_id, credential_id, public_key, sign_count, created_at)
-        values ('unverified-passkey', 'user-a', 'unverified-webauthn',
-          'unverified-public-key', 0, ${now - 1000});
+        values ('unverified-passkey', 'user-a',
+          'dW52ZXJpZmllZC13ZWJhdXRobg',
+          'dW52ZXJpZmllZC1wdWJsaWMta2V5', 0, ${now - 1000});
       `);
 
       await expectSecuritySetupRequired(database, d1, validated);
@@ -3369,7 +3377,8 @@ describe("mailbox administration", () => {
             ),
             makeResolverLive()
           )
-        )
+        ),
+        Layer.orDie
       );
 
       const mailbox = await Effect.runPromise(
@@ -3418,7 +3427,8 @@ describe("mailbox administration", () => {
             ),
             makeResolverLive()
           )
-        )
+        ),
+        Layer.orDie
       );
       const first = await Effect.runPromise(
         rename(d1, validated, mailAuthorizationLive, "primary", "Recruiting")
@@ -3469,7 +3479,8 @@ describe("mailbox administration", () => {
             ),
             makeResolverLive()
           )
-        )
+        ),
+        Layer.orDie
       );
       await Effect.runPromise(
         rename(d1, validated, mailAuthorizationLive, "primary", "Recruiting")
@@ -3517,7 +3528,8 @@ describe("mailbox administration", () => {
             ),
             makeResolverLive()
           )
-        )
+        ),
+        Layer.orDie
       );
 
       const error = await Effect.runPromise(
@@ -3561,7 +3573,8 @@ describe("mailbox administration", () => {
             ),
             makeResolverLive()
           )
-        )
+        ),
+        Layer.orDie
       );
       await Effect.runPromise(
         rename(d1, validated, mailAuthorizationLive, "primary", "Recruiting")
@@ -3634,7 +3647,8 @@ describe("mailbox administration", () => {
             ),
             makeResolverLive()
           )
-        )
+        ),
+        Layer.orDie
       );
 
       const mailbox = await Effect.runPromise(
@@ -3844,7 +3858,8 @@ describe("mailbox administration", () => {
             ),
             makeResolverLive()
           )
-        )
+        ),
+        Layer.orDie
       );
       const movingTimeD1 = withDatabaseTimes(baseD1, [
         expiresAt - 1,

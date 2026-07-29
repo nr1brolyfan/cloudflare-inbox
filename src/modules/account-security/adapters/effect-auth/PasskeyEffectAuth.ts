@@ -4,7 +4,7 @@ import {
   PasskeyOptionsLive,
   PasskeyVerificationLive,
 } from "@effect-auth/core/Passkey";
-import { SimpleWebAuthnPasskeyVerifierLive } from "@effect-auth/core/PasskeySimpleWebAuthn";
+import { SimpleWebAuthnPasskeyVerifier } from "@effect-auth/core/PasskeySimpleWebAuthn";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -16,7 +16,7 @@ export const PasskeyEffectAuthLayer = Layer.unwrap(
       PasskeyCredentialStore,
       PasskeyCredentialStore.of(credentialStore)
     );
-    const verifierLayer = SimpleWebAuthnPasskeyVerifierLive;
+    const verifierLayer = SimpleWebAuthnPasskeyVerifier.layer();
 
     return Layer.mergeAll(
       PasskeyCredentialManagementLive.pipe(Layer.provide(credentialStoreLayer)),
@@ -28,4 +28,4 @@ export const PasskeyEffectAuthLayer = Layer.unwrap(
       verifierLayer
     );
   })
-);
+).pipe(Layer.orDie);

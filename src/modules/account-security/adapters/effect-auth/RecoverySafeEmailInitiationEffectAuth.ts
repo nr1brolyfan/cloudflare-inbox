@@ -1,9 +1,9 @@
 /* oxlint-disable max-classes-per-file -- The denial marker and three cohesive service decorators share one boundary. */
 import { EmailOtpLogin, EmailOtpStartError } from "@effect-auth/core/EmailOtp";
 import {
-  EmailVerificationFlow,
-  EmailVerificationFlowStartError,
-} from "@effect-auth/core/EmailVerification";
+  EmailVerificationCode,
+  EmailVerificationCodeStartError,
+} from "@effect-auth/core/EmailVerificationCode";
 import {
   MagicLinkLogin,
   MagicLinkStartError,
@@ -110,19 +110,19 @@ export const RecoverySafeEmailInitiationEffectAuthLayer = Layer.mergeAll(
     })
   ),
   Layer.effect(
-    EmailVerificationFlow,
+    EmailVerificationCode,
     Effect.gen(function* () {
       const policy = yield* RecoverySafeIdentityPolicy;
       const identities = yield* IdentityStore;
-      const verification = yield* EmailVerificationFlow;
+      const verification = yield* EmailVerificationCode;
 
-      return EmailVerificationFlow.of({
+      return EmailVerificationCode.of({
         start: (input) =>
           Effect.gen(function* () {
             const identity = yield* identities.findById(input.identityId).pipe(
               Effect.mapError(
                 (cause) =>
-                  new EmailVerificationFlowStartError({
+                  new EmailVerificationCodeStartError({
                     cause,
                     message: "Failed to resolve email verification identity",
                   })
@@ -133,7 +133,7 @@ export const RecoverySafeEmailInitiationEffectAuthLayer = Layer.mergeAll(
               identity.value.kind !== "email" ||
               identity.value.revokedAt !== undefined
             ) {
-              return yield* new EmailVerificationFlowStartError({
+              return yield* new EmailVerificationCodeStartError({
                 cause: denied(),
                 message: "Email initiation denied",
               });
@@ -144,7 +144,7 @@ export const RecoverySafeEmailInitiationEffectAuthLayer = Layer.mergeAll(
             ).pipe(
               Effect.mapError(
                 (cause) =>
-                  new EmailVerificationFlowStartError({
+                  new EmailVerificationCodeStartError({
                     cause,
                     message: initiationMessage(cause),
                   })
@@ -152,6 +152,7 @@ export const RecoverySafeEmailInitiationEffectAuthLayer = Layer.mergeAll(
             );
             return yield* verification.start(input);
           }),
+        verify: verification.verify,
       });
     })
   )

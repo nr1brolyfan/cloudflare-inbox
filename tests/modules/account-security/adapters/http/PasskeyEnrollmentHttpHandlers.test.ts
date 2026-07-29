@@ -70,8 +70,14 @@ const operationId = "00000000-0000-4000-8000-000000000071";
 const readbackSecret = "r".repeat(43);
 const challengeId = "challenge-a";
 const credential = {
-  id: "browser-a",
-  response: { attestationObject: "attestation-a" },
+  clientExtensionResults: {},
+  id: "YnJvd3Nlci1h",
+  rawId: "YnJvd3Nlci1h",
+  response: {
+    attestationObject: "YXR0ZXN0YXRpb24tYQ",
+    clientDataJSON:
+      "eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiWTJoaGJHeGxibWRsIiwib3JpZ2luIjoiaHR0cHM6Ly9pbmJveC50ZXN0In0",
+  },
   type: "public-key" as const,
 };
 const userId = UserId("user-a");
@@ -101,7 +107,7 @@ const issuedSession = {
   amr: ["passkey"],
   authenticationEvents: [],
   authTime: UnixMillis(2000),
-  expiresAt: UnixMillis(10_000),
+  expiresAt: UnixMillis(Date.now() + 900_000),
   sessionId: SessionId("new-session-a"),
   token: SessionToken("new-session-a.secret"),
   userId,
@@ -167,7 +173,7 @@ const requestAuthLayers = (
   includeRecoveryEnrollment = false
 ) => {
   const authLive = Layer.mergeAll(
-    Layer.succeed(SessionCookie, makeSessionCookie()),
+    Layer.effect(SessionCookie, makeSessionCookie()),
     Layer.succeed(
       Sessions,
       Sessions.of({
@@ -179,9 +185,9 @@ const requestAuthLayers = (
     ),
     WebCryptoLive(),
     AuthSecretsLive({
-      challenge: Redacted.make("challenge-secret"),
-      privacy: Redacted.make("privacy-secret"),
-      session: Redacted.make("session-secret"),
+      challenge: Redacted.make("challenge-secret".repeat(3)),
+      privacy: Redacted.make("privacy-secret".repeat(3)),
+      session: Redacted.make("session-secret".repeat(3)),
     })
   );
   return {
@@ -210,10 +216,12 @@ const commonMiddleware = Layer.mergeAll(
   ),
   AuthSchemaErrorMiddlewareLive,
   AuthOriginCheckMiddlewareLive({
-    allowMissingOrigin: false,
-    allowedOrigins: [publicOrigin],
+    mode: "secure",
+    origins: [publicOrigin],
   }),
-  AuthRequestMetadataMiddlewareLive({ trustProxyHeaders: true })
+  AuthRequestMetadataMiddlewareLive({
+    ipSource: { _tag: "XForwardedFor", trustedHops: 1 },
+  })
 );
 
 const makeHandler = (
@@ -352,7 +360,7 @@ describe("passkey enrollment receipt HTTP contracts", () => {
     );
     const body = {
       challengeId: "challenge-a",
-      credential: { id: "browser-a", response: {}, type: "public-key" },
+      credential,
       operationId,
       readbackSecret,
     };

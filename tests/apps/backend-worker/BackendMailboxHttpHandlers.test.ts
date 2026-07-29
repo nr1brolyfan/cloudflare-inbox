@@ -438,13 +438,13 @@ const makeHandler = (
   )
 ) => {
   const requestAuthLive = Layer.mergeAll(
-    Layer.succeed(SessionCookie, makeSessionCookie()),
+    Layer.effect(SessionCookie, makeSessionCookie()),
     Layer.succeed(Sessions, Sessions.of({ validate } as SessionsService)),
     WebCryptoLive(),
     AuthSecretsLive({
-      challenge: Redacted.make("challenge-secret"),
-      privacy: Redacted.make("privacy-secret"),
-      session: Redacted.make("session-secret"),
+      challenge: Redacted.make("challenge-secret".repeat(3)),
+      privacy: Redacted.make("privacy-secret".repeat(3)),
+      session: Redacted.make("session-secret".repeat(3)),
     })
   );
   const middlewareLive = Layer.mergeAll(
@@ -458,8 +458,8 @@ const makeHandler = (
     ),
     AuthSchemaErrorMiddlewareLive,
     AuthOriginCheckMiddlewareLive({
-      allowMissingOrigin: false,
-      allowedOrigins: [publicOrigin],
+      mode: "secure",
+      origins: [publicOrigin],
     }),
     SessionAuthenticationMiddlewareLayer.pipe(
       Layer.provide(

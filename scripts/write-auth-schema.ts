@@ -40,7 +40,7 @@ for (const file of artifacts.files) {
           "// oxlint-disable-next-line oxc/no-barrel-file -- Generated public schema exports.",
         ]
       : []),
-    file.content,
+    file.content.replaceAll(/\(t\)\s*=>\s*\[\s*\]/gu, "(_t) => []"),
   ].join("\n");
   const formatted = await format(
     path.resolve(outputDirectory, file.path),

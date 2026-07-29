@@ -29,8 +29,18 @@
     "0026_auth_user_identity",
     "0027_auth_audit_log_storage_order",
     "0028_auth_oauth_client_secret_key",
-    "0029_auth_oauth_device_authorization"
+    "0029_auth_oauth_device_authorization",
+    "0030_auth_passkey_credential_name",
+    "0031_auth_oauth_provider_mode_refresh_family",
+    "0032_auth_domain_verification_proof_hash",
+    "0033_auth_login_risk_history_hardening",
+    "0034_auth_oauth_provider_token_revocation_outbox",
+    "0035_auth_audit_log_cardinality",
+    "0036_auth_security_timeline_cardinality",
+    "0037_auth_webhook_cardinality",
+    "0038_auth_jwt_revocation_hardening",
+    "0039_auth_passkey_credential_hardening"
   ],
   "package": "@effect-auth/core",
-  "version": "0.1.0-alpha.19"
+  "version": "0.1.0-alpha.20"
 }

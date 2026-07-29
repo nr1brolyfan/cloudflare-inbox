@@ -1,4 +1,3 @@
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import { and, eq, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -91,11 +90,7 @@ export const MailboxOperationalStatusD1Layer = Layer.effect(
 );
 
 /** Selects the reviewed D1 adapter without exposing raw SQL capabilities to apps. */
-export const mailboxOperationalStatusD1Layer = (
-  database: D1EffectQbDatabaseLike
-) =>
+export const mailboxOperationalStatusD1Layer = (database: D1Database) =>
   MailboxOperationalStatusD1Layer.pipe(
-    Layer.provide(
-      controlPlaneDatabaseLayerFromBinding(database as unknown as D1Database)
-    )
+    Layer.provide(controlPlaneDatabaseLayerFromBinding(database))
   );

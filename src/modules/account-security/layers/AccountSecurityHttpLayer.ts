@@ -7,13 +7,29 @@ import {
   CoreAuthLoginApprovalGroupLive,
   CoreAuthLoginNotificationGroupLive,
   CoreAuthSessionGroupLive,
-  EmailOtpHttpOperationsLive,
-  EmailVerificationHttpOperationsLive,
-  LoginApprovalHttpOperationsLive,
-  LoginNotificationHttpOperationsLive,
-  MagicLinkHttpOperationsLive,
-  PasswordHttpOperationsLive,
 } from "@effect-auth/core/HttpApi";
+import {
+  EmailAuthProcessCookieLive,
+  EmailOtpHttpOperationsLive,
+} from "@effect-auth/core/HttpApi/EmailOtp";
+import { EmailVerificationHttpOperationsLive } from "@effect-auth/core/HttpApi/EmailVerification";
+import {
+  HttpBotVerifierCapability,
+  HttpLoginRiskEnricherCapability,
+  HttpTrustedDeviceCookieCapability,
+  layerNoDeps as httpAuthenticationCapabilitiesLayerNoDeps,
+} from "@effect-auth/core/HttpApi/HttpAuthenticationCapabilities";
+import {
+  HttpLoginApprovalFinalizerCapability,
+  HttpLoginApprovalStatusCapability,
+  LoginNotificationReportCapability,
+  PasswordEmailVerificationCapability,
+  layerNoDeps as httpEndpointCapabilitiesLayerNoDeps,
+} from "@effect-auth/core/HttpApi/HttpEndpointCapabilities";
+import { LoginApprovalHttpOperationsLive } from "@effect-auth/core/HttpApi/LoginApproval";
+import { LoginNotificationHttpOperationsLive } from "@effect-auth/core/HttpApi/LoginNotification";
+import { MagicLinkHttpOperationsLive } from "@effect-auth/core/HttpApi/MagicLink";
+import { PasswordHttpOperationsLive } from "@effect-auth/core/HttpApi/Password";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -54,19 +70,22 @@ export const AccountSecurityHttpMiddlewareLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* AuthRuntimeConfig;
     const originPolicy = {
-      allowMissingOrigin: false,
-      allowedOrigins: [config.publicOrigin.origin],
+      mode: "secure",
+      origins: [config.publicOrigin.origin],
+    } as const;
+    const requestMetadata = {
+      ipSource: { _tag: "CloudflareConnectingIp" },
     } as const;
 
     return Layer.mergeAll(
       AuthSchemaErrorMiddlewareLive,
-      AuthOriginCheckMiddlewareLive(originPolicy),
-      AuthRequestMetadataMiddlewareLive({ trustProxyHeaders: true }),
+      AuthOriginCheckMiddlewareLive(originPolicy).pipe(Layer.orDie),
+      AuthRequestMetadataMiddlewareLive(requestMetadata).pipe(Layer.orDie),
       CurrentRequestAuthMiddlewareLayer.pipe(
-        Layer.provide(AccountSecurityLayer)
+        Layer.provide(AccountSecurityLayer.pipe(Layer.orDie))
       ),
       SessionAuthenticationMiddlewareLayer.pipe(
-        Layer.provide(AccountSecurityLayer)
+        Layer.provide(AccountSecurityLayer.pipe(Layer.orDie))
       )
     );
   })
@@ -77,11 +96,27 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* AuthRuntimeConfig;
     const originPolicy = {
-      allowMissingOrigin: false,
-      allowedOrigins: [config.publicOrigin.origin],
+      mode: "secure",
+      origins: [config.publicOrigin.origin],
     } as const;
+    const requestMetadata = {
+      ipSource: { _tag: "CloudflareConnectingIp" },
+    } as const;
+    const httpAuthenticationCapabilitiesLayer =
+      httpAuthenticationCapabilitiesLayerNoDeps({
+        requestMetadata,
+        botVerifier: HttpBotVerifierCapability.Disabled(),
+        trustedDeviceCookie: HttpTrustedDeviceCookieCapability.Disabled(),
+        loginRiskEnricher: HttpLoginRiskEnricherCapability.Disabled(),
+      }).pipe(Layer.orDie);
+    const httpEndpointCapabilitiesLayer = httpEndpointCapabilitiesLayerNoDeps({
+      passwordEmailVerification: PasswordEmailVerificationCapability.Disabled(),
+      loginNotificationReport: LoginNotificationReportCapability.Disabled(),
+      loginApprovalStatus: HttpLoginApprovalStatusCapability.Disabled(),
+      loginApprovalFinalizer: HttpLoginApprovalFinalizerCapability.Disabled(),
+    }).pipe(Layer.orDie);
     const requestValidationLayer = AccountSecurityHttpMiddlewareLayer;
-    const accountSecurityLayer = AccountSecurityLayer;
+    const accountSecurityLayer = AccountSecurityLayer.pipe(Layer.orDie);
     const passwordHttpOperationsLayer = PasswordHttpOperationsLive.pipe(
       Layer.provide(accountSecurityLayer)
     );
@@ -100,17 +135,20 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
       Layer.provide(EmailVerificationHttpOperationsLive),
       Layer.provide(EmailOtpHttpOperationsLive),
       Layer.provide(MagicLinkHttpOperationsLive),
-      Layer.provide(LoginApprovalHttpOperationsLive),
+      Layer.provide(LoginApprovalHttpOperationsLive.pipe(Layer.orDie)),
       Layer.provide(LoginNotificationHttpOperationsLive),
       Layer.provide(ApplicationStepUpHttpOperationsLayer),
       Layer.provide(accountSecurityLayer),
       Layer.provide(SensitiveOperationStepUpClockCloudflareLayer),
       Layer.provide(
         AuthHttpApiConfigLive({
-          originCheck: originPolicy,
-          requestMetadata: { trustProxyHeaders: true },
-        })
+          originPolicy,
+          requestMetadata,
+        }).pipe(Layer.orDie)
       ),
+      Layer.provide(EmailAuthProcessCookieLive.pipe(Layer.orDie)),
+      Layer.provide(httpAuthenticationCapabilitiesLayer),
+      Layer.provide(httpEndpointCapabilitiesLayer),
       Layer.provide(requestValidationLayer),
       Layer.provide(accountSecurityLayer),
       Layer.provide(BotProtectionNoopLive)
@@ -160,7 +198,10 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
         Layer.provide(accountSecurityLayer),
         Layer.provide(protectedHttpDependencies)
       ),
-      DevEmailHttpHandlersLayer.pipe(Layer.provide(accountSecurityLayer))
+      DevEmailHttpHandlersLayer.pipe(Layer.provide(accountSecurityLayer)),
+      accountSecurityLayer,
+      httpAuthenticationCapabilitiesLayer,
+      httpEndpointCapabilitiesLayer
     );
   })
 );

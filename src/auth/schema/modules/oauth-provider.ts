@@ -1,4 +1,4 @@
-// Generated from @effect-auth/core@0.1.0-alpha.19.
+// Generated from @effect-auth/core@0.1.0-alpha.20.
 // Do not edit manually; run `bun run generate:auth-schema`.
 
 import { sql } from "drizzle-orm";
@@ -112,6 +112,7 @@ export const authOauthProviderModeToken = sqliteTable(
     rotatedAt: integer("rotated_at"),
     replacedByTokenHash: text("replaced_by_token_hash"),
     metadata: text("metadata"),
+    familyId: text("family_id"),
   },
   (t) => [
     primaryKey({ name: "auth_oauth_provider_mode_token_pkey", columns: [t.tokenHash] }),
@@ -121,6 +122,36 @@ export const authOauthProviderModeToken = sqliteTable(
     index("auth_oauth_provider_mode_token_revoked_at_idx").on(t.revokedAt),
     index("auth_oauth_provider_mode_token_rotated_at_idx").on(t.rotatedAt),
     index("auth_oauth_provider_mode_token_jwt_id_idx").on(t.jwtId),
+    index("auth_oauth_provider_mode_token_family_id_idx").on(t.familyId),
+  ],
+);
+
+export const authOauthProviderModeRefreshFamily = sqliteTable(
+  "auth_oauth_provider_mode_refresh_family",
+  {
+    familyId: text("family_id").notNull(),
+    clientId: text("client_id").notNull(),
+    subject: text("subject").notNull(),
+    createdAt: integer("created_at").notNull(),
+    expiresAt: integer("expires_at").notNull(),
+    version: integer("version").notNull().default(0),
+    revokedAt: integer("revoked_at"),
+    reuseDetectedAt: integer("reuse_detected_at"),
+    revocationReason: text("revocation_reason"),
+    metadata: text("metadata"),
+  },
+  (t) => [
+    primaryKey({ name: "auth_oauth_provider_mode_refresh_family_pkey", columns: [t.familyId] }),
+    check("auth_oauth_provider_mode_refresh_family_version_check", sql`version >= 0`),
+    check("auth_oauth_provider_mode_refresh_family_expiry_check", sql`expires_at > created_at`),
+    check(
+      "auth_oauth_provider_mode_refresh_family_reuse_check",
+      sql`reuse_detected_at is null or revoked_at is not null`,
+    ),
+    index("auth_oauth_provider_mode_refresh_family_client_idx").on(t.clientId),
+    index("auth_oauth_provider_mode_refresh_family_subject_idx").on(t.subject),
+    index("auth_oauth_provider_mode_refresh_family_expires_at_idx").on(t.expiresAt),
+    index("auth_oauth_provider_mode_refresh_family_revoked_at_idx").on(t.revokedAt),
   ],
 );
 

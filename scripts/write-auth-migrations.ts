@@ -1,4 +1,4 @@
-import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 
 import authPackage from "@effect-auth/core/package.json" with { type: "json" };
@@ -36,6 +36,9 @@ const generatedFiles = new Map<string, string>([
   ["effect-auth.json", manifest] as const,
 ]);
 
+const migrationSql = (content: string) =>
+  content.split("\n").slice(3).join("\n").trim();
+
 const existingFiles = await readdir(outputDirectory).catch(() => []);
 const staleFiles = existingFiles.filter(
   (file) => /^\d{4}_auth_.+\.sql$/u.test(file) && !generatedFiles.has(file)
@@ -46,7 +49,11 @@ for (const [file, content] of generatedFiles) {
   const path = `${outputDirectory}/${file}`;
   const existing = await readFile(path, "utf-8").catch(() => null);
 
-  if (existing !== content) {
+  const unchangedHistoricalMigration =
+    existing !== null &&
+    file.endsWith(".sql") &&
+    migrationSql(existing) === migrationSql(content);
+  if (existing !== content && !unchangedHistoricalMigration) {
     changedFiles.push(file);
   }
 }
@@ -63,11 +70,21 @@ if (checkOnly) {
   await mkdir(outputDirectory, { recursive: true });
 
   for (const [file, content] of generatedFiles) {
-    await writeFile(`${outputDirectory}/${file}`, content);
+    const path = `${outputDirectory}/${file}`;
+    const existing = await readFile(path, "utf-8").catch(() => null);
+    if (existing === null || file === "effect-auth.json") {
+      await writeFile(path, content);
+      continue;
+    }
+    if (migrationSql(existing) !== migrationSql(content)) {
+      throw new Error(`Historical auth migration drift: ${file}`);
+    }
   }
 
-  for (const file of staleFiles) {
-    await unlink(`${outputDirectory}/${file}`);
+  if (staleFiles.length > 0) {
+    throw new Error(
+      `Refusing to delete historical auth migrations: ${staleFiles.join(", ")}`
+    );
   }
 
   console.log(`Wrote ${authStorageMigrations.length} auth migrations.`);

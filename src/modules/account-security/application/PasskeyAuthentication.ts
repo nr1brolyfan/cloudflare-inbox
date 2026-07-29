@@ -14,6 +14,7 @@ import {
   PasskeyVerification,
   PasskeyVerifier,
 } from "@effect-auth/core/Passkey";
+import { PasskeyAuthenticationCredentialPayload } from "@effect-auth/core/PasskeyCredentialPayload";
 import * as AuthPermission from "@effect-auth/core/Permission";
 import { Sessions } from "@effect-auth/core/Sessions";
 import type { IssuedSession } from "@effect-auth/core/Sessions";
@@ -24,7 +25,6 @@ import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
-import { PasskeyClientCredential } from "#/modules/account-security/application/PasskeyEnrollment";
 import {
   CONTROL_PLANE_STEP_UP_POLICY,
   StepUpVerifiedAt,
@@ -38,12 +38,12 @@ import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 export const StartPasskeySignInCommand = Schema.Struct({});
 export const FinishPasskeySignInCommand = Schema.Struct({
   challengeId: ChallengeIdSchema,
-  credential: PasskeyClientCredential,
+  credential: PasskeyAuthenticationCredentialPayload,
 });
 export const StartPasskeyStepUpCommand = Schema.Struct({});
 export const FinishPasskeyStepUpCommand = Schema.Struct({
   challengeId: ChallengeIdSchema,
-  credential: PasskeyClientCredential,
+  credential: PasskeyAuthenticationCredentialPayload,
 });
 
 export class StartedPasskeyAuthentication extends Schema.Class<StartedPasskeyAuthentication>(
@@ -56,7 +56,19 @@ export class StartedPasskeyAuthentication extends Schema.Class<StartedPasskeyAut
       Schema.Array(
         Schema.Struct({
           id: Schema.String,
-          transports: Schema.optional(Schema.Array(Schema.String)),
+          transports: Schema.optional(
+            Schema.Array(
+              Schema.Literals([
+                "ble",
+                "cable",
+                "hybrid",
+                "internal",
+                "nfc",
+                "smart-card",
+                "usb",
+              ])
+            )
+          ),
           type: Schema.Literal("public-key"),
         })
       )
@@ -239,7 +251,7 @@ export class PasskeyAuthentication extends Context.Service<
           .finishAuthentication({
             challengeId: command.challengeId,
             expectedChallengeMetadata,
-            expectedOrigin: config.expectedOrigin,
+            expectedOrigin: config.expectedOrigins,
             relyingPartyId: config.relyingParty.id,
             requireUserVerification: config.requireUserVerification,
             response: command.credential,

@@ -26,7 +26,6 @@ const MagicLinkStartPayload = Schema.Struct({
     kind: Schema.String,
     value: Schema.String,
   }),
-  secret: Schema.optional(Schema.String),
   locale: Schema.optional(Schema.String),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
   botChallenge: Schema.optional(Schema.Struct({ token: Schema.String })),
@@ -158,9 +157,6 @@ export const makeAuthMagicLinkStartHandler = (dependencies: {
           ? { email: Email(payload.identity.value) }
           : {}),
       });
-      if (payload.secret !== undefined) {
-        return yield* Effect.fail({ _tag: "InvalidInitiationSecret" as const });
-      }
       return yield* dependencies.starter.start({
         identity: payload.identity,
         locale: payload.locale,
@@ -174,14 +170,6 @@ export const makeAuthMagicLinkStartHandler = (dependencies: {
       })
     );
     if (result._tag === "failure") {
-      if (result.error._tag === "InvalidInitiationSecret") {
-        return authError(
-          400,
-          "AuthBadRequestError",
-          "bad_request",
-          "Invalid magic link request"
-        );
-      }
       return failureResponse(result.error);
     }
     return json(200, {

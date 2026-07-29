@@ -64,13 +64,13 @@ const makeSessionServicesLive = (
   cryptoLive = WebCryptoLive()
 ) =>
   Layer.mergeAll(
-    Layer.succeed(SessionCookie, makeSessionCookie()),
+    Layer.effect(SessionCookie, makeSessionCookie()),
     Layer.succeed(Sessions, Sessions.of({ validate } as SessionsService)),
     cryptoLive,
     AuthSecretsLive({
-      challenge: Redacted.make("challenge-secret"),
-      privacy: Redacted.make("privacy-secret"),
-      session: Redacted.make("session-secret"),
+      challenge: Redacted.make("challenge-secret".repeat(3)),
+      privacy: Redacted.make("privacy-secret".repeat(3)),
+      session: Redacted.make("session-secret".repeat(3)),
     })
   );
 

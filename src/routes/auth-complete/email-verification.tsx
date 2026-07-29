@@ -25,7 +25,7 @@ function EmailVerificationCompletion() {
     mutationFn: () =>
       authClient.emailVerification.verify({
         challengeId: credentials.challengeId,
-        ...(credentials.secret ? { secret: credentials.secret } : {}),
+        code: credentials.secret ?? "",
       }),
     retry: false,
     onSuccess: async () => {
@@ -40,7 +40,7 @@ function EmailVerificationCompletion() {
       title="Verify your address"
       description="Confirm this email address to remove limited-session restrictions from your account."
       action="Verify email"
-      isReady={Boolean(credentials.challengeId)}
+      isReady={Boolean(credentials.challengeId && credentials.secret)}
       isPending={verify.isPending}
       error={verify.error ? authErrorMessage(verify.error) : undefined}
       onSubmit={() => verify.mutate()}

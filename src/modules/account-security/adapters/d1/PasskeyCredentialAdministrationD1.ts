@@ -50,6 +50,7 @@ import {
   appExternalRecoveryIdentity,
   appPasskeyCredentialRevocation,
 } from "./AccountSecuritySchema";
+import { normalizedAuthAuditEvent } from "./NormalizedAuthAuditEvent";
 
 export interface PasskeyCredentialAdministrationRuntimeShape {
   readonly now: () => number;
@@ -343,6 +344,7 @@ const PasskeyCredentialAdministrationTransactionD1Layer = Layer.effect(
           }).pipe(
             Effect.mapError((cause) => failure("revoke", "storage", cause))
           );
+          const normalizedAudit = normalizedAuthAuditEvent(auditEvent);
           const trustedStepUpSession = sensitiveSessionPredicate(
             database,
             requestAuth,
@@ -490,12 +492,21 @@ const PasskeyCredentialAdministrationTransactionD1Layer = Layer.effect(
                 .select({
                   actorUserId: sql`${userId}`.as("actor_user_id"),
                   createdAt: sql`${timestamp}`.as("created_at"),
-                  event: sql`${JSON.stringify(auditEvent)}`.as("event"),
+                  event: sql`${normalizedAudit.event}`.as("event"),
+                  eventBytes: sql`${normalizedAudit.eventBytes}`.as(
+                    "event_bytes"
+                  ),
                   id: sql`${`passkey-revocation:${command.operationId}`}`.as(
                     "id"
                   ),
-                  occurredAt: sql`${timestamp}`.as("occurred_at"),
-                  type: sql`${auditEvent.type}`.as("type"),
+                  normalizationVersion:
+                    sql`${normalizedAudit.normalizationVersion}`.as(
+                      "normalization_version"
+                    ),
+                  occurredAt: sql`${normalizedAudit.occurredAt}`.as(
+                    "occurred_at"
+                  ),
+                  type: sql`${normalizedAudit.type}`.as("type"),
                   userId: sql`${userId}`.as("user_id"),
                 })
                 .from(appAuthorizationGuard)

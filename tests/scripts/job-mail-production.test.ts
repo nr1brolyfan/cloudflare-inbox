@@ -316,13 +316,16 @@ describe("job mail production resource structure", () => {
 
   it("keeps health startup separate from the complete Backend graph", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
     const health = readRoot(
       "src/apps/backend-worker/BackendHealthApplicationLayer.ts"
     );
     expect(backend).not.toContain(
       'import { BackendApplicationLayer } from "./BackendApplicationLayer"'
     );
-    expect(backend).toContain('requestUrl.pathname === "/api/health"');
+    expect(backend).toContain("backendFeatureFor(");
+    expect(dispatch).toContain('path: "/api/health"');
+    expect(dispatch).toContain("import type { BackendHttpApi }");
     expect(backend).toContain('import("./BackendHealthApplicationLayer")');
     expect(backend).toContain('import("./BackendApplicationLayer")');
     expect(backend).toContain("Layer.provide(MailboxBootstrapConfigLayer)");
@@ -335,6 +338,7 @@ describe("job mail production resource structure", () => {
 
   it("keeps current-session startup separate from the complete auth graph", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
     const application = readRoot(
       "src/apps/backend-worker/BackendAuthSessionApplicationLayer.ts"
     );
@@ -345,8 +349,7 @@ describe("job mail production resource structure", () => {
       "src/modules/account-security/adapters/d1/AuthSessionStoreD1.ts"
     );
 
-    expect(backend).toContain('request.method === "GET"');
-    expect(backend).toContain('requestUrl.pathname === "/auth/session"');
+    expect(dispatch).toContain('path: "/auth/session"');
     expect(backend).toContain('import("./BackendAuthSessionApplicationLayer")');
     expect(application).toContain("AuthCurrentSessionHttpRouteLayer");
     expect(application).toContain("EffectAuthSessionStoreD1Layer");
@@ -355,7 +358,8 @@ describe("job mail production resource structure", () => {
     expect(route).toContain("router.add(");
     expect(route).toContain('"GET"');
     expect(route).toContain('"/auth/session"');
-    expect(storage).toContain("makeEffectQbSqliteSessionStore");
+    expect(storage).toContain("makeDrizzleEffectSqliteSessionStore");
+    expect(storage).toContain("makeD1SqlitePasswordSessionCommitStore");
     expect(application).not.toContain("AccountSecurityLayer");
     expect(application).not.toContain("AccountSecurityHttpLayer");
     expect(application).not.toContain("EffectAuthStorageD1Layer");
@@ -365,6 +369,7 @@ describe("job mail production resource structure", () => {
 
   it("keeps magic-link start separate from the complete auth graph", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
     const application = readRoot(
       "src/apps/backend-worker/BackendMagicLinkStartApplicationLayer.ts"
     );
@@ -375,10 +380,7 @@ describe("job mail production resource structure", () => {
       "src/modules/account-security/adapters/effect-auth/MagicLinkStartEffectAuth.ts"
     );
 
-    expect(backend).toContain('request.method === "POST"');
-    expect(backend).toContain(
-      'requestUrl.pathname === "/auth/magic-link/start"'
-    );
+    expect(dispatch).toContain('path: "/auth/magic-link/start"');
     expect(backend).toContain(
       'import("./BackendMagicLinkStartApplicationLayer")'
     );
@@ -397,6 +399,7 @@ describe("job mail production resource structure", () => {
 
   it("keeps magic-link verify separate from the complete Backend graph", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
     const application = readRoot(
       "src/apps/backend-worker/BackendMagicLinkVerifyApplicationLayer.ts"
     );
@@ -404,9 +407,7 @@ describe("job mail production resource structure", () => {
       "src/modules/account-security/adapters/http/AuthMagicLinkVerifyHttpRoute.ts"
     );
 
-    expect(backend).toContain(
-      'requestUrl.pathname === "/auth/magic-link/verify"'
-    );
+    expect(dispatch).toContain('path: "/auth/magic-link/verify"');
     expect(backend).toContain(
       'import("./BackendMagicLinkVerifyApplicationLayer")'
     );
@@ -420,6 +421,7 @@ describe("job mail production resource structure", () => {
 
   it("keeps step-up options separate from the complete Backend graph", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
     const application = readRoot(
       "src/apps/backend-worker/BackendStepUpOptionsApplicationLayer.ts"
     );
@@ -427,10 +429,7 @@ describe("job mail production resource structure", () => {
       "src/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.ts"
     );
 
-    expect(backend).toContain('request.method === "GET"');
-    expect(backend).toContain(
-      'requestUrl.pathname === "/auth/step-up/options"'
-    );
+    expect(dispatch).toContain('path: "/auth/step-up/options"');
     expect(backend).toContain(
       'import("./BackendStepUpOptionsApplicationLayer")'
     );
@@ -444,6 +443,23 @@ describe("job mail production resource structure", () => {
     expect(application).not.toContain("AccountSecurityHttpLayer");
     expect(route).toContain('"/auth/step-up/options"');
     expect(route).not.toContain("@effect-auth/core/HttpApi");
+  });
+
+  it("keeps effect-qb and its PostgreSQL parser out of production storage", () => {
+    const packageJson = JSON.parse(readRoot("package.json")) as {
+      dependencies: Record<string, string>;
+      devDependencies: Record<string, string>;
+    };
+    const storage = readRoot(
+      "src/modules/account-security/adapters/d1/AccountSecurityStorageD1.ts"
+    );
+
+    expect(storage).toContain("PasskeyCredentialStoreD1Layer");
+    expect(storage).toContain("PermissionStoreD1Layer");
+    expect(storage).toContain("RecoveryCodeStoreD1Layer");
+    expect(storage).not.toContain("EffectQb");
+    expect(packageJson.dependencies["effect-qb"]).toBeUndefined();
+    expect(packageJson.devDependencies["effect-qb"]).toBe("4.0.0-beta.98");
   });
 });
 

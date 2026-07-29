@@ -70,6 +70,8 @@ import { CurrentRequestAuth } from "#/shared/RequestAuth";
 import type { CurrentRequestAuthShape } from "#/shared/RequestAuth";
 import { UnixMillis } from "#/shared/Temporal";
 
+import { normalizedAuthAuditEvent } from "./NormalizedAuthAuditEvent";
+
 export interface FirstOwnerPasswordEnrollmentRuntimeShape {
   readonly now: () => number;
 }
@@ -552,6 +554,7 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
             type: "app.first_owner.password_enrolled",
             version: 1,
           }).pipe(Effect.mapError((cause) => failure("storage", cause)));
+          const normalizedAudit = normalizedAuthAuditEvent(auditEvent);
           const statements: ControlPlane.ControlPlaneStatements = [
             database.insert(appAuthorizationGuard).select(
               sql`select ${nonce} where ${trustedSession}
@@ -594,12 +597,21 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
                 .select({
                   actorUserId: sql`${actorUserId}`.as("actor_user_id"),
                   createdAt: sql`${timestamp}`.as("created_at"),
-                  event: sql`${JSON.stringify(auditEvent)}`.as("event"),
+                  event: sql`${normalizedAudit.event}`.as("event"),
+                  eventBytes: sql`${normalizedAudit.eventBytes}`.as(
+                    "event_bytes"
+                  ),
                   id: sql`${`first-owner-password-enrollment:${command.operationId}`}`.as(
                     "id"
                   ),
-                  occurredAt: sql`${timestamp}`.as("occurred_at"),
-                  type: sql`${auditEvent.type}`.as("type"),
+                  normalizationVersion:
+                    sql`${normalizedAudit.normalizationVersion}`.as(
+                      "normalization_version"
+                    ),
+                  occurredAt: sql`${normalizedAudit.occurredAt}`.as(
+                    "occurred_at"
+                  ),
+                  type: sql`${normalizedAudit.type}`.as("type"),
                   userId: sql`${actorUserId}`.as("user_id"),
                 })
                 .from(appAuthorizationGuard)

@@ -1,5 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
+import type { D1Database } from "@cloudflare/workers-types";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
@@ -40,7 +41,9 @@ describe("MailboxOperationalStatus D1", () => {
         Effect.runPromise(
           effect.pipe(
             Effect.provide(
-              mailboxOperationalStatusD1Layer(makeTestD1Database(database))
+              mailboxOperationalStatusD1Layer(
+                makeTestD1Database(database) as unknown as D1Database
+              )
             )
           )
         );

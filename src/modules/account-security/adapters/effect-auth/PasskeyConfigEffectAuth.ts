@@ -1,3 +1,4 @@
+import { supportedModernPasskeyAlgorithmIds } from "@effect-auth/core/PasskeyConfiguration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -19,7 +20,11 @@ export const PasskeyRuntimeConfigEffectAuthLayer = Layer.effect(
         residentKey: "required",
         userVerification: "required",
       },
-      expectedOrigin: auth.publicOrigin.origin,
+      expectedOrigins: [auth.publicOrigin.origin],
+      pubKeyCredParams: supportedModernPasskeyAlgorithmIds.map((alg) => ({
+        alg,
+        type: "public-key",
+      })),
       relyingParty: {
         id: auth.publicOrigin.hostname,
         name: "Cloudflare Inbox",

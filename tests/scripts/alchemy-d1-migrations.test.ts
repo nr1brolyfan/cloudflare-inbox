@@ -501,13 +501,13 @@ describe("patched Alchemy D1 migration batching", () => {
     );
   });
 
-  it("replays the expression-depth-100 verified payload from ledger 54", () => {
+  it("replays the expression-depth-100 verified payload from ledger 64", () => {
     const database = new DatabaseSync(":memory:");
     const files = migrationFiles();
     try {
       createLedger(database);
       for (const [index, file] of files.entries()) {
-        if (index === 54) {
+        if (index === 64) {
           break;
         }
         applyMigrationBatch(database, file, index + 1);
@@ -517,27 +517,27 @@ describe("patched Alchemy D1 migration batching", () => {
           .prepare("select id,name from d1_migrations order by id desc limit 1")
           .get()
       ).toMatchObject({
-        id: "00054",
+        id: "00064",
         name: "1024_app_mailbox_legacy_organization_assignment.sql",
       });
 
       for (const [index, file] of files.entries()) {
-        if (index < 54) {
+        if (index < 64) {
           continue;
         }
         applyMigrationBatch(database, file, index + 1, true);
       }
 
-      expect(files).toHaveLength(61);
+      expect(files).toHaveLength(71);
       expect(
         database.prepare("select count(*) as count from d1_migrations").get()
-      ).toMatchObject({ count: 61 });
+      ).toMatchObject({ count: 71 });
       expect(
         database
           .prepare("select id,name from d1_migrations order by id desc limit 1")
           .get()
       ).toMatchObject({
-        id: "00061",
+        id: "00071",
         name: "1031_app_mailbox_bootstrap_security_intent.sql",
       });
       expect(

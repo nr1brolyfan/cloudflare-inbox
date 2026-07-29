@@ -1,6 +1,6 @@
 import type { Challenge } from "@effect-auth/core/Challenge";
 import type { EmailOtpLogin } from "@effect-auth/core/EmailOtp";
-import type { EmailVerificationFlow } from "@effect-auth/core/EmailVerification";
+import type { EmailVerificationCode } from "@effect-auth/core/EmailVerificationCode";
 import type { MagicLinkLogin } from "@effect-auth/core/MagicLink";
 import type { PasswordReset } from "@effect-auth/core/Password";
 import {
@@ -52,7 +52,7 @@ import type { RecoverySafeIdentityPolicy } from "#/modules/account-security/port
 type RecoverySafeRawEffectAuthServices =
   | Challenge
   | EmailOtpLogin
-  | EmailVerificationFlow
+  | EmailVerificationCode
   | MagicLinkLogin
   | PasswordReset;
 

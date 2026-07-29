@@ -42,6 +42,7 @@ import {
 } from "../../../../support/d1";
 
 const now = Date.now();
+const base64Url = (value: string) => Buffer.from(value).toString("base64url");
 const operationId = "00000000-0000-4000-8000-000000000040";
 const otherOperationId = "00000000-0000-4000-8000-000000000041";
 const requestContext = Schema.decodeUnknownSync(RequestCorrelation)({
@@ -161,8 +162,8 @@ const insertCredential = (
     .run(
       id,
       options.userId ?? "user-a",
-      `webauthn-${id}`,
-      `sensitive-public-key-${id}`,
+      base64Url(`webauthn-${id}`),
+      base64Url(`sensitive-public-key-${id}`),
       createdAt,
       createdAt + 100,
       options.revokedAt ?? null,
@@ -324,8 +325,10 @@ describe("passkey credential administration", () => {
           },
         ],
       });
-      expect(serialized).not.toContain("webauthn-");
-      expect(serialized).not.toContain("sensitive-public-key");
+      expect(serialized).not.toContain(base64Url("webauthn-passkey-a"));
+      expect(serialized).not.toContain(
+        base64Url("sensitive-public-key-passkey-a")
+      );
       expect(serialized).not.toContain("aaguid");
       expect(state.rateLimitOperations).toStrictEqual([
         "auth.passkey.credentials.list",
@@ -378,8 +381,12 @@ describe("passkey credential administration", () => {
       });
       const serializedAudit = JSON.stringify(audit);
       expect({
-        containsCredentialId: serializedAudit.includes("webauthn-passkey-a"),
-        containsPublicKey: serializedAudit.includes("sensitive-public-key"),
+        containsCredentialId: serializedAudit.includes(
+          base64Url("webauthn-passkey-a")
+        ),
+        containsPublicKey: serializedAudit.includes(
+          base64Url("sensitive-public-key-passkey-a")
+        ),
         rateLimitOperations: state.rateLimitOperations,
       }).toStrictEqual({
         containsCredentialId: false,

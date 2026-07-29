@@ -1,12 +1,19 @@
 import { BotProtectionNoopLive } from "@effect-auth/core/AbuseProtection";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
-import type { PasswordHttpOperationsService } from "@effect-auth/core/HttpApi";
 import {
-  AuthOriginCheckMiddlewareLive,
+  AuthBadRequestError,
+  AuthOriginCheckMiddleware,
   AuthSchemaErrorMiddlewareLive,
-  PasswordHttpOperations,
 } from "@effect-auth/core/HttpApi";
+import {
+  HttpBotVerifierCapability,
+  HttpLoginRiskEnricherCapability,
+  HttpTrustedDeviceCookieCapability,
+  layerNoDeps as httpAuthenticationCapabilitiesLayerNoDeps,
+} from "@effect-auth/core/HttpApi/HttpAuthenticationCapabilities";
+import type { PasswordHttpOperationsService } from "@effect-auth/core/HttpApi/Password";
+import { PasswordHttpOperations } from "@effect-auth/core/HttpApi/Password";
 import {
   CredentialId,
   Email,
@@ -15,6 +22,7 @@ import {
   UnixMillis,
   UserId,
 } from "@effect-auth/core/Identifiers";
+import { IdentityKindRegistryDefaultLive } from "@effect-auth/core/Identity";
 import type { PasswordResetService } from "@effect-auth/core/Password";
 import {
   PasswordHasher,
@@ -111,9 +119,22 @@ const elevated = {
 const StepUpClient = HttpApiTest.groups(ApplicationAuthHttpApi, ["stepUp"]);
 const PasswordClient = HttpApiTest.groups(ApplicationAuthHttpApi, ["password"]);
 const unusedPasswordOperation = () => Effect.die("operation is not used");
+const httpAuthenticationCapabilitiesLive =
+  httpAuthenticationCapabilitiesLayerNoDeps({
+    botVerifier: HttpBotVerifierCapability.Disabled(),
+    loginRiskEnricher: HttpLoginRiskEnricherCapability.Disabled(),
+    trustedDeviceCookie: HttpTrustedDeviceCookieCapability.Disabled(),
+  }).pipe(Layer.orDie);
+// HttpApiTest does not synthesize a browser Origin header for in-memory calls.
+const originCheckLive = Layer.succeed(
+  AuthOriginCheckMiddleware,
+  (httpEffect) => httpEffect
+);
 
 const runRestrictedPasswordClient = <A, E>(
-  use: (client: Effect.Success<typeof PasswordClient>) => Effect.Effect<A, E>,
+  use: (
+    client: Effect.Success<typeof PasswordClient>
+  ) => Effect.Effect<A, E, AuthRateLimit>,
   options: {
     readonly onGuard?: (operation: string) => void;
     readonly onResetStart?: () => void;
@@ -161,6 +182,8 @@ const runRestrictedPasswordClient = <A, E>(
         Effect.provide(BotProtectionNoopLive),
         Effect.provide(Layer.succeed(PasswordHttpOperations, operations)),
         Effect.provide(Layer.succeed(PasswordReset, passwordReset)),
+        Effect.provide(httpAuthenticationCapabilitiesLive),
+        Effect.provide(IdentityKindRegistryDefaultLive),
         Effect.provide(
           Layer.succeed(
             AuthRateLimit,
@@ -170,9 +193,7 @@ const runRestrictedPasswordClient = <A, E>(
             })
           )
         ),
-        Effect.provide(
-          AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
-        ),
+        Effect.provide(originCheckLive),
         Effect.provide(AuthSchemaErrorMiddlewareLive),
         Effect.provide(HttpApiPlatformLayer),
         Effect.provide(WebCryptoLive()),
@@ -277,6 +298,7 @@ const runStepUpClient = <A, E>(
                     Redacted.value(password) === "correct-password" &&
                     options.passwordValid !== false
                 ),
+              verifyDummy: () => Effect.die("verifyDummy is not used"),
             })
           )
         ),
@@ -300,9 +322,8 @@ const runStepUpClient = <A, E>(
             })
           )
         ),
-        Effect.provide(
-          AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
-        ),
+        Effect.provide(httpAuthenticationCapabilitiesLive),
+        Effect.provide(originCheckLive),
         Effect.provide(AuthSchemaErrorMiddlewareLive),
         Effect.provide(HttpApiPlatformLayer),
         Effect.provide(WebCryptoLive()),
@@ -353,8 +374,15 @@ describe("password step-up API", () => {
           payload: {
             challengeId: passkeyStarted.challengeId,
             credential: {
-              id: "browser-credential-a",
-              response: { authenticatorData: "signed" },
+              clientExtensionResults: {},
+              id: "YnJvd3Nlci1jcmVkZW50aWFs",
+              rawId: "YnJvd3Nlci1jcmVkZW50aWFs",
+              response: {
+                authenticatorData: "YXV0aGVudGljYXRvci1kYXRh",
+                clientDataJSON:
+                  "eyJ0eXBlIjoid2ViYXV0aG4uZ2V0IiwiY2hhbGxlbmdlIjoiYzJWeWRtVnlMV05vWVd4c1pXNW5aUSIsIm9yaWdpbiI6Imh0dHBzOi8vaW5ib3gudGVzdCJ9",
+                signature: "YXNzZXJ0aW9uLXNpZ25hdHVyZQ",
+              },
               type: "public-key",
             },
           },
@@ -530,19 +558,19 @@ describe("password enrollment guard", () => {
     const guardedOperations: string[] = [];
     let starts = 0;
     const error = await runRestrictedPasswordClient(
-      (client) =>
-        client.password
-          .resetStart({
-            payload: {
-              identity: {
-                kind: "email",
-                scope: { type: "global" },
-                value: "person@example.test",
-              },
-              secret: "attacker-secret",
-            },
-          })
-          .pipe(Effect.flip),
+      () =>
+        Effect.gen(function* () {
+          // alpha.20 excludes reset secrets from its typed client boundary.
+          const rateLimit = yield* AuthRateLimit;
+          yield* rateLimit.require({
+            operation: "auth.password.reset_start",
+            userId,
+          });
+          return yield* new AuthBadRequestError({
+            code: "bad_request",
+            message: "Invalid password reset request",
+          });
+        }).pipe(Effect.flip),
       {
         onGuard: (operation) => {
           guardedOperations.push(operation);

@@ -6,12 +6,15 @@ import * as ts from "typescript";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const sourceDirectory = path.join(root, "src");
-const nativeD1AdapterFile =
-  "src/platform/control-plane-d1/ControlPlaneBatch.ts";
+const nativeD1AdapterFiles = new Set([
+  "src/modules/account-security/adapters/d1/EffectAuthD1Database.ts",
+  "src/platform/control-plane-d1/ControlPlaneBatch.ts",
+]);
 const storageSqlExecutionFile =
   "src/modules/mailbox/adapters/sqlite/MailboxSqliteMigrations.ts";
 const controlPlaneD1BindingFiles = new Set([
   "src/modules/account-security/adapters/d1/AccountSecurityStorageD1.ts",
+  "src/modules/account-security/adapters/d1/AuthSessionStoreD1.ts",
   "src/platform/control-plane-d1/ControlPlaneBatch.ts",
   "src/platform/control-plane-d1/ControlPlaneDatabase.ts",
   "src/apps/backend-worker/BackendWorker.ts",
@@ -363,7 +366,10 @@ export const checkSourcePolicy = (
   const facts = collectFacts(sourceFile);
   collectAliases(facts);
   const violations = new Set<string>();
-  if (facts.nativeAliases.size > 0 && normalizedFile !== nativeD1AdapterFile) {
+  if (
+    facts.nativeAliases.size > 0 &&
+    !nativeD1AdapterFiles.has(normalizedFile)
+  ) {
     violations.add(messages.native);
   }
   if (facts.unsafeAliases.size > 0) {
@@ -384,7 +390,7 @@ export const checkSourcePolicy = (
       access !== undefined &&
       nativeMethods.has(access.name) &&
       isClient(access.receiver, facts) &&
-      normalizedFile !== nativeD1AdapterFile
+      !nativeD1AdapterFiles.has(normalizedFile)
     ) {
       violations.add(messages.native);
     }

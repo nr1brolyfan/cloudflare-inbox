@@ -221,9 +221,9 @@ const liveLayer = (d1: D1EffectQbDatabaseLike, options: LiveOptions = {}) => {
       Layer.mergeAll(
         ControlPlaneD1Layer.pipe(Layer.provide(bindingLayer)),
         AuthSecretsLive({
-          challenge: Redacted.make("challenge-key"),
-          privacy: Redacted.make("privacy-key"),
-          session: Redacted.make("session-key"),
+          challenge: Redacted.make("c".repeat(32)),
+          privacy: Redacted.make("p".repeat(32)),
+          session: Redacted.make("s".repeat(32)),
         }),
         Layer.succeed(
           AuthRateLimit,
@@ -235,7 +235,7 @@ const liveLayer = (d1: D1EffectQbDatabaseLike, options: LiveOptions = {}) => {
           })
         ),
         cryptoLayer,
-        Pbkdf2PasswordHasherLive({ iterations: 1 }).pipe(
+        Pbkdf2PasswordHasherLive({ iterations: 210_000 }).pipe(
           Layer.provide(cryptoLayer)
         ),
         Layer.succeed(
@@ -367,14 +367,16 @@ const directSealWrite = (database: DatabaseSync, proofVerifiedAt: number) => {
   database
     .prepare(
       `insert into auth_audit_log
-        (id, type, user_id, actor_user_id, occurred_at, event, created_at)
+        (id, type, user_id, actor_user_id, occurred_at, event,
+         normalization_version, event_bytes, created_at)
        values (?, 'app.first_owner.password_enrolled', 'user-a', 'user-a',
-               ?, ?, ?)`
+                ?, ?, 1, ?, ?)`
     )
     .run(
       `first-owner-password-enrollment:${operationId}`,
       now,
       auditEvent,
+      Buffer.byteLength(auditEvent),
       now
     );
   database
@@ -456,7 +458,7 @@ describe("FirstOwnerPasswordEnrollmentD1", () => {
         })
       ).pipe(
         Effect.provide(
-          Pbkdf2PasswordHasherLive({ iterations: 1 }).pipe(
+          Pbkdf2PasswordHasherLive({ iterations: 210_000 }).pipe(
             Layer.provide(cryptoLayer)
           )
         )
@@ -840,13 +842,24 @@ describe("FirstOwnerPasswordEnrollmentD1", () => {
 
   it("rejects an actual deterministic audit-ID collision atomically", async () => {
     const { database, d1, validated } = await setup();
+    const auditEvent = JSON.stringify({
+      occurredAt: now - 1,
+      type: "app.unrelated",
+    });
     database
       .prepare(
         `insert into auth_audit_log
-          (id, type, user_id, actor_user_id, occurred_at, event, created_at)
-         values (?, 'app.unrelated', 'user-a', 'user-a', ?, '{}', ?)`
+          (id, type, user_id, actor_user_id, occurred_at, event,
+           normalization_version, event_bytes, created_at)
+         values (?, 'app.unrelated', 'user-a', 'user-a', ?, ?, 1, ?, ?)`
       )
-      .run(`first-owner-password-enrollment:${operationId}`, now - 1, now - 1);
+      .run(
+        `first-owner-password-enrollment:${operationId}`,
+        now - 1,
+        auditEvent,
+        Buffer.byteLength(auditEvent),
+        now - 1
+      );
 
     await expect(runEnrollment(d1, validated)).rejects.toMatchObject({
       reason: "state-conflict",

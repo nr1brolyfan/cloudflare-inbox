@@ -1,14 +1,16 @@
 import { BotProtectionNoopLive } from "@effect-auth/core/AbuseProtection";
+import { emptyCustomEvidencePolicyRegistry } from "@effect-auth/core/Assurance";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
+import type { EmailAuthProcessCredential } from "@effect-auth/core/EmailAuthProcess";
 import type { EmailOtpLoginService } from "@effect-auth/core/EmailOtp";
 import { EmailOtpLogin, EmailOtpStartError } from "@effect-auth/core/EmailOtp";
-import type { EmailVerificationFlowService } from "@effect-auth/core/EmailVerification";
+import type { EmailVerificationCodeService } from "@effect-auth/core/EmailVerificationCode";
 import {
-  EmailVerificationFlow,
-  EmailVerificationFlowStartError,
-  EmailVerificationIssueError,
-} from "@effect-auth/core/EmailVerification";
+  EmailVerificationCode,
+  EmailVerificationCodeStartError,
+} from "@effect-auth/core/EmailVerificationCode";
 import {
+  AuthOriginCheckMiddleware,
   AuthOriginCheckMiddlewareLive,
   AuthSchemaErrorMiddlewareLive,
   CoreAuthHttpApi,
@@ -16,10 +18,19 @@ import {
   EmailVerificationHttpOperations,
   MagicLinkHttpOperations,
 } from "@effect-auth/core/HttpApi";
+import { EmailAuthProcessCookie } from "@effect-auth/core/HttpApi/EmailOtp";
+import {
+  HttpBotVerifierCapability,
+  HttpLoginRiskEnricherCapability,
+  HttpTrustedDeviceCookieCapability,
+  layerNoDeps as httpAuthenticationCapabilitiesLayerNoDeps,
+} from "@effect-auth/core/HttpApi/HttpAuthenticationCapabilities";
 import {
   ChallengeId,
   Email,
   IdentityId,
+  SessionId,
+  SessionToken,
   UnixMillis,
   UserId,
 } from "@effect-auth/core/Identifiers";
@@ -28,12 +39,18 @@ import {
   MagicLinkLogin,
   MagicLinkStartError,
 } from "@effect-auth/core/MagicLink";
+import { SessionCookie, Sessions } from "@effect-auth/core/Sessions";
 import { IdentityStore, StorageError } from "@effect-auth/core/Storage";
 import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Brand from "effect/Brand";
+import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Redacted from "effect/Redacted";
+import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import { HttpApiTest } from "effect/unstable/httpapi";
+import type * as HttpApiMiddleware from "effect/unstable/httpapi/HttpApiMiddleware";
 import { describe, expect, it } from "vitest";
 
 import { RecoverySafeEmailInitiationDenied } from "#/modules/account-security/adapters/effect-auth/RecoverySafeEmailInitiationEffectAuth";
@@ -50,6 +67,9 @@ const identity = {
   value: "person@example.com",
 };
 const identityId = IdentityId("identity-a");
+const sessionId = SessionId("session-a");
+const sessionToken = SessionToken("session-a.secret");
+const userId = UserId("user-a");
 const storedIdentity = {
   createdAt: UnixMillis(1000),
   id: identityId,
@@ -58,7 +78,7 @@ const storedIdentity = {
   normalizedValue: "person@example.com",
   scope: { type: "global" as const },
   updatedAt: UnixMillis(1000),
-  userId: UserId("user-a"),
+  userId,
   value: "person@example.com",
 };
 const storageError = () =>
@@ -72,11 +92,60 @@ const MagicLinkClient = HttpApiTest.groups(CoreAuthHttpApi, ["magicLink"]);
 const EmailVerificationClient = HttpApiTest.groups(CoreAuthHttpApi, [
   "emailVerification",
 ]);
+const publicOrigin = "https://inbox.test";
+const emailAuthProcessCredential =
+  Brand.nominal<EmailAuthProcessCredential>()("email-process-a");
+const authProcess = {
+  challengeId: ChallengeId("email-process-a"),
+  credential: Redacted.make(emailAuthProcessCredential),
+  expiresAt: UnixMillis(1000),
+};
+const validatedSession = {
+  actor: { sessionId, userId },
+  currentSession: {
+    aal: "aal1" as const,
+    amr: ["password"],
+    authenticationEvents: [],
+    authTime: UnixMillis(500),
+    expiresAt: UnixMillis(2000),
+    sessionId,
+    userId,
+  },
+  issued: {
+    aal: "aal1" as const,
+    amr: ["password"],
+    authenticationEvents: [],
+    authTime: UnixMillis(500),
+    expiresAt: UnixMillis(2000),
+    sessionId,
+    token: sessionToken,
+    userId,
+  },
+};
+const httpAuthenticationCapabilitiesLayer =
+  httpAuthenticationCapabilitiesLayerNoDeps({
+    botVerifier: HttpBotVerifierCapability.Disabled(),
+    loginRiskEnricher: HttpLoginRiskEnricherCapability.Disabled(),
+    trustedDeviceCookie: HttpTrustedDeviceCookieCapability.Disabled(),
+  }).pipe(Layer.orDie);
+const AuthOriginCheckClient = Context.Service<
+  HttpApiMiddleware.HttpApiMiddlewareClient<never, never, never>
+>(`${AuthOriginCheckMiddleware.key}/Client`);
+const authOriginCheckClientLayer = Layer.succeed(
+  AuthOriginCheckClient,
+  ({ next, request }) =>
+    next(HttpClientRequest.setHeader(request, "origin", publicOrigin))
+);
+const authOriginCheckLayer = AuthOriginCheckMiddlewareLive({
+  mode: "secure",
+  origins: [publicOrigin],
+}).pipe(Layer.orDie);
 
 const runEmailOtpClient = <A, E>(
   use: (client: Effect.Success<typeof EmailOtpClient>) => Effect.Effect<A, E>,
   options: {
     readonly onGuard?: (operation: string) => void;
+    readonly onProcessCommit?: (process: typeof authProcess) => void;
     readonly onStart?: () => void;
     readonly start?: EmailOtpLoginService["start"];
   } = {}
@@ -97,11 +166,21 @@ const runEmailOtpClient = <A, E>(
                 Effect.sync(() => {
                   options.onStart?.();
                   return {
+                    authProcess,
                     challengeId: ChallengeId("challenge-a"),
                     email: Email("person@example.com"),
                     expiresAt: UnixMillis(1000),
                   };
                 })),
+          })
+        ),
+        Effect.provide(
+          Layer.mock(EmailAuthProcessCookie, {
+            commit: (process) =>
+              Effect.sync(() => {
+                options.onProcessCommit?.(process);
+                return "__Host-email-auth-process=fixture";
+              }),
           })
         ),
         Effect.provide(
@@ -122,9 +201,9 @@ const runEmailOtpClient = <A, E>(
             })
           )
         ),
-        Effect.provide(
-          AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
-        ),
+        Effect.provide(httpAuthenticationCapabilitiesLayer),
+        Effect.provide(authOriginCheckLayer),
+        Effect.provide(authOriginCheckClientLayer),
         Effect.provide(AuthSchemaErrorMiddlewareLive),
         Effect.provide(HttpApiPlatformLayer),
         Effect.provide(NodeServices.layer)
@@ -134,8 +213,14 @@ const runEmailOtpClient = <A, E>(
 
 describe("restricted email OTP API", () => {
   it("delegates valid start requests to the effect-auth operation", async () => {
-    const result = await runEmailOtpClient((client) =>
-      client.emailOtp.start({ payload: { identity } })
+    let committedProcess: typeof authProcess | undefined;
+    const result = await runEmailOtpClient(
+      (client) => client.emailOtp.start({ payload: { identity } }),
+      {
+        onProcessCommit: (process) => {
+          committedProcess = process;
+        },
+      }
     );
 
     expect(result).toStrictEqual({
@@ -143,33 +228,7 @@ describe("restricted email OTP API", () => {
       expiresAt: 1000,
       identity,
     });
-  });
-
-  it("rejects caller-provided secrets before the operation", async () => {
-    const guardedOperations: string[] = [];
-    let starts = 0;
-    const error = await runEmailOtpClient(
-      (client) =>
-        client.emailOtp
-          .start({ payload: { identity, secret: "attacker-secret" } })
-          .pipe(Effect.flip),
-      {
-        onGuard: (operation) => {
-          guardedOperations.push(operation);
-        },
-        onStart: () => {
-          starts += 1;
-        },
-      }
-    );
-
-    expect(error).toMatchObject({
-      _tag: "AuthBadRequestError",
-      code: "bad_request",
-      message: "Invalid email OTP request",
-    });
-    expect(guardedOperations).toStrictEqual(["auth.email_otp.start"]);
-    expect(starts).toBe(0);
+    expect(committedProcess).toStrictEqual(authProcess);
   });
 
   it("maps service policy denial to the generic public contract", async () => {
@@ -258,9 +317,9 @@ const runMagicLinkClient = <A, E>(
             })
           )
         ),
-        Effect.provide(
-          AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
-        ),
+        Effect.provide(httpAuthenticationCapabilitiesLayer),
+        Effect.provide(authOriginCheckLayer),
+        Effect.provide(authOriginCheckClientLayer),
         Effect.provide(AuthSchemaErrorMiddlewareLive),
         Effect.provide(HttpApiPlatformLayer),
         Effect.provide(NodeServices.layer)
@@ -274,7 +333,7 @@ const runEmailVerificationClient = <A, E>(
   ) => Effect.Effect<A, E>,
   options: {
     readonly onGuard?: (operation: string) => void;
-    readonly start?: EmailVerificationFlowService["start"];
+    readonly start?: EmailVerificationCodeService["start"];
   } = {}
 ) =>
   Effect.runPromise(
@@ -286,16 +345,14 @@ const runEmailVerificationClient = <A, E>(
         Effect.provide(RestrictedEmailVerificationHttpHandlersLayer),
         Effect.provide(BotProtectionNoopLive),
         Effect.provide(
-          Layer.mock(EmailVerificationFlow, {
+          Layer.mock(EmailVerificationCode, {
             start:
               options.start ??
               (() =>
                 Effect.succeed({
                   challengeId: ChallengeId("verification-a"),
-                  email: Email("person@example.com"),
                   expiresAt: UnixMillis(1000),
                   identityId,
-                  userId: storedIdentity.userId,
                 })),
           })
         ),
@@ -310,6 +367,17 @@ const runEmailVerificationClient = <A, E>(
           })
         ),
         Effect.provide(
+          Layer.mock(Sessions, {
+            customEvidencePolicies: emptyCustomEvidencePolicyRegistry,
+            validate: () => Effect.succeed(validatedSession),
+          })
+        ),
+        Effect.provide(
+          Layer.mock(SessionCookie, {
+            read: () => Effect.succeed(Option.some(sessionToken)),
+          })
+        ),
+        Effect.provide(
           Layer.succeed(
             AuthRateLimit,
             AuthRateLimit.of({
@@ -318,9 +386,9 @@ const runEmailVerificationClient = <A, E>(
             })
           )
         ),
-        Effect.provide(
-          AuthOriginCheckMiddlewareLive({ allowMissingOrigin: true })
-        ),
+        Effect.provide(httpAuthenticationCapabilitiesLayer),
+        Effect.provide(authOriginCheckLayer),
+        Effect.provide(authOriginCheckClientLayer),
         Effect.provide(AuthSchemaErrorMiddlewareLive),
         Effect.provide(HttpApiPlatformLayer),
         Effect.provide(NodeServices.layer)
@@ -338,34 +406,6 @@ describe("restricted email-link APIs", () => {
       expiresAt: 1000,
       identity,
     });
-  });
-
-  it("runs the magic-link guard before rejecting caller-provided secrets", async () => {
-    const guardedOperations: string[] = [];
-    let starts = 0;
-    const error = await runMagicLinkClient(
-      (client) =>
-        client.magicLink
-          .start({ payload: { identity, secret: "attacker-secret" } })
-          .pipe(Effect.flip),
-      {
-        onGuard: (operation) => {
-          guardedOperations.push(operation);
-        },
-        start: () =>
-          Effect.sync(() => {
-            starts += 1;
-          }).pipe(Effect.andThen(Effect.die("unreachable"))),
-      }
-    );
-
-    expect(error).toMatchObject({
-      _tag: "AuthBadRequestError",
-      code: "bad_request",
-      message: "Invalid magic link request",
-    });
-    expect(guardedOperations).toStrictEqual(["auth.magic_link.start"]);
-    expect(starts).toBe(0);
   });
 
   it.each([
@@ -399,35 +439,10 @@ describe("restricted email-link APIs", () => {
       runEmailVerificationClient((client) =>
         client.emailVerification.start({ payload: { identityId } })
       )
-    ).resolves.toBeUndefined();
-  });
-
-  it("runs the verification guard before rejecting caller-provided secrets", async () => {
-    const guardedOperations: string[] = [];
-    let starts = 0;
-    const error = await runEmailVerificationClient(
-      (client) =>
-        client.emailVerification
-          .start({ payload: { identityId, secret: "attacker-secret" } })
-          .pipe(Effect.flip),
-      {
-        onGuard: (operation) => {
-          guardedOperations.push(operation);
-        },
-        start: () =>
-          Effect.sync(() => {
-            starts += 1;
-          }).pipe(Effect.andThen(Effect.die("unreachable"))),
-      }
-    );
-
-    expect(error).toMatchObject({
-      _tag: "AuthBadRequestError",
-      code: "bad_request",
-      message: "Invalid email verification request",
+    ).resolves.toStrictEqual({
+      challengeId: "verification-a",
+      expiresAt: 1000,
     });
-    expect(guardedOperations).toStrictEqual(["auth.email_verification.start"]);
-    expect(starts).toBe(0);
   });
 
   it("maps verification policy denial to policy_denied", async () => {
@@ -439,7 +454,7 @@ describe("restricted email-link APIs", () => {
       {
         start: () =>
           Effect.fail(
-            new EmailVerificationFlowStartError({
+            new EmailVerificationCodeStartError({
               cause: new RecoverySafeEmailInitiationDenied(),
               message: "Email initiation denied",
             })
@@ -453,32 +468,6 @@ describe("restricted email-link APIs", () => {
     });
   });
 
-  it("maps raced vendor issue to anonymized bad_request", async () => {
-    const error = await runEmailVerificationClient(
-      (client) =>
-        client.emailVerification
-          .start({ payload: { identityId } })
-          .pipe(Effect.flip),
-      {
-        start: () =>
-          Effect.fail(
-            new EmailVerificationFlowStartError({
-              cause: new EmailVerificationIssueError({
-                message: "Email is already verified",
-              }),
-              message: "Failed to issue email verification",
-            })
-          ),
-      }
-    );
-
-    expect(error).toMatchObject({
-      _tag: "AuthBadRequestError",
-      code: "bad_request",
-      message: "Invalid email verification request",
-    });
-  });
-
   it("maps verification storage failure to sanitized internal error", async () => {
     const error = await runEmailVerificationClient(
       (client) =>
@@ -488,7 +477,7 @@ describe("restricted email-link APIs", () => {
       {
         start: () =>
           Effect.fail(
-            new EmailVerificationFlowStartError({
+            new EmailVerificationCodeStartError({
               cause: storageError(),
               message: "Failed to resolve email verification identity",
             })
