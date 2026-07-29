@@ -38,17 +38,15 @@ type RawMessagesClient = Effect.Success<
   ReturnType<typeof Cloudflare.R2.ReadWriteBucket>
 >;
 
-export interface BackendHealthBindingsShape {
-  readonly authRateLimit: AlchemyRateLimitDurableObjectNamespace;
-  readonly mailboxDataPlane: MailboxDONamespace;
-  readonly rawMessages: RawMessagesClient;
-}
-
 /** Cloudflare bindings used only by the backend readiness probes. */
-export const BackendHealthBindings =
-  Context.Service<BackendHealthBindingsShape>(
-    "cloudflare-inbox/BackendHealthBindings"
-  );
+export class BackendHealthBindings extends Context.Service<
+  BackendHealthBindings,
+  {
+    readonly authRateLimit: AlchemyRateLimitDurableObjectNamespace;
+    readonly mailboxDataPlane: MailboxDONamespace;
+    readonly rawMessages: RawMessagesClient;
+  }
+>()("cloudflare-inbox/BackendHealthBindings") {}
 
 /** Probes every persistent binding used by backend request handling. */
 export const BackendHealthLayer = Layer.effect(

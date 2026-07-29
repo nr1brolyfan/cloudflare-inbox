@@ -2,6 +2,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 
 import { JobMailProductionTopology } from "#/platform/cloudflare/JobMailProductionTopology";
 
+/** Shared metadata database for auth, organizations, permissions, and routing. */
 export const ControlPlaneDatabase = Cloudflare.D1.Database("ControlPlane", {
   migrationsDir: "./migrations/control-plane",
 });

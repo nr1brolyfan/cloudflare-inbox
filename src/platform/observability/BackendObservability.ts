@@ -63,3 +63,16 @@ export const BackendObservabilityLayer = Layer.unwrap(
     );
   })
 );
+
+/** Supplies deployment options to the request-scoped observability graph. */
+export const backendObservabilityLayer = (
+  options: BackendObservabilityOptions
+) =>
+  BackendObservabilityLayer.pipe(
+    Layer.provide(
+      Layer.succeed(
+        BackendObservabilityConfig,
+        BackendObservabilityConfig.of(options)
+      )
+    )
+  );

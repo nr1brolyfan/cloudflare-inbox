@@ -357,6 +357,22 @@ describe("job mail production resource structure", () => {
     expect(backend).toContain("BackendApplicationLayer.pipe(");
   });
 
+  it("keeps runtime config and Cloudflare adapters outside the Worker composition root", () => {
+    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
+    const config = readRoot("src/apps/backend-worker/AuthRuntimeConfig.ts");
+    const bindings = readRoot(
+      "src/apps/backend-worker/CloudflareBindingLayers.ts"
+    );
+
+    expect(config).toContain("Config.all({");
+    expect(bindings).toContain("inboundAttachmentR2ReadClientLayer");
+    expect(bindings).toContain("mailboxOutboundProviderLayer");
+    expect(backend).toContain("backendHttpDependenciesLayer");
+    expect(backend).not.toContain("Config.redacted(");
+    expect(backend).not.toContain("AuthRuntimeConfig.of(");
+    expect(backend).not.toContain("r2AttachmentObject");
+  });
+
   it("does not retain route-dispatch workaround files", () => {
     const removedFiles = [
       "src/apps/backend-worker/BackendHttpDispatch.ts",
