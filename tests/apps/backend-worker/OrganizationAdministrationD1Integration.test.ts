@@ -1,7 +1,6 @@
 /* oxlint-disable vitest/max-expects -- Integration cases verify atomic lifecycle state. */
 import { DatabaseSync } from "node:sqlite";
 
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   CredentialId,
   SessionId,
@@ -44,6 +43,7 @@ import {
   applyControlPlaneMigrations,
   makeTestD1Database,
 } from "../../support/d1";
+import type { TestD1DatabaseLike } from "../../support/d1";
 
 const stepUpNow = Date.now();
 const requestContext = Schema.decodeUnknownSync(RequestCorrelation)({
@@ -129,7 +129,7 @@ const seedAuthority = (
   }
 };
 
-const controlPlaneLayer = (database: D1EffectQbDatabaseLike) =>
+const controlPlaneLayer = (database: TestD1DatabaseLike) =>
   ControlPlaneD1Layer.pipe(
     Layer.provide(
       Layer.succeed(
@@ -142,7 +142,7 @@ const controlPlaneLayer = (database: D1EffectQbDatabaseLike) =>
   );
 
 const runAdministration = <A, E>(
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   validated: ValidatedSession,
   effect: Effect.Effect<
     A,

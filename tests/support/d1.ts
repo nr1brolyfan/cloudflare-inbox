@@ -1,13 +1,27 @@
 import { readdir, readFile } from "node:fs/promises";
 import type { DatabaseSync, SQLInputValue } from "node:sqlite";
 
-import type {
-  D1EffectQbDatabaseLike,
-  D1EffectQbPreparedStatementLike,
-  D1EffectQbResult,
-} from "@effect-auth/core/EffectQbSqliteStorage";
-
 import { LEGACY_DEFAULT_ORGANIZATION_ID } from "#/modules/organization/domain/Organization";
+
+export interface TestD1Result<Row = Readonly<Record<string, unknown>>> {
+  readonly error?: string;
+  readonly results?: readonly Row[];
+  readonly success: boolean;
+}
+
+export interface TestD1PreparedStatementLike {
+  readonly all: <Row extends Readonly<Record<string, unknown>>>() => Promise<
+    TestD1Result<Row>
+  >;
+  readonly bind: (...values: readonly unknown[]) => TestD1PreparedStatementLike;
+}
+
+export interface TestD1DatabaseLike {
+  readonly batch: (
+    statements: readonly TestD1PreparedStatementLike[]
+  ) => Promise<readonly TestD1Result[]>;
+  readonly prepare: (sql: string) => TestD1PreparedStatementLike;
+}
 
 const migrationsDirectory = new URL(
   "../../migrations/control-plane/",
@@ -129,7 +143,7 @@ export const insertFreshCutoverOrganization = (
 const errorMessage = (error: unknown) =>
   error instanceof Error ? error.message : String(error);
 
-interface TestPreparedStatement extends D1EffectQbPreparedStatementLike<TestPreparedStatement> {
+interface TestPreparedStatement extends TestD1PreparedStatementLike {
   readonly raw: <
     Row extends readonly unknown[] = readonly unknown[],
   >() => Promise<readonly Row[]>;
@@ -137,7 +151,7 @@ interface TestPreparedStatement extends D1EffectQbPreparedStatementLike<TestPrep
 
 export const makeTestD1Database = (
   database: DatabaseSync
-): D1EffectQbDatabaseLike => {
+): TestD1DatabaseLike => {
   const makeStatement = (
     sql: string,
     values: readonly unknown[] = []
@@ -149,12 +163,12 @@ export const makeTestD1Database = (
             .prepare(sql)
             .all(...(values as readonly SQLInputValue[])) as Row[],
           success: true,
-        } satisfies D1EffectQbResult<Row>);
+        } satisfies TestD1Result<Row>);
       } catch (error) {
         return Promise.resolve({
           error: errorMessage(error),
           success: false,
-        } satisfies D1EffectQbResult<Row>);
+        } satisfies TestD1Result<Row>);
       }
     },
     bind: (...boundValues) => makeStatement(sql, boundValues),
@@ -177,7 +191,7 @@ export const makeTestD1Database = (
     batch: (statements) => {
       const execute = async () => {
         database.exec("begin immediate");
-        const results: D1EffectQbResult[] = [];
+        const results: TestD1Result[] = [];
 
         try {
           for (const statement of statements) {

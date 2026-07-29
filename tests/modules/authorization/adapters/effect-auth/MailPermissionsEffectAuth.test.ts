@@ -1,7 +1,7 @@
 /* oxlint-disable vitest/max-expects -- Migration protection and role matrices require exhaustive assertions. */
 import { DatabaseSync } from "node:sqlite";
 
-import { D1EffectQbSqliteAuthStorageLive } from "@effect-auth/core/EffectQbSqliteStorage";
+import type { D1Database } from "@cloudflare/workers-types";
 import {
   PermissionAdministration,
   Permissions,
@@ -11,6 +11,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
 
+import { PermissionStoreD1Layer } from "#/modules/account-security/adapters/d1/PermissionStoreD1";
 import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
 import {
   AuthorizationPermission,
@@ -29,6 +30,8 @@ import {
   organizationScope,
   sendIdentityScope,
 } from "#/modules/authorization/contracts/AuthorizationCatalog";
+import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
+import { ControlPlaneD1Binding } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
 import {
   applyControlPlaneMigration,
@@ -39,6 +42,22 @@ import {
 
 const migration = "1020_app_authorization_catalog_v2.sql";
 const through1019 = "1019_app_organization_member.sql";
+
+const nativeMailPermissionsLive = (database: DatabaseSync) => {
+  const d1 = makeTestD1Database(database);
+  const controlPlane = ControlPlaneD1Layer.pipe(
+    Layer.provide(
+      Layer.succeed(
+        ControlPlaneD1Binding,
+        ControlPlaneD1Binding.of({ database: d1 as unknown as D1Database })
+      )
+    )
+  );
+
+  return MailPermissionsEffectAuthLayer.pipe(
+    Layer.provide(PermissionStoreD1Layer.pipe(Layer.provide(controlPlane)))
+  );
+};
 
 const expectedRolePermissions = {
   "organization.owner": [
@@ -937,15 +956,7 @@ describe("D1 authorization catalog", () => {
             ).toBeFalsy();
           }
         }
-      }).pipe(
-        Effect.provide(
-          MailPermissionsEffectAuthLayer.pipe(
-            Layer.provide(
-              D1EffectQbSqliteAuthStorageLive(makeTestD1Database(database))
-            )
-          )
-        )
-      );
+      }).pipe(Effect.provide(nativeMailPermissionsLive(database)));
 
       await Effect.runPromise(program);
       expect(grantCounts(database)).toStrictEqual({ permissions: 0, roles: 7 });
@@ -986,15 +997,7 @@ describe("D1 authorization catalog", () => {
               subject,
             }),
           };
-        }).pipe(
-          Effect.provide(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(
-                D1EffectQbSqliteAuthStorageLive(makeTestD1Database(database))
-              )
-            )
-          )
-        )
+        }).pipe(Effect.provide(nativeMailPermissionsLive(database)))
       );
 
       expect(result).toStrictEqual({ mailbox: false, organization: false });
@@ -1060,15 +1063,7 @@ describe("D1 authorization catalog", () => {
             ).toBeFalsy();
           }
         }
-      }).pipe(
-        Effect.provide(
-          MailPermissionsEffectAuthLayer.pipe(
-            Layer.provide(
-              D1EffectQbSqliteAuthStorageLive(makeTestD1Database(database))
-            )
-          )
-        )
-      );
+      }).pipe(Effect.provide(nativeMailPermissionsLive(database)));
 
       await Effect.runPromise(program);
       expect(grantCounts(database)).toStrictEqual({ permissions: 0, roles: 4 });
@@ -1130,15 +1125,7 @@ describe("D1 authorization catalog", () => {
             subject,
           })
         ).toBeFalsy();
-      }).pipe(
-        Effect.provide(
-          MailPermissionsEffectAuthLayer.pipe(
-            Layer.provide(
-              D1EffectQbSqliteAuthStorageLive(makeTestD1Database(database))
-            )
-          )
-        )
-      );
+      }).pipe(Effect.provide(nativeMailPermissionsLive(database)));
 
       await Effect.runPromise(program);
       expect(grantCounts(database)).toStrictEqual({ permissions: 1, roles: 1 });

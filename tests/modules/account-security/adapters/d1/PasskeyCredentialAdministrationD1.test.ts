@@ -3,7 +3,6 @@ import { DatabaseSync } from "node:sqlite";
 import type { D1Database } from "@cloudflare/workers-types";
 import { decodeAuditEvent } from "@effect-auth/core/AuditLog";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   CredentialId,
   SessionId,
@@ -40,6 +39,7 @@ import {
   applyControlPlaneMigrations,
   makeTestD1Database,
 } from "../../../../support/d1";
+import type { TestD1DatabaseLike } from "../../../../support/d1";
 
 const now = Date.now();
 const base64Url = (value: string) => Buffer.from(value).toString("base64url");
@@ -171,7 +171,7 @@ const insertCredential = (
     );
 };
 
-const administrationLive = (d1: D1EffectQbDatabaseLike, state: TestState) => {
+const administrationLive = (d1: TestD1DatabaseLike, state: TestState) => {
   const controlPlaneLive = ControlPlaneD1Layer.pipe(
     Layer.provide(
       Layer.succeed(
@@ -239,7 +239,7 @@ const provideRequestAuth = <A, E, R>(
   );
 
 const runList = (
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1DatabaseLike,
   state: TestState,
   session: ValidatedSession
 ) =>
@@ -252,7 +252,7 @@ const runList = (
   );
 
 const runRevoke = (
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1DatabaseLike,
   state: TestState,
   session: ValidatedSession,
   id = "passkey-a",
@@ -436,7 +436,7 @@ describe("passkey credential administration", () => {
       insertCredential(database, "passkey-b", now - 2000);
       const baseD1 = makeTestD1Database(database);
       let changed = false;
-      const changedD1: D1EffectQbDatabaseLike = {
+      const changedD1: TestD1DatabaseLike = {
         batch: (statements) => {
           if (!changed) {
             changed = true;
@@ -478,7 +478,7 @@ describe("passkey credential administration", () => {
       insertCredential(database, "passkey-b", now - 2000);
       const baseD1 = makeTestD1Database(database);
       let changed = false;
-      const changedD1: D1EffectQbDatabaseLike = {
+      const changedD1: TestD1DatabaseLike = {
         batch: (statements) => {
           if (!changed) {
             changed = true;
@@ -518,7 +518,7 @@ describe("passkey credential administration", () => {
       const futureLastUsedAt = now + 5000;
       const baseD1 = makeTestD1Database(database);
       let changed = false;
-      const changedD1: D1EffectQbDatabaseLike = {
+      const changedD1: TestD1DatabaseLike = {
         batch: (statements) => {
           if (!changed) {
             changed = true;
@@ -617,7 +617,7 @@ describe("passkey credential administration", () => {
       insertCredential(database, "passkey-a", now - 3000);
       insertCredential(database, "passkey-b", now - 2000);
       const baseD1 = makeTestD1Database(database);
-      const unknownCommitD1: D1EffectQbDatabaseLike = {
+      const unknownCommitD1: TestD1DatabaseLike = {
         batch: async (statements) => {
           await baseD1.batch(statements);
           throw new Error("connection ended after commit");
@@ -646,7 +646,7 @@ describe("passkey credential administration", () => {
       insertCredential(database, "passkey-a", now - 3000);
       insertCredential(database, "passkey-b", now - 2000);
       const baseD1 = makeTestD1Database(database);
-      const conflictingD1: D1EffectQbDatabaseLike = {
+      const conflictingD1: TestD1DatabaseLike = {
         batch: () => {
           database
             .prepare(

@@ -1,7 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
 import { DevEmailStore, DevEmailStoreError } from "@effect-auth/core/DevEmail";
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import { Email, UnixMillis } from "@effect-auth/core/Identifiers";
 import { PasskeyCredentialStore } from "@effect-auth/core/Passkey";
 import { PermissionStore } from "@effect-auth/core/Permission";
@@ -21,10 +20,11 @@ import {
   applyControlPlaneMigrations,
   makeTestD1Database,
 } from "../../../../support/d1";
+import type { TestD1DatabaseLike } from "../../../../support/d1";
 
 const makeStoreLive = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike = makeTestD1Database(database)
+  d1: TestD1DatabaseLike = makeTestD1Database(database)
 ) => {
   const controlPlaneLive = ControlPlaneD1Layer.pipe(
     Layer.provide(
@@ -196,7 +196,7 @@ describe("D1 development email store", () => {
     const database = new DatabaseSync(":memory:");
     await applyControlPlaneMigrations(database);
     const baseD1 = makeTestD1Database(database);
-    const failedD1: D1EffectQbDatabaseLike = {
+    const failedD1: TestD1DatabaseLike = {
       batch: () => Promise.resolve([{ success: false }]),
       prepare: baseD1.prepare,
     };

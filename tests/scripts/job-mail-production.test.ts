@@ -314,135 +314,71 @@ describe("job mail production resource structure", () => {
     );
   });
 
-  it("keeps health startup separate from the complete Backend graph", () => {
+  it("statically imports exactly one complete Backend application graph", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
-    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
-    const health = readRoot(
-      "src/apps/backend-worker/BackendHealthApplicationLayer.ts"
+    const sourceFile = TypeScript.createSourceFile(
+      "BackendWorker.ts",
+      backend,
+      TypeScript.ScriptTarget.Latest,
+      false,
+      TypeScript.ScriptKind.TS
     );
-    expect(backend).not.toContain(
-      'import { BackendApplicationLayer } from "./BackendApplicationLayer"'
-    );
-    expect(backend).toContain("backendFeatureFor(");
-    expect(dispatch).toContain('path: "/api/health"');
-    expect(dispatch).toContain("import type { BackendHttpApi }");
-    expect(backend).toContain('import("./BackendHealthApplicationLayer")');
-    expect(backend).toContain('import("./BackendApplicationLayer")');
-    expect(backend).toContain("Layer.provide(MailboxBootstrapConfigLayer)");
-    expect(health).toContain("BackendHealthHttpApi");
-    expect(health).toContain("BackendHealthHttpHandlersLayer");
-    expect(health).toContain("BackendHealthLayer");
-    expect(health).toContain("MailPermissionsEffectAuthLayer");
-    expect(health).toContain("EffectAuthStorageD1Layer");
+    const staticApplicationImports: string[] = [];
+    const dynamicApplicationImports: string[] = [];
+    const visit = (node: TypeScript.Node): void => {
+      if (
+        TypeScript.isImportDeclaration(node) &&
+        TypeScript.isStringLiteral(node.moduleSpecifier) &&
+        /Backend.*ApplicationLayer$/u.test(node.moduleSpecifier.text)
+      ) {
+        staticApplicationImports.push(node.moduleSpecifier.text);
+      }
+      const [argument] = TypeScript.isCallExpression(node)
+        ? node.arguments
+        : [];
+      if (
+        TypeScript.isCallExpression(node) &&
+        node.expression.kind === TypeScript.SyntaxKind.ImportKeyword &&
+        argument !== undefined &&
+        TypeScript.isStringLiteral(argument) &&
+        /Backend.*ApplicationLayer$/u.test(argument.text)
+      ) {
+        dynamicApplicationImports.push(argument.text);
+      }
+      TypeScript.forEachChild(node, visit);
+    };
+    visit(sourceFile);
+
+    expect(staticApplicationImports).toStrictEqual([
+      "./BackendApplicationLayer",
+    ]);
+    expect(dynamicApplicationImports).toStrictEqual([]);
+    expect(backend).not.toContain("backendFeatureFor");
+    expect(backend).toContain("BackendApplicationLayer.pipe(");
   });
 
-  it("keeps current-session startup separate from the complete auth graph", () => {
-    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
-    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
-    const application = readRoot(
-      "src/apps/backend-worker/BackendAuthSessionApplicationLayer.ts"
-    );
-    const route = readRoot(
-      "src/modules/account-security/adapters/http/AuthCurrentSessionHttpRoute.ts"
-    );
-    const storage = readRoot(
-      "src/modules/account-security/adapters/d1/AuthSessionStoreD1.ts"
-    );
+  it("does not retain route-dispatch workaround files", () => {
+    const removedFiles = [
+      "src/apps/backend-worker/BackendHttpDispatch.ts",
+      "src/apps/backend-worker/BackendHealthApplicationLayer.ts",
+      "src/apps/backend-worker/BackendAuthSessionApplicationLayer.ts",
+      "src/apps/backend-worker/BackendMagicLinkStartApplicationLayer.ts",
+      "src/apps/backend-worker/BackendMagicLinkVerifyApplicationLayer.ts",
+      "src/apps/backend-worker/BackendStepUpOptionsApplicationLayer.ts",
+      "src/modules/account-security/adapters/http/AuthCurrentSessionHttpRoute.ts",
+      "src/modules/account-security/adapters/http/AuthMagicLinkStartHttpRoute.ts",
+      "src/modules/account-security/adapters/http/AuthMagicLinkVerifyHttpRoute.ts",
+      "src/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.ts",
+      "tests/apps/backend-worker/BackendHttpDispatch.test.ts",
+      "tests/modules/account-security/adapters/http/AuthCurrentSessionHttpRoute.test.ts",
+      "tests/modules/account-security/adapters/http/AuthMagicLinkStartHttpRoute.test.ts",
+      "tests/modules/account-security/adapters/http/AuthMagicLinkVerifyHttpRoute.test.ts",
+      "tests/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.test.ts",
+    ];
 
-    expect(dispatch).toContain('path: "/auth/session"');
-    expect(backend).toContain('import("./BackendAuthSessionApplicationLayer")');
-    expect(application).toContain("AuthCurrentSessionHttpRouteLayer");
-    expect(application).toContain("EffectAuthSessionStoreD1Layer");
-    expect(application).toContain("SessionsLive");
-    expect(application).toContain("externalRecoveryLinkEvidence.policy");
-    expect(route).toContain("router.add(");
-    expect(route).toContain('"GET"');
-    expect(route).toContain('"/auth/session"');
-    expect(storage).toContain("makeDrizzleEffectSqliteSessionStore");
-    expect(storage).toContain("makeD1SqlitePasswordSessionCommitStore");
-    expect(application).not.toContain("AccountSecurityLayer");
-    expect(application).not.toContain("AccountSecurityHttpLayer");
-    expect(application).not.toContain("EffectAuthStorageD1Layer");
-    expect(application).not.toContain("SessionHttpOperationsLive");
-    expect(route).not.toContain("@effect-auth/core/HttpApi");
-  });
-
-  it("keeps magic-link start separate from the complete auth graph", () => {
-    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
-    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
-    const application = readRoot(
-      "src/apps/backend-worker/BackendMagicLinkStartApplicationLayer.ts"
-    );
-    const route = readRoot(
-      "src/modules/account-security/adapters/http/AuthMagicLinkStartHttpRoute.ts"
-    );
-    const starter = readRoot(
-      "src/modules/account-security/adapters/effect-auth/MagicLinkStartEffectAuth.ts"
-    );
-
-    expect(dispatch).toContain('path: "/auth/magic-link/start"');
-    expect(backend).toContain(
-      'import("./BackendMagicLinkStartApplicationLayer")'
-    );
-    expect(application).toContain("AuthMagicLinkStartHttpRouteLayer");
-    expect(application).toContain("MagicLinkStarterLayer");
-    expect(application).toContain("AuthRateLimitStandardLive");
-    expect(application).toContain("RecoverySafeIdentityD1Layer");
-    expect(route).toContain('"/auth/magic-link/start"');
-    expect(starter).toContain('type: "magic-link"');
-    expect(starter).toContain('"/auth-complete/magic-link"');
-    expect(application).not.toContain("AccountSecurityLayer");
-    expect(application).not.toContain("AccountSecurityHttpLayer");
-    expect(application).not.toContain("EffectAuthStorageD1Layer");
-    expect(route).not.toContain("@effect-auth/core/HttpApi");
-  });
-
-  it("keeps magic-link verify separate from the complete Backend graph", () => {
-    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
-    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
-    const application = readRoot(
-      "src/apps/backend-worker/BackendMagicLinkVerifyApplicationLayer.ts"
-    );
-    const route = readRoot(
-      "src/modules/account-security/adapters/http/AuthMagicLinkVerifyHttpRoute.ts"
-    );
-
-    expect(dispatch).toContain('path: "/auth/magic-link/verify"');
-    expect(backend).toContain(
-      'import("./BackendMagicLinkVerifyApplicationLayer")'
-    );
-    expect(application).toContain("AuthMagicLinkVerifyHttpRouteLayer");
-    expect(application).toContain("AccountSecurityEffectAuthLayer");
-    expect(application).not.toContain("BackendApplicationLayer");
-    expect(application).not.toContain("AccountSecurityHttpLayer");
-    expect(route).toContain('"/auth/magic-link/verify"');
-    expect(route).not.toContain("@effect-auth/core/HttpApi");
-  });
-
-  it("keeps step-up options separate from the complete Backend graph", () => {
-    const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
-    const dispatch = readRoot("src/apps/backend-worker/BackendHttpDispatch.ts");
-    const application = readRoot(
-      "src/apps/backend-worker/BackendStepUpOptionsApplicationLayer.ts"
-    );
-    const route = readRoot(
-      "src/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.ts"
-    );
-
-    expect(dispatch).toContain('path: "/auth/step-up/options"');
-    expect(backend).toContain(
-      'import("./BackendStepUpOptionsApplicationLayer")'
-    );
-    expect(application).toContain("AuthStepUpOptionsHttpRouteLayer");
-    expect(application).toContain("PasskeyAuthenticationIdentityD1Layer");
-    expect(application).toContain("StepUpFactorReaderD1Layer");
-    expect(application).not.toContain("PasskeyAuthentication.layerNoDeps");
-    expect(application).not.toContain("AccountSecurityEffectAuthLayer");
-    expect(application).not.toContain("EffectAuthStorageD1Layer");
-    expect(application).not.toContain("BackendApplicationLayer");
-    expect(application).not.toContain("AccountSecurityHttpLayer");
-    expect(route).toContain('"/auth/step-up/options"');
-    expect(route).not.toContain("@effect-auth/core/HttpApi");
+    expect(
+      removedFiles.filter((file) => existsSync(path.join(root, file)))
+    ).toStrictEqual([]);
   });
 
   it("keeps effect-qb and its PostgreSQL parser out of production storage", () => {
@@ -453,13 +389,20 @@ describe("job mail production resource structure", () => {
     const storage = readRoot(
       "src/modules/account-security/adapters/d1/AccountSecurityStorageD1.ts"
     );
+    const bunfig = readRoot("bunfig.toml");
+    const lockfile = readRoot("bun.lock");
 
     expect(storage).toContain("PasskeyCredentialStoreD1Layer");
     expect(storage).toContain("PermissionStoreD1Layer");
     expect(storage).toContain("RecoveryCodeStoreD1Layer");
     expect(storage).not.toContain("EffectQb");
     expect(packageJson.dependencies["effect-qb"]).toBeUndefined();
-    expect(packageJson.devDependencies["effect-qb"]).toBe("4.0.0-beta.98");
+    expect(packageJson.dependencies["pgsql-ast-parser"]).toBeUndefined();
+    expect(packageJson.devDependencies["effect-qb"]).toBeUndefined();
+    expect(packageJson.devDependencies["pgsql-ast-parser"]).toBeUndefined();
+    expect(bunfig).toContain("peer = false");
+    expect(lockfile).not.toContain('"effect-qb": ["effect-qb@');
+    expect(lockfile).not.toContain('"pgsql-ast-parser": [');
   });
 });
 

@@ -5,7 +5,6 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { decodeAuditEvent } from "@effect-auth/core/AuditLog";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   CredentialId,
   SessionId,
@@ -33,6 +32,7 @@ import {
   applyControlPlaneMigrations,
   makeTestD1Database,
 } from "../../../../support/d1";
+import type { TestD1DatabaseLike } from "../../../../support/d1";
 
 const now = Date.now();
 const operationId = Schema.decodeUnknownSync(AdministrativeOperationId)(
@@ -176,9 +176,9 @@ const seedActiveSet = (
 };
 
 const beforeBatch = (
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   mutation: () => void
-): D1EffectQbDatabaseLike => ({
+): TestD1DatabaseLike => ({
   batch: (statements) => {
     mutation();
     return database.batch(statements);
@@ -187,8 +187,8 @@ const beforeBatch = (
 });
 
 const loseResponseAfterCommit = (
-  database: D1EffectQbDatabaseLike
-): D1EffectQbDatabaseLike => ({
+  database: TestD1DatabaseLike
+): TestD1DatabaseLike => ({
   batch: async (statements) => {
     await database.batch(statements);
     throw new Error("D1 response lost after commit");
@@ -197,13 +197,13 @@ const loseResponseAfterCommit = (
 });
 
 const loseResponseWithoutCommit = (
-  database: D1EffectQbDatabaseLike
-): D1EffectQbDatabaseLike => ({
+  database: TestD1DatabaseLike
+): TestD1DatabaseLike => ({
   batch: () => Promise.reject(new Error("D1 request outcome unknown")),
   prepare: database.prepare,
 });
 
-const liveLayer = (d1: D1EffectQbDatabaseLike, onRateLimit?: () => void) => {
+const liveLayer = (d1: TestD1DatabaseLike, onRateLimit?: () => void) => {
   const controlPlaneLive = ControlPlaneD1Layer.pipe(
     Layer.provide(
       Layer.succeed(

@@ -91,8 +91,8 @@ import {
   CurrentBackendRequestContext,
 } from "#/platform/observability/BackendRequestContext";
 
+import { BackendApplicationLayer } from "./BackendApplicationLayer";
 import { BackendHealthBindings } from "./BackendHealthLayer";
-import { backendFeatureFor } from "./BackendHttpDispatch";
 import { handleCloudflareEmailRoutingMessage } from "./CloudflareEmailRoutingIntegration";
 import { LegacyMailDomainClaimStoreD1Layer } from "./LegacyMailDomainClaimD1Integration";
 import { cacheSuccessfulInitialization } from "./SuccessfulInitialization";
@@ -493,73 +493,15 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               ControlPlaneD1Binding,
               ControlPlaneD1Binding.of({ database: controlPlaneDatabase })
             );
-            const feature = backendFeatureFor(
-              request.method,
-              requestUrl.pathname
-            );
-            const BackendRequestApplicationLayer = yield* Effect.gen(
-              function* () {
-                switch (feature) {
-                  case "health": {
-                    return (yield* Effect.promise(
-                      () => import("./BackendHealthApplicationLayer")
-                    )).BackendHealthApplicationLayer.pipe(
-                      Layer.provide(databaseBinding),
-                      Layer.provide(BackendHealthBindingsLayer)
-                    );
-                  }
-                  case "authSession": {
-                    return (yield* Effect.promise(
-                      () => import("./BackendAuthSessionApplicationLayer")
-                    )).BackendAuthSessionApplicationLayer.pipe(
-                      Layer.provide(databaseBinding),
-                      Layer.provide(AuthRuntimeConfigLayer)
-                    );
-                  }
-                  case "magicLinkStart": {
-                    return (yield* Effect.promise(
-                      () => import("./BackendMagicLinkStartApplicationLayer")
-                    )).BackendMagicLinkStartApplicationLayer.pipe(
-                      Layer.provide(databaseBinding),
-                      Layer.provide(AuthRuntimeConfigLayer),
-                      Layer.provide(MailboxBootstrapConfigLayer)
-                    );
-                  }
-                  case "magicLinkVerify": {
-                    return (yield* Effect.promise(
-                      () => import("./BackendMagicLinkVerifyApplicationLayer")
-                    )).BackendMagicLinkVerifyApplicationLayer.pipe(
-                      Layer.provide(databaseBinding),
-                      Layer.provide(AuthRuntimeConfigLayer)
-                    );
-                  }
-                  case "stepUpOptions": {
-                    return (yield* Effect.promise(
-                      () => import("./BackendStepUpOptionsApplicationLayer")
-                    )).BackendStepUpOptionsApplicationLayer.pipe(
-                      Layer.provide(databaseBinding),
-                      Layer.provide(AuthRuntimeConfigLayer)
-                    );
-                  }
-                  case "complete": {
-                    return (yield* Effect.promise(
-                      () => import("./BackendApplicationLayer")
-                    )).BackendApplicationLayer.pipe(
-                      Layer.provide(databaseBinding),
-                      Layer.provide(BackendBindingsLayer),
-                      Layer.provide(
-                        Layer.succeed(
-                          CurrentBackendRequestContext,
-                          CurrentBackendRequestContext.of(requestContext)
-                        )
-                      )
-                    );
-                  }
-                  default: {
-                    return feature;
-                  }
-                }
-              }
+            const BackendRequestApplicationLayer = BackendApplicationLayer.pipe(
+              Layer.provide(databaseBinding),
+              Layer.provide(BackendBindingsLayer),
+              Layer.provide(
+                Layer.succeed(
+                  CurrentBackendRequestContext,
+                  CurrentBackendRequestContext.of(requestContext)
+                )
+              )
             );
             const handler = yield* HttpRouter.toHttpEffect(
               BackendRequestApplicationLayer.pipe(Layer.orDie)

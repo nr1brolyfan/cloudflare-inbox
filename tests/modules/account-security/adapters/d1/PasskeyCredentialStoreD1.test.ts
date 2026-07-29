@@ -1,6 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
 
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   CredentialId,
   UnixMillis,
@@ -25,6 +24,7 @@ import {
   applyControlPlaneMigrations,
   makeTestD1Database,
 } from "../../../../support/d1";
+import type { TestD1DatabaseLike } from "../../../../support/d1";
 
 const userId = UserId("user-a");
 
@@ -46,7 +46,7 @@ const credential = (
   ...overrides,
 });
 
-const makeStoreLive = (d1: D1EffectQbDatabaseLike) => {
+const makeStoreLive = (d1: TestD1DatabaseLike) => {
   const controlPlane = ControlPlaneD1Layer.pipe(
     Layer.provide(
       Layer.succeed(
@@ -59,7 +59,7 @@ const makeStoreLive = (d1: D1EffectQbDatabaseLike) => {
 };
 
 const withStore = <A, E>(
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1DatabaseLike,
   use: (store: PasskeyCredentialStore["Service"]) => Effect.Effect<A, E>
 ) =>
   Effect.runPromise(
@@ -116,7 +116,7 @@ describe("native D1 passkey credential store", () => {
     await applyControlPlaneMigrations(database);
     const base = makeTestD1Database(database);
     const prepared: string[] = [];
-    const d1: D1EffectQbDatabaseLike = {
+    const d1: TestD1DatabaseLike = {
       batch: base.batch,
       prepare: (statement) => {
         prepared.push(statement);

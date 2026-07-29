@@ -1,7 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 
 import type { D1Database } from "@cloudflare/workers-types";
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   ChallengeId,
   CredentialId,
@@ -55,6 +54,7 @@ import {
   applyControlPlaneMigrations,
   makeTestD1Database,
 } from "../../../../support/d1";
+import type { TestD1DatabaseLike } from "../../../../support/d1";
 
 const now = Date.now();
 const challengeSecret = Schema.decodeUnknownSync(
@@ -168,7 +168,7 @@ const insertSession = (database: DatabaseSync, session: ValidatedSession) => {
 
 const managementLive = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1DatabaseLike,
   delivered: string[],
   recoveryPolicyLive: Layer.Layer<
     RecoverySafeIdentityPolicy,
@@ -302,9 +302,9 @@ const managementLive = (
 };
 
 const beforeBatch = (
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   mutation: () => void
-): D1EffectQbDatabaseLike => ({
+): TestD1DatabaseLike => ({
   batch: (statements) => {
     mutation();
     return database.batch(statements);
@@ -333,8 +333,8 @@ const RecoveryPolicyStorageFailureLayer = Layer.succeed(
 );
 
 const loseResponseAfterCommit = (
-  database: D1EffectQbDatabaseLike
-): D1EffectQbDatabaseLike => ({
+  database: TestD1DatabaseLike
+): TestD1DatabaseLike => ({
   batch: async (statements) => {
     await database.batch(statements);
     throw new Error("D1 response lost after commit");
@@ -343,8 +343,8 @@ const loseResponseAfterCommit = (
 });
 
 const loseResponseWithoutCommit = (
-  database: D1EffectQbDatabaseLike
-): D1EffectQbDatabaseLike => ({
+  database: TestD1DatabaseLike
+): TestD1DatabaseLike => ({
   batch: () => Promise.reject(new Error("D1 request outcome unknown")),
   prepare: database.prepare,
 });

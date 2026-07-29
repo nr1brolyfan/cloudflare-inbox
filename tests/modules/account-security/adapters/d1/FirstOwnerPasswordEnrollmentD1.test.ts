@@ -5,7 +5,6 @@ import type { D1Database } from "@cloudflare/workers-types";
 import { AuthSecretsLive } from "@effect-auth/core/AuthConfig";
 import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   SessionId,
   SessionToken,
@@ -51,6 +50,7 @@ import {
   applyControlPlaneMigrationsThrough,
   makeTestD1Database,
 } from "../../../../support/d1";
+import type { TestD1DatabaseLike } from "../../../../support/d1";
 
 const now = Date.now();
 const operationId = Schema.decodeUnknownSync(AdministrativeOperationId)(
@@ -165,8 +165,8 @@ const insertAccount = (
 };
 
 const loseResponseAfterCommit = (
-  database: D1EffectQbDatabaseLike
-): D1EffectQbDatabaseLike => ({
+  database: TestD1DatabaseLike
+): TestD1DatabaseLike => ({
   batch: async (statements) => {
     await database.batch(statements);
     throw new Error("D1 response lost after commit");
@@ -175,16 +175,16 @@ const loseResponseAfterCommit = (
 });
 
 const loseResponseWithoutCommit = (
-  database: D1EffectQbDatabaseLike
-): D1EffectQbDatabaseLike => ({
+  database: TestD1DatabaseLike
+): TestD1DatabaseLike => ({
   batch: () => Promise.reject(new Error("D1 outcome unknown")),
   prepare: database.prepare,
 });
 
 const beforeBatch = (
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   mutation: () => void
-): D1EffectQbDatabaseLike => ({
+): TestD1DatabaseLike => ({
   batch: (statements) => {
     mutation();
     return database.batch(statements);
@@ -194,8 +194,8 @@ const beforeBatch = (
 
 const loseResponseAndReadback = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike
-): D1EffectQbDatabaseLike => ({
+  d1: TestD1DatabaseLike
+): TestD1DatabaseLike => ({
   batch: () => {
     database.close();
     return Promise.reject(new Error("D1 outcome and readback unavailable"));
@@ -208,7 +208,7 @@ interface LiveOptions {
   readonly onRateLimit?: () => void;
 }
 
-const liveLayer = (d1: D1EffectQbDatabaseLike, options: LiveOptions = {}) => {
+const liveLayer = (d1: TestD1DatabaseLike, options: LiveOptions = {}) => {
   const bindingLayer = Layer.succeed(
     ControlPlaneD1Binding,
     ControlPlaneD1Binding.of({
@@ -255,7 +255,7 @@ const liveLayer = (d1: D1EffectQbDatabaseLike, options: LiveOptions = {}) => {
 };
 
 const runEnrollment = (
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1DatabaseLike,
   validated: ValidatedSession,
   command?: { readonly operationId: string; readonly password: string },
   options?: LiveOptions
@@ -289,7 +289,7 @@ const runEnrollment = (
 };
 
 const runUntrustedEnrollment = (
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1DatabaseLike,
   validated: ValidatedSession,
   input: unknown
 ) =>

@@ -1,7 +1,6 @@
 /* oxlint-disable vitest/max-expects -- Migration protocol cases assert each atomic state together. */
 import { DatabaseSync } from "node:sqlite";
 
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";
@@ -22,6 +21,7 @@ import {
   applyControlPlaneMigrationsThrough,
   makeTestD1Database,
 } from "../../support/d1";
+import type { TestD1DatabaseLike } from "../../support/d1";
 
 const migration = "1026_app_legacy_mail_domain_claim.sql";
 const operationId = "00000000-0000-4000-8000-000000000010";
@@ -257,7 +257,7 @@ const initialize = async (database: DatabaseSync, domain: string) => {
 
 const inspect = (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike = makeTestD1Database(database)
+  d1: TestD1DatabaseLike = makeTestD1Database(database)
 ) => {
   const binding = Layer.succeed(
     ControlPlaneD1Binding,
@@ -455,7 +455,7 @@ describe("legacy mail domain claim", () => {
     try {
       const base = makeTestD1Database(database);
       let batchCalls = 0;
-      const d1: D1EffectQbDatabaseLike = {
+      const d1: TestD1DatabaseLike = {
         ...base,
         batch: (statements) => {
           batchCalls += 1;
@@ -475,7 +475,7 @@ describe("legacy mail domain claim", () => {
     const database = await makeLegacyDatabase("example.test");
     try {
       const base = makeTestD1Database(database);
-      const d1: D1EffectQbDatabaseLike = {
+      const d1: TestD1DatabaseLike = {
         ...base,
         batch: () => Promise.reject(new Error("restricted-storage-detail")),
       };
@@ -493,7 +493,7 @@ describe("legacy mail domain claim", () => {
       await applyControlPlaneMigrations(database);
       const base = makeTestD1Database(database);
       let inserted = false;
-      const d1: D1EffectQbDatabaseLike = {
+      const d1: TestD1DatabaseLike = {
         ...base,
         batch: (statements) => {
           if (!inserted) {

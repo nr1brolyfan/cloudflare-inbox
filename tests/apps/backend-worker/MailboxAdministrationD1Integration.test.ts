@@ -1,8 +1,6 @@
 /* oxlint-disable vitest/max-expects -- Integration cases verify atomic cross-table states. */
 import { DatabaseSync } from "node:sqlite";
 
-import type { D1EffectQbDatabaseLike } from "@effect-auth/core/EffectQbSqliteStorage";
-import { D1EffectQbSqliteAuthStorageLive } from "@effect-auth/core/EffectQbSqliteStorage";
 import {
   CredentialId,
   SessionId,
@@ -23,6 +21,7 @@ import {
   OrganizationBootstrapD1Layer,
   OrganizationBootstrapTransactionD1Layer,
 } from "#/apps/backend-worker/MailboxAdministrationD1Integration";
+import { PermissionStoreD1Layer } from "#/modules/account-security/adapters/d1/PermissionStoreD1";
 import { CONTROL_PLANE_STEP_UP_POLICY } from "#/modules/account-security/domain/StepUpPolicy";
 import { SensitiveOperationStepUpClock } from "#/modules/account-security/ports/SensitiveOperationStepUpClock";
 import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
@@ -74,6 +73,7 @@ import {
   insertFreshCutoverOrganization,
   makeTestD1Database,
 } from "../../support/d1";
+import type { TestD1DatabaseLike } from "../../support/d1";
 
 const now = 2000;
 const stepUpNow = Date.now();
@@ -552,7 +552,7 @@ const unavailableMailAuthorizationLive = Layer.succeed(
   MailboxAuthorization.of({} as MailboxAuthorizationService)
 );
 
-const controlPlaneBatchLive = (database: D1EffectQbDatabaseLike) =>
+const controlPlaneBatchLive = (database: TestD1DatabaseLike) =>
   ControlPlaneD1Layer.pipe(
     Layer.provide(
       Layer.succeed(
@@ -565,9 +565,9 @@ const controlPlaneBatchLive = (database: D1EffectQbDatabaseLike) =>
   );
 
 const withDatabaseTimes = (
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   databaseTimes: readonly number[]
-): D1EffectQbDatabaseLike => {
+): TestD1DatabaseLike => {
   let timeStatement = 0;
   return {
     ...database,
@@ -588,6 +588,15 @@ const withDatabaseTimes = (
     },
   };
 };
+
+const nativeMailPermissionsLive = (database: TestD1DatabaseLike) =>
+  MailPermissionsEffectAuthLayer.pipe(
+    Layer.provide(
+      PermissionStoreD1Layer.pipe(
+        Layer.provide(controlPlaneBatchLive(database))
+      )
+    )
+  );
 
 const provideRequestAuth = <A, E, R>(
   effect: Effect.Effect<
@@ -620,7 +629,7 @@ const canonicalTestAddress = (address: string) => {
 };
 
 const bootstrap = (
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   validated: ValidatedSession,
   nonce: string,
   ownerEmail = "user-a@example.test",
@@ -732,7 +741,7 @@ const bootstrap = (
   );
 
 const bootstrapWithAcknowledgement = (
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   validated: ValidatedSession,
   acknowledgedOperationId: string | undefined,
   operationId = "00000000-0000-4000-8000-000000000010"
@@ -754,7 +763,7 @@ const bootstrapWithAcknowledgement = (
   );
 
 const rename = (
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   validated: ValidatedSession,
   mailAuthorizationLive: Layer.Layer<MailboxAuthorization>,
   mailboxId: string,
@@ -811,7 +820,7 @@ const rename = (
   );
 
 const readOperation = (
-  database: D1EffectQbDatabaseLike,
+  database: TestD1DatabaseLike,
   validated: ValidatedSession,
   operationId = "00000000-0000-4000-8000-000000000010"
 ) =>
@@ -908,7 +917,7 @@ const emptyBootstrapClosure = {
 
 const expectSecuritySetupRequired = async (
   database: DatabaseSync,
-  d1: D1EffectQbDatabaseLike,
+  d1: TestD1DatabaseLike,
   validated: ValidatedSession,
   ownerEmail = "user-a@example.test"
 ) => {
@@ -973,13 +982,7 @@ describe("mailbox administration", () => {
               validated.actor.userId
             ),
           });
-        }).pipe(
-          Effect.provide(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
-            )
-          )
-        )
+        }).pipe(Effect.provide(nativeMailPermissionsLive(d1)))
       );
       await expect(
         applyControlPlaneMigration(
@@ -1279,7 +1282,7 @@ describe("mailbox administration", () => {
         const validated = makeValidatedSession("user-a", "session-a");
         insertCurrentSession(database, validated);
         let raceBlocked = false;
-        const racedD1: D1EffectQbDatabaseLike = {
+        const racedD1: TestD1DatabaseLike = {
           batch: (statements) => {
             try {
               database.exec(mutation);
@@ -1314,7 +1317,7 @@ describe("mailbox administration", () => {
       insertCurrentSession(database, validated);
       database.exec(`insert into auth_user (id, created_at, updated_at)
         values ('user-b', ${now}, ${now})`);
-      const racedD1: D1EffectQbDatabaseLike = {
+      const racedD1: TestD1DatabaseLike = {
         batch: (statements) => {
           database.exec(`update auth_session set user_id = 'user-b'
             where id = 'session-a'`);
@@ -1505,7 +1508,7 @@ describe("mailbox administration", () => {
       const baseD1 = makeTestD1Database(database);
       const validated = makeValidatedSession("user-a", "session-a");
       insertCurrentSession(database, validated);
-      const racedD1: D1EffectQbDatabaseLike = {
+      const racedD1: TestD1DatabaseLike = {
         batch: (statements) => {
           rotateRecoveryCodes(
             database,
@@ -2041,7 +2044,7 @@ describe("mailbox administration", () => {
         const baseD1 = makeTestD1Database(database);
         const validated = makeValidatedSession("user-a", "session-a");
         insertCurrentSession(database, validated);
-        const racedD1: D1EffectQbDatabaseLike = {
+        const racedD1: TestD1DatabaseLike = {
           batch: (statements) => {
             database.exec(mutation);
             return baseD1.batch(statements);
@@ -2062,7 +2065,7 @@ describe("mailbox administration", () => {
       await applyControlPlaneMigrations(database);
       const baseD1 = makeTestD1Database(database);
       let priorBatch: Promise<unknown> = Promise.resolve();
-      const serializedD1: D1EffectQbDatabaseLike = {
+      const serializedD1: TestD1DatabaseLike = {
         batch: (statements) => {
           const result = priorBatch.then(() => baseD1.batch(statements));
           priorBatch = result.catch(() => null);
@@ -3109,7 +3112,7 @@ describe("mailbox administration", () => {
       const baseD1 = makeTestD1Database(database);
       const validated = makeValidatedSession("user-a", "session-a");
       insertCurrentSession(database, validated);
-      const staleD1: D1EffectQbDatabaseLike = {
+      const staleD1: TestD1DatabaseLike = {
         batch: (statements) => {
           database
             .prepare(
@@ -3143,7 +3146,7 @@ describe("mailbox administration", () => {
       const baseD1 = makeTestD1Database(database);
       const validated = makeValidatedSession("user-a", "session-a");
       insertCurrentSession(database, validated);
-      const expiredD1: D1EffectQbDatabaseLike = {
+      const expiredD1: TestD1DatabaseLike = {
         batch: (statements) => {
           database
             .prepare("update auth_session set expires_at = ? where id = ?")
@@ -3255,7 +3258,7 @@ describe("mailbox administration", () => {
         const baseD1 = makeTestD1Database(database);
         const validated = makeValidatedSession("user-a", "session-a");
         insertCurrentSession(database, validated);
-        const changedD1: D1EffectQbDatabaseLike = {
+        const changedD1: TestD1DatabaseLike = {
           batch: (statements) => {
             database
               .prepare(
@@ -3371,12 +3374,7 @@ describe("mailbox administration", () => {
       await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
       const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
-          Layer.merge(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
-            ),
-            makeResolverLive()
-          )
+          Layer.merge(nativeMailPermissionsLive(d1), makeResolverLive())
         ),
         Layer.orDie
       );
@@ -3421,12 +3419,7 @@ describe("mailbox administration", () => {
       await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
       const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
-          Layer.merge(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
-            ),
-            makeResolverLive()
-          )
+          Layer.merge(nativeMailPermissionsLive(d1), makeResolverLive())
         ),
         Layer.orDie
       );
@@ -3473,12 +3466,7 @@ describe("mailbox administration", () => {
       await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
       const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
-          Layer.merge(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
-            ),
-            makeResolverLive()
-          )
+          Layer.merge(nativeMailPermissionsLive(d1), makeResolverLive())
         ),
         Layer.orDie
       );
@@ -3522,12 +3510,7 @@ describe("mailbox administration", () => {
         end`);
       const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
-          Layer.merge(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
-            ),
-            makeResolverLive()
-          )
+          Layer.merge(nativeMailPermissionsLive(d1), makeResolverLive())
         ),
         Layer.orDie
       );
@@ -3567,12 +3550,7 @@ describe("mailbox administration", () => {
       await Effect.runPromise(bootstrap(d1, validated, "bootstrap-guard"));
       const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
-          Layer.merge(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
-            ),
-            makeResolverLive()
-          )
+          Layer.merge(nativeMailPermissionsLive(d1), makeResolverLive())
         ),
         Layer.orDie
       );
@@ -3641,12 +3619,7 @@ describe("mailbox administration", () => {
         );
       const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
-          Layer.merge(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(D1EffectQbSqliteAuthStorageLive(d1))
-            ),
-            makeResolverLive()
-          )
+          Layer.merge(nativeMailPermissionsLive(d1), makeResolverLive())
         ),
         Layer.orDie
       );
@@ -3852,12 +3825,7 @@ describe("mailbox administration", () => {
         .run(expiresAt, "user-a", LegacyMailboxRole.owner);
       const mailAuthorizationLive = MailboxAuthorizationApplicationLayer.pipe(
         Layer.provide(
-          Layer.merge(
-            MailPermissionsEffectAuthLayer.pipe(
-              Layer.provide(D1EffectQbSqliteAuthStorageLive(baseD1))
-            ),
-            makeResolverLive()
-          )
+          Layer.merge(nativeMailPermissionsLive(baseD1), makeResolverLive())
         ),
         Layer.orDie
       );
@@ -4001,7 +3969,7 @@ describe("mailbox administration", () => {
       const validated = makeValidatedSession("user-a", "session-a");
       insertCurrentSession(database, validated);
       let batches = 0;
-      const ambiguousD1: D1EffectQbDatabaseLike = {
+      const ambiguousD1: TestD1DatabaseLike = {
         batch: async (statements) => {
           batches += 1;
           await baseD1.batch(statements);
@@ -4044,7 +4012,7 @@ describe("mailbox administration", () => {
       const baseD1 = makeTestD1Database(database);
       const validated = makeValidatedSession("user-a", "session-a");
       insertCurrentSession(database, validated);
-      const boundaryD1: D1EffectQbDatabaseLike = {
+      const boundaryD1: TestD1DatabaseLike = {
         batch: async (statements) => {
           const results = await baseD1.batch(statements);
           return results.map((result, index) =>
@@ -4092,7 +4060,7 @@ describe("mailbox administration", () => {
       const baseD1 = makeTestD1Database(database);
       const validated = makeValidatedSession("user-a", "session-a");
       insertCurrentSession(database, validated);
-      const missingStatusD1: D1EffectQbDatabaseLike = {
+      const missingStatusD1: TestD1DatabaseLike = {
         batch: async (statements) => {
           const results = await baseD1.batch(statements);
           return results.map((result, index) =>
