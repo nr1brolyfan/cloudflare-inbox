@@ -317,6 +317,7 @@ describe("first-owner password enrollment API", () => {
           Effect.fail(
             new FirstOwnerPasswordEnrollmentError({
               cause: new Error(`sensitive ${password}`),
+              ...(reason === "storage" ? { phase: "password-hash" } : {}),
               reason,
             })
           ),
@@ -330,6 +331,7 @@ describe("first-owner password enrollment API", () => {
       expect(JSON.parse(text)).toMatchObject({ code });
       expect(text).not.toContain(password);
       expect(text).not.toContain("sensitive");
+      expect(text).not.toContain("password-hash");
     } finally {
       await dispose();
     }

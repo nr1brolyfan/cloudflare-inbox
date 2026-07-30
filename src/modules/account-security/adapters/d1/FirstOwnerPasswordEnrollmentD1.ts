@@ -54,6 +54,7 @@ import {
   FirstOwnerPasswordEnrollmentError,
   FirstOwnerPasswordEnrollmentReceipt,
 } from "#/modules/account-security/application/FirstOwnerPasswordEnrollment";
+import type { FirstOwnerPasswordEnrollmentFailurePhase } from "#/modules/account-security/application/FirstOwnerPasswordEnrollment";
 import {
   AUTHENTICATION_EVENT_SCHEMA_VERSION,
   CONTROL_PLANE_STEP_UP_POLICY,
@@ -97,11 +98,13 @@ interface EnrollmentProof {
 const failure = (
   reason: FirstOwnerPasswordEnrollmentError["reason"],
   cause?: unknown,
-  commitState?: FirstOwnerPasswordEnrollmentError["commitState"]
+  commitState?: FirstOwnerPasswordEnrollmentError["commitState"],
+  phase?: FirstOwnerPasswordEnrollmentFailurePhase
 ) =>
   new FirstOwnerPasswordEnrollmentError({
     cause,
     ...(commitState === undefined ? {} : { commitState }),
+    ...(phase === undefined ? {} : { phase }),
     reason,
   });
 
@@ -209,12 +212,16 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
         .where(eq(appFirstOwnerPasswordEnrollment.operationId, operationId))
         .limit(1)
         .pipe(
-          Effect.mapError((cause) => failure("storage", cause)),
+          Effect.mapError((cause) =>
+            failure("storage", cause, undefined, "receipt-read")
+          ),
           Effect.flatMap(([row]) =>
             row === undefined
               ? Effect.succeed(null)
               : Schema.decodeUnknownEffect(ReceiptRow)(row).pipe(
-                  Effect.mapError((cause) => failure("storage", cause)),
+                  Effect.mapError((cause) =>
+                    failure("storage", cause, undefined, "receipt-decode")
+                  ),
                   Effect.flatMap((receipt) =>
                     Effect.all(
                       [
@@ -273,11 +280,25 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
                       ],
                       { concurrency: "unbounded" }
                     ).pipe(
-                      Effect.mapError((cause) => failure("storage", cause)),
+                      Effect.mapError((cause) =>
+                        failure(
+                          "storage",
+                          cause,
+                          undefined,
+                          "receipt-artifacts"
+                        )
+                      ),
                       Effect.flatMap((artifacts) =>
                         artifacts.every((rows) => rows.length === 1)
                           ? Effect.succeed(receipt)
-                          : Effect.fail(failure("storage"))
+                          : Effect.fail(
+                              failure(
+                                "storage",
+                                undefined,
+                                undefined,
+                                "receipt-artifacts"
+                              )
+                            )
                       )
                     )
                   )
@@ -291,7 +312,11 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
           data: `first-owner-password-enrollment:v1:${password}`,
           key: authSecrets.privacy,
         })
-        .pipe(Effect.mapError((cause) => failure("storage", cause)));
+        .pipe(
+          Effect.mapError((cause) =>
+            failure("storage", cause, undefined, "intent-digest")
+          )
+        );
 
     return FirstOwnerPasswordEnrollmentTransaction.of({
       enroll: (untrusted) =>
@@ -325,7 +350,9 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
                   cause._tag === "RateLimitExceededError"
                     ? "rate-limited"
                     : "storage",
-                  cause
+                  cause,
+                  undefined,
+                  "rate-limit"
                 )
               )
             );
@@ -337,11 +364,17 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
                 timestamp
               )} as integer) as session_valid`
             )
-            .pipe(Effect.mapError((cause) => failure("storage", cause)));
+            .pipe(
+              Effect.mapError((cause) =>
+                failure("storage", cause, undefined, "session-read")
+              )
+            );
           const [persistedSession] = yield* Schema.decodeUnknownEffect(
             Schema.Array(Schema.Struct({ session_valid: Schema.Number }))
           )(persistedSessionRows).pipe(
-            Effect.mapError((cause) => failure("storage", cause))
+            Effect.mapError((cause) =>
+              failure("storage", cause, undefined, "session-decode")
+            )
           );
           if (persistedSession?.session_valid !== 1) {
             return yield* failure("restricted-session");
@@ -356,7 +389,9 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
               return yield* failure("operation-conflict");
             }
             const receipt = yield* receiptFromRow(replay).pipe(
-              Effect.mapError((cause) => failure("storage", cause))
+              Effect.mapError((cause) =>
+                failure("storage", cause, undefined, "receipt-decode")
+              )
             );
             return FirstOwnerPasswordAlreadyEnrolled.make({
               _tag: "FirstOwnerPasswordAlreadyEnrolled",
@@ -390,7 +425,11 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
               )
             )
             .limit(1)
-            .pipe(Effect.mapError((cause) => failure("storage", cause)));
+            .pipe(
+              Effect.mapError((cause) =>
+                failure("storage", cause, undefined, "identity-read")
+              )
+            );
           if (identity === undefined) {
             return yield* failure("owner-not-eligible");
           }
@@ -405,13 +444,25 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
           }).pipe(Effect.mapError((cause) => failure("invalid-input", cause)));
           const passwordHash = yield* hasher
             .hash({ password: redactedPassword })
-            .pipe(Effect.mapError((cause) => failure("storage", cause)));
+            .pipe(
+              Effect.mapError((cause) =>
+                failure("storage", cause, undefined, "password-hash")
+              )
+            );
           const credentialId = yield* crypto
             .randomToken(16)
-            .pipe(Effect.mapError((cause) => failure("storage", cause)));
+            .pipe(
+              Effect.mapError((cause) =>
+                failure("storage", cause, undefined, "credential-id")
+              )
+            );
           const nonce = yield* crypto
             .randomToken(16)
-            .pipe(Effect.mapError((cause) => failure("storage", cause)));
+            .pipe(
+              Effect.mapError((cause) =>
+                failure("storage", cause, undefined, "authorization-nonce")
+              )
+            );
 
           const trustedSession = transactionalSessionPredicate(
             database,
@@ -553,7 +604,11 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
             subject: { type: "user", userId: actorUserId },
             type: "app.first_owner.password_enrolled",
             version: 1,
-          }).pipe(Effect.mapError((cause) => failure("storage", cause)));
+          }).pipe(
+            Effect.mapError((cause) =>
+              failure("storage", cause, undefined, "audit-encode")
+            )
+          );
           const normalizedAudit = normalizedAuthAuditEvent(auditEvent);
           const statements: ControlPlane.ControlPlaneStatements = [
             database.insert(appAuthorizationGuard).select(
@@ -659,7 +714,12 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
                     Effect.flatMap((stored) => {
                       if (stored === null) {
                         return Effect.fail(
-                          failure("indeterminate", cause.cause, "unknown")
+                          failure(
+                            "indeterminate",
+                            cause.cause,
+                            "unknown",
+                            "batch"
+                          )
                         );
                       }
                       if (
@@ -675,19 +735,26 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
                             receipt,
                           })
                         ),
-                        Effect.mapError((error) => failure("storage", error))
+                        Effect.mapError((error) =>
+                          failure("storage", error, undefined, "receipt-decode")
+                        )
                       );
                     }),
                     Effect.catch((readbackError) =>
                       readbackError.reason === "operation-conflict"
                         ? Effect.fail(readbackError)
                         : Effect.fail(
-                            failure("indeterminate", cause.cause, "unknown")
+                            failure(
+                              "indeterminate",
+                              cause.cause,
+                              "unknown",
+                              "batch"
+                            )
                           )
                     )
                   )
                 : Effect.fail(
-                    failure("storage", cause.cause, cause.commitState)
+                    failure("storage", cause.cause, cause.commitState, "batch")
                   )
             )
           );
@@ -708,7 +775,9 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
               })
             )
           )(results[1]?.results).pipe(
-            Effect.mapError((cause) => failure("storage", cause))
+            Effect.mapError((cause) =>
+              failure("storage", cause, undefined, "batch-status-decode")
+            )
           );
           if (status?.authorized !== 1) {
             if (status?.session_valid !== 1) {
@@ -730,7 +799,9 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
                 concurrent.passwordIntentDigest === intentDigest
               ) {
                 const receipt = yield* receiptFromRow(concurrent).pipe(
-                  Effect.mapError((cause) => failure("storage", cause))
+                  Effect.mapError((cause) =>
+                    failure("storage", cause, undefined, "receipt-decode")
+                  )
                 );
                 return FirstOwnerPasswordAlreadyEnrolled.make({
                   _tag: "FirstOwnerPasswordAlreadyEnrolled",
@@ -745,15 +816,27 @@ const FirstOwnerPasswordEnrollmentTransactionD1Layer = Layer.effect(
             if (status.audit_available !== 1) {
               return yield* failure("state-conflict");
             }
-            return yield* failure("storage");
+            return yield* failure(
+              "storage",
+              undefined,
+              undefined,
+              "batch-result"
+            );
           }
           const receiptRows = yield* Schema.decodeUnknownEffect(
             Schema.Array(Schema.Struct({ operation_id: Schema.String }))
           )(results[4]?.results).pipe(
-            Effect.mapError((cause) => failure("storage", cause))
+            Effect.mapError((cause) =>
+              failure("storage", cause, undefined, "batch-result")
+            )
           );
           if (receiptRows[0]?.operation_id !== command.operationId) {
-            return yield* failure("storage");
+            return yield* failure(
+              "storage",
+              undefined,
+              undefined,
+              "batch-result"
+            );
           }
           const receipt = FirstOwnerPasswordEnrollmentReceipt.make({
             committedAt: timestamp,

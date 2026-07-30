@@ -82,11 +82,20 @@ const mapError = (
       );
     }
     default: {
-      return Effect.fail(
-        new AuthInternalError({
-          code: "internal_error",
-          message: "Password enrollment failed",
-        })
+      const publicError = new AuthInternalError({
+        code: "internal_error",
+        message: "Password enrollment failed",
+      });
+      return Effect.logError(
+        "auth.first_owner_password_enrollment.failed"
+      ).pipe(
+        Effect.annotateLogs({
+          "commit.state": error.commitState ?? "not-applicable",
+          "event.name": "auth.first_owner_password_enrollment.failed",
+          "failure.phase": error.phase ?? "unknown",
+          "failure.reason": error.reason,
+        }),
+        Effect.andThen(Effect.fail(publicError))
       );
     }
   }

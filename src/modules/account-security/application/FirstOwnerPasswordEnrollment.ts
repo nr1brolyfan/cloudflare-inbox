@@ -67,11 +67,29 @@ export type FirstOwnerPasswordEnrollmentResult = Schema.Schema.Type<
   typeof FirstOwnerPasswordEnrollmentResult
 >;
 
+export type FirstOwnerPasswordEnrollmentFailurePhase =
+  | "audit-encode"
+  | "authorization-nonce"
+  | "batch"
+  | "batch-result"
+  | "batch-status-decode"
+  | "credential-id"
+  | "identity-read"
+  | "intent-digest"
+  | "password-hash"
+  | "rate-limit"
+  | "receipt-artifacts"
+  | "receipt-decode"
+  | "receipt-read"
+  | "session-decode"
+  | "session-read";
+
 export class FirstOwnerPasswordEnrollmentError extends Data.TaggedError(
   "FirstOwnerPasswordEnrollmentError"
 )<{
   readonly cause?: unknown;
   readonly commitState?: "committed" | "not-committed" | "unknown";
+  readonly phase?: FirstOwnerPasswordEnrollmentFailurePhase;
   readonly reason:
     | "deployment-not-empty"
     | "indeterminate"
