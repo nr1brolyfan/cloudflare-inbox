@@ -4,6 +4,7 @@ import {
   AuthInternalError,
   AuthPolicyDeniedError,
   AuthRateLimitedError,
+  AuthStepUpRequiredError,
 } from "@effect-auth/core/HttpApi";
 import { RateLimitExceededError } from "@effect-auth/core/RateLimiter";
 import * as Duration from "effect/Duration";
@@ -25,7 +26,8 @@ type PublicError =
   | AuthConflictError
   | AuthInternalError
   | AuthPolicyDeniedError
-  | AuthRateLimitedError;
+  | AuthRateLimitedError
+  | AuthStepUpRequiredError;
 
 const mapError = (
   error: FirstOwnerPasswordEnrollmentError
@@ -60,10 +62,17 @@ const mapError = (
         })
       );
     }
+    case "proof-required": {
+      return Effect.fail(
+        new AuthStepUpRequiredError({
+          code: "step_up_required",
+          message: "Fresh email authentication required",
+        })
+      );
+    }
     case "deployment-not-empty":
     case "owner-config-invalid":
     case "owner-not-eligible":
-    case "proof-required":
     case "restricted-session": {
       return Effect.fail(
         new AuthPolicyDeniedError({

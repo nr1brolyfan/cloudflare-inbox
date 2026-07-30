@@ -6,6 +6,7 @@ import {
   AuthPolicyDeniedError,
   AuthRateLimitedError,
   AuthSchemaErrorMiddleware,
+  AuthStepUpRequiredError,
   AuthUnauthenticatedError,
 } from "@effect-auth/core/HttpApi";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
@@ -26,6 +27,7 @@ const Enroll = HttpApiEndpoint.post("enroll", "/auth/first-owner/password", {
     AuthBadRequestError,
     AuthUnauthenticatedError,
     AuthPolicyDeniedError,
+    AuthStepUpRequiredError,
     AuthRateLimitedError,
     AuthConflictError,
     AuthInternalError,

@@ -170,6 +170,7 @@ function FirstOwnerPasswordPanel({
   isPending,
   onConfirmationChange,
   onPasswordChange,
+  onReauthenticate,
   onSubmit,
   password,
 }: {
@@ -178,9 +179,15 @@ function FirstOwnerPasswordPanel({
   readonly isPending: boolean;
   readonly onConfirmationChange: (password: string) => void;
   readonly onPasswordChange: (password: string) => void;
+  readonly onReauthenticate: () => void;
   readonly onSubmit: () => void;
   readonly password: string;
 }) {
+  const reauthenticationRequired = hasAuthErrorCode(
+    enrollmentError,
+    "step_up_required"
+  );
+
   return (
     <div className="mt-8 rounded-2xl border border-[var(--line)] bg-white/70 p-5">
       <p className="island-kicker">First owner security</p>
@@ -218,21 +225,36 @@ function FirstOwnerPasswordPanel({
             className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
           />
         </label>
-        {enrollmentError ? (
+        {reauthenticationRequired ? (
+          <ErrorNotice>
+            Your email proof has expired. Sign out, use a fresh email sign-in
+            link, and create the password within five minutes.
+          </ErrorNotice>
+        ) : enrollmentError ? (
           <ErrorNotice>{authErrorMessage(enrollmentError)}</ErrorNotice>
         ) : null}
-        <button
-          type="submit"
-          disabled={isPending}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg disabled:opacity-50"
-        >
-          {isPending ? (
-            <LoaderCircle className="animate-spin" size={17} />
-          ) : (
-            <ShieldCheck size={17} />
-          )}
-          Create password and confirm
-        </button>
+        {reauthenticationRequired ? (
+          <button
+            type="button"
+            onClick={onReauthenticate}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg"
+          >
+            <LogOut size={17} /> Sign out and use a fresh link
+          </button>
+        ) : (
+          <button
+            type="submit"
+            disabled={isPending}
+            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg disabled:opacity-50"
+          >
+            {isPending ? (
+              <LoaderCircle className="animate-spin" size={17} />
+            ) : (
+              <ShieldCheck size={17} />
+            )}
+            Create password and confirm
+          </button>
+        )}
       </form>
     </div>
   );
@@ -1113,6 +1135,7 @@ export function SignedInOwnerBootstrap({
             ownerBootstrap.handleFirstPasswordConfirmationChange
           }
           onPasswordChange={ownerBootstrap.handleFirstPasswordChange}
+          onReauthenticate={onLogout}
           onSubmit={() => ownerBootstrap.firstPasswordEnrollment.mutate()}
           password={ownerBootstrap.firstPassword}
         />

@@ -306,6 +306,7 @@ describe("first-owner password enrollment API", () => {
   it.each([
     ["invalid-input", 400, "bad_request"],
     ["owner-not-eligible", 403, "policy_denied"],
+    ["proof-required", 403, "step_up_required"],
     ["operation-conflict", 409, "conflict"],
     ["rate-limited", 429, "rate_limited"],
     ["storage", 500, "internal_error"],

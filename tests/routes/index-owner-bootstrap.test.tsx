@@ -81,7 +81,7 @@ const stepUpRequired = {
 };
 const password = "correct horse battery staple";
 
-const renderBootstrap = () => {
+const renderBootstrap = (onLogout = vi.fn<() => void>()) => {
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
@@ -92,7 +92,7 @@ const renderBootstrap = () => {
     <QueryClientProvider client={queryClient}>
       <SignedInOwnerBootstrap
         isLogoutPending={false}
-        onLogout={vi.fn<() => void>()}
+        onLogout={onLogout}
         userId="user-a"
       />
     </QueryClientProvider>
@@ -178,6 +178,31 @@ describe(SignedInOwnerBootstrap, () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("requires a fresh email sign-in after first-owner proof expires", async () => {
+    const onLogout = vi.fn<() => void>();
+    mocks.stepUpOptions.mockResolvedValue({ factors: [] });
+    mocks.enrollFirstOwnerPassword.mockRejectedValue(
+      Object.assign(new Error("First-owner password enrollment denied"), {
+        code: "step_up_required",
+      })
+    );
+    renderBootstrap(onLogout);
+    await openFirstPasswordPanel();
+
+    submitFirstPassword();
+
+    await expect(
+      screen.findByText(/email proof has expired/u)
+    ).resolves.toBeTruthy();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Sign out and use a fresh link" })
+    );
+    expect(onLogout).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("button", { name: "Create password and confirm" })
+    ).toBeNull();
   });
 
   it("steps up immediately after enrollment without creating the mailbox", async () => {
