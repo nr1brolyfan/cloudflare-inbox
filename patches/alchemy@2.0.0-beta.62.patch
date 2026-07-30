@@ -1,5 +1,5 @@
 diff --git a/src/Cloudflare/D1/ApplyMigrations.ts b/src/Cloudflare/D1/ApplyMigrations.ts
-index abf4a2e53a8793ad521ed70719bde153f72511de..832cc1cb4152298a4e3990960101bfebbb5fbd39 100644
+index abf4a2e53a8793ad521ed70719bde153f72511de..a79a4816a1c4edd7fad2c3056d3083636703e770 100644
 --- a/src/Cloudflare/D1/ApplyMigrations.ts
 +++ b/src/Cloudflare/D1/ApplyMigrations.ts
 @@ -2,7 +2,9 @@ import type { Credentials } from "@distilled.cloud/cloudflare/Credentials";
@@ -12,7 +12,57 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..832cc1cb4152298a4e3990960101bfeb
 
  export interface ApplyMigrationsOptions {
    accountId: string;
-@@ -30,16 +32,18 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+@@ -11,6 +13,30 @@ export interface ApplyMigrationsOptions {
+   migrationsFiles: ReadonlyArray<SqlFile>;
+ }
+
++const auditLogRebuildMigration = "0035_auth_audit_log_cardinality.sql";
++const appSchemaDependencyMigration =
++  "1030_app_first_owner_password_enrollment.sql";
++const appAuthStorageRebindMigration = "1032_app_auth_storage_rebind.sql";
++
++export const selectD1ResumeRepairs = <Migration extends { id: string }>(
++  migrations: ReadonlyArray<Migration>,
++  applied: ReadonlySet<string>,
++): ReadonlyArray<Migration> => {
++  if (
++    !applied.has(auditLogRebuildMigration) ||
++    !applied.has(appSchemaDependencyMigration) ||
++    applied.has(appAuthStorageRebindMigration)
++  ) {
++    return [];
++  }
++  const rebind = migrations.find(
++    (migration) =>
++      migration.id === appAuthStorageRebindMigration &&
++      !applied.has(migration.id),
++  );
++  return rebind === undefined ? [] : [rebind];
++};
++
+ /**
+  * Apply pending D1 migrations in order. Uses the wrangler-compatible
+  * 3-column schema `(id TEXT PK, name TEXT, applied_at TEXT)`.
+@@ -26,20 +52,37 @@ export const applyMigrations = (options: ApplyMigrationsOptions) =>
+     );
+     let nextSeq = yield* getNextSeq(accountId, databaseId, migrationsTable);
+
++    // A failed historical 0035 import can commit after SQLite rewrites app
++    // triggers to its dropped scratch table. Repair those objects without
++    // advancing the ledger, then apply the normal ordered sequence, including
++    // the same idempotent forward migration at its canonical position.
++    for (const repair of selectD1ResumeRepairs(
++      migrationsFiles,
++      applied,
++    )) {
++      yield* importD1Database({
++        accountId,
++        databaseId,
++        sqlData: compileD1ImportSql(repair.sql, repair.id),
++      });
++    }
++
+     for (const migration of migrationsFiles) {
        if (applied.has(migration.id)) continue;
        const migrationId = nextSeq.toString().padStart(5, "0");
        nextSeq += 1;
@@ -37,7 +87,7 @@ index abf4a2e53a8793ad521ed70719bde153f72511de..832cc1cb4152298a4e3990960101bfeb
      }
    });
 
-@@ -71,6 +75,622 @@ const executeSQL = (
+@@ -71,6 +114,622 @@ const executeSQL = (
      return yield* queryDb({ accountId, databaseId, sql });
    });
 

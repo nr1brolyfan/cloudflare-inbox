@@ -5,6 +5,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 
+import { authStorageMigrations } from "@effect-auth/core/StorageMigrations";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import { describe, expect, it } from "vitest";
@@ -12,6 +13,7 @@ import { describe, expect, it } from "vitest";
 import {
   compileD1ImportSql,
   rebalanceSqlBooleanExpression,
+  selectD1ResumeRepairs,
   splitSqlStatements,
 } from "../../node_modules/alchemy/src/Cloudflare/D1/ApplyMigrations";
 import {
@@ -36,6 +38,53 @@ const schemaSql = (database: DatabaseSync) =>
   database
     .prepare(
       "select type,name,tbl_name,sql from sqlite_schema order by type,name"
+    )
+    .all();
+
+const auditBindingTriggerSql = (database: DatabaseSync) =>
+  database
+    .prepare(
+      `select name, sql from sqlite_schema
+       where type = 'trigger' and name in (
+         'app_account_recovery_completion_receipt_binding',
+         'app_passkey_enrollment_receipt_binding',
+         'app_first_owner_password_enrollment_binding'
+       ) order by name`
+    )
+    .all()
+    .map((row) => ({
+      name: row.name,
+      sql: row.sql,
+    }));
+
+const firstOwnerArtifactSql = (database: DatabaseSync) =>
+  database
+    .prepare(
+      `select json_group_array(json_object(
+        'type', type, 'name', name, 'tbl_name', tbl_name, 'sql', sql
+      )) as artifact_sql_json
+      from (select type, name, tbl_name, sql from sqlite_master where name in (
+        'app_first_owner_password_enrollment',
+        'app_first_owner_password_enrollment_actor_operation_idx',
+        'app_first_owner_password_enrollment_binding',
+        'app_first_owner_password_enrollment_no_update',
+        'app_first_owner_password_enrollment_no_delete',
+        'app_first_owner_password_enrollment_no_replace',
+        'app_first_owner_password_enrollment_generation',
+        'app_first_owner_password_enrollment_generation_no_replace',
+        'app_first_owner_password_enrollment_generation_no_update',
+        'app_first_owner_password_enrollment_generation_no_delete'
+      ) order by type, name)`
+    )
+    .get()?.artifact_sql_json;
+
+const passkeyRevocationSchemaSql = (database: DatabaseSync) =>
+  database
+    .prepare(
+      `select type,name,tbl_name,sql from sqlite_schema
+       where name = 'app_passkey_credential_revocation'
+          or name like 'app_passkey_credential_revocation_%'
+       order by type,name`
     )
     .all();
 
@@ -192,6 +241,42 @@ const ownerAssignmentState = (database: DatabaseSync) => ({
 });
 
 describe("patched Alchemy D1 migration batching", () => {
+  it("selects an unledgered repair only for an app-schema resume after 0035", () => {
+    const migrations = [
+      { id: "0035_auth_audit_log_cardinality.sql" },
+      { id: "0036_auth_security_timeline_cardinality.sql" },
+      { id: "1030_app_first_owner_password_enrollment.sql" },
+      { id: "1032_app_auth_storage_rebind.sql" },
+    ];
+
+    expect(selectD1ResumeRepairs(migrations, new Set())).toStrictEqual([]);
+    expect(
+      selectD1ResumeRepairs(
+        migrations,
+        new Set(["0035_auth_audit_log_cardinality.sql"])
+      ).map(({ id }) => id)
+    ).toStrictEqual([]);
+    expect(
+      selectD1ResumeRepairs(
+        migrations,
+        new Set([
+          "0035_auth_audit_log_cardinality.sql",
+          "1030_app_first_owner_password_enrollment.sql",
+        ])
+      ).map(({ id }) => id)
+    ).toStrictEqual(["1032_app_auth_storage_rebind.sql"]);
+    expect(
+      selectD1ResumeRepairs(
+        migrations,
+        new Set([
+          "0035_auth_audit_log_cardinality.sql",
+          "1030_app_first_owner_password_enrollment.sql",
+          "1032_app_auth_storage_rebind.sql",
+        ])
+      )
+    ).toStrictEqual([]);
+  });
+
   it("keeps trigger bodies, quoted semicolons, and comments complete", () => {
     const sql = `
       -- ignored ; delimiter
@@ -528,17 +613,17 @@ describe("patched Alchemy D1 migration batching", () => {
         applyMigrationBatch(database, file, index + 1, true);
       }
 
-      expect(files).toHaveLength(71);
+      expect(files).toHaveLength(72);
       expect(
         database.prepare("select count(*) as count from d1_migrations").get()
-      ).toMatchObject({ count: 71 });
+      ).toMatchObject({ count: 72 });
       expect(
         database
           .prepare("select id,name from d1_migrations order by id desc limit 1")
           .get()
       ).toMatchObject({
-        id: "00071",
-        name: "1031_app_mailbox_bootstrap_security_intent.sql",
+        id: "00072",
+        name: "1032_app_auth_storage_rebind.sql",
       });
       expect(
         database
@@ -568,6 +653,444 @@ describe("patched Alchemy D1 migration batching", () => {
       } finally {
         expected.close();
       }
+    } finally {
+      database.close();
+    }
+  });
+
+  it("upgrades an alpha.19 schema without rebinding app triggers to auth scratch tables", () => {
+    const database = new DatabaseSync(":memory:");
+    const files = migrationFiles();
+    const pending = files.filter((file) => {
+      const name = path.basename(file);
+      return (
+        /^003[0-9]_auth_/u.test(name) ||
+        name === "1032_app_auth_storage_rebind.sql"
+      );
+    });
+    const baseline = files.filter((file) => !pending.includes(file));
+
+    try {
+      database.exec("pragma foreign_keys = on");
+      createLedger(database);
+      for (const [index, file] of baseline.entries()) {
+        applyMigrationBatch(database, file, index + 1);
+      }
+      const triggersBefore = auditBindingTriggerSql(database);
+      const revocationSchemaBefore = passkeyRevocationSchemaSql(database);
+      const firstOwnerArtifactBefore = firstOwnerArtifactSql(database);
+      expect(triggersBefore).toHaveLength(3);
+      expect(revocationSchemaBefore).toHaveLength(6);
+      expect(firstOwnerArtifactBefore).toBe(
+        database
+          .prepare(
+            `select artifact_sql_json from
+             app_first_owner_password_enrollment_generation where id = 1`
+          )
+          .get()?.artifact_sql_json
+      );
+      database.exec(`
+        insert into auth_passkey_credential
+          (id,user_id,credential_id,public_key,sign_count,transports,backed_up,
+           created_at,last_used_at,revoked_at,metadata)
+        values ('credential-a','user-a','AQ','AQ',0,null,0,1000,null,1000,null);
+        insert into app_passkey_credential_revocation
+          (operation_id,user_id,credential_record_id,credential_created_at,
+           credential_last_used_at,revoked_at)
+        values ('00000000-0000-4000-8000-000000000011','user-a',
+          'credential-a',1000,null,1000);`);
+
+      for (const [index, file] of pending.entries()) {
+        applyMigrationBatch(database, file, baseline.length + index + 1, true);
+      }
+
+      expect(auditBindingTriggerSql(database)).toStrictEqual(triggersBefore);
+      expect(passkeyRevocationSchemaSql(database)).toStrictEqual(
+        revocationSchemaBefore
+      );
+      expect(firstOwnerArtifactSql(database)).toBe(firstOwnerArtifactBefore);
+      expect(
+        database
+          .prepare(
+            `select artifact_sql_json from
+             app_first_owner_password_enrollment_generation where id = 1`
+          )
+          .get()?.artifact_sql_json
+      ).toBe(firstOwnerArtifactBefore);
+      expect(
+        database
+          .prepare(
+            `select operation_id,credential_record_id from
+             app_passkey_credential_revocation`
+          )
+          .all()
+      ).toMatchObject([
+        {
+          credential_record_id: "credential-a",
+          operation_id: "00000000-0000-4000-8000-000000000011",
+        },
+      ]);
+      expect(
+        database
+          .prepare(
+            `select "table", "from", "to", on_delete from
+             pragma_foreign_key_list('app_passkey_credential_revocation')`
+          )
+          .all()
+      ).toMatchObject([
+        {
+          table: "auth_passkey_credential",
+          from: "credential_record_id",
+          to: "id",
+          on_delete: "RESTRICT",
+        },
+      ]);
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from sqlite_schema
+             where sql like '%_unconstrained%'`
+          )
+          .get()
+      ).toMatchObject({ count: 0 });
+      expect(database.prepare("pragma foreign_key_check").all()).toStrictEqual(
+        []
+      );
+      for (const table of [
+        "app_account_recovery_completion_receipt",
+        "app_passkey_credential_revocation",
+        "app_passkey_enrollment_receipt",
+        "app_first_owner_password_enrollment",
+      ]) {
+        expect(() =>
+          database.prepare(`explain insert into ${table} default values`).all()
+        ).not.toThrow();
+      }
+      expect(database.prepare("pragma quick_check").get()).toMatchObject({
+        quick_check: "ok",
+      });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("resumes the live post-0035 state before applying the remaining auth migrations", () => {
+    const database = new DatabaseSync(":memory:");
+    const files = migrationFiles();
+    const authUpgrade = files.filter((file) =>
+      /^003[0-9]_auth_/u.test(path.basename(file))
+    );
+    const rebind = files.find(
+      (file) => path.basename(file) === "1032_app_auth_storage_rebind.sql"
+    );
+    const baseline = files.filter(
+      (file) => !authUpgrade.includes(file) && file !== rebind
+    );
+    const originalAuditRebuild = authStorageMigrations.find(
+      (migration) => migration.id === "0035_auth_audit_log_cardinality"
+    );
+    if (rebind === undefined || originalAuditRebuild === undefined) {
+      throw new Error("Missing post-0035 resume migration fixture");
+    }
+
+    try {
+      database.exec("pragma foreign_keys = on");
+      createLedger(database);
+      for (const [index, file] of baseline.entries()) {
+        applyMigrationBatch(database, file, index + 1);
+      }
+      const triggersBefore = auditBindingTriggerSql(database);
+      const firstOwnerArtifactBefore = firstOwnerArtifactSql(database);
+      const through0034 = authUpgrade.filter(
+        (file) => path.basename(file) < "0035_"
+      );
+      for (const [index, file] of through0034.entries()) {
+        applyMigrationBatch(database, file, baseline.length + index + 1, true);
+      }
+      applySqlBatch(
+        database,
+        originalAuditRebuild.sql,
+        `${originalAuditRebuild.id}.sql`,
+        baseline.length + through0034.length + 1,
+        true
+      );
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from sqlite_schema
+             where type = 'trigger' and sql like '%auth_audit_log_unconstrained%'`
+          )
+          .get()
+      ).toMatchObject({ count: 3 });
+
+      const applied = new Set(
+        database
+          .prepare("select name from d1_migrations")
+          .all()
+          .map((row) => String(row.name))
+      );
+      const records = files.map((file) => ({
+        id: path.basename(file),
+        sql: readFileSync(path.join(root, file), "utf-8"),
+      }));
+      const repairs = selectD1ResumeRepairs(records, applied);
+      expect(repairs.map(({ id }) => id)).toStrictEqual([
+        "1032_app_auth_storage_rebind.sql",
+      ]);
+      database.exec("begin immediate");
+      try {
+        for (const repair of repairs) {
+          database.exec(compileD1ImportSql(repair.sql, repair.id));
+        }
+        database.exec("commit");
+      } catch (error) {
+        database.exec("rollback");
+        throw error;
+      }
+      expect(
+        database
+          .prepare("select count(*) as count from d1_migrations where name = ?")
+          .get(path.basename(rebind))
+      ).toMatchObject({ count: 0 });
+
+      const remaining = files.filter(
+        (file) => !applied.has(path.basename(file))
+      );
+      const hardeningIndex = remaining.findIndex(
+        (file) =>
+          path.basename(file) === "0039_auth_passkey_credential_hardening.sql"
+      );
+      if (hardeningIndex === -1) {
+        throw new Error("Missing remaining passkey hardening migration");
+      }
+      const applyRemaining = (file: string, index: number) =>
+        applyMigrationBatch(
+          database,
+          file,
+          baseline.length + through0034.length + index + 2,
+          true
+        );
+      for (const [index, file] of remaining
+        .slice(0, hardeningIndex + 1)
+        .entries()) {
+        applyRemaining(file, index);
+      }
+      expect(auditBindingTriggerSql(database)).toStrictEqual(triggersBefore);
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from sqlite_schema
+             where sql like '%_unconstrained%'`
+          )
+          .get()
+      ).toMatchObject({ count: 0 });
+      expect(() =>
+        database
+          .prepare(
+            "explain insert into app_passkey_enrollment_receipt default values"
+          )
+          .all()
+      ).not.toThrow();
+      for (const [offset, file] of remaining
+        .slice(hardeningIndex + 1)
+        .entries()) {
+        applyRemaining(file, hardeningIndex + offset + 1);
+      }
+
+      expect(auditBindingTriggerSql(database)).toStrictEqual(triggersBefore);
+      expect(firstOwnerArtifactSql(database)).toBe(firstOwnerArtifactBefore);
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from sqlite_schema
+             where sql like '%_unconstrained%'`
+          )
+          .get()
+      ).toMatchObject({ count: 0 });
+      expect(
+        database
+          .prepare("select count(*) as count from d1_migrations where name = ?")
+          .get(path.basename(rebind))
+      ).toMatchObject({ count: 1 });
+      expect(database.prepare("pragma foreign_key_check").all()).toStrictEqual(
+        []
+      );
+    } finally {
+      database.close();
+    }
+  });
+
+  it("repairs a receipt schema left dangling by the original passkey hardening", () => {
+    const database = new DatabaseSync(":memory:");
+    const files = migrationFiles();
+    const authUpgrade = files.filter((file) =>
+      /^003[0-9]_auth_/u.test(path.basename(file))
+    );
+    const rebind = files.find(
+      (file) => path.basename(file) === "1032_app_auth_storage_rebind.sql"
+    );
+    const baseline = files.filter(
+      (file) => !authUpgrade.includes(file) && file !== rebind
+    );
+    const originalHardening = authStorageMigrations.find(
+      (migration) => migration.id === "0039_auth_passkey_credential_hardening"
+    );
+    if (rebind === undefined || originalHardening === undefined) {
+      throw new Error("Missing auth storage rebind migration fixture");
+    }
+
+    try {
+      database.exec("pragma foreign_keys = on");
+      createLedger(database);
+      for (const [index, file] of baseline.entries()) {
+        applyMigrationBatch(database, file, index + 1);
+      }
+      for (const [index, file] of authUpgrade.entries()) {
+        if (path.basename(file).startsWith("0039_")) {
+          break;
+        }
+        applyMigrationBatch(database, file, baseline.length + index + 1, true);
+      }
+      applySqlBatch(
+        database,
+        originalHardening.sql,
+        `${originalHardening.id}.sql`,
+        baseline.length + authUpgrade.length,
+        true
+      );
+
+      expect(
+        database
+          .prepare(
+            `select "table" from
+             pragma_foreign_key_list('app_passkey_credential_revocation')`
+          )
+          .get()
+      ).toMatchObject({ table: "auth_passkey_credential_unconstrained" });
+      expect(
+        database
+          .prepare(
+            `select sql from sqlite_schema
+             where name = 'app_passkey_credential_revocation_binding'`
+          )
+          .get()?.sql
+      ).toContain("auth_passkey_credential_unconstrained");
+
+      applyMigrationBatch(
+        database,
+        rebind,
+        baseline.length + authUpgrade.length + 1,
+        true
+      );
+
+      expect(
+        database
+          .prepare(
+            `select "table" from
+             pragma_foreign_key_list('app_passkey_credential_revocation')`
+          )
+          .get()
+      ).toMatchObject({ table: "auth_passkey_credential" });
+      expect(passkeyRevocationSchemaSql(database)).toHaveLength(6);
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from sqlite_schema
+             where sql like '%_unconstrained%'`
+          )
+          .get()
+      ).toMatchObject({ count: 0 });
+      expect(database.prepare("pragma foreign_key_check").all()).toStrictEqual(
+        []
+      );
+      expect(() =>
+        database
+          .prepare(
+            "explain insert into app_passkey_credential_revocation default values"
+          )
+          .all()
+      ).not.toThrow();
+    } finally {
+      database.close();
+    }
+  });
+
+  it("rolls back passkey hardening when a retained receipt would become orphaned", () => {
+    const database = new DatabaseSync(":memory:");
+    const files = migrationFiles();
+    const authUpgrade = files.filter((file) =>
+      /^003[0-9]_auth_/u.test(path.basename(file))
+    );
+    const baseline = files.filter(
+      (file) =>
+        !authUpgrade.includes(file) &&
+        path.basename(file) !== "1032_app_auth_storage_rebind.sql"
+    );
+    const hardeningIndex = authUpgrade.findIndex(
+      (file) =>
+        path.basename(file) === "0039_auth_passkey_credential_hardening.sql"
+    );
+    const hardening = authUpgrade[hardeningIndex];
+    if (hardening === undefined) {
+      throw new Error("Missing passkey hardening migration fixture");
+    }
+
+    try {
+      database.exec("pragma foreign_keys = on");
+      createLedger(database);
+      for (const [index, file] of baseline.entries()) {
+        applyMigrationBatch(database, file, index + 1);
+      }
+      database.exec(`
+        insert into auth_passkey_credential
+          (id,user_id,credential_id,public_key,sign_count,transports,backed_up,
+           created_at,last_used_at,revoked_at,metadata)
+        values ('credential-invalid','user-a','not+base64url','',0,null,0,
+          1000,null,1000,null);
+        insert into app_passkey_credential_revocation
+          (operation_id,user_id,credential_record_id,credential_created_at,
+           credential_last_used_at,revoked_at)
+        values ('00000000-0000-4000-8000-000000000012','user-a',
+          'credential-invalid',1000,null,1000);`);
+      for (const [index, file] of authUpgrade.entries()) {
+        if (index === hardeningIndex) {
+          break;
+        }
+        applyMigrationBatch(database, file, baseline.length + index + 1, true);
+      }
+      const schemaBefore = passkeyRevocationSchemaSql(database);
+
+      expect(() =>
+        applyMigrationBatch(
+          database,
+          hardening,
+          baseline.length + hardeningIndex + 1,
+          true
+        )
+      ).toThrow(/foreign key|invalid passkey revocation receipt binding/iu);
+      expect(passkeyRevocationSchemaSql(database)).toStrictEqual(schemaBefore);
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from app_passkey_credential_revocation
+             where credential_record_id = 'credential-invalid'`
+          )
+          .get()
+      ).toMatchObject({ count: 1 });
+      expect(
+        database
+          .prepare(
+            `select count(*) as count from sqlite_schema
+             where name = 'auth_passkey_credential_revocation_rebind'
+                or name = 'auth_passkey_credential_unconstrained'`
+          )
+          .get()
+      ).toMatchObject({ count: 0 });
+      expect(
+        database
+          .prepare("select count(*) as count from d1_migrations where name = ?")
+          .get(path.basename(hardening))
+      ).toMatchObject({ count: 0 });
     } finally {
       database.close();
     }

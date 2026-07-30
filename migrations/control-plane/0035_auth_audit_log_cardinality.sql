@@ -1,6 +1,11 @@
 -- Generated from @effect-auth/core@0.1.0-alpha.20.
 -- Do not edit manually; run `bun run generate:auth-migrations`.
 
+-- App triggers created by later historical migrations must not follow the scratch rename.
+drop trigger if exists app_account_recovery_completion_receipt_binding;
+drop trigger if exists app_passkey_enrollment_receipt_binding;
+drop trigger if exists app_first_owner_password_enrollment_binding;
+
 create table if not exists auth_audit_log_quarantine (
   storage_id integer,
   id text,
