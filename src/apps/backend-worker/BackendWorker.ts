@@ -10,7 +10,6 @@ import * as Ref from "effect/Ref";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerRespondable from "effect/unstable/http/HttpServerRespondable";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import InboundWorkflow from "#/apps/inbound-workflow/InboundWorkflow";
 import { MailboxDO } from "#/apps/mailbox-do/MailboxDO";
@@ -67,7 +66,7 @@ import {
   authRuntimeEnvironmentConfig,
   makeAuthRuntimeConfig,
 } from "./AuthRuntimeConfig";
-import { backendHttpFeatureFor } from "./BackendHttpFeature";
+import { BackendApplicationLayer } from "./BackendApplicationLayer";
 import {
   backendHealthBindingsLayer,
   draftAttachmentR2ClientLayer,
@@ -335,120 +334,14 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               CurrentBackendRequestContext,
               CurrentBackendRequestContext.of(requestContext)
             );
-            const feature = backendHttpFeatureFor(
-              request.method,
-              requestUrl.pathname
+            const handler = yield* HttpRouter.toHttpEffect(
+              BackendApplicationLayer.pipe(
+                Layer.provide(requestControlPlaneD1Layer),
+                Layer.provide(backendHttpDependenciesLayer),
+                Layer.provide(requestContextLayer),
+                Layer.orDie
+              )
             );
-            const handler = yield* Effect.gen(function* () {
-              if (feature === "session") {
-                const { BackendAuthSessionApplicationLayer } =
-                  yield* Effect.promise(
-                    () => import("./BackendAuthSessionApplicationLayer")
-                  );
-                return yield* HttpRouter.toHttpEffect(
-                  BackendAuthSessionApplicationLayer.pipe(
-                    Layer.provide(requestControlPlaneD1Layer),
-                    Layer.provide(authConfigLayer),
-                    Layer.orDie
-                  )
-                );
-              }
-              if (feature === "magicLinkStart") {
-                const { BackendMagicLinkStartApplicationLayer } =
-                  yield* Effect.promise(
-                    () => import("./BackendMagicLinkStartApplicationLayer")
-                  );
-                return yield* HttpRouter.toHttpEffect(
-                  BackendMagicLinkStartApplicationLayer.pipe(
-                    Layer.provide(requestControlPlaneD1Layer),
-                    Layer.provide(authConfigLayer),
-                    Layer.provide(mailboxBootstrapConfigLayer),
-                    Layer.orDie
-                  )
-                );
-              }
-              if (feature === "magicLinkVerify") {
-                const { BackendMagicLinkVerifyApplicationLayer } =
-                  yield* Effect.promise(
-                    () => import("./BackendMagicLinkVerifyApplicationLayer")
-                  );
-                return yield* HttpRouter.toHttpEffect(
-                  BackendMagicLinkVerifyApplicationLayer.pipe(
-                    Layer.provide(requestControlPlaneD1Layer),
-                    Layer.provide(authConfigLayer),
-                    Layer.orDie
-                  )
-                );
-              }
-              if (feature === "stepUpOptions") {
-                const { BackendStepUpOptionsApplicationLayer } =
-                  yield* Effect.promise(
-                    () => import("./BackendStepUpOptionsApplicationLayer")
-                  );
-                return yield* HttpRouter.toHttpEffect(
-                  BackendStepUpOptionsApplicationLayer.pipe(
-                    Layer.provide(requestControlPlaneD1Layer),
-                    Layer.provide(authConfigLayer),
-                    Layer.orDie
-                  )
-                );
-              }
-              if (feature === "accountSecurity") {
-                const { BackendAccountSecurityApplicationLayer } =
-                  yield* Effect.promise(
-                    () => import("./BackendAccountSecurityApplicationLayer")
-                  );
-                return yield* HttpRouter.toHttpEffect(
-                  BackendAccountSecurityApplicationLayer.pipe(
-                    Layer.provide(requestControlPlaneD1Layer),
-                    Layer.provide(backendHttpDependenciesLayer),
-                    Layer.provide(requestContextLayer),
-                    Layer.orDie
-                  )
-                );
-              }
-              if (feature === "mailbox") {
-                const { BackendMailboxApplicationLayer } =
-                  yield* Effect.promise(
-                    () => import("./BackendMailboxApplicationLayer")
-                  );
-                return yield* HttpRouter.toHttpEffect(
-                  BackendMailboxApplicationLayer.pipe(
-                    Layer.provide(requestControlPlaneD1Layer),
-                    Layer.provide(backendHttpDependenciesLayer),
-                    Layer.provide(requestContextLayer),
-                    Layer.orDie
-                  )
-                );
-              }
-              if (feature === "organization") {
-                const { BackendOrganizationApplicationLayer } =
-                  yield* Effect.promise(
-                    () => import("./BackendOrganizationApplicationLayer")
-                  );
-                return yield* HttpRouter.toHttpEffect(
-                  BackendOrganizationApplicationLayer.pipe(
-                    Layer.provide(requestControlPlaneD1Layer),
-                    Layer.provide(backendHttpDependenciesLayer),
-                    Layer.provide(requestContextLayer),
-                    Layer.orDie
-                  )
-                );
-              }
-              if (feature === "health") {
-                const { BackendHealthApplicationLayer } = yield* Effect.promise(
-                  () => import("./BackendHealthApplicationLayer")
-                );
-                return yield* HttpRouter.toHttpEffect(
-                  BackendHealthApplicationLayer.pipe(
-                    Layer.provide(requestControlPlaneD1Layer),
-                    Layer.provide(healthBindingsLayer),
-                    Layer.orDie
-                  )
-                );
-              }
-              return Effect.succeed(HttpServerResponse.empty({ status: 404 }));
-            });
             const response = yield* handler.pipe(
               Effect.provideService(
                 CurrentBackendRequestContext,

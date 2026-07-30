@@ -223,6 +223,26 @@ describe("complete Backend application auth graph", () => {
     ]);
   });
 
+  it("serves every bounded context through the canonical aggregate graph", async () => {
+    const responses = await Promise.all([
+      request("/auth/step-up/options"),
+      request("/api/mailboxes/bootstrap-owner", {
+        method: "POST",
+        headers: { "content-type": "application/json", origin: publicOrigin },
+        body: "{}",
+      }),
+      request(
+        "/api/organizations/operations/00000000-0000-4000-8000-000000000010"
+      ),
+      request("/api/health"),
+      request("/unknown"),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toStrictEqual([
+      401, 401, 500, 503, 404,
+    ]);
+  });
+
   it("serves POST /auth/magic-link/start and enforces the configured origin", async () => {
     const validBody = JSON.stringify({
       identity: {

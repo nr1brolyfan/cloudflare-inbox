@@ -314,7 +314,7 @@ describe("job mail production resource structure", () => {
     );
   });
 
-  it("loads every bounded context independently with no aggregate fallback", () => {
+  it("serves one canonical Backend HTTP application graph", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
     const sourceFile = TypeScript.createSourceFile(
       "BackendWorker.ts",
@@ -349,19 +349,12 @@ describe("job mail production resource structure", () => {
     };
     visit(sourceFile);
 
-    expect(staticApplicationImports).toStrictEqual([]);
-    expect(dynamicApplicationImports).toStrictEqual([
-      "./BackendAuthSessionApplicationLayer",
-      "./BackendMagicLinkStartApplicationLayer",
-      "./BackendMagicLinkVerifyApplicationLayer",
-      "./BackendStepUpOptionsApplicationLayer",
-      "./BackendAccountSecurityApplicationLayer",
-      "./BackendMailboxApplicationLayer",
-      "./BackendOrganizationApplicationLayer",
-      "./BackendHealthApplicationLayer",
+    expect(staticApplicationImports).toStrictEqual([
+      "./BackendApplicationLayer",
     ]);
-    expect(backend).toContain("backendHttpFeatureFor(");
-    expect(backend).not.toContain('import("./BackendApplicationLayer")');
+    expect(dynamicApplicationImports).toStrictEqual([]);
+    expect(backend).not.toContain("backendHttpFeatureFor(");
+    expect(backend).toContain("HttpRouter.toHttpEffect(");
   });
 
   it("keeps runtime config and Cloudflare adapters outside the Worker composition root", () => {
