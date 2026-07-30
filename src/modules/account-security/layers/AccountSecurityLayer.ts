@@ -121,9 +121,7 @@ export const AccountSecurityLayer = Layer.unwrap(
     const authStorageLayer = EffectAuthStorageD1Layer;
     const devEmailStoreLayer = DevEmailStoreD1Layer;
     const rawEffectAuthLayer = AccountSecurityEffectAuthLayer.pipe(
-      Layer.provide(runtimeConfigLayer),
-      Layer.provide(authStorageLayer),
-      Layer.provide(devEmailStoreLayer)
+      Layer.provide([runtimeConfigLayer, authStorageLayer, devEmailStoreLayer])
     );
     const recoverySafeIdentityLayer = RecoverySafeIdentityD1Layer;
     const passkeyConfigLayer = PasskeyRuntimeConfigEffectAuthLayer.pipe(
@@ -146,8 +144,7 @@ export const AccountSecurityLayer = Layer.unwrap(
       );
     const passwordResetEligibilityLayer =
       PasswordResetEligibility.layerNoDeps.pipe(
-        Layer.provide(rawEffectAuthLayer),
-        Layer.provide(authStorageLayer)
+        Layer.provide([rawEffectAuthLayer, authStorageLayer])
       );
     const effectAuthLayer = makeRecoverySafeAccountSecurityEffectAuthLayer({
       authStorage: authStorageLayer,
@@ -155,6 +152,9 @@ export const AccountSecurityLayer = Layer.unwrap(
       rawEffectAuth: rawEffectAuthLayer,
       recoverySafeIdentity: recoverySafeIdentityLayer,
     });
+    const recoveryCodesLayer = RecoveryCodesLive.pipe(
+      Layer.provide(effectAuthLayer)
+    );
     const recoveryIdentityLayer = ExternalRecoveryIdentityD1Layer.pipe(
       Layer.provide(
         Layer.mergeAll(
@@ -173,14 +173,16 @@ export const AccountSecurityLayer = Layer.unwrap(
     );
     const firstOwnerPasswordEnrollmentLayer =
       FirstOwnerPasswordEnrollmentD1Layer.pipe(
-        Layer.provide(effectAuthLayer),
-        Layer.provide(FirstOwnerPasswordEnrollmentRuntimeLayer)
+        Layer.provide([
+          effectAuthLayer,
+          FirstOwnerPasswordEnrollmentRuntimeLayer,
+        ])
       );
     const passkeyEnrollmentLayer = PasskeyEnrollmentD1Layer.pipe(
       Layer.provide(
         Layer.mergeAll(
           effectAuthLayer,
-          RecoveryCodesLive.pipe(Layer.provide(effectAuthLayer)),
+          recoveryCodesLayer,
           PasskeyEnrollmentRuntimeLayer,
           passkeyConfigLayer,
           SensitiveOperationStepUpClockCloudflareLayer
@@ -202,15 +204,13 @@ export const AccountSecurityLayer = Layer.unwrap(
         Layer.provide(
           Layer.mergeAll(
             effectAuthLayer,
-            RecoveryCodesLive.pipe(Layer.provide(effectAuthLayer)),
+            recoveryCodesLayer,
             SensitiveOperationStepUpClockCloudflareLayer
           )
         )
       );
     const recoveryCodeCoreLayer = RecoveryCodeManagementLive.pipe(
-      Layer.provide(RecoveryCodesLive.pipe(Layer.provide(effectAuthLayer))),
-      Layer.provide(effectAuthLayer),
-      Layer.provide(authStorageLayer)
+      Layer.provide([recoveryCodesLayer, effectAuthLayer, authStorageLayer])
     );
     const accountRecoveryLayer = AccountRecoveryD1Layer.pipe(
       Layer.provide(
@@ -218,7 +218,7 @@ export const AccountSecurityLayer = Layer.unwrap(
           effectAuthLayer,
           authStorageLayer,
           recoveryCodeCoreLayer,
-          RecoveryCodesLive.pipe(Layer.provide(effectAuthLayer)),
+          recoveryCodesLayer,
           recoverySafeIdentityLayer,
           AccountRecoveryDeliveryEmailLayer.pipe(
             Layer.provide(runtimeConfigLayer),

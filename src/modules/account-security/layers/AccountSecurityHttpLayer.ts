@@ -65,6 +65,8 @@ import {
 } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import { AccountSecurityLayer } from "#/modules/account-security/layers/AccountSecurityLayer";
 
+const AccountSecurityOrDieLayer = AccountSecurityLayer.pipe(Layer.orDie);
+
 /** Shared origin, metadata, schema-error, and authenticated-request middleware. */
 export const AccountSecurityHttpMiddlewareLayer = Layer.unwrap(
   Effect.gen(function* () {
@@ -76,17 +78,16 @@ export const AccountSecurityHttpMiddlewareLayer = Layer.unwrap(
     const requestMetadata = {
       ipSource: { _tag: "CloudflareConnectingIp" },
     } as const;
+    const authenticatedRequestMiddlewareLayer = Layer.mergeAll(
+      CurrentRequestAuthMiddlewareLayer,
+      SessionAuthenticationMiddlewareLayer
+    ).pipe(Layer.provide(AccountSecurityOrDieLayer));
 
     return Layer.mergeAll(
       AuthSchemaErrorMiddlewareLive,
       AuthOriginCheckMiddlewareLive(originPolicy).pipe(Layer.orDie),
       AuthRequestMetadataMiddlewareLive(requestMetadata).pipe(Layer.orDie),
-      CurrentRequestAuthMiddlewareLayer.pipe(
-        Layer.provide(AccountSecurityLayer.pipe(Layer.orDie))
-      ),
-      SessionAuthenticationMiddlewareLayer.pipe(
-        Layer.provide(AccountSecurityLayer.pipe(Layer.orDie))
-      )
+      authenticatedRequestMiddlewareLayer
     );
   })
 );
@@ -116,7 +117,7 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
       loginApprovalFinalizer: HttpLoginApprovalFinalizerCapability.Disabled(),
     }).pipe(Layer.orDie);
     const requestValidationLayer = AccountSecurityHttpMiddlewareLayer;
-    const accountSecurityLayer = AccountSecurityLayer.pipe(Layer.orDie);
+    const accountSecurityLayer = AccountSecurityOrDieLayer;
     const passwordHttpOperationsLayer = PasswordHttpOperationsLive.pipe(
       Layer.provide(accountSecurityLayer)
     );
@@ -138,7 +139,6 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
       Layer.provide(LoginApprovalHttpOperationsLive.pipe(Layer.orDie)),
       Layer.provide(LoginNotificationHttpOperationsLive),
       Layer.provide(ApplicationStepUpHttpOperationsLayer),
-      Layer.provide(accountSecurityLayer),
       Layer.provide(SensitiveOperationStepUpClockCloudflareLayer),
       Layer.provide(
         AuthHttpApiConfigLive({
@@ -149,57 +149,32 @@ export const AccountSecurityHttpLayer = Layer.unwrap(
       Layer.provide(EmailAuthProcessCookieLive.pipe(Layer.orDie)),
       Layer.provide(httpAuthenticationCapabilitiesLayer),
       Layer.provide(httpEndpointCapabilitiesLayer),
-      Layer.provide(requestValidationLayer),
-      Layer.provide(accountSecurityLayer),
       Layer.provide(BotProtectionNoopLive)
     );
     const recoveryRequestAuthLayer =
       RecoveryRemediationRequestAuthMiddlewareLayer.pipe(
         Layer.provide(accountSecurityLayer)
       );
-    const protectedHttpDependencies = AccountSecurityHttpMiddlewareLayer;
+    const handlersLayer = Layer.mergeAll(
+      coreHandlersLayer,
+      AccountRecoveryHttpHandlersLayer,
+      ExternalRecoveryIdentityHttpHandlersLayer,
+      FirstOwnerPasswordEnrollmentHttpHandlersLayer,
+      PasskeyEnrollmentHttpHandlersLayer,
+      RecoveryPasskeyEnrollmentHttpHandlersLayer,
+      RecoveryPasskeyEnrollmentReadbackHttpHandlersLayer,
+      PasskeyAuthenticationHttpHandlersLayer,
+      PasskeyCredentialManagementHttpHandlersLayer,
+      RecoveryCodeManagementHttpHandlersLayer,
+      DevEmailHttpHandlersLayer
+    ).pipe(
+      Layer.provide(recoveryRequestAuthLayer),
+      Layer.provide(requestValidationLayer),
+      Layer.provideMerge(accountSecurityLayer)
+    );
 
     return Layer.mergeAll(
-      coreHandlersLayer,
-      AccountRecoveryHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(requestValidationLayer)
-      ),
-      ExternalRecoveryIdentityHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(protectedHttpDependencies)
-      ),
-      FirstOwnerPasswordEnrollmentHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(protectedHttpDependencies)
-      ),
-      PasskeyEnrollmentHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(protectedHttpDependencies)
-      ),
-      RecoveryPasskeyEnrollmentHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(recoveryRequestAuthLayer),
-        Layer.provide(requestValidationLayer)
-      ),
-      RecoveryPasskeyEnrollmentReadbackHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(requestValidationLayer)
-      ),
-      PasskeyAuthenticationHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(requestValidationLayer)
-      ),
-      PasskeyCredentialManagementHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(protectedHttpDependencies)
-      ),
-      RecoveryCodeManagementHttpHandlersLayer.pipe(
-        Layer.provide(accountSecurityLayer),
-        Layer.provide(protectedHttpDependencies)
-      ),
-      DevEmailHttpHandlersLayer.pipe(Layer.provide(accountSecurityLayer)),
-      accountSecurityLayer,
+      handlersLayer,
       httpAuthenticationCapabilitiesLayer,
       httpEndpointCapabilitiesLayer
     );

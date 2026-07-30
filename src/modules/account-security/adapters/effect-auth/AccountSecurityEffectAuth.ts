@@ -105,8 +105,8 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
 
       const { emailSender } = options.delivery;
       return AuthMailerLive({ from: options.emailFrom }).pipe(
-        Layer.provide(emailTemplatesLayer),
-        Layer.provide(
+        Layer.provide([
+          emailTemplatesLayer,
           Layer.succeed(
             Mailer,
             AlchemyCloudflareMailer.make({
@@ -119,8 +119,8 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
               from: options.emailFrom,
               provider: "cloudflare-email-routing",
             })
-          )
-        )
+          ),
+        ])
       );
     })();
     const authenticationCapabilitiesLayer =
@@ -146,39 +146,6 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
       Layer.merge(IdentityKindRegistryDefaultLive),
       Layer.merge(authMailerLayer)
     );
-    const passwordBaseLayer = PasswordDefaultLive(
-      undefined,
-      minimumPasswordRiskPolicyLayer
-    ).pipe(Layer.provideMerge(baseLayer));
-    const passwordLayer = PasswordResetLive({
-      makeUrl: ({ challengeId, secret }) =>
-        flowUrl(
-          publicOrigin,
-          "/auth-complete/password-reset",
-          challengeId,
-          secret
-        ),
-    }).pipe(Layer.provideMerge(passwordBaseLayer));
-    const emailDeliveryLayer = EmailDeliveryFromAuthMailerLive.pipe(
-      Layer.provideMerge(baseLayer)
-    );
-    const emailVerificationLayer = EmailVerificationCodeLive.pipe(
-      Layer.provideMerge(emailDeliveryLayer)
-    );
-    const emailOtpLayer = EmailOtpDefaultLive().pipe(
-      Layer.provideMerge(baseLayer)
-    );
-    const magicLinkLayer = MagicLinkLoginLive({
-      makeUrl: ({ challengeId, secret }) =>
-        flowUrl(publicOrigin, "/auth-complete/magic-link", challengeId, secret),
-    }).pipe(Layer.provideMerge(baseLayer));
-    const loginApprovalLayer = LoginApprovalLive().pipe(
-      Layer.provideMerge(baseLayer)
-    );
-    const authFlowStateLayer = AuthFlowStateLive().pipe(
-      Layer.provideMerge(baseLayer)
-    );
-    const passkeyLayer = PasskeyEffectAuthLayer.pipe(Layer.provide(baseLayer));
     const rateLimiterLayer = RateLimiterLive.pipe(
       Layer.provide(PersistenceRateLimiter.layer),
       Layer.provide(
@@ -187,20 +154,37 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
         })
       )
     );
-    const authRateLimitLayer = AuthRateLimitStandardLive().pipe(
-      Layer.provideMerge(rateLimiterLayer),
-      Layer.provideMerge(baseLayer)
-    );
+    const featureBaseLayer = Layer.mergeAll(
+      PasswordDefaultLive(undefined, minimumPasswordRiskPolicyLayer),
+      EmailDeliveryFromAuthMailerLive,
+      EmailOtpDefaultLive(),
+      MagicLinkLoginLive({
+        makeUrl: ({ challengeId, secret }) =>
+          flowUrl(
+            publicOrigin,
+            "/auth-complete/magic-link",
+            challengeId,
+            secret
+          ),
+      }),
+      LoginApprovalLive(),
+      AuthFlowStateLive(),
+      PasskeyEffectAuthLayer,
+      rateLimiterLayer
+    ).pipe(Layer.provideMerge(baseLayer));
     const requirementsLayer = Layer.mergeAll(
-      passwordLayer,
-      emailVerificationLayer,
-      emailOtpLayer,
-      magicLinkLayer,
-      loginApprovalLayer,
-      authFlowStateLayer,
-      passkeyLayer,
-      authRateLimitLayer
-    );
+      PasswordResetLive({
+        makeUrl: ({ challengeId, secret }) =>
+          flowUrl(
+            publicOrigin,
+            "/auth-complete/password-reset",
+            challengeId,
+            secret
+          ),
+      }),
+      EmailVerificationCodeLive,
+      AuthRateLimitStandardLive()
+    ).pipe(Layer.provideMerge(featureBaseLayer));
 
     return Layer.mergeAll(
       authenticationCapabilitiesLayer,

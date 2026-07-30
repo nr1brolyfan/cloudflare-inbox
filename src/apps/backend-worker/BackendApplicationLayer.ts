@@ -7,11 +7,7 @@ import {
   AccountSecurityHttpLayer,
   AccountSecurityHttpMiddlewareLayer,
 } from "#/modules/account-security/layers/AccountSecurityHttpLayer";
-import { AccountSecurityLayer } from "#/modules/account-security/layers/AccountSecurityLayer";
 import { AddressRoutingLayer } from "#/modules/address-routing/layers/AddressRoutingLayer";
-import { AdministrativeAudit } from "#/modules/administrative-audit/contracts/AdministrativeAudit";
-import { AdministrativeAuditRuntimeLayer } from "#/modules/administrative-audit/layers/AdministrativeAuditLayer";
-import { MailPermissionsEffectAuthLayer } from "#/modules/authorization/adapters/effect-auth/MailPermissionsEffectAuth";
 import { MailboxAuthorizationLayer } from "#/modules/authorization/layers/MailboxAuthorizationLayer";
 import { TrustedMailResourceTransport } from "#/modules/authorization/ports/TrustedMailResourceTransport";
 import {
@@ -29,20 +25,14 @@ import { BackendHealthLayer } from "./BackendHealthLayer";
 import { BackendHttpApi } from "./BackendHttpApi";
 import { MailboxHttpLayer } from "./BackendMailboxHttpLayer";
 import { OrganizationHttpHandlersLayer } from "./BackendOrganizationHttpHandlers";
+import {
+  AdministrativeAuditApplicationRuntimeLayer,
+  PermissionsApplicationLayer,
+} from "./BackendSecurityContextLayers";
 import { OrganizationLayer } from "./OrganizationApplicationLayer";
 import { OrganizationSessionRequirementsMiddlewareLayer } from "./OrganizationSessionRequirements";
 
 /** Builds the one Backend API from closed bounded-context HTTP graphs. */
-const AdministrativeAuditApplicationRuntimeLayer =
-  AdministrativeAudit.layerNoDeps.pipe(
-    Layer.provide(AdministrativeAuditRuntimeLayer)
-  );
-const AccountSecurityApplicationLayer = AccountSecurityLayer.pipe(
-  Layer.provide(AdministrativeAuditApplicationRuntimeLayer)
-);
-const PermissionsApplicationLayer = MailPermissionsEffectAuthLayer.pipe(
-  Layer.provide(AccountSecurityApplicationLayer)
-);
 const MailboxDoClientApplicationLayer = MailboxDoClientLayer.pipe(
   Layer.provide(MailboxRegistryD1Layer)
 );
