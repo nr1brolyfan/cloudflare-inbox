@@ -314,7 +314,7 @@ describe("job mail production resource structure", () => {
     );
   });
 
-  it("loads bounded authentication graphs independently from the complete graph", () => {
+  it("loads every bounded context independently with no aggregate fallback", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
     const sourceFile = TypeScript.createSourceFile(
       "BackendWorker.ts",
@@ -354,13 +354,14 @@ describe("job mail production resource structure", () => {
       "./BackendAuthSessionApplicationLayer",
       "./BackendMagicLinkStartApplicationLayer",
       "./BackendMagicLinkVerifyApplicationLayer",
-      "./BackendApplicationLayer",
+      "./BackendStepUpOptionsApplicationLayer",
+      "./BackendAccountSecurityApplicationLayer",
+      "./BackendMailboxApplicationLayer",
+      "./BackendOrganizationApplicationLayer",
+      "./BackendHealthApplicationLayer",
     ]);
-    expect(backend).not.toContain("backendFeatureFor");
-    expect(backend).toContain("BackendApplicationLayer.pipe(");
-    expect(backend).toContain('route === "GET /auth/session"');
-    expect(backend).toContain('route === "POST /auth/magic-link/start"');
-    expect(backend).toContain('route === "POST /auth/magic-link/verify"');
+    expect(backend).toContain("backendHttpFeatureFor(");
+    expect(backend).not.toContain('import("./BackendApplicationLayer")');
   });
 
   it("keeps runtime config and Cloudflare adapters outside the Worker composition root", () => {
@@ -379,14 +380,33 @@ describe("job mail production resource structure", () => {
     expect(backend).not.toContain("r2AttachmentObject");
   });
 
-  it("does not retain route-dispatch workaround files", () => {
+  it("keeps mailbox and organization free of aggregate account-security layers", () => {
+    const mailbox = readRoot(
+      "src/apps/backend-worker/BackendMailboxApplicationLayer.ts"
+    );
+    const organization = readRoot(
+      "src/apps/backend-worker/BackendOrganizationApplicationLayer.ts"
+    );
+    const security = readRoot(
+      "src/apps/backend-worker/BackendSecurityContextLayers.ts"
+    );
+
+    expect(mailbox).not.toContain("AccountSecurityLayer");
+    expect(mailbox).toContain("BackendSessionAuthenticationMiddlewareLayer");
+    expect(organization).not.toContain("AccountSecurityLayer");
+    expect(organization).toContain(
+      "BackendSessionAuthenticationMiddlewareLayer"
+    );
+    expect(security).toContain("PermissionStoreD1Layer");
+    expect(security).not.toContain(
+      "Layer.provide(AccountSecurityApplicationLayer)"
+    );
+  });
+
+  it("does not retain the legacy aggregate dispatcher", () => {
     const removedFiles = [
       "src/apps/backend-worker/BackendHttpDispatch.ts",
-      "src/apps/backend-worker/BackendHealthApplicationLayer.ts",
-      "src/apps/backend-worker/BackendStepUpOptionsApplicationLayer.ts",
-      "src/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.ts",
       "tests/apps/backend-worker/BackendHttpDispatch.test.ts",
-      "tests/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.test.ts",
     ];
 
     expect(

@@ -13,8 +13,12 @@ import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { BackendAccountSecurityApplicationLayer } from "#/apps/backend-worker/BackendAccountSecurityApplicationLayer";
 import { BackendApplicationLayer } from "#/apps/backend-worker/BackendApplicationLayer";
+import { BackendHealthApplicationLayer } from "#/apps/backend-worker/BackendHealthApplicationLayer";
 import { BackendHealthBindings } from "#/apps/backend-worker/BackendHealthLayer";
+import { BackendMailboxApplicationLayer } from "#/apps/backend-worker/BackendMailboxApplicationLayer";
+import { BackendOrganizationApplicationLayer } from "#/apps/backend-worker/BackendOrganizationApplicationLayer";
 import {
   AuthRuntimeConfig,
   AuthRuntimeConfigSchema,
@@ -58,6 +62,8 @@ const rateLimitNamespace = {
 let database: DatabaseSync;
 let dispose: (() => Promise<void>) | undefined;
 let handler: ((request: Request) => Promise<Response>) | undefined;
+let contextDisposes: readonly (() => Promise<void>)[] = [];
+let contextHandlers: readonly ((request: Request) => Promise<Response>)[] = [];
 
 describe("complete Backend application auth graph", () => {
   beforeAll(async () => {
@@ -130,10 +136,39 @@ describe("complete Backend application auth graph", () => {
     const { dispose: disposeHandler, handler: requestHandler } = webHandler;
     dispose = disposeHandler;
     handler = requestHandler;
+    const accountSecurityContext = HttpRouter.toWebHandler(
+      BackendAccountSecurityApplicationLayer.pipe(Layer.provide(bindings)),
+      { disableLogger: true }
+    );
+    const mailboxContext = HttpRouter.toWebHandler(
+      BackendMailboxApplicationLayer.pipe(Layer.provide(bindings)),
+      { disableLogger: true }
+    );
+    const organizationContext = HttpRouter.toWebHandler(
+      BackendOrganizationApplicationLayer.pipe(Layer.provide(bindings)),
+      { disableLogger: true }
+    );
+    const healthContext = HttpRouter.toWebHandler(
+      BackendHealthApplicationLayer.pipe(Layer.provide(bindings)),
+      {
+        disableLogger: true,
+      }
+    );
+    const contexts = [
+      accountSecurityContext,
+      mailboxContext,
+      organizationContext,
+      healthContext,
+    ];
+    contextDisposes = contexts.map((context) => context.dispose);
+    contextHandlers = contexts.map((context) => context.handler);
   });
 
   afterAll(async () => {
     await dispose?.();
+    await Promise.all(
+      contextDisposes.map((disposeContext) => disposeContext())
+    );
     database.close();
   });
 
@@ -154,6 +189,38 @@ describe("complete Backend application auth graph", () => {
       code: "unauthenticated",
       message: "Unauthenticated",
     });
+  });
+
+  it("builds each bounded context without the aggregate graph", async () => {
+    const [accountSecurity, mailbox, organization, health] = contextHandlers;
+    if (
+      accountSecurity === undefined ||
+      mailbox === undefined ||
+      organization === undefined ||
+      health === undefined
+    ) {
+      throw new Error("Bounded Backend contexts were not built");
+    }
+    const responses = await Promise.all([
+      accountSecurity(new Request("https://backend.test/auth/step-up/options")),
+      mailbox(
+        new Request("https://backend.test/api/mailboxes/bootstrap-owner", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin: publicOrigin },
+          body: "{}",
+        })
+      ),
+      organization(
+        new Request(
+          "https://backend.test/api/organizations/operations/00000000-0000-4000-8000-000000000010"
+        )
+      ),
+      health(new Request("https://backend.test/api/health")),
+    ]);
+
+    expect(responses.map(({ status }) => status)).toStrictEqual([
+      401, 401, 500, 503,
+    ]);
   });
 
   it("serves POST /auth/magic-link/start and enforces the configured origin", async () => {

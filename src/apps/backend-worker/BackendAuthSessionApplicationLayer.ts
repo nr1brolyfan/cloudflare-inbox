@@ -11,7 +11,7 @@ import { AuthCurrentSessionHttpRouteLayer } from "#/modules/account-security/ada
 import { externalRecoveryLinkEvidence } from "#/modules/account-security/domain/AccountRecovery";
 import { ControlPlaneDatabaseLayer } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 
-const AuthSessionCoreLayer = Layer.unwrap(
+export const AuthSessionCoreLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* AuthRuntimeConfig;
     const sessionDependencies = Layer.mergeAll(
@@ -23,7 +23,8 @@ const AuthSessionCoreLayer = Layer.unwrap(
       )
     );
 
-    return Layer.merge(
+    return Layer.mergeAll(
+      sessionDependencies,
       SessionsLive().pipe(Layer.provide(sessionDependencies)),
       SessionCookieLive()
     );
