@@ -16,6 +16,7 @@ import { AuthRateLimitStandardLive } from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import { AuthMailerFromDevEmailStoreLive } from "@effect-auth/core/DevEmail";
 import { EmailOtpDefaultLive } from "@effect-auth/core/EmailOtp";
+import { EmailAcceptancePolicyNoopLive } from "@effect-auth/core/EmailRisk";
 import { EmailDeliveryFromAuthMailerLive } from "@effect-auth/core/EmailVerification";
 import { EmailVerificationCodeLive } from "@effect-auth/core/EmailVerificationCode";
 import { IdentityKindRegistryDefaultLive } from "@effect-auth/core/Identity";
@@ -28,7 +29,10 @@ import {
   makeDefaultAuthEmailTemplates,
 } from "@effect-auth/core/Mailer";
 import {
-  PasswordDefaultLive,
+  PasswordLoginLive,
+  PasswordManagementLive,
+  PasswordPrimaryFactorLive,
+  PasswordRegistrationLive,
   PasswordResetLive,
 } from "@effect-auth/core/Password";
 import { PasswordRiskPolicy } from "@effect-auth/core/PasswordRisk";
@@ -40,6 +44,7 @@ import * as Redacted from "effect/Redacted";
 import { RateLimiter as PersistenceRateLimiter } from "effect/unstable/persistence";
 
 import { AuthRuntimeConfig } from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
+import { NodePbkdf2PasswordHasherLayer } from "#/modules/account-security/adapters/effect-auth/NodePbkdf2PasswordHasher";
 import { PasskeyEffectAuthLayer } from "#/modules/account-security/adapters/effect-auth/PasskeyEffectAuth";
 import { externalRecoveryLinkEvidence } from "#/modules/account-security/domain/AccountRecovery";
 import { completionUrl } from "#/modules/account-security/domain/CompletionUrl";
@@ -154,8 +159,18 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
         })
       )
     );
+    const passwordLayer = Layer.mergeAll(
+      PasswordPrimaryFactorLive,
+      PasswordLoginLive,
+      PasswordRegistrationLive,
+      PasswordManagementLive
+    ).pipe(
+      Layer.provideMerge(NodePbkdf2PasswordHasherLayer),
+      Layer.provideMerge(minimumPasswordRiskPolicyLayer),
+      Layer.provideMerge(EmailAcceptancePolicyNoopLive)
+    );
     const featureBaseLayer = Layer.mergeAll(
-      PasswordDefaultLive(undefined, minimumPasswordRiskPolicyLayer),
+      passwordLayer,
       EmailDeliveryFromAuthMailerLive,
       EmailOtpDefaultLive(),
       MagicLinkLoginLive({
