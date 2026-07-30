@@ -314,7 +314,7 @@ describe("job mail production resource structure", () => {
     );
   });
 
-  it("statically imports exactly one complete Backend application graph", () => {
+  it("loads bounded authentication graphs independently from the complete graph", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
     const sourceFile = TypeScript.createSourceFile(
       "BackendWorker.ts",
@@ -349,12 +349,18 @@ describe("job mail production resource structure", () => {
     };
     visit(sourceFile);
 
-    expect(staticApplicationImports).toStrictEqual([
+    expect(staticApplicationImports).toStrictEqual([]);
+    expect(dynamicApplicationImports).toStrictEqual([
+      "./BackendAuthSessionApplicationLayer",
+      "./BackendMagicLinkStartApplicationLayer",
+      "./BackendMagicLinkVerifyApplicationLayer",
       "./BackendApplicationLayer",
     ]);
-    expect(dynamicApplicationImports).toStrictEqual([]);
     expect(backend).not.toContain("backendFeatureFor");
     expect(backend).toContain("BackendApplicationLayer.pipe(");
+    expect(backend).toContain('route === "GET /auth/session"');
+    expect(backend).toContain('route === "POST /auth/magic-link/start"');
+    expect(backend).toContain('route === "POST /auth/magic-link/verify"');
   });
 
   it("keeps runtime config and Cloudflare adapters outside the Worker composition root", () => {
@@ -377,18 +383,9 @@ describe("job mail production resource structure", () => {
     const removedFiles = [
       "src/apps/backend-worker/BackendHttpDispatch.ts",
       "src/apps/backend-worker/BackendHealthApplicationLayer.ts",
-      "src/apps/backend-worker/BackendAuthSessionApplicationLayer.ts",
-      "src/apps/backend-worker/BackendMagicLinkStartApplicationLayer.ts",
-      "src/apps/backend-worker/BackendMagicLinkVerifyApplicationLayer.ts",
       "src/apps/backend-worker/BackendStepUpOptionsApplicationLayer.ts",
-      "src/modules/account-security/adapters/http/AuthCurrentSessionHttpRoute.ts",
-      "src/modules/account-security/adapters/http/AuthMagicLinkStartHttpRoute.ts",
-      "src/modules/account-security/adapters/http/AuthMagicLinkVerifyHttpRoute.ts",
       "src/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.ts",
       "tests/apps/backend-worker/BackendHttpDispatch.test.ts",
-      "tests/modules/account-security/adapters/http/AuthCurrentSessionHttpRoute.test.ts",
-      "tests/modules/account-security/adapters/http/AuthMagicLinkStartHttpRoute.test.ts",
-      "tests/modules/account-security/adapters/http/AuthMagicLinkVerifyHttpRoute.test.ts",
       "tests/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute.test.ts",
     ];
 

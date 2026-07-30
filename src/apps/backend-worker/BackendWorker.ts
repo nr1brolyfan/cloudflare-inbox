@@ -66,7 +66,6 @@ import {
   authRuntimeEnvironmentConfig,
   makeAuthRuntimeConfig,
 } from "./AuthRuntimeConfig";
-import { BackendApplicationLayer } from "./BackendApplicationLayer";
 import {
   backendHealthBindingsLayer,
   draftAttachmentR2ClientLayer,
@@ -330,19 +329,65 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               ControlPlaneD1Binding,
               ControlPlaneD1Binding.of({ database: controlPlaneDatabase })
             );
-            const backendRequestApplicationLayer = BackendApplicationLayer.pipe(
-              Layer.provide(requestControlPlaneD1Layer),
-              Layer.provide(backendHttpDependenciesLayer),
-              Layer.provide(
-                Layer.succeed(
-                  CurrentBackendRequestContext,
-                  CurrentBackendRequestContext.of(requestContext)
+            const route = `${request.method} ${requestUrl.pathname}`;
+            const handler = yield* Effect.gen(function* () {
+              if (route === "GET /auth/session") {
+                const { BackendAuthSessionApplicationLayer } =
+                  yield* Effect.promise(
+                    () => import("./BackendAuthSessionApplicationLayer")
+                  );
+                return yield* HttpRouter.toHttpEffect(
+                  BackendAuthSessionApplicationLayer.pipe(
+                    Layer.provide(requestControlPlaneD1Layer),
+                    Layer.provide(authConfigLayer),
+                    Layer.orDie
+                  )
+                );
+              }
+              if (route === "POST /auth/magic-link/start") {
+                const { BackendMagicLinkStartApplicationLayer } =
+                  yield* Effect.promise(
+                    () => import("./BackendMagicLinkStartApplicationLayer")
+                  );
+                return yield* HttpRouter.toHttpEffect(
+                  BackendMagicLinkStartApplicationLayer.pipe(
+                    Layer.provide(requestControlPlaneD1Layer),
+                    Layer.provide(authConfigLayer),
+                    Layer.provide(mailboxBootstrapConfigLayer),
+                    Layer.orDie
+                  )
+                );
+              }
+              if (route === "POST /auth/magic-link/verify") {
+                const { BackendMagicLinkVerifyApplicationLayer } =
+                  yield* Effect.promise(
+                    () => import("./BackendMagicLinkVerifyApplicationLayer")
+                  );
+                return yield* HttpRouter.toHttpEffect(
+                  BackendMagicLinkVerifyApplicationLayer.pipe(
+                    Layer.provide(requestControlPlaneD1Layer),
+                    Layer.provide(authConfigLayer),
+                    Layer.orDie
+                  )
+                );
+              }
+              const { BackendApplicationLayer } = yield* Effect.promise(
+                () => import("./BackendApplicationLayer")
+              );
+              return yield* HttpRouter.toHttpEffect(
+                BackendApplicationLayer.pipe(
+                  Layer.provide(requestControlPlaneD1Layer),
+                  Layer.provide(backendHttpDependenciesLayer),
+                  Layer.provide(
+                    Layer.succeed(
+                      CurrentBackendRequestContext,
+                      CurrentBackendRequestContext.of(requestContext)
+                    )
+                  ),
+                  Layer.orDie
                 )
-              )
-            );
-            const handler = yield* HttpRouter.toHttpEffect(
-              backendRequestApplicationLayer.pipe(Layer.orDie)
-            );
+              );
+            });
             const response = yield* handler.pipe(
               Effect.provideService(
                 CurrentBackendRequestContext,
