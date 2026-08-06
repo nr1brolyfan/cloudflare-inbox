@@ -1,4 +1,4 @@
-import { makeDrizzleEffectSqliteVerificationStore } from "@effect-auth/core/DrizzleEffectSqliteVerificationStore";
+import { makeDrizzleSqliteVerificationStore } from "@effect-auth/core/DrizzleSqliteVerificationStore";
 import { VerificationStore } from "@effect-auth/core/Storage";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -10,6 +10,6 @@ export const EffectAuthVerificationStoreD1Layer = Layer.effect(
   VerificationStore,
   Effect.gen(function* () {
     const database = yield* ControlPlaneDatabase;
-    return makeDrizzleEffectSqliteVerificationStore(database);
+    return makeDrizzleSqliteVerificationStore(database);
   })
 );

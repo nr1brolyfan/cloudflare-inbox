@@ -38,7 +38,7 @@
   },
   "dependencies": {
     "@adraffy/ens-normalize": "1.11.1",
-    "@effect-auth/core": "0.1.0-alpha.20",
+    "@effect-auth/core": "file:../effect-auth/effect-auth-core-local.tgz",
     "@effect/platform-bun": "4.0.0-beta.98",
     "@effect/sql-d1": "4.0.0-beta.98",
     "@effect/sql-sqlite-do": "4.0.0-beta.98",

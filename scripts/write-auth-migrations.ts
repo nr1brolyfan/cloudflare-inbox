@@ -289,11 +289,20 @@ const patchedMigrationFiles = new Set(
     (id) => `${id}.sql`
   )
 );
+const retainedHistoricalMigrationIds = [
+  "0014_auth_webhook_outbox",
+  "0015_auth_webhook_replay",
+  "0037_auth_webhook_cardinality",
+] as const;
+const migrationIds = [
+  ...authStorageMigrations.map(({ id }) => id),
+  ...retainedHistoricalMigrationIds,
+].toSorted();
 
 const manifest = `${JSON.stringify(
   {
     database: "sqlite/d1",
-    migrations: authStorageMigrations.map(({ id }) => id),
+    migrations: migrationIds,
     package: "@effect-auth/core",
     version: authPackage.version,
   },
@@ -329,7 +338,10 @@ const migrationSql = (content: string) =>
 
 const existingFiles = await readdir(outputDirectory).catch(() => []);
 const staleFiles = existingFiles.filter(
-  (file) => /^\d{4}_auth_.+\.sql$/u.test(file) && !generatedFiles.has(file)
+  (file) =>
+    /^\d{4}_auth_.+\.sql$/u.test(file) &&
+    !generatedFiles.has(file) &&
+    !retainedHistoricalMigrationIds.some((id) => file === `${id}.sql`)
 );
 const changedFiles: string[] = [];
 

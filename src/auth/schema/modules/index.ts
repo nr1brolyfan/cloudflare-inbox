@@ -17,7 +17,6 @@ export * from "./audit-log.js";
 export * from "./login-approval.js";
 export * from "./login-risk.js";
 export * from "./trusted-devices.js";
-export * from "./webhooks.js";
 export * from "./domain-verification.js";
 export * from "./security-timeline.js";
 export * from "./oauth-provider.js";

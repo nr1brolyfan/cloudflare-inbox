@@ -7,15 +7,17 @@ import {
   RecoveryCodeHash,
   RecoveryCodeStore,
   RecoveryCodeStoreError,
-} from "@effect-auth/core/RecoveryCode";
+  makeRecoveryCodeRecord,
+} from "@effect-auth/core/RecoveryCodeStorage";
 import type {
   RecoveryCodeRecord,
   RecoveryCodeStoreOperation,
-} from "@effect-auth/core/RecoveryCode";
+} from "@effect-auth/core/RecoveryCodeStorage";
 import { and, asc, eq, isNull, sql } from "drizzle-orm";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 
 import { authRecoveryCode } from "#/auth/schema/index";
 import { ControlPlaneBatch } from "#/platform/control-plane-d1/ControlPlaneBatch";
@@ -72,22 +74,26 @@ const metadataDecode = (value: string | null) => {
   return decoded as Readonly<Record<string, unknown>>;
 };
 
+const makeRecoveryCodeHash = Schema.decodeUnknownSync(RecoveryCodeHash);
+
 const decode = (
   operation: RecoveryCodeStoreOperation,
   row: typeof authRecoveryCode.$inferSelect
 ): Effect.Effect<RecoveryCodeRecord, RecoveryCodeStoreError> =>
   Effect.try({
     try: () =>
-      omitUndefined({
-        codeHash: RecoveryCodeHash(row.codeHash),
-        createdAt: UnixMillis(row.createdAt),
-        id: CredentialId(row.id),
-        metadata: metadataDecode(row.metadata),
-        revokedAt:
-          row.revokedAt === null ? undefined : UnixMillis(row.revokedAt),
-        usedAt: row.usedAt === null ? undefined : UnixMillis(row.usedAt),
-        userId: UserId(row.userId),
-      }) as RecoveryCodeRecord,
+      makeRecoveryCodeRecord(
+        omitUndefined({
+          codeHash: makeRecoveryCodeHash(row.codeHash),
+          createdAt: UnixMillis(row.createdAt),
+          id: CredentialId(row.id),
+          metadata: metadataDecode(row.metadata),
+          revokedAt:
+            row.revokedAt === null ? undefined : UnixMillis(row.revokedAt),
+          usedAt: row.usedAt === null ? undefined : UnixMillis(row.usedAt),
+          userId: UserId(row.userId),
+        })
+      ),
     catch: (cause) => storeError(operation, cause),
   });
 

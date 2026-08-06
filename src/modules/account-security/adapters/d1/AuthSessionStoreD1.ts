@@ -1,5 +1,5 @@
 import { makeD1SqlitePasswordSessionCommitStore } from "@effect-auth/core/D1SqlitePasswordSessionCommitStore";
-import { makeDrizzleEffectSqliteSessionStore } from "@effect-auth/core/DrizzleEffectSqliteSessionStore";
+import { makeDrizzleSqliteSessionStore } from "@effect-auth/core/DrizzleSqliteSessionStore";
 import { SessionStore } from "@effect-auth/core/SessionStorage";
 import { PasswordSessionCommitStore } from "@effect-auth/core/Storage";
 import * as Effect from "effect/Effect";
@@ -18,10 +18,7 @@ export const EffectAuthSessionStoreD1Layer = Layer.unwrap(
     const database = yield* ControlPlaneDatabase;
     const d1 = yield* ControlPlaneD1Binding;
     return Layer.merge(
-      Layer.succeed(
-        SessionStore,
-        makeDrizzleEffectSqliteSessionStore(database)
-      ),
+      Layer.succeed(SessionStore, makeDrizzleSqliteSessionStore(database)),
       Layer.succeed(
         PasswordSessionCommitStore,
         makeD1SqlitePasswordSessionCommitStore(

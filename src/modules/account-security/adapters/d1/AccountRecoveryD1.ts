@@ -320,6 +320,7 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
                   }),
                 ],
                 factors: [{ type: "backup-code" }],
+                intent: "sign-in",
                 metadata: {
                   externalRecoveryIdentityId: identity.id,
                   externalRecoveryIdentityVersion: identity.version,

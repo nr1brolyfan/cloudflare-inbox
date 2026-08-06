@@ -16,7 +16,6 @@ const manifestPath = `${outputDirectory}/effect-auth.json`;
 const checkOnly = process.argv.includes("--check");
 
 const artifacts = generateStorageArtifacts({
-  adapter: "drizzle",
   database: "sqlite",
   features: storageFeatureCatalog.map(({ id }) => id),
   mode: "fresh",

@@ -9,11 +9,13 @@ import {
   RecoveryCodeHash,
   RecoveryCodeStore,
   RecoveryCodeStoreError,
-} from "@effect-auth/core/RecoveryCode";
-import type { RecoveryCodeRecord } from "@effect-auth/core/RecoveryCode";
+  makeRecoveryCodeRecord,
+} from "@effect-auth/core/RecoveryCodeStorage";
+import type { RecoveryCodeRecord } from "@effect-auth/core/RecoveryCodeStorage";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { RecoveryCodeStoreD1Layer } from "#/modules/account-security/adapters/d1/RecoveryCodeStoreD1";
@@ -32,14 +34,17 @@ const code = (
   suffix: string,
   createdAt: number,
   overrides: Partial<RecoveryCodeRecord> = {}
-): RecoveryCodeRecord => ({
-  codeHash: RecoveryCodeHash(`sha256:${suffix.repeat(43).slice(0, 43)}`),
-  createdAt: UnixMillis(createdAt),
-  id: CredentialId(`code-${suffix}`),
-  metadata: { set: suffix },
-  userId,
-  ...overrides,
-});
+): RecoveryCodeRecord =>
+  makeRecoveryCodeRecord({
+    codeHash: Schema.decodeUnknownSync(RecoveryCodeHash)(
+      `sha256:${suffix.repeat(43).slice(0, 43)}`
+    ),
+    createdAt: UnixMillis(createdAt),
+    id: CredentialId(`code-${suffix}`),
+    metadata: { set: suffix },
+    userId,
+    ...overrides,
+  });
 
 const makeStoreLive = (d1: TestD1DatabaseLike) => {
   const controlPlane = ControlPlaneD1Layer.pipe(

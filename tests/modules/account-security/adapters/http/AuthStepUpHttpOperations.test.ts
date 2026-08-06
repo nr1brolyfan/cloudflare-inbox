@@ -38,7 +38,11 @@ import type {
 } from "@effect-auth/core/Sessions";
 import { SessionCookie, Sessions } from "@effect-auth/core/Sessions";
 import type { CredentialStoreService } from "@effect-auth/core/Storage";
-import { CredentialStore, StorageError } from "@effect-auth/core/Storage";
+import {
+  CredentialStore,
+  makePasswordCredential,
+  StorageError,
+} from "@effect-auth/core/Storage";
 import * as NodeServices from "@effect/platform-node/NodeServices";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
@@ -206,13 +210,15 @@ const runRestrictedPasswordClient = <A, E>(
 const makeCredentialStore = (): CredentialStoreService => ({
   findPasswordByUserId: () =>
     Effect.succeed(
-      Option.some({
-        createdAt: UnixMillis(1000),
-        id: credentialId,
-        passwordHash: "stored-hash",
-        updatedAt: UnixMillis(1000),
-        userId,
-      })
+      Option.some(
+        makePasswordCredential({
+          createdAt: UnixMillis(1000),
+          id: credentialId,
+          passwordHash: "stored-hash",
+          updatedAt: UnixMillis(1000),
+          userId,
+        })
+      )
     ),
   insertPassword: () => Effect.die("insertPassword is not used"),
   updatePassword: () => Effect.die("updatePassword is not used"),

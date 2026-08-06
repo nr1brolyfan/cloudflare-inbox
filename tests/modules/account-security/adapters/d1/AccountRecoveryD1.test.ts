@@ -17,10 +17,10 @@ import {
   UserId,
 } from "@effect-auth/core/Identifiers";
 import {
-  RecoveryCodeHash,
   RecoveryCodeManagement,
   RecoveryCodes,
 } from "@effect-auth/core/RecoveryCode";
+import { RecoveryCodeHash } from "@effect-auth/core/RecoveryCodeStorage";
 import { Sessions } from "@effect-auth/core/Sessions";
 import type {
   IssuedSession,
@@ -67,8 +67,11 @@ const flowSecret = "s".repeat(32);
 const recoveryCode = "AAAA-BBBB-CCCC-DDDD";
 const flowSecretHash = "a".repeat(43);
 const readbackSecretHash = "b".repeat(43);
-const recoveryCodeHash = RecoveryCodeHash(`sha256:${"c".repeat(43)}`);
-const differentRecoveryCodeHash = RecoveryCodeHash(`sha256:${"d".repeat(43)}`);
+const makeRecoveryCodeHash = Schema.decodeUnknownSync(RecoveryCodeHash);
+const recoveryCodeHash = makeRecoveryCodeHash(`sha256:${"c".repeat(43)}`);
+const differentRecoveryCodeHash = makeRecoveryCodeHash(
+  `sha256:${"d".repeat(43)}`
+);
 const metadata = {
   externalRecoveryIdentityId: "recovery-a",
   externalRecoveryIdentityVersion: 2,
@@ -266,6 +269,7 @@ const makeFixture = async (options: FixtureOptions = {}) => {
             expiresAt: verification.expiresAt,
             factors: [{ type: "backup-code" }],
             flowId,
+            intent: "sign-in",
             metadata,
             method: "external-recovery-link",
             userId,

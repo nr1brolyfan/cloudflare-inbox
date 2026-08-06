@@ -16,7 +16,6 @@
     "modules/login-approval.ts",
     "modules/login-risk.ts",
     "modules/trusted-devices.ts",
-    "modules/webhooks.ts",
     "modules/domain-verification.ts",
     "modules/security-timeline.ts",
     "modules/oauth-provider.ts",
@@ -26,12 +25,11 @@
     "relations.ts",
     "index.ts"
   ],
-  "fingerprint": "fnv1a32:0521b088",
-  "generatorVersion": "1.12.0",
+  "fingerprint": "fnv1a32:830de66e",
+  "generatorVersion": "1.14.0",
   "package": "@effect-auth/core",
   "request": {
     "database": "sqlite",
-    "adapter": "drizzle",
     "mode": "fresh",
     "features": [
       "password",
@@ -53,7 +51,6 @@
       "audit-log",
       "login-risk",
       "security-timeline",
-      "webhooks",
       "domain-verification",
       "permissions"
     ],

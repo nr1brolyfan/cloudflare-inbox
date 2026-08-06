@@ -4,7 +4,7 @@ import { DevEmailStore, DevEmailStoreError } from "@effect-auth/core/DevEmail";
 import { Email, UnixMillis } from "@effect-auth/core/Identifiers";
 import { PasskeyCredentialStore } from "@effect-auth/core/Passkey";
 import { PermissionStore } from "@effect-auth/core/Permission";
-import { RecoveryCodeStore } from "@effect-auth/core/RecoveryCode";
+import { RecoveryCodeStore } from "@effect-auth/core/RecoveryCodeStorage";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import { describe, expect, it } from "vitest";

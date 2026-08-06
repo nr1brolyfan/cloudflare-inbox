@@ -28,12 +28,9 @@ import type {
   PasskeyTransport,
 } from "@effect-auth/core/PasskeyCredentialPayload";
 import * as AuthPermission from "@effect-auth/core/Permission";
-import {
-  RecoveryCode,
-  RecoveryCodeHash,
-  RecoveryCodes,
-} from "@effect-auth/core/RecoveryCode";
+import { RecoveryCode, RecoveryCodes } from "@effect-auth/core/RecoveryCode";
 import type { RecoveryCodesService } from "@effect-auth/core/RecoveryCode";
+import { RecoveryCodeHash } from "@effect-auth/core/RecoveryCodeStorage";
 import { Sessions } from "@effect-auth/core/Sessions";
 import type {
   SessionCreateInput,
@@ -431,7 +428,7 @@ const recoveryCodesService: RecoveryCodesService = {
     ),
   hash: ({ code }) =>
     Effect.succeed(
-      RecoveryCodeHash(
+      Schema.decodeUnknownSync(RecoveryCodeHash)(
         `sha256:test-${recoveryCodeValues.indexOf(
           Redacted.value(code) as (typeof recoveryCodeValues)[number]
         )}`
