@@ -710,6 +710,37 @@ const migrations = [
       archiveRecipientImmutableReplaceTrigger,
     ],
   },
+  {
+    version: 15,
+    statements: [
+      `UPDATE message
+          SET folder_id = 'sent',
+              scheduled_at = NULL,
+              accepted_at = (
+                SELECT accepted_at FROM outbound_delivery
+                 WHERE outbound_delivery.id = message.outbound_delivery_id
+              ),
+              activity_at = max(activity_at, (
+                SELECT accepted_at FROM outbound_delivery
+                 WHERE outbound_delivery.id = message.outbound_delivery_id
+              )),
+              updated_at = max(updated_at, (
+                SELECT accepted_at FROM outbound_delivery
+                 WHERE outbound_delivery.id = message.outbound_delivery_id
+              )),
+              version = version + 1
+        WHERE folder_id = 'scheduled'
+          AND deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM outbound_delivery
+             WHERE outbound_delivery.id = message.outbound_delivery_id
+               AND outbound_delivery.message_id = message.id
+               AND outbound_delivery.status = 'accepted'
+               AND outbound_delivery.deleted_at IS NULL
+               AND outbound_delivery.accepted_at IS NOT NULL
+          )`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

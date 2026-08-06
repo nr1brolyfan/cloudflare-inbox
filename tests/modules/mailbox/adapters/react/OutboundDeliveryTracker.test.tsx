@@ -128,6 +128,32 @@ describe(OutboundDeliveryTracker, () => {
     expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
   });
 
+  it("refreshes the mailbox and dismisses an accepted send", () => {
+    vi.useFakeTimers();
+    const onDismiss = vi.fn<() => void>();
+    const onMailboxChanged = vi.fn<() => void>();
+    const client = queryClient();
+    client.setQueryData(
+      outboundDeliveryQueryKey("session-1", "primary", "delivery-1"),
+      snapshot({ ...scheduled, status: "accepted" })
+    );
+    renderTracker(
+      {
+        getStatus: vi.fn<GetStatus>().mockResolvedValue({
+          ok: true,
+          outbound: snapshot({ ...scheduled, status: "accepted" }),
+        }),
+        onDismiss,
+        onMailboxChanged,
+      },
+      client
+    );
+
+    expect(onMailboxChanged).toHaveBeenCalledOnce();
+    act(() => vi.advanceTimersByTime(8000));
+    expect(onDismiss).toHaveBeenCalledOnce();
+  });
+
   it("uses the exact cancellation command when an ambiguous undo is retried", async () => {
     const onMailboxChanged = vi.fn<() => void>();
     const undo = vi
@@ -201,7 +227,7 @@ describe(OutboundDeliveryTracker, () => {
     expect(
       screen.getByText(/does not confirm recipient delivery/iu)
     ).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Check status" })).toBeNull();
   });
 
   it.each([
@@ -294,11 +320,12 @@ describe(OutboundDeliveryTracker, () => {
         outbound: snapshot({ ...scheduled, status: "accepted" }),
       })
       .mockRejectedValueOnce(new Error("network"));
-    renderTracker({ getStatus });
+    const { client } = renderTracker({ getStatus });
 
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Check status" })
-    );
+    await screen.findByText("Accepted by provider");
+    await client.refetchQueries({
+      queryKey: outboundDeliveryQueryKey("session-1", "primary", "delivery-1"),
+    });
 
     await screen.findByText(/last known status is still shown/iu);
     expect(screen.getByText(/last known status is still shown/iu)).toBeTruthy();

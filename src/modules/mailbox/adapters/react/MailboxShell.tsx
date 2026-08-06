@@ -59,6 +59,7 @@ interface MailboxShellProps {
   readonly headerAction?: ReactNode;
   readonly isSigningOut: boolean;
   readonly labels: readonly NavigationLabel[];
+  readonly mailboxAddress: string;
   readonly mailboxName: string;
   readonly onNavigate: (selection: MailboxViewSelection) => void;
   readonly onPrefetch: (selection: MailboxViewSelection) => void;
@@ -82,6 +83,7 @@ function MailboxNavigation({
   folders,
   isSigningOut,
   labels,
+  mailboxAddress,
   mailboxName,
   onClose,
   onNavigate,
@@ -131,7 +133,7 @@ function MailboxNavigation({
               {mailboxName}
             </span>
             <span className="block truncate text-[0.68rem] text-white/48">
-              Primary mailbox
+              {mailboxAddress}
             </span>
           </span>
         </div>
@@ -320,6 +322,7 @@ export function MailboxShell({
   headerAction,
   isSigningOut,
   labels,
+  mailboxAddress,
   mailboxName,
   onNavigate,
   onPrefetch,
@@ -356,6 +359,7 @@ export function MailboxShell({
             folders={folders}
             isSigningOut={isSigningOut}
             labels={labels}
+            mailboxAddress={mailboxAddress}
             mailboxName={mailboxName}
             onNavigate={onNavigate}
             onPrefetch={onPrefetch}
@@ -386,6 +390,7 @@ export function MailboxShell({
                 folders={folders}
                 isSigningOut={isSigningOut}
                 labels={labels}
+                mailboxAddress={mailboxAddress}
                 mailboxName={mailboxName}
                 onClose={() => setNavigationOpen(false)}
                 onNavigate={onNavigate}

@@ -4,7 +4,10 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
-import { outboundDelivery } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
+import {
+  message,
+  outboundDelivery,
+} from "#/modules/mailbox/adapters/sqlite/MailboxSqliteSchema";
 import { MailboxOutboundAlarmClock } from "#/modules/mailbox/ports/MailboxOutboundAlarmClock";
 import {
   MailboxOutboundLifecycleStore,
@@ -247,26 +250,60 @@ export const MailboxOutboundLifecycleStoreSqliteLayer = Layer.effect(
                 };
 
         return db
-          .update(outboundDelivery)
-          .set({
-            ...values,
-            updatedAt: settledAt,
-            version: sql`${outboundDelivery.version} + 1`,
-          })
-          .where(
-            and(
-              eq(outboundDelivery.id, claim.outboundDeliveryId),
-              eq(outboundDelivery.status, "sending"),
-              eq(outboundDelivery.version, claim.version),
-              eq(outboundDelivery.attemptCount, claim.attemptCount),
-              isNull(outboundDelivery.deletedAt)
-            )
+          .transaction((tx) =>
+            Effect.gen(function* () {
+              const [updated] = yield* tx
+                .update(outboundDelivery)
+                .set({
+                  ...values,
+                  updatedAt: settledAt,
+                  version: sql`${outboundDelivery.version} + 1`,
+                })
+                .where(
+                  and(
+                    eq(outboundDelivery.id, claim.outboundDeliveryId),
+                    eq(outboundDelivery.status, "sending"),
+                    eq(outboundDelivery.version, claim.version),
+                    eq(outboundDelivery.attemptCount, claim.attemptCount),
+                    isNull(outboundDelivery.deletedAt)
+                  )
+                )
+                .returning({ messageId: outboundDelivery.messageId });
+              if (updated === undefined) {
+                return false;
+              }
+              if (settlement._tag === "Accepted") {
+                const moved = yield* tx
+                  .update(message)
+                  .set({
+                    acceptedAt: settledAt,
+                    activityAt: settledAt,
+                    folderId: "sent",
+                    scheduledAt: null,
+                    updatedAt: settledAt,
+                    version: sql`${message.version} + 1`,
+                  })
+                  .where(
+                    and(
+                      eq(message.id, updated.messageId),
+                      eq(message.folderId, "scheduled"),
+                      eq(message.outboundDeliveryId, claim.outboundDeliveryId),
+                      isNull(message.deletedAt)
+                    )
+                  )
+                  .returning({ id: message.id });
+                if (moved.length !== 1) {
+                  return yield* Effect.die(
+                    new Error(
+                      "Accepted outbound message could not move to Sent"
+                    )
+                  );
+                }
+              }
+              return true;
+            })
           )
-          .returning({ id: outboundDelivery.id })
-          .pipe(
-            Effect.map((rows) => rows.length === 1),
-            Effect.orDie
-          );
+          .pipe(Effect.orDie);
       },
     });
   })

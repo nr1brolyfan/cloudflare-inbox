@@ -45,7 +45,11 @@ const mailbox = {
   version: 1,
 } as const;
 const navigation = {
-  mailbox: { displayName: "Inbox", id: "primary" },
+  mailbox: {
+    displayName: "Inbox",
+    id: "primary",
+    primaryAddress: "inbox@example.com",
+  },
   folders: [
     {
       id: "inbox",

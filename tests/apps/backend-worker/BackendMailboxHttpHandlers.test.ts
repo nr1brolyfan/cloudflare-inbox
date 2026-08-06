@@ -190,7 +190,11 @@ const replayedProcessing = Schema.decodeUnknownSync(InboundProcessingSchema)({
   version: 3,
 });
 const mailboxNavigation = Schema.decodeUnknownSync(MailboxNavigationResult)({
-  mailbox: { displayName: "Inbox", id: "primary" },
+  mailbox: {
+    displayName: "Inbox",
+    id: "primary",
+    primaryAddress: "inbox@example.com",
+  },
   folders: [
     {
       id: "inbox",
@@ -1741,7 +1745,11 @@ describe("protected mailbox API", () => {
       await expect(response.json()).resolves.toMatchObject({
         folders: [{ id: "inbox", unreadCount: 2 }],
         labels: [],
-        mailbox: { displayName: "Inbox", id: "primary" },
+        mailbox: {
+          displayName: "Inbox",
+          id: "primary",
+          primaryAddress: "inbox@example.com",
+        },
       });
     } finally {
       await dispose();

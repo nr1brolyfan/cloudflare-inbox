@@ -18,12 +18,14 @@ import {
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDisplayName } from "#/modules/organization/domain/Mailbox";
 import { MailboxNavigationReader } from "#/modules/organization/ports/MailboxNavigationReader";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 export class MailboxNavigationMailbox extends Schema.Class<MailboxNavigationMailbox>(
   "cloudflare-inbox/MailboxNavigationMailbox"
 )({
   id: MailboxId,
   displayName: MailboxDisplayName,
+  primaryAddress: EmailAddress,
 }) {}
 
 export class MailboxNavigationFolder extends Schema.Class<MailboxNavigationFolder>(

@@ -1724,6 +1724,7 @@ function AuthenticatedInbox({
       <MailboxShell
         folders={folders}
         labels={labels}
+        mailboxAddress={mailbox.primaryAddress}
         mailboxName={mailbox.displayName}
         onNavigate={navigateToSelection}
         onPrefetch={prefetchSelection}

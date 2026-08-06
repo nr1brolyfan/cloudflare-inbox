@@ -63,20 +63,34 @@ const operationalLayers = (isActive = true) =>
 
 const setup = Effect.gen(function* () {
   const db = yield* MailboxDatabase;
-  yield* db.insert(folder).values({
-    createdAt: 0,
-    id: "scheduled",
-    kind: "scheduled",
-    name: "Scheduled",
-    updatedAt: 0,
-  });
+  yield* db.insert(folder).values([
+    {
+      createdAt: 0,
+      id: "scheduled",
+      kind: "scheduled",
+      name: "Scheduled",
+      updatedAt: 0,
+    },
+    {
+      createdAt: 0,
+      id: "sent",
+      kind: "sent",
+      name: "Sent",
+      updatedAt: 0,
+    },
+  ]);
 });
 
 const seedDelivery = (id: string, sendAt = 1000) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     const messageId = `message-${id}`;
-    yield* db.insert(message).values({ folderId: "scheduled", id: messageId });
+    yield* db.insert(message).values({
+      folderId: "scheduled",
+      id: messageId,
+      outboundDeliveryId: id,
+      scheduledAt: sendAt,
+    });
     yield* db.insert(outboundDelivery).values({
       createdAt: 0,
       id,

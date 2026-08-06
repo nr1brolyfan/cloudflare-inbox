@@ -206,7 +206,11 @@ describe(SignedInOwnerBootstrap, () => {
   it("opens an existing mailbox without showing onboarding", async () => {
     const onMailboxFound = vi.fn<() => void>();
     mocks.getMailboxNavigation.mockResolvedValue({
-      mailbox: { displayName: "Inbox", id: "primary" },
+      mailbox: {
+        displayName: "Inbox",
+        id: "primary",
+        primaryAddress: "inbox@example.com",
+      },
       ok: true,
     });
 
@@ -232,7 +236,11 @@ describe(SignedInOwnerBootstrap, () => {
       vi.fn(),
       onMailboxFound,
       {
-        mailbox: { displayName: "Inbox", id: "primary" },
+        mailbox: {
+          displayName: "Inbox",
+          id: "primary",
+          primaryAddress: "inbox@example.com",
+        },
         ok: true,
       },
       0
@@ -413,7 +421,11 @@ describe(SignedInOwnerBootstrap, () => {
     });
     const onMailboxFound = vi.fn<() => void>();
     mocks.bootstrapMailboxOwner.mockResolvedValue({
-      mailbox: { displayName: "Inbox", id: "primary" },
+      mailbox: {
+        displayName: "Inbox",
+        id: "primary",
+        primaryAddress: "inbox@example.com",
+      },
       ok: true,
     });
     mocks.getMailboxNavigation.mockReturnValue(navigationReady);
@@ -431,7 +443,11 @@ describe(SignedInOwnerBootstrap, () => {
       navigation: {
         folders: { items: [] },
         labels: { items: [] },
-        mailbox: { displayName: "Inbox", id: "primary" },
+        mailbox: {
+          displayName: "Inbox",
+          id: "primary",
+          primaryAddress: "inbox@example.com",
+        },
       },
       ok: true,
     });

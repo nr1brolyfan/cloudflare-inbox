@@ -4,6 +4,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
+import { appMailboxAddress } from "#/modules/address-routing/adapters/d1/AddressRoutingSchema";
 import { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
@@ -18,6 +19,7 @@ import { canonicalMailboxAncestryPredicate } from "#/modules/organization/integr
 import { MailboxNavigationReader } from "#/modules/organization/ports/MailboxNavigationReader";
 import { ControlPlaneDatabase } from "#/platform/control-plane-d1/ControlPlaneDatabase";
 import { appOrganization } from "#/platform/control-plane-d1/OrganizationRootSchema";
+import { EmailAddress } from "#/shared/EmailAddress";
 
 import { appMailbox, appMailboxMember } from "./OrganizationSchema";
 
@@ -55,9 +57,18 @@ const MailboxNavigationReaderD1Layer = Layer.effect(
             ),
             displayName: appMailbox.displayName,
             id: appMailbox.id,
+            primaryAddress: appMailboxAddress.address,
           })
           .from(appMailboxMember)
           .innerJoin(appMailbox, eq(appMailbox.id, appMailboxMember.mailboxId))
+          .innerJoin(
+            appMailboxAddress,
+            and(
+              eq(appMailboxAddress.mailboxId, appMailbox.id),
+              eq(appMailboxAddress.isPrimary, true),
+              eq(appMailboxAddress.enabled, true)
+            )
+          )
           .innerJoin(
             appOrganization,
             eq(appOrganization.id, appMailbox.organizationId)
@@ -82,7 +93,11 @@ const MailboxNavigationReaderD1Layer = Layer.effect(
         }
 
         const mailbox = yield* Schema.decodeUnknownEffect(
-          Schema.Struct({ id: MailboxId, displayName: MailboxDisplayName })
+          Schema.Struct({
+            id: MailboxId,
+            displayName: MailboxDisplayName,
+            primaryAddress: EmailAddress,
+          })
         )(row).pipe(
           Effect.mapError((cause) => navigationError("storage", cause))
         );

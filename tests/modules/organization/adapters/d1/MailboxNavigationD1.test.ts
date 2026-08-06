@@ -156,6 +156,15 @@ const insertMailboxMembership = (
        values ('primary', 'user-a', 1000, 1000, ?)`
     )
     .run(options.revoked ? 1000 : null);
+  database
+    .prepare(
+      `insert into app_mailbox_address
+        (mailbox_id, id, address, normalized_address, is_primary, enabled,
+         created_at, updated_at)
+       values ('primary', 'primary', 'inbox@example.com', 'inbox@example.com',
+               1, 1, 1000, 1000)`
+    )
+    .run();
 };
 
 describe("mailbox navigation", () => {
@@ -268,12 +277,17 @@ describe("mailbox navigation", () => {
         mailbox: {
           displayName: result.mailbox.displayName,
           id: result.mailbox.id,
+          primaryAddress: result.mailbox.primaryAddress,
         },
       }).toStrictEqual({
         calls: ["read:primary", "folders:primary", "labels:primary"],
         folder: "inbox",
         label: "label-work",
-        mailbox: { displayName: "Primary Inbox", id: "primary" },
+        mailbox: {
+          displayName: "Primary Inbox",
+          id: "primary",
+          primaryAddress: "inbox@example.com",
+        },
       });
     } finally {
       database.close();

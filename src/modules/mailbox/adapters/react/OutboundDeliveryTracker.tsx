@@ -65,6 +65,7 @@ class OutboundStatusRequestError extends Error {
 }
 
 const decodeUndoCommand = Schema.decodeUnknownSync(UndoMailboxSendCommand);
+const acceptedAutoDismissMillis = 8000;
 
 export const outboundDeliveryQueryKey = (
   sessionId: string,
@@ -232,6 +233,7 @@ export function OutboundDeliveryTracker({
   const queryClient = useQueryClient();
   const queryKey = outboundDeliveryQueryKey(sessionId, mailboxId, deliveryId);
   const undoCommand = useRef<UndoCommand | null>(null);
+  const mailboxRefreshVersion = useRef<number | null>(null);
   const [clockNow, setClockNow] = useState(Date.now);
   const [accessFailure, setAccessFailure] = useState<number>();
   const [actionFailure, setActionFailure] = useState<string>();
@@ -277,6 +279,29 @@ export function OutboundDeliveryTracker({
     const timer = window.setInterval(() => setClockNow(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, [deadline, delivery?.attemptCount, delivery?.status]);
+
+  useEffect(() => {
+    if (
+      delivery?.status !== "accepted" ||
+      mailboxRefreshVersion.current === delivery.version
+    ) {
+      return;
+    }
+    mailboxRefreshVersion.current = delivery.version;
+    onMailboxChanged();
+  }, [delivery?.status, delivery?.version, onMailboxChanged]);
+
+  useEffect(() => {
+    if (
+      delivery?.status !== "accepted" ||
+      status.error !== null ||
+      actionFailure !== undefined
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(onDismiss, acceptedAutoDismissMillis);
+    return () => window.clearTimeout(timer);
+  }, [actionFailure, delivery?.status, onDismiss, status.error]);
 
   const runUndo = async () => {
     if (delivery === undefined) {
@@ -373,7 +398,6 @@ export function OutboundDeliveryTracker({
     (transientFailure ||
       actionFailure !== undefined ||
       undoState === "checking" ||
-      delivery?.status === "accepted" ||
       delivery?.status === "indeterminate" ||
       (delivery?.status === "scheduled" && !canUndo));
   const statusIndicator = statusIcon(delivery?.status);

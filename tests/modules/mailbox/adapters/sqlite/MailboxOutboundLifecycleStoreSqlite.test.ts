@@ -40,20 +40,34 @@ const lifecycleLive = (now: () => number) =>
 
 const setup = Effect.gen(function* () {
   const db = yield* MailboxDatabase;
-  yield* db.insert(folder).values({
-    createdAt: 0,
-    id: "scheduled",
-    kind: "scheduled",
-    name: "Scheduled",
-    updatedAt: 0,
-  });
+  yield* db.insert(folder).values([
+    {
+      createdAt: 0,
+      id: "scheduled",
+      kind: "scheduled",
+      name: "Scheduled",
+      updatedAt: 0,
+    },
+    {
+      createdAt: 0,
+      id: "sent",
+      kind: "sent",
+      name: "Sent",
+      updatedAt: 0,
+    },
+  ]);
 });
 
 const seedDelivery = (id: string, sendAt: number, version = 1) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
     const messageId = `message-${id}`;
-    yield* db.insert(message).values({ folderId: "scheduled", id: messageId });
+    yield* db.insert(message).values({
+      folderId: "scheduled",
+      id: messageId,
+      outboundDeliveryId: id,
+      scheduledAt: sendAt,
+    });
     yield* db.insert(outboundDelivery).values({
       createdAt: 0,
       id,
@@ -148,6 +162,17 @@ describe("outbound lifecycle SQLite store", () => {
           providerMessageId: "provider-1",
           status: "accepted",
           version: 3,
+        });
+        const [settledMessage] = yield* db
+          .select()
+          .from(message)
+          .where(eq(message.id, "message-delivery-1"));
+        expect(settledMessage).toMatchObject({
+          acceptedAt: 1000,
+          folderId: "sent",
+          scheduledAt: null,
+          updatedAt: 1000,
+          version: 2,
         });
       }).pipe(Effect.provide(lifecycleLive(() => 1000)))
     );

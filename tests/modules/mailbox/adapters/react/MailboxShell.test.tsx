@@ -67,6 +67,7 @@ describe(MailboxShell, () => {
       <MailboxShell
         folders={folders}
         labels={labels}
+        mailboxAddress="inbox@example.com"
         mailboxName="Primary Inbox"
         principalLabel="user-123"
         isSigningOut={false}
@@ -125,6 +126,7 @@ describe(MailboxShell, () => {
       <MailboxShell
         folders={folders}
         labels={labels}
+        mailboxAddress="inbox@example.com"
         mailboxName="Primary Inbox"
         principalLabel="user-123"
         isSigningOut={false}
@@ -159,6 +161,7 @@ describe(MailboxShell, () => {
       <MailboxShell
         folders={folders}
         labels={[]}
+        mailboxAddress="inbox@example.com"
         mailboxName="Primary Inbox"
         principalLabel="user-123"
         isSigningOut={false}
@@ -219,6 +222,7 @@ describe(MailboxShell, () => {
       <MailboxShell
         folders={folders}
         labels={labels}
+        mailboxAddress="inbox@example.com"
         mailboxName="Primary Inbox"
         principalLabel="user-123"
         isSigningOut
