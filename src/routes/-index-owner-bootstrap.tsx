@@ -394,7 +394,11 @@ function StepUpPanel({
   );
 }
 
-function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
+export function ExternalRecoveryEnrollment({
+  userId,
+}: {
+  readonly userId: string;
+}) {
   const queryClient = useQueryClient();
   const [address, setAddress] = useState("");
   const [operationId] = useState(() => crypto.randomUUID());
@@ -524,7 +528,7 @@ function ExternalRecoveryEnrollment({ userId }: { readonly userId: string }) {
   );
 }
 
-function PasskeyEnrollment({ userId }: { readonly userId: string }) {
+export function PasskeyEnrollment({ userId }: { readonly userId: string }) {
   const queryClient = useQueryClient();
   const supported = usePasskeySupport();
   const [password, setPassword] = useState("");
@@ -650,7 +654,11 @@ const hasAuthErrorCode = (error: unknown, code: string) =>
   "code" in error &&
   error.code === code;
 
-function PasskeyCredentialManagement({ userId }: { readonly userId: string }) {
+export function PasskeyCredentialManagement({
+  userId,
+}: {
+  readonly userId: string;
+}) {
   const queryClient = useQueryClient();
   const [password, setPassword] = useState("");
   const [revokeCommand, setRevokeCommand] = useState<{
@@ -830,7 +838,7 @@ function PasskeyCredentialManagement({ userId }: { readonly userId: string }) {
   );
 }
 
-function RecoveryCodeManagement({
+export function RecoveryCodeManagement({
   acknowledgedOperationId,
   setAcknowledgedOperationId,
   setPlaintextOperationId,
@@ -1039,22 +1047,16 @@ export function SignedInOwnerBootstrap({
   isLogoutPending,
   onMailboxFound,
   onLogout,
-  securitySetupRequired = false,
   sessionId,
   userId,
 }: {
   readonly isLogoutPending: boolean;
   readonly onMailboxFound: () => Promise<void> | void;
   readonly onLogout: () => void;
-  readonly securitySetupRequired?: boolean;
   readonly sessionId: string;
   readonly userId: string;
 }) {
   const queryClient = useQueryClient();
-  const [acknowledgedRecoveryOperationId, setAcknowledgedRecoveryOperationId] =
-    useState<string | null>(null);
-  const [plaintextRecoveryOperationId, setPlaintextRecoveryOperationId] =
-    useState<string | null>(null);
   const mailboxNavigation = useQuery({
     queryFn: async () => {
       const result = await getMailboxNavigation();
@@ -1141,35 +1143,12 @@ export function SignedInOwnerBootstrap({
         Mailbox access is verified when you open the workspace. Session
         principal: <code>{userId.slice(0, 12)}...</code>
       </p>
-      {securitySetupRequired ? (
-        <div className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--sand)]/60 p-5">
-          <p className="font-bold">Complete the launch checklist in order</p>
-          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-[var(--sea-ink-soft)]">
-            <li>Verify an external recovery address.</li>
-            <li>Create at least two user-verified passkeys.</li>
-            <li>Generate and securely save recovery codes.</li>
-            <li>
-              Launch the mailbox only after the first three steps succeed.
-            </li>
-          </ol>
-          <p className="mt-3 text-xs leading-5 text-[var(--sea-ink-soft)]">
-            The mailbox server rechecks every security requirement atomically
-            before creation. This page does not report readiness counts or
-            credential identifiers.
-          </p>
-        </div>
-      ) : (
-        <Notice>
-          Your identity is confirmed. Create the primary inbox below.
-        </Notice>
-      )}
+      <Notice>
+        Your identity is confirmed. Create the primary inbox below.
+      </Notice>
       <div className="mt-6">
         {bootstrapResult?.ok === false ? (
-          <ErrorNotice>
-            {bootstrapResult.error.message === "Security setup required"
-              ? "Security setup is incomplete. Verify external recovery, keep two active passkeys, and generate a current set of ten unused recovery codes before trying again."
-              : bootstrapResult.error.message}
-          </ErrorNotice>
+          <ErrorNotice>{bootstrapResult.error.message}</ErrorNotice>
         ) : ownerBootstrap.mailboxBootstrap.error ? (
           <ErrorNotice>Mailbox setup request failed. Try again.</ErrorNotice>
         ) : null}
@@ -1218,71 +1197,26 @@ export function SignedInOwnerBootstrap({
           passwordError={ownerBootstrap.passwordStepUp.error}
         />
       ) : (
-        <>
-          {securitySetupRequired ? (
-            <>
-              <ExternalRecoveryEnrollment userId={userId} />
-              <PasskeyEnrollment userId={userId} />
-              <RecoveryCodeManagement
-                acknowledgedOperationId={acknowledgedRecoveryOperationId}
-                setAcknowledgedOperationId={setAcknowledgedRecoveryOperationId}
-                setPlaintextOperationId={setPlaintextRecoveryOperationId}
-                userId={userId}
-              />
-              <PasskeyCredentialManagement userId={userId} />
-            </>
-          ) : null}
-          <section className="mt-8 border-t border-[var(--line)] pt-8">
-            <p className="island-kicker">Mailbox creation</p>
-            <h3 className="mt-2 text-xl font-bold">Create the primary inbox</h3>
-            {securitySetupRequired ? (
-              <>
-                <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
-                  The server is authoritative for recovery, passkey, and
-                  recovery-code readiness. The acknowledgement below records
-                  only that you saved the one-time plaintext codes offline,
-                  which the server cannot prove.
-                </p>
-                <p className="mt-5 rounded-xl border border-[var(--line)] bg-white/70 p-4 text-sm leading-6">
-                  Create becomes available only after you save and acknowledge
-                  the exact recovery-code generation still shown in this browser
-                  session.
-                </p>
-              </>
+        <section className="mt-8 border-t border-[var(--line)] pt-8">
+          <p className="island-kicker">Mailbox creation</p>
+          <h3 className="mt-2 text-xl font-bold">Create the primary inbox</h3>
+          <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+            Your confirmed identity is enough to create the inbox.
+          </p>
+          <button
+            type="button"
+            onClick={() => ownerBootstrap.handleBootstrap()}
+            disabled={ownerBootstrap.mailboxBootstrap.isPending}
+            className="mt-5 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
+          >
+            {ownerBootstrap.mailboxBootstrap.isPending ? (
+              <LoaderCircle className="animate-spin" size={17} />
             ) : (
-              <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
-                Your confirmed identity is enough to create the inbox.
-              </p>
+              <Mail size={17} />
             )}
-            <button
-              type="button"
-              onClick={() => {
-                if (!securitySetupRequired) {
-                  ownerBootstrap.handleBootstrap();
-                } else if (acknowledgedRecoveryOperationId !== null) {
-                  ownerBootstrap.handleBootstrap(
-                    acknowledgedRecoveryOperationId
-                  );
-                }
-              }}
-              disabled={
-                (securitySetupRequired &&
-                  (plaintextRecoveryOperationId === null ||
-                    acknowledgedRecoveryOperationId !==
-                      plaintextRecoveryOperationId)) ||
-                ownerBootstrap.mailboxBootstrap.isPending
-              }
-              className="mt-5 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
-            >
-              {ownerBootstrap.mailboxBootstrap.isPending ? (
-                <LoaderCircle className="animate-spin" size={17} />
-              ) : (
-                <Mail size={17} />
-              )}
-              Create primary inbox
-            </button>
-          </section>
-        </>
+            Create primary inbox
+          </button>
+        </section>
       )}
       <button
         type="button"
