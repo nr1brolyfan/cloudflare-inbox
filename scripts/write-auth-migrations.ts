@@ -297,7 +297,9 @@ const retainedHistoricalMigrationIds = [
 const migrationIds = [
   ...authStorageMigrations.map(({ id }) => id),
   ...retainedHistoricalMigrationIds,
-].toSorted();
+];
+// oxlint-disable-next-line unicorn/no-array-sort -- This new local array is safe to mutate; the project targets ES2022 without toSorted.
+migrationIds.sort();
 
 const manifest = `${JSON.stringify(
   {
