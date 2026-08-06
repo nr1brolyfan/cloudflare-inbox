@@ -1840,9 +1840,14 @@ function AuthenticatedInbox({
               search: decodeInboxSearch({ ...search, delivery: undefined }),
             })
           }
-          onMailboxChanged={() =>
-            void queryClient.invalidateQueries({ queryKey: ["mailbox"] })
-          }
+          onMailboxChanged={() => {
+            void queryClient.resetQueries({
+              queryKey: ["mailbox", "messages"],
+            });
+            void queryClient.invalidateQueries({
+              queryKey: mailboxNavigationQueryKey,
+            });
+          }}
           onUnauthorized={() => clearCachedAuthSession(queryClient)}
           sessionId={sessionId}
           undo={(command) => undoMailboxSend({ data: command })}
@@ -1864,7 +1869,9 @@ function InboxRoute() {
   const session = useQuery({
     queryKey: authSessionQueryKey,
     queryFn: ({ signal }) => currentSessionForQuery(signal),
-    retry: false,
+    retry: 2,
+    retryDelay: (attempt) => 250 * (attempt + 1),
+    staleTime: 30_000,
   });
   const activeNavigationQueryKey = [
     ...mailboxNavigationQueryKey,

@@ -302,16 +302,23 @@ export function MessageList({
           <p className="text-xs font-extrabold tracking-[0.12em] text-[var(--sea-ink-soft)] uppercase">
             Messages
           </p>
-          <span className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]">
-            {data.items.length}
-          </span>
-          {isRefreshing ? (
-            <LoaderCircle
-              aria-label="Refreshing messages"
-              className="animate-spin text-[var(--sea-ink-soft)]"
-              size={14}
-            />
-          ) : null}
+          <div className="flex shrink-0 items-center gap-2">
+            <output className="inline-flex size-3.5 shrink-0 items-center justify-center">
+              {isRefreshing ? (
+                <>
+                  <LoaderCircle
+                    aria-hidden="true"
+                    className="animate-spin text-[var(--sea-ink-soft)]"
+                    size={14}
+                  />
+                  <span className="sr-only">Refreshing messages</span>
+                </>
+              ) : null}
+            </output>
+            <span className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]">
+              {data.items.length}
+            </span>
+          </div>
         </div>
         <MessageSearchControls
           filters={filters}

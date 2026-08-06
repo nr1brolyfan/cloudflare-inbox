@@ -13,6 +13,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { PRODUCTION_ENV_FILE, readProductionEnvFile } from "./production-env";
 import type { ProductionEnvironment } from "./production-env";
 
+const workspaceRoot = fileURLToPath(new URL("../", import.meta.url));
+
 export const PRODUCTION_OPERATIONAL_ENV_KEYS = [
   "PATH",
   "HOME",
@@ -189,6 +191,7 @@ export const runProductionAlchemy = (
 
   const invocation = alchemyCliInvocation(productionAlchemyArgs(mode));
   const result = spawnSync(invocation.command, invocation.args, {
+    cwd: workspaceRoot,
     env: productionAlchemyChildEnv(production, process.env),
     stdio: "inherit",
   });

@@ -70,6 +70,7 @@ describe("MailboxDO migrations", () => {
         { version: 13, applied_at: expect.any(String) },
         { version: 14, applied_at: expect.any(String) },
         { version: 15, applied_at: expect.any(String) },
+        { version: 16, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -119,7 +120,7 @@ describe("MailboxDO migrations", () => {
     try {
       applyMailboxMigrations(makeStorage(database));
       database.exec(`
-        DELETE FROM mailbox_schema_migration WHERE version = 15;
+        DELETE FROM mailbox_schema_migration WHERE version IN (15, 16);
         INSERT INTO folder (id, name, kind, created_at, updated_at)
         VALUES ('scheduled', 'Scheduled', 'scheduled', 0, 0),
                ('sent', 'Sent', 'sent', 0, 0);
@@ -137,7 +138,7 @@ describe("MailboxDO migrations", () => {
            1, 1000, 2000);
       `);
 
-      expect(applyMailboxMigrations(makeStorage(database))).toBe(15);
+      expect(applyMailboxMigrations(makeStorage(database))).toBe(16);
       expect({
         ...database
           .prepare(
@@ -150,9 +151,9 @@ describe("MailboxDO migrations", () => {
         accepted_at: 2000,
         activity_at: 2000,
         folder_id: "sent",
-        scheduled_at: null,
+        scheduled_at: 1000,
         updated_at: 2000,
-        version: 2,
+        version: 3,
       });
     } finally {
       database.close();
@@ -347,7 +348,7 @@ describe("MailboxDO migrations", () => {
         DROP TRIGGER outbound_delivery_archive_recipient_update_check;
         ALTER TABLE outbound_delivery DROP COLUMN archive_recipient;
         ALTER TABLE message DROP COLUMN reply_to_json;
-        DELETE FROM mailbox_schema_migration WHERE version IN (13, 14, 15);
+        DELETE FROM mailbox_schema_migration WHERE version IN (13, 14, 15, 16);
         INSERT INTO folder (id, name, kind, created_at, updated_at)
           VALUES ('inbox', 'Inbox', 'inbox', 0, 0);
         INSERT INTO message (id, folder_id, subject, received_at)
@@ -357,7 +358,7 @@ describe("MailboxDO migrations", () => {
         .prepare("SELECT * FROM message WHERE id = 'legacy-message'")
         .get();
 
-      expect(applyMailboxMigrations(storage)).toBe(15);
+      expect(applyMailboxMigrations(storage)).toBe(16);
       const after = database
         .prepare("SELECT * FROM message WHERE id = 'legacy-message'")
         .get();

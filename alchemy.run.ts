@@ -14,7 +14,21 @@ import {
   jobMailInboundRuleProps,
 } from "./src/platform/cloudflare/JobMailProductionTopology.ts";
 
+const workspaceRoot = import.meta.dirname;
+
 const websiteBaseProps = {
+  rootDir: workspaceRoot,
+  memo: {
+    include: [
+      "public/**",
+      "src/**",
+      "bun.lock",
+      "package.json",
+      "tsconfig.json",
+      "tsr.config.json",
+      "vite.config.ts",
+    ],
+  },
   compatibility: {
     date: "2026-07-11",
     flags: ["nodejs_compat"],

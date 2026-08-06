@@ -279,7 +279,6 @@ export const MailboxOutboundLifecycleStoreSqliteLayer = Layer.effect(
                     acceptedAt: settledAt,
                     activityAt: settledAt,
                     folderId: "sent",
-                    scheduledAt: null,
                     updatedAt: settledAt,
                     version: sql`${message.version} + 1`,
                   })

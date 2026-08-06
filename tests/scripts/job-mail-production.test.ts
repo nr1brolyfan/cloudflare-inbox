@@ -292,6 +292,19 @@ describe("job mail production resource structure", () => {
     expect(source).not.toContain("runWorkerFirst: true");
   });
 
+  it("hashes Website inputs independently of the caller working directory", () => {
+    const graph = readRoot("alchemy.run.ts");
+    const runner = readRoot("scripts/run-production-alchemy.ts");
+    expect(graph).toContain("const workspaceRoot = import.meta.dirname");
+    expect(graph).toContain("rootDir: workspaceRoot");
+    expect(graph).toContain('"src/**"');
+    expect(graph).toContain('"vite.config.ts"');
+    expect(runner).toContain(
+      'const workspaceRoot = fileURLToPath(new URL("../", import.meta.url))'
+    );
+    expect(runner).toContain("cwd: workspaceRoot");
+  });
+
   it("inspects production state through the deployment credential boundary", () => {
     const source = readRoot("scripts/check-production-state.ts");
     expect(source).toContain("readProductionEnvFile");

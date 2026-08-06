@@ -323,4 +323,31 @@ describe(MessageList, () => {
     fireEvent.click(screen.getByRole("button", { name: "Try again" }));
     expect(onRetryRefresh).toHaveBeenCalledOnce();
   });
+
+  it("keeps the count anchored while refresh state changes", () => {
+    const props = {
+      data: messages,
+      filters: {},
+      isLoadingMore: false,
+      loadMoreFailed: false,
+      onLoadMore: vi.fn<() => void>(),
+      onMessageAction:
+        vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >(),
+      onOpenMessage: vi.fn<(threadId: string, messageId: string) => void>(),
+      onQueryChange: vi.fn<(state: MailboxMessageQueryState) => void>(),
+      selection: { folder: "inbox" } as const,
+    };
+    const view = render(<MessageList {...props} />);
+    const refreshSlot = screen.getByRole("status");
+    const count = refreshSlot.nextElementSibling;
+
+    expect(refreshSlot.className).toContain("size-3.5");
+    expect(count?.textContent).toBe("2");
+    view.rerender(<MessageList {...props} isRefreshing />);
+    expect(screen.getByRole("status")).toBe(refreshSlot);
+    expect(screen.getByText("Refreshing messages")).toBeTruthy();
+    expect(refreshSlot.nextElementSibling).toBe(count);
+  });
 });

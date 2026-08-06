@@ -373,7 +373,14 @@ const listMessages = (mailboxId: MailboxId, input: ListMessagesInput) =>
     const rows = yield* db
       .select()
       .from(message)
-      .where(isNull(message.deletedAt))
+      .where(
+        and(
+          isNull(message.deletedAt),
+          input.filters?.folderId === undefined
+            ? undefined
+            : eq(message.folderId, input.filters.folderId)
+        )
+      )
       .orderBy(desc(message.activityAt), desc(message.id));
     const hydrated = yield* Effect.all(
       rows
@@ -464,6 +471,9 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
       .where(
         and(
           isNull(message.deletedAt),
+          input.filters?.folderId === undefined
+            ? undefined
+            : eq(message.folderId, input.filters.folderId),
           sql`"message".rowid IN (
             SELECT rowid FROM message_search WHERE message_search MATCH ${ftsQuery}
           )`

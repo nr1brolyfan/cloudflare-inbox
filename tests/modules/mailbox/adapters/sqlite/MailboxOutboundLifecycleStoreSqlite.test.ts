@@ -170,7 +170,7 @@ describe("outbound lifecycle SQLite store", () => {
         expect(settledMessage).toMatchObject({
           acceptedAt: 1000,
           folderId: "sent",
-          scheduledAt: null,
+          scheduledAt: 1000,
           updatedAt: 1000,
           version: 2,
         });

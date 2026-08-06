@@ -252,7 +252,9 @@ function Home() {
   const session = useQuery({
     queryKey: authSessionQueryKey,
     queryFn: ({ signal }) => currentSessionForQuery(signal),
-    retry: false,
+    retry: 2,
+    retryDelay: (attempt) => 250 * (attempt + 1),
+    staleTime: 30_000,
   });
 
   const completeAuthentication = async (result: { type: string }) => {

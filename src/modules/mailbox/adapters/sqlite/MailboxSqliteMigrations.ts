@@ -738,6 +738,28 @@ const migrations = [
                AND outbound_delivery.status = 'accepted'
                AND outbound_delivery.deleted_at IS NULL
                AND outbound_delivery.accepted_at IS NOT NULL
+      )`,
+    ],
+  },
+  {
+    version: 16,
+    statements: [
+      `UPDATE message
+          SET scheduled_at = (
+                SELECT send_at FROM outbound_delivery
+                 WHERE outbound_delivery.id = message.outbound_delivery_id
+              ),
+              version = version + 1
+        WHERE direction = 'outbound'
+          AND scheduled_at IS NULL
+          AND deleted_at IS NULL
+          AND EXISTS (
+            SELECT 1 FROM outbound_delivery
+             WHERE outbound_delivery.id = message.outbound_delivery_id
+               AND outbound_delivery.message_id = message.id
+               AND outbound_delivery.status IN ('accepted', 'delivered', 'bounced')
+               AND outbound_delivery.deleted_at IS NULL
+               AND outbound_delivery.accepted_at IS NOT NULL
           )`,
     ],
   },
