@@ -15,8 +15,10 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { BackendAccountSecurityApplicationLayer } from "#/apps/backend-worker/BackendAccountSecurityApplicationLayer";
 import { BackendApplicationLayer } from "#/apps/backend-worker/BackendApplicationLayer";
+import { BackendAuthSessionApplicationLayer } from "#/apps/backend-worker/BackendAuthSessionApplicationLayer";
 import { BackendHealthApplicationLayer } from "#/apps/backend-worker/BackendHealthApplicationLayer";
 import { BackendHealthBindings } from "#/apps/backend-worker/BackendHealthLayer";
+import { BackendMagicLinkStartApplicationLayer } from "#/apps/backend-worker/BackendMagicLinkStartApplicationLayer";
 import { BackendMailboxApplicationLayer } from "#/apps/backend-worker/BackendMailboxApplicationLayer";
 import { BackendOrganizationApplicationLayer } from "#/apps/backend-worker/BackendOrganizationApplicationLayer";
 import {
@@ -154,11 +156,21 @@ describe("complete Backend application auth graph", () => {
         disableLogger: true,
       }
     );
+    const sessionContext = HttpRouter.toWebHandler(
+      BackendAuthSessionApplicationLayer.pipe(Layer.provide(bindings)),
+      { disableLogger: true }
+    );
+    const magicLinkStartContext = HttpRouter.toWebHandler(
+      BackendMagicLinkStartApplicationLayer.pipe(Layer.provide(bindings)),
+      { disableLogger: true }
+    );
     const contexts = [
       accountSecurityContext,
       mailboxContext,
       organizationContext,
       healthContext,
+      sessionContext,
+      magicLinkStartContext,
     ];
     contextDisposes = contexts.map((context) => context.dispose);
     contextHandlers = contexts.map((context) => context.handler);
@@ -221,6 +233,16 @@ describe("complete Backend application auth graph", () => {
     expect(responses.map(({ status }) => status)).toStrictEqual([
       401, 401, 500, 503,
     ]);
+  });
+
+  it("serves current session through the focused startup graph", async () => {
+    const [session] = contextHandlers.slice(4);
+    if (session === undefined) {
+      throw new Error("Focused session context was not built");
+    }
+
+    const response = await session(new Request(`${publicOrigin}/auth/session`));
+    expect(response.status).toBe(401);
   });
 
   it("serves every bounded context through the canonical aggregate graph", async () => {

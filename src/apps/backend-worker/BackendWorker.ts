@@ -67,6 +67,10 @@ import {
   makeAuthRuntimeConfig,
 } from "./AuthRuntimeConfig";
 import { BackendApplicationLayer } from "./BackendApplicationLayer";
+import { BackendAuthSessionApplicationLayer } from "./BackendAuthSessionApplicationLayer";
+import { BackendHealthApplicationLayer } from "./BackendHealthApplicationLayer";
+import { backendHttpApplicationKind } from "./BackendHttpApplicationSelection";
+import { BackendMagicLinkStartApplicationLayer } from "./BackendMagicLinkStartApplicationLayer";
 import {
   backendHealthBindingsLayer,
   draftAttachmentR2ClientLayer,
@@ -294,10 +298,16 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     // Serve the complete private HTTP API with request-scoped D1 and tracing.
     return {
       fetch: Effect.gen(function* () {
-        yield* initializeLegacyMailDomainClaim;
         const startedAtNanos = yield* Clock.currentTimeNanos;
         const request = yield* HttpServerRequest.HttpServerRequest;
         const requestUrl = new URL(request.url, authRuntimeConfig.publicOrigin);
+        const applicationKind = backendHttpApplicationKind(
+          request.method,
+          requestUrl.pathname
+        );
+        if (applicationKind === "aggregate") {
+          yield* initializeLegacyMailDomainClaim;
+        }
         const requestContext = backendRequestContext(request.headers["cf-ray"]);
         const completion = yield* BackendRequestCompletion.pipe(
           Effect.provide(backendRequestCompletionContext)
@@ -335,8 +345,16 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
               CurrentBackendRequestContext,
               CurrentBackendRequestContext.of(requestContext)
             );
+            const applicationLayer =
+              applicationKind === "health"
+                ? BackendHealthApplicationLayer
+                : applicationKind === "session"
+                  ? BackendAuthSessionApplicationLayer
+                  : applicationKind === "magic-link-start"
+                    ? BackendMagicLinkStartApplicationLayer
+                    : BackendApplicationLayer;
             const handler = yield* HttpRouter.toHttpEffect(
-              BackendApplicationLayer.pipe(
+              applicationLayer.pipe(
                 Layer.provide(requestControlPlaneD1Layer),
                 Layer.provide(backendHttpDependenciesLayer),
                 Layer.provide(requestContextLayer),

@@ -327,7 +327,7 @@ describe("job mail production resource structure", () => {
     );
   });
 
-  it("serves one canonical Backend HTTP application graph", () => {
+  it("uses focused startup graphs for critical Backend routes", () => {
     const backend = readRoot("src/apps/backend-worker/BackendWorker.ts");
     const sourceFile = TypeScript.createSourceFile(
       "BackendWorker.ts",
@@ -364,9 +364,12 @@ describe("job mail production resource structure", () => {
 
     expect(staticApplicationImports).toStrictEqual([
       "./BackendApplicationLayer",
+      "./BackendAuthSessionApplicationLayer",
+      "./BackendHealthApplicationLayer",
+      "./BackendMagicLinkStartApplicationLayer",
     ]);
     expect(dynamicApplicationImports).toStrictEqual([]);
-    expect(backend).not.toContain("backendHttpFeatureFor(");
+    expect(backend).toContain("backendHttpApplicationKind(");
     expect(backend).toContain("HttpRouter.toHttpEffect(");
   });
 
