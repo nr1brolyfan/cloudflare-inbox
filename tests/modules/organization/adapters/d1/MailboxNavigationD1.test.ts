@@ -23,6 +23,10 @@ import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirec
 import { MailboxNavigationD1Layer } from "#/modules/organization/adapters/d1/MailboxNavigationD1";
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
 import {
+  MailboxBootstrapConfig,
+  MailboxBootstrapConfigValue,
+} from "#/modules/organization/contracts/MailboxBootstrapConfig";
+import {
   ControlPlaneD1Binding,
   ControlPlaneDatabaseLayer,
 } from "#/platform/control-plane-d1/ControlPlaneDatabase";
@@ -60,6 +64,11 @@ const labels = Schema.decodeUnknownSync(LabelList)({
       version: 1,
     },
   ],
+});
+const bootstrapConfig = Schema.decodeUnknownSync(MailboxBootstrapConfigValue)({
+  initialAddress: "inbox@example.com",
+  initialDomain: "example.com",
+  ownerEmailAllowlist: ["owner@example.net"],
 });
 const unusedAuthorization = () =>
   Effect.die(new Error("Unexpected authorization operation"));
@@ -116,6 +125,10 @@ const navigationEffect = (
     Layer.provide(
       Layer.mergeAll(
         databaseLive,
+        Layer.succeed(
+          MailboxBootstrapConfig,
+          MailboxBootstrapConfig.of(bootstrapConfig)
+        ),
         Layer.succeed(MailboxAuthorization, authorization),
         Layer.succeed(MailboxDirectoryRepository, repository)
       )
