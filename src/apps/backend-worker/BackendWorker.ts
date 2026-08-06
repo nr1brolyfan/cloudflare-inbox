@@ -109,6 +109,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     },
     url: false,
     env: {
+      ALCHEMY_DEV,
       MAILBOX_OUTBOUND_PROVIDER_DISABLED: ALCHEMY_DEV,
     },
   },
@@ -122,7 +123,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     const mailboxDataPlane = yield* MailboxDO;
     const inboundWorkflow = yield* InboundWorkflow;
     const emailRouting = yield* EmailRoutingEventSource;
-    const isDevelopment = yield* ALCHEMY_DEV;
+    const isDevelopment = process.env.ALCHEMY_DEV === "true";
 
     // Decode immutable deployment configuration before assembling adapters.
     const authEnvironment = yield* authRuntimeEnvironmentConfig;
@@ -174,6 +175,7 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
     );
     const healthBindingsLayer = backendHealthBindingsLayer({
       authRateLimit,
+      isDevelopment,
       mailboxDataPlane,
       rawMessages,
     });
@@ -289,7 +291,6 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
         );
       })
     );
-
     // Serve the complete private HTTP API with request-scoped D1 and tracing.
     return {
       fetch: Effect.gen(function* () {

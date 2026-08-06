@@ -613,17 +613,17 @@ describe("patched Alchemy D1 migration batching", () => {
         applyMigrationBatch(database, file, index + 1, true);
       }
 
-      expect(files).toHaveLength(72);
+      expect(files).toHaveLength(73);
       expect(
         database.prepare("select count(*) as count from d1_migrations").get()
-      ).toMatchObject({ count: 72 });
+      ).toMatchObject({ count: 73 });
       expect(
         database
           .prepare("select id,name from d1_migrations order by id desc limit 1")
           .get()
       ).toMatchObject({
-        id: "00072",
-        name: "1032_app_auth_storage_rebind.sql",
+        id: "00073",
+        name: "1033_app_mailbox_bootstrap_development_intent.sql",
       });
       expect(
         database
@@ -631,7 +631,7 @@ describe("patched Alchemy D1 migration batching", () => {
             "select count(*) as count from sqlite_schema where type = 'trigger'"
           )
           .get()
-      ).toMatchObject({ count: 178 });
+      ).toMatchObject({ count: 182 });
       expect(database.prepare("pragma quick_check").get()).toMatchObject({
         quick_check: "ok",
       });

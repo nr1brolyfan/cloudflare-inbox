@@ -1,6 +1,5 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Link } from "@tanstack/react-router";
 import {
   CheckCircle2,
   KeyRound,
@@ -14,6 +13,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
   bootstrapMailboxOwner,
+  getMailboxNavigation,
   readMailboxAdministrationOperation,
 } from "#/apps/website/TanStackFunctions";
 import {
@@ -44,7 +44,9 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
   const [operationId] = useState(() => crypto.randomUUID());
   const [passwordEnrollmentOperationId] = useState(() => crypto.randomUUID());
   const mailboxBootstrap = useMutation({
-    mutationFn: async (acknowledgedRecoveryCodeRotationOperationId: string) => {
+    mutationFn: async (
+      acknowledgedRecoveryCodeRotationOperationId?: string
+    ) => {
       const readback = async () => {
         const result = await readMailboxAdministrationOperation({
           data: { operationId },
@@ -56,7 +58,9 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
       try {
         const result = await bootstrapMailboxOwner({
           data: {
-            acknowledgedRecoveryCodeRotationOperationId,
+            ...(acknowledgedRecoveryCodeRotationOperationId === undefined
+              ? {}
+              : { acknowledgedRecoveryCodeRotationOperationId }),
             displayName: "Inbox",
             operationId,
           },
@@ -146,7 +150,7 @@ const useOwnerBootstrap = (queryClient: QueryClient, userId: string) => {
     handlePasskeyStepUp: () => {
       setStepUpComplete(true);
     },
-    handleBootstrap: (acknowledgedRecoveryCodeRotationOperationId: string) =>
+    handleBootstrap: (acknowledgedRecoveryCodeRotationOperationId?: string) =>
       mailboxBootstrap.mutate(acknowledgedRecoveryCodeRotationOperationId),
     handleStepUpPasswordChange: setStepUpPassword,
     mailboxBootstrap,
@@ -1033,11 +1037,17 @@ function RecoveryCodeManagement({
 // oxlint-disable-next-line eslint/complexity -- The bootstrap surface exhaustively selects mailbox, step-up, and one-time first-owner states.
 export function SignedInOwnerBootstrap({
   isLogoutPending,
+  onMailboxFound,
   onLogout,
+  securitySetupRequired = true,
+  sessionId,
   userId,
 }: {
   readonly isLogoutPending: boolean;
+  readonly onMailboxFound: () => Promise<void> | void;
   readonly onLogout: () => void;
+  readonly securitySetupRequired?: boolean;
+  readonly sessionId: string;
   readonly userId: string;
 }) {
   const queryClient = useQueryClient();
@@ -1045,11 +1055,21 @@ export function SignedInOwnerBootstrap({
     useState<string | null>(null);
   const [plaintextRecoveryOperationId, setPlaintextRecoveryOperationId] =
     useState<string | null>(null);
+  const mailboxNavigation = useQuery({
+    queryFn: async () => {
+      const result = await getMailboxNavigation();
+      if (!result.ok && result.status === 401) {
+        await clearCachedAuthSession(queryClient);
+      }
+      return result;
+    },
+    queryKey: ["mailbox", "navigation", userId, sessionId] as const,
+    retry: false,
+  });
   const ownerBootstrap = useOwnerBootstrap(queryClient, userId);
   const bootstrapResult = ownerBootstrap.mailboxBootstrap.data;
   const mailboxExists =
     bootstrapResult?.ok === false && bootstrapResult.status === 409;
-  const mailboxKnown = bootstrapResult?.ok === true || mailboxExists;
   const firstPasswordNeeded =
     ownerBootstrap.secureSetupStarted &&
     !ownerBootstrap.stepUpComplete &&
@@ -1059,6 +1079,54 @@ export function SignedInOwnerBootstrap({
     !hasStepUpFactor(ownerBootstrap.stepUpOptions.data, "passkey");
   const secureSetupPending = ownerBootstrap.secureSetupStarted === false;
   const stepUpPending = ownerBootstrap.stepUpComplete === false;
+  const mailboxReady =
+    mailboxNavigation.data?.ok === true ||
+    bootstrapResult?.ok === true ||
+    mailboxExists;
+
+  useEffect(() => {
+    if (mailboxReady) {
+      void onMailboxFound();
+    }
+  }, [mailboxReady, onMailboxFound]);
+
+  if (mailboxNavigation.isPending || mailboxReady) {
+    return (
+      <output className="flex items-center justify-center py-24 text-[var(--sea-ink-soft)]">
+        <LoaderCircle aria-label="Loading mailbox" className="animate-spin" />
+      </output>
+    );
+  }
+
+  if (
+    mailboxNavigation.error ||
+    (mailboxNavigation.data.ok === false &&
+      mailboxNavigation.data.status !== 404)
+  ) {
+    return (
+      <div>
+        <ErrorNotice>
+          We could not check whether your primary inbox already exists. Try
+          again before starting setup.
+        </ErrorNotice>
+        <button
+          type="button"
+          onClick={() => void mailboxNavigation.refetch()}
+          className="mt-5 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg"
+        >
+          Try again
+        </button>
+        <button
+          type="button"
+          onClick={onLogout}
+          disabled={isLogoutPending}
+          className="mt-3 ml-3 rounded-xl border border-[var(--line)] bg-white/70 px-5 py-3 font-bold disabled:opacity-50"
+        >
+          Sign out
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1073,36 +1141,31 @@ export function SignedInOwnerBootstrap({
         Mailbox access is verified when you open the workspace. Session
         principal: <code>{userId.slice(0, 12)}...</code>
       </p>
-      <div className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--sand)]/60 p-5">
-        <p className="font-bold">Complete the launch checklist in order</p>
-        <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-[var(--sea-ink-soft)]">
-          <li>Verify an external recovery address.</li>
-          <li>Create at least two user-verified passkeys.</li>
-          <li>Generate and securely save recovery codes.</li>
-          <li>Launch the mailbox only after the first three steps succeed.</li>
-        </ol>
-        <p className="mt-3 text-xs leading-5 text-[var(--sea-ink-soft)]">
-          The mailbox server rechecks every security requirement atomically
-          before creation. This page does not report readiness counts or
-          credential identifiers.
-        </p>
-      </div>
+      {securitySetupRequired ? (
+        <div className="mt-6 rounded-2xl border border-[var(--line)] bg-[var(--sand)]/60 p-5">
+          <p className="font-bold">Complete the launch checklist in order</p>
+          <ol className="mt-3 list-decimal space-y-2 pl-5 text-sm leading-6 text-[var(--sea-ink-soft)]">
+            <li>Verify an external recovery address.</li>
+            <li>Create at least two user-verified passkeys.</li>
+            <li>Generate and securely save recovery codes.</li>
+            <li>
+              Launch the mailbox only after the first three steps succeed.
+            </li>
+          </ol>
+          <p className="mt-3 text-xs leading-5 text-[var(--sea-ink-soft)]">
+            The mailbox server rechecks every security requirement atomically
+            before creation. This page does not report readiness counts or
+            credential identifiers.
+          </p>
+        </div>
+      ) : (
+        <Notice>
+          Recovery addresses, passkeys, and recovery codes are optional in local
+          development and can be added later.
+        </Notice>
+      )}
       <div className="mt-6">
-        {bootstrapResult?.ok ? (
-          <div className="space-y-3">
-            <Notice>
-              Primary inbox created: {bootstrapResult.mailbox.displayName}
-            </Notice>
-            <p className="text-sm leading-6 text-[var(--sea-ink-soft)]">
-              Finish the security checklist below before launching it.
-            </p>
-          </div>
-        ) : mailboxExists ? (
-          <Notice>
-            A primary inbox already exists. Finish the security checklist below
-            before launching it.
-          </Notice>
-        ) : bootstrapResult ? (
+        {bootstrapResult?.ok === false ? (
           <ErrorNotice>
             {bootstrapResult.error.message === "Security setup required"
               ? "Security setup is incomplete. Verify external recovery, keep two active passkeys, and generate a current set of ten unused recovery codes before trying again."
@@ -1157,34 +1220,24 @@ export function SignedInOwnerBootstrap({
         />
       ) : (
         <>
-          <ExternalRecoveryEnrollment userId={userId} />
-          <PasskeyEnrollment userId={userId} />
-          <RecoveryCodeManagement
-            acknowledgedOperationId={acknowledgedRecoveryOperationId}
-            setAcknowledgedOperationId={setAcknowledgedRecoveryOperationId}
-            setPlaintextOperationId={setPlaintextRecoveryOperationId}
-            userId={userId}
-          />
-          <PasskeyCredentialManagement userId={userId} />
+          {securitySetupRequired ? (
+            <>
+              <ExternalRecoveryEnrollment userId={userId} />
+              <PasskeyEnrollment userId={userId} />
+              <RecoveryCodeManagement
+                acknowledgedOperationId={acknowledgedRecoveryOperationId}
+                setAcknowledgedOperationId={setAcknowledgedRecoveryOperationId}
+                setPlaintextOperationId={setPlaintextRecoveryOperationId}
+                userId={userId}
+              />
+              <PasskeyCredentialManagement userId={userId} />
+            </>
+          ) : null}
           <section className="mt-8 border-t border-[var(--line)] pt-8">
             <p className="island-kicker">Step 4 / Mailbox creation</p>
-            {mailboxKnown ? (
+            <h3 className="mt-2 text-xl font-bold">Create the primary inbox</h3>
+            {securitySetupRequired ? (
               <>
-                <h3 className="mt-2 text-xl font-bold">
-                  Open the primary inbox
-                </h3>
-                <Link
-                  to="/inbox"
-                  className="mt-5 flex w-fit items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white no-underline shadow-lg hover:-translate-y-0.5 hover:text-white"
-                >
-                  <Mail size={17} /> Open inbox
-                </Link>
-              </>
-            ) : (
-              <>
-                <h3 className="mt-2 text-xl font-bold">
-                  Create the primary inbox
-                </h3>
                 <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
                   The server is authoritative for recovery, passkey, and
                   recovery-code readiness. The acknowledgement below records
@@ -1196,32 +1249,40 @@ export function SignedInOwnerBootstrap({
                   the exact recovery-code generation still shown in this browser
                   session.
                 </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (acknowledgedRecoveryOperationId !== null) {
-                      ownerBootstrap.handleBootstrap(
-                        acknowledgedRecoveryOperationId
-                      );
-                    }
-                  }}
-                  disabled={
-                    plaintextRecoveryOperationId === null ||
-                    acknowledgedRecoveryOperationId !==
-                      plaintextRecoveryOperationId ||
-                    ownerBootstrap.mailboxBootstrap.isPending
-                  }
-                  className="mt-5 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
-                >
-                  {ownerBootstrap.mailboxBootstrap.isPending ? (
-                    <LoaderCircle className="animate-spin" size={17} />
-                  ) : (
-                    <Mail size={17} />
-                  )}
-                  Create primary inbox
-                </button>
               </>
+            ) : (
+              <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+                Local development can create the inbox immediately. Security
+                recovery options remain available after setup.
+              </p>
             )}
+            <button
+              type="button"
+              onClick={() => {
+                if (!securitySetupRequired) {
+                  ownerBootstrap.handleBootstrap();
+                } else if (acknowledgedRecoveryOperationId !== null) {
+                  ownerBootstrap.handleBootstrap(
+                    acknowledgedRecoveryOperationId
+                  );
+                }
+              }}
+              disabled={
+                (securitySetupRequired &&
+                  (plaintextRecoveryOperationId === null ||
+                    acknowledgedRecoveryOperationId !==
+                      plaintextRecoveryOperationId)) ||
+                ownerBootstrap.mailboxBootstrap.isPending
+              }
+              className="mt-5 flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
+            >
+              {ownerBootstrap.mailboxBootstrap.isPending ? (
+                <LoaderCircle className="animate-spin" size={17} />
+              ) : (
+                <Mail size={17} />
+              )}
+              Create primary inbox
+            </button>
           </section>
         </>
       )}

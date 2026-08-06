@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import {
   ArrowRight,
   KeyRound,
@@ -235,6 +235,7 @@ function RecoveredCodesPanel({
 // oxlint-disable-next-line eslint/complexity -- The single auth surface exhaustively selects mutually exclusive sign-in and recovery states.
 function Home() {
   const devEmailInbox = Route.useLoaderData();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [mode, setMode] = useState<AuthMode>("magic");
   const [email, setEmail] = useState("");
@@ -413,8 +414,11 @@ function Home() {
               <SignedInOwnerBootstrap
                 key={session.data.userId}
                 userId={session.data.userId}
+                sessionId={session.data.sessionId}
                 isLogoutPending={logout.isPending}
+                onMailboxFound={() => navigate({ replace: true, to: "/inbox" })}
                 onLogout={() => logout.mutate()}
+                securitySetupRequired={!devEmailInbox.enabled}
               />
             ) : (
               <>

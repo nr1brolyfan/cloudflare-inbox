@@ -12,7 +12,10 @@ import {
   makePermissiveAuthenticationCapabilities,
 } from "@effect-auth/core/AuthFlow";
 import { AuthKernelLive } from "@effect-auth/core/AuthKernel";
-import { AuthRateLimitStandardLive } from "@effect-auth/core/AuthRateLimit";
+import {
+  AuthRateLimitNoopLive,
+  AuthRateLimitStandardLive,
+} from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import { AuthMailerFromDevEmailStoreLive } from "@effect-auth/core/DevEmail";
 import { EmailOtpDefaultLive } from "@effect-auth/core/EmailOtp";
@@ -200,7 +203,9 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
           ),
       }),
       EmailVerificationCodeLive,
-      AuthRateLimitStandardLive()
+      options.delivery._tag === "development"
+        ? AuthRateLimitNoopLive
+        : AuthRateLimitStandardLive()
     ).pipe(Layer.provideMerge(featureBaseLayer));
 
     return Layer.mergeAll(

@@ -48,6 +48,7 @@ import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorizati
 import {
   appMailbox,
   appMailboxAdministrationReceipt,
+  appMailboxBootstrapDevelopmentIntent,
   appMailboxBootstrapDomainIntent,
   appMailboxBootstrapReceiptV1Intent,
   appMailboxBootstrapReceiptV2,
@@ -94,6 +95,7 @@ import { UnixMillis } from "#/shared/Temporal";
 export interface MailboxAdministrationRuntime {
   readonly now: () => number;
   readonly randomId: () => string;
+  readonly securitySetupRequired?: boolean;
 }
 
 /** Clock and identifier source captured by mailbox administration. */
@@ -102,13 +104,20 @@ export const MailboxAdministrationRuntime =
     "cloudflare-inbox/MailboxAdministrationRuntime"
   );
 
-export const MailboxAdministrationRuntimeLayer = Layer.succeed(
-  MailboxAdministrationRuntime,
-  MailboxAdministrationRuntime.of({
-    now: Date.now,
-    randomId: () => crypto.randomUUID(),
-  })
-);
+export const mailboxAdministrationRuntimeLayer = (
+  securitySetupRequired = true
+) =>
+  Layer.succeed(
+    MailboxAdministrationRuntime,
+    MailboxAdministrationRuntime.of({
+      now: Date.now,
+      randomId: () => crypto.randomUUID(),
+      securitySetupRequired,
+    })
+  );
+
+export const MailboxAdministrationRuntimeLayer =
+  mailboxAdministrationRuntimeLayer();
 
 const activeOwnerRolePredicate = (database: ControlPlaneDatabase) =>
   exists(
@@ -405,6 +414,7 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
     const authorization = yield* MailboxAuthorization;
     const audit = yield* AdministrativeAudit;
     const { now, randomId } = runtime;
+    const securitySetupRequired = runtime.securitySetupRequired !== false;
 
     const readHistoricalBootstrapIntent = (
       operationId: string,
@@ -814,6 +824,9 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                 )
               )
           );
+          const securitySetupReady = securitySetupRequired
+            ? and(recoveryReady, passkeysReady, recoveryCodesReady)
+            : sql`1`;
           const mailboxAvailable = notExists(
             database.select({ value: sql`1` }).from(appMailbox)
           );
@@ -846,6 +859,50 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
               .from(appMailbox)
               .where(createdMailbox)
           );
+          const bootstrapIntentStatement = securitySetupRequired
+            ? database.insert(appMailboxBootstrapSecurityIntent).select(
+                sql`select ${input.operationId}, ${validated.actor.userId},
+                            ${acknowledgedRotationOperationId}, 1
+                       where ${authorized}`
+              )
+            : database.insert(appMailboxBootstrapDevelopmentIntent).select(
+                sql`select ${input.operationId}, ${validated.actor.userId}, 1
+                       where ${authorized}`
+              );
+          const bootstrapReceiptMissing = notExists(
+            database
+              .select({ value: sql`1` })
+              .from(appMailboxAdministrationReceipt)
+              .where(
+                eq(
+                  appMailboxAdministrationReceipt.operationId,
+                  input.operationId
+                )
+              )
+          );
+          const bootstrapIntentCleanupStatement = securitySetupRequired
+            ? database
+                .delete(appMailboxBootstrapSecurityIntent)
+                .where(
+                  and(
+                    eq(
+                      appMailboxBootstrapSecurityIntent.operationId,
+                      input.operationId
+                    ),
+                    bootstrapReceiptMissing
+                  )
+                )
+            : database
+                .delete(appMailboxBootstrapDevelopmentIntent)
+                .where(
+                  and(
+                    eq(
+                      appMailboxBootstrapDevelopmentIntent.operationId,
+                      input.operationId
+                    ),
+                    bootstrapReceiptMissing
+                  )
+                );
           const statements: ControlPlane.ControlPlaneStatements = [
             database.insert(appAuthorizationGuard).select(
               sql`select ${nonce}
@@ -853,9 +910,7 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                         and ${ownerRoleActive}
                         and ${ownerIdentityValid}
                         and ${sealActorValid}
-                        and ${recoveryReady}
-                        and ${passkeysReady}
-                        and ${recoveryCodesReady}
+                        and ${securitySetupReady}
                         and ${mailboxAvailable}
                         and ${operationAvailable}`
             ),
@@ -954,11 +1009,7 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                   .where(eq(appAuthorizationGuard.nonce, nonce))
               )
               .onConflictDoNothing(),
-            database.insert(appMailboxBootstrapSecurityIntent).select(
-              sql`select ${input.operationId}, ${validated.actor.userId},
-                         ${acknowledgedRotationOperationId}, 1
-                    where ${authorized}`
-            ),
+            bootstrapIntentStatement,
             database
               .insert(appMailboxAdministrationReceipt)
               .select(
@@ -1046,25 +1097,7 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                 )
             ),
             administrativeAuditInsertStatement(database, auditEvent, nonce),
-            database.delete(appMailboxBootstrapSecurityIntent).where(
-              and(
-                eq(
-                  appMailboxBootstrapSecurityIntent.operationId,
-                  input.operationId
-                ),
-                notExists(
-                  database
-                    .select({ value: sql`1` })
-                    .from(appMailboxAdministrationReceipt)
-                    .where(
-                      eq(
-                        appMailboxAdministrationReceipt.operationId,
-                        input.operationId
-                      )
-                    )
-                )
-              )
-            ),
+            bootstrapIntentCleanupStatement,
             database
               .delete(appAuthorizationGuard)
               .where(eq(appAuthorizationGuard.nonce, nonce)),

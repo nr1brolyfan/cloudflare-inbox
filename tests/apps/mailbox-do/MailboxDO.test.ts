@@ -8,20 +8,20 @@ const source = readFileSync(
 );
 
 describe("MailboxDO binding discovery", () => {
-  it("always discovers email before runtime configuration is read", () => {
-    const outerEmail = source.indexOf(
-      "const email = yield* Cloudflare.Email.Send(MailboxEmailSender);"
-    );
+  it("omits the email binding from the development graph", () => {
+    const outerEmail = source.indexOf("yield* Cloudflare.Email.Send");
     const innerRuntime = source.indexOf("return Effect.gen(function* () {");
 
     expect(outerEmail).toBeGreaterThan(-1);
     expect(outerEmail).toBeLessThan(innerRuntime);
-    expect(source).not.toContain("ALCHEMY_DEV");
+    expect(source).toContain('process.env.ALCHEMY_DEV === "true"');
   });
 
-  it("uses the strict runtime flag to select the helper email client", () => {
-    expect(source).toContain("yield* Config.boolean(");
-    expect(source).toContain('"MAILBOX_OUTBOUND_PROVIDER_DISABLED"');
+  it("accepts Alchemy's JSON boolean environment binding", () => {
+    expect(source).toContain(
+      'process.env.MAILBOX_OUTBOUND_PROVIDER_DISABLED === "true"'
+    );
+    expect(source).not.toContain("Config.boolean(");
     expect(source).toContain("providerDisabled ? undefined : email");
   });
 });

@@ -1,7 +1,10 @@
 import { RateLimitStoreDurableObject } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
 import { CustomEvidencePoliciesLive } from "@effect-auth/core/Assurance";
 import { AuthSecretsLive } from "@effect-auth/core/AuthConfig";
-import { AuthRateLimitStandardLive } from "@effect-auth/core/AuthRateLimit";
+import {
+  AuthRateLimitNoopLive,
+  AuthRateLimitStandardLive,
+} from "@effect-auth/core/AuthRateLimit";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import { PrivacyLive } from "@effect-auth/core/Privacy";
 import { RateLimiterLive } from "@effect-auth/core/RateLimiter";
@@ -49,10 +52,13 @@ const StepUpOptionsAuthLayer = Layer.unwrap(
         })
       )
     );
-    const authRateLimitLayer = AuthRateLimitStandardLive().pipe(
-      Layer.provide(rateLimiterLayer),
-      Layer.provide(privacyLayer)
-    );
+    const authRateLimitLayer =
+      config.delivery._tag === "development"
+        ? AuthRateLimitNoopLive
+        : AuthRateLimitStandardLive().pipe(
+            Layer.provide(rateLimiterLayer),
+            Layer.provide(privacyLayer)
+          );
 
     return Layer.mergeAll(
       sessionDependencies,

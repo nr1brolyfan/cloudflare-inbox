@@ -142,6 +142,7 @@ export const mailboxDoNamespaceLayer = (binding: MailboxDONamespace) =>
 /** Keeps readiness-only bindings separate from application dependencies. */
 export const backendHealthBindingsLayer = (bindings: {
   readonly authRateLimit: AlchemyRateLimitDurableObjectNamespace;
+  readonly isDevelopment: boolean;
   readonly mailboxDataPlane: MailboxDONamespace;
   readonly rawMessages: RawMessagesR2Binding;
 }) => Layer.succeed(BackendHealthBindings, BackendHealthBindings.of(bindings));

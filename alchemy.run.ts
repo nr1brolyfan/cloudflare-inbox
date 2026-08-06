@@ -2,6 +2,7 @@
 import * as Alchemy from "alchemy";
 import { ALCHEMY_DEV } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Command from "alchemy/Command";
 import * as Effect from "effect/Effect";
 
 import Backend from "./src/apps/backend-worker/BackendWorker.ts";
@@ -13,7 +14,7 @@ import {
   jobMailInboundRuleProps,
 } from "./src/platform/cloudflare/JobMailProductionTopology.ts";
 
-const websiteProps = {
+const websiteBaseProps = {
   compatibility: {
     date: "2026-07-11",
     flags: ["nodejs_compat"],
@@ -21,10 +22,6 @@ const websiteProps = {
   dev: {
     port: 1337,
     strictPort: true,
-  },
-  env: {
-    BACKEND: Backend,
-    DEV_EMAIL_INBOX_ENABLED: ALCHEMY_DEV,
   },
   assets: {
     runWorkerFirst: ["/*", "!/assets/*"],
@@ -45,14 +42,24 @@ const websiteProps = {
   },
 };
 
-export class Website extends Cloudflare.Website.Vite<Website>()(
-  "Website",
-  websiteProps
-) {}
+export class Website extends Cloudflare.Website.Vite<Website>()("Website", {
+  ...websiteBaseProps,
+  env: {
+    BACKEND: Backend,
+    DEV_EMAIL_INBOX_ENABLED: ALCHEMY_DEV,
+  },
+}) {}
 
 export class ProductionWebsite extends Cloudflare.Website.Vite<ProductionWebsite>()(
   "Website",
-  { ...websiteProps, domain: JobMailProductionTopology.website.domain }
+  {
+    ...websiteBaseProps,
+    domain: JobMailProductionTopology.website.domain,
+    env: {
+      BACKEND: Backend,
+      DEV_EMAIL_INBOX_ENABLED: ALCHEMY_DEV,
+    },
+  }
 ) {}
 
 export type WebsiteEnv = Cloudflare.InferEnv<typeof Website>;
@@ -70,6 +77,7 @@ export default Alchemy.Stack(
   },
   Effect.gen(function* () {
     const stack = yield* Alchemy.Stack;
+    const isDevelopment = yield* ALCHEMY_DEV;
     const isProduction = isJobMailProductionStage(stack.stage);
     const productionConfig = isProduction
       ? yield* jobMailProductionConfig
@@ -91,6 +99,15 @@ export default Alchemy.Stack(
         zone: JobMailProductionTopology.routing.zone,
       });
     }
+    if (isDevelopment) {
+      const website = yield* Command.Dev("WebsiteDevServer", {
+        command: "bunx vite dev --port 1337 --strictPort",
+      });
+      return {
+        websiteUrl: website.url ?? "http://localhost:1337/",
+      };
+    }
+
     const website = yield* isProduction ? ProductionWebsite : Website;
 
     return {

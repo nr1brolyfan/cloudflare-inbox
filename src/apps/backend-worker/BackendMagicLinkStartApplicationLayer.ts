@@ -1,7 +1,10 @@
 import { AlchemyCloudflareMailer } from "@effect-auth/core/AlchemyCloudflareEmail";
 import { RateLimitStoreDurableObject } from "@effect-auth/core/AlchemyCloudflareRateLimitDurableObject";
 import { AuthSecretsLive } from "@effect-auth/core/AuthConfig";
-import { AuthRateLimitStandardLive } from "@effect-auth/core/AuthRateLimit";
+import {
+  AuthRateLimitNoopLive,
+  AuthRateLimitStandardLive,
+} from "@effect-auth/core/AuthRateLimit";
 import { ChallengeLive } from "@effect-auth/core/Challenge";
 import { WebCryptoLive } from "@effect-auth/core/Crypto";
 import { AuthMailerFromDevEmailStoreLive } from "@effect-auth/core/DevEmail";
@@ -95,10 +98,13 @@ const MagicLinkStartCoreLayer = Layer.unwrap(
         })
       )
     );
-    const authRateLimitLayer = AuthRateLimitStandardLive().pipe(
-      Layer.provide(rateLimiterLayer),
-      Layer.provide(privacyLayer)
-    );
+    const authRateLimitLayer =
+      config.delivery._tag === "development"
+        ? AuthRateLimitNoopLive
+        : AuthRateLimitStandardLive().pipe(
+            Layer.provide(rateLimiterLayer),
+            Layer.provide(privacyLayer)
+          );
     const starterLayer = MagicLinkStarterLayer.pipe(
       Layer.provide(challengeLayer),
       Layer.provide(cryptoLayer),

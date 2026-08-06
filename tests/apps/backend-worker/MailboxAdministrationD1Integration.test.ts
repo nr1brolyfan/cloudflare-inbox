@@ -645,6 +645,7 @@ const bootstrap = (
     readonly initialDomain?: string;
     readonly omitAcknowledgement?: boolean;
     readonly ownerEmailAllowlist?: readonly string[];
+    readonly securitySetupRequired?: boolean;
   }
 ) =>
   provideRequestAuth(
@@ -725,6 +726,8 @@ const bootstrap = (
                 MailboxAdministrationRuntime.of({
                   now: () => now,
                   randomId: () => nonce,
+                  securitySetupRequired:
+                    trustedOverrides?.securitySetupRequired,
                 })
               ),
               Layer.succeed(
@@ -1225,6 +1228,44 @@ describe("mailbox administration", () => {
         receiptV2: 1,
         securityIntents: 1,
       });
+    } finally {
+      database.close();
+    }
+  });
+
+  it("allows development bootstrap without recovery credentials", async () => {
+    const database = new DatabaseSync(":memory:");
+    try {
+      await applyControlPlaneMigrations(database);
+      const d1 = makeTestD1Database(database);
+      const validated = makeValidatedSession("user-a", "session-a");
+      insertCurrentSession(database, validated);
+      database.exec(`
+        update app_external_recovery_identity
+           set status = 'revoked', revoked_at = ${now}, updated_at = ${now},
+               version = 3
+         where id = 'bootstrap-recovery';
+        update auth_passkey_credential set revoked_at = ${now}
+         where id = 'bootstrap-passkey-2';
+        update auth_recovery_code set used_at = ${now}
+         where id = 'bootstrap-recovery-code-0';
+      `);
+
+      const mailbox = await Effect.runPromise(
+        bootstrap(
+          d1,
+          validated,
+          "development-bootstrap-guard",
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { omitAcknowledgement: true, securitySetupRequired: false }
+        )
+      );
+
+      expect(mailbox).toMatchObject({ id: "primary", status: "active" });
     } finally {
       database.close();
     }

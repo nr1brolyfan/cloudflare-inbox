@@ -1,7 +1,6 @@
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { sql } from "drizzle-orm";
-import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
@@ -69,12 +68,14 @@ const mailboxDoImplementation = Effect.gen(function* () {
 const mailboxDoRuntime = Effect.gen(function* () {
   const controlPlane = yield* Cloudflare.D1.QueryDatabase(ControlPlaneDatabase);
   const rawMessages = yield* Cloudflare.R2.ReadWriteBucket(RawMessagesBucket);
-  const email = yield* Cloudflare.Email.Send(MailboxEmailSender);
+  const isDevelopment = process.env.ALCHEMY_DEV === "true";
+  const email = isDevelopment
+    ? undefined
+    : yield* Cloudflare.Email.Send(MailboxEmailSender);
 
   return Effect.gen(function* () {
-    const providerDisabled = yield* Config.boolean(
-      "MAILBOX_OUTBOUND_PROVIDER_DISABLED"
-    );
+    const providerDisabled =
+      process.env.MAILBOX_OUTBOUND_PROVIDER_DISABLED === "true";
     const bindings = mailboxDoBindingsFromClients(
       controlPlane,
       rawMessages,

@@ -25,7 +25,10 @@ export const BackendSessionAuthenticationMiddlewareLayer = Layer.unwrap(
   Effect.gen(function* () {
     const config = yield* AuthRuntimeConfig;
     const originPolicy = {
-      mode: "secure",
+      mode:
+        config.publicOrigin.protocol === "http:"
+          ? "loopback-development"
+          : "secure",
       origins: [config.publicOrigin.origin],
     } as const;
     const requestMetadata = {

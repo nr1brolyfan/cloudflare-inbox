@@ -784,6 +784,30 @@ export const appMailboxBootstrapSecurityIntent = sqliteTable(
   ]
 );
 
+export const appMailboxBootstrapDevelopmentIntent = sqliteTable(
+  "app_mailbox_bootstrap_development_intent",
+  {
+    operationId: text("operation_id").primaryKey(),
+    actorUserId: text("actor_user_id").notNull(),
+    schemaVersion: integer("schema_version").notNull(),
+  },
+  () => [
+    check(
+      "app_mailbox_bootstrap_development_intent_operation_id_check",
+      sql`length(operation_id) = 36`
+    ),
+    check(
+      "app_mailbox_bootstrap_development_intent_actor_check",
+      sql`length(actor_user_id) between 1 and 128
+        and actor_user_id = trim(actor_user_id)`
+    ),
+    check(
+      "app_mailbox_bootstrap_development_intent_schema_check",
+      sql`schema_version = 1`
+    ),
+  ]
+);
+
 export const appMailboxBootstrapDomainIntent = sqliteTable(
   "app_mailbox_bootstrap_domain_intent",
   {

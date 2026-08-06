@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   bootstrapMailboxOwner: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   enrollFirstOwnerPassword: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   generateRecoveryCodes: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+  getMailboxNavigation: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   listPasskeyCredentials: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
   readMailboxAdministrationOperation:
     vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -31,6 +32,8 @@ vi.mock(import("#/apps/website/TanStackFunctions"), async (importOriginal) => {
     ...actual,
     bootstrapMailboxOwner:
       mocks.bootstrapMailboxOwner as unknown as typeof actual.bootstrapMailboxOwner,
+    getMailboxNavigation:
+      mocks.getMailboxNavigation as unknown as typeof actual.getMailboxNavigation,
     readMailboxAdministrationOperation:
       mocks.readMailboxAdministrationOperation as unknown as typeof actual.readMailboxAdministrationOperation,
   };
@@ -79,20 +82,41 @@ const stepUpRequired = {
   ok: false,
   status: 403,
 };
+const mailboxNotFound = {
+  error: { code: "not_found", message: "Not found" },
+  ok: false,
+  status: 404,
+};
 const password = "correct horse battery staple";
 
-const renderBootstrap = (onLogout = vi.fn<() => void>()) => {
+const renderBootstrap = (
+  onLogout = vi.fn<() => void>(),
+  onMailboxFound = vi.fn<() => void>(),
+  initialNavigation: unknown | null = mailboxNotFound
+) => {
   const queryClient = new QueryClient({
     defaultOptions: {
       mutations: { retry: false },
       queries: { retry: false },
     },
   });
+  if (initialNavigation !== null) {
+    queryClient.setQueryDefaults(
+      ["mailbox", "navigation", "user-a", "session-a"],
+      { staleTime: Number.POSITIVE_INFINITY }
+    );
+    queryClient.setQueryData(
+      ["mailbox", "navigation", "user-a", "session-a"],
+      initialNavigation
+    );
+  }
   return render(
     <QueryClientProvider client={queryClient}>
       <SignedInOwnerBootstrap
         isLogoutPending={false}
+        onMailboxFound={onMailboxFound}
         onLogout={onLogout}
+        sessionId="session-a"
         userId="user-a"
       />
     </QueryClientProvider>
@@ -162,6 +186,7 @@ describe(SignedInOwnerBootstrap, () => {
       const { operationId } = command as { operationId: string };
       return Promise.resolve(generatedCodes(operationId));
     });
+    mocks.getMailboxNavigation.mockResolvedValue(mailboxNotFound);
     mocks.readMailboxAdministrationOperation.mockResolvedValue({
       error: { code: "not_found", message: "Not found" },
       ok: false,
@@ -178,6 +203,40 @@ describe(SignedInOwnerBootstrap, () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
+  });
+
+  it("opens an existing mailbox without showing onboarding", async () => {
+    const onMailboxFound = vi.fn<() => void>();
+    mocks.getMailboxNavigation.mockResolvedValue({
+      mailbox: { displayName: "Inbox", id: "primary" },
+      ok: true,
+    });
+
+    renderBootstrap(vi.fn(), onMailboxFound, null);
+
+    await waitFor(() => expect(onMailboxFound).toHaveBeenCalledOnce());
+    expect(
+      screen.queryByRole("button", { name: "Begin secure setup" })
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Create primary inbox" })
+    ).toBeNull();
+    expect(screen.queryByText(/Recovery addresses, passkeys/u)).toBeNull();
+  });
+
+  it("does not show onboarding when mailbox discovery fails", async () => {
+    mocks.getMailboxNavigation.mockResolvedValue({
+      error: { code: "service_unavailable", message: "Unavailable" },
+      ok: false,
+      status: 503,
+    });
+
+    renderBootstrap(vi.fn(), vi.fn(), null);
+
+    await screen.findByText(/could not check whether your primary inbox/u);
+    expect(
+      screen.queryByRole("button", { name: "Create primary inbox" })
+    ).toBeNull();
   });
 
   it("requires a fresh email sign-in after first-owner proof expires", async () => {

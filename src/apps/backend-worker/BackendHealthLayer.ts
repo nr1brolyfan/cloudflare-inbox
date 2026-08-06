@@ -44,6 +44,7 @@ export class BackendHealthBindings extends Context.Service<
   BackendHealthBindings,
   {
     readonly authRateLimit: AlchemyRateLimitDurableObjectNamespace;
+    readonly isDevelopment: boolean;
     readonly mailboxDataPlane: MailboxDONamespace;
     readonly rawMessages: RawMessagesClient;
   }
@@ -74,82 +75,86 @@ export const BackendHealthLayer = Layer.effect(
         subject: PermissionSubject.make("health", "backend"),
       });
     });
-    const probeAuthRateLimit = bindings.authRateLimit
-      .getByName(`${AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX}health`)
-      .fixedWindow({
-        limit: 1,
-        refillMillis: 1,
-        tokens: 1,
-      })
-      .pipe(Effect.provide(RuntimeContext.phantom));
+    const probeAuthRateLimit = bindings.isDevelopment
+      ? Effect.void
+      : bindings.authRateLimit
+          .getByName(`${AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX}health`)
+          .fixedWindow({
+            limit: 1,
+            refillMillis: 1,
+            tokens: 1,
+          })
+          .pipe(Effect.provide(RuntimeContext.phantom));
     const probeControlPlane = controlPlane.get<{ readonly ready: number }>(
       sql`select 1 as ready`
     );
     const healthMailbox = bindings.mailboxDataPlane.getByName("__health__");
-    const probeMailboxDataPlane = Effect.gen(function* () {
-      const directoryRequest = yield* Schema.decodeUnknownEffect(
-        DirectoryRpcRequest
-      )({ _tag: "ListFolders", input: { mailboxId: "__health__" } });
-      const mailDataRequest = yield* Schema.decodeUnknownEffect(
-        MailDataRpcRequest
-      )({ _tag: "ListMessages", input: { mailboxId: "__health__" } });
-      const resourceLookup = yield* Schema.decodeUnknownEffect(
-        MailboxResourceLookup
-      )({
-        _tag: "Folder",
-        mailboxId: "__health__",
-        folderId: "__health__",
-      });
-      const encodedDirectoryRequest =
-        yield* Schema.encodeEffect(DirectoryRpcRequest)(directoryRequest);
-      const encodedMailDataRequest =
-        yield* Schema.encodeEffect(MailDataRpcRequest)(mailDataRequest);
-      const encodedResourceLookup = yield* Schema.encodeEffect(
-        MailboxResourceLookup
-      )(resourceLookup);
+    const probeMailboxDataPlane = bindings.isDevelopment
+      ? Effect.void
+      : Effect.gen(function* () {
+          const directoryRequest = yield* Schema.decodeUnknownEffect(
+            DirectoryRpcRequest
+          )({ _tag: "ListFolders", input: { mailboxId: "__health__" } });
+          const mailDataRequest = yield* Schema.decodeUnknownEffect(
+            MailDataRpcRequest
+          )({ _tag: "ListMessages", input: { mailboxId: "__health__" } });
+          const resourceLookup = yield* Schema.decodeUnknownEffect(
+            MailboxResourceLookup
+          )({
+            _tag: "Folder",
+            mailboxId: "__health__",
+            folderId: "__health__",
+          });
+          const encodedDirectoryRequest =
+            yield* Schema.encodeEffect(DirectoryRpcRequest)(directoryRequest);
+          const encodedMailDataRequest =
+            yield* Schema.encodeEffect(MailDataRpcRequest)(mailDataRequest);
+          const encodedResourceLookup = yield* Schema.encodeEffect(
+            MailboxResourceLookup
+          )(resourceLookup);
 
-      return yield* Effect.all({
-        ready: healthMailbox
-          .sqliteReady()
-          .pipe(Effect.provide(RuntimeContext.phantom)),
-        folders: healthMailbox
-          .executeDirectory(encodedDirectoryRequest)
-          .pipe(
-            Effect.provide(RuntimeContext.phantom),
-            Effect.flatMap(Schema.decodeUnknownEffect(DirectoryRpcResponse))
-          ),
-        messages: healthMailbox
-          .executeMailData(encodedMailDataRequest)
-          .pipe(
-            Effect.provide(RuntimeContext.phantom),
-            Effect.flatMap(Schema.decodeUnknownEffect(MailDataRpcResponse))
-          ),
-        missing: healthMailbox
-          .resolveMailResource(encodedResourceLookup)
-          .pipe(
-            Effect.provide(RuntimeContext.phantom),
-            Effect.flatMap(
-              Schema.decodeUnknownEffect(MailboxResourceLookupResult)
-            )
-          ),
-      });
-    }).pipe(
-      Effect.tap(({ folders, messages, missing }) => {
-        if (missing._tag !== "NotFound") {
-          return Effect.die(
-            new Error("MailboxDO repository probe found test data")
-          );
-        }
-        return folders._tag === "FoldersListed" &&
-          folders.value.items.length === 7 &&
-          messages._tag === "MessagesListed" &&
-          messages.value.items.length === 0
-          ? Effect.void
-          : Effect.die(
-              new Error("MailboxDO system folders are not initialized")
-            );
-      })
-    );
+          return yield* Effect.all({
+            ready: healthMailbox
+              .sqliteReady()
+              .pipe(Effect.provide(RuntimeContext.phantom)),
+            folders: healthMailbox
+              .executeDirectory(encodedDirectoryRequest)
+              .pipe(
+                Effect.provide(RuntimeContext.phantom),
+                Effect.flatMap(Schema.decodeUnknownEffect(DirectoryRpcResponse))
+              ),
+            messages: healthMailbox
+              .executeMailData(encodedMailDataRequest)
+              .pipe(
+                Effect.provide(RuntimeContext.phantom),
+                Effect.flatMap(Schema.decodeUnknownEffect(MailDataRpcResponse))
+              ),
+            missing: healthMailbox
+              .resolveMailResource(encodedResourceLookup)
+              .pipe(
+                Effect.provide(RuntimeContext.phantom),
+                Effect.flatMap(
+                  Schema.decodeUnknownEffect(MailboxResourceLookupResult)
+                )
+              ),
+          });
+        }).pipe(
+          Effect.tap(({ folders, messages, missing }) => {
+            if (missing._tag !== "NotFound") {
+              return Effect.die(
+                new Error("MailboxDO repository probe found test data")
+              );
+            }
+            return folders._tag === "FoldersListed" &&
+              folders.value.items.length === 7 &&
+              messages._tag === "MessagesListed" &&
+              messages.value.items.length === 0
+              ? Effect.void
+              : Effect.die(
+                  new Error("MailboxDO system folders are not initialized")
+                );
+          })
+        );
     const probeRawMessages = bindings.rawMessages
       .head("__health__")
       .pipe(Effect.provide(RuntimeContext.phantom));

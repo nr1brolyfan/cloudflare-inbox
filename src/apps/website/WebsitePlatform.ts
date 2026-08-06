@@ -13,6 +13,14 @@ const hasWebsiteBindings = (
 ): env is Cloudflare.Env & WebsiteEnv =>
   "BACKEND" in env && "DEV_EMAIL_INBOX_ENABLED" in env;
 
+const localBackendRequest = (request: Request) => {
+  const url = new URL(request.url);
+  url.protocol = "http:";
+  url.hostname = "localhost";
+  url.port = "1338";
+  return fetch(new Request(url, request));
+};
+
 interface WebsitePlatformShape {
   readonly devEmailInboxEnabled: boolean;
   readonly fetch: (operation: string, request: Request) => Promise<Response>;
@@ -25,6 +33,13 @@ const WebsitePlatform = Context.Service<WebsitePlatformShape>(
 const WebsitePlatformBindingsLayer = Layer.effect(
   WebsitePlatform,
   Effect.promise(async () => {
+    if (import.meta.env.DEV) {
+      return WebsitePlatform.of({
+        devEmailInboxEnabled: true,
+        fetch: (_operation, request) => localBackendRequest(request),
+      });
+    }
+
     const Cloudflare = await import("cloudflare:workers");
     if (!hasWebsiteBindings(Cloudflare.env)) {
       throw new Error("Website Cloudflare bindings are unavailable");
