@@ -49,7 +49,7 @@ import { RateLimiter as PersistenceRateLimiter } from "effect/unstable/persisten
 import { AuthRuntimeConfig } from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
 import { AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX } from "#/modules/account-security/adapters/effect-auth/AuthRateLimitStorage";
 import { PasskeyEffectAuthLayer } from "#/modules/account-security/adapters/effect-auth/PasskeyEffectAuth";
-import { WebCryptoPbkdf2PasswordHasherLayer } from "#/modules/account-security/adapters/effect-auth/WebCryptoPbkdf2PasswordHasher";
+import { ScryptPasswordHasherLayer } from "#/modules/account-security/adapters/effect-auth/ScryptPasswordHasher";
 import { externalRecoveryLinkEvidence } from "#/modules/account-security/domain/AccountRecovery";
 import { completionUrl } from "#/modules/account-security/domain/CompletionUrl";
 import { meetsPasswordPolicy } from "#/modules/account-security/domain/PasswordPolicy";
@@ -170,7 +170,7 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
       PasswordRegistrationLive,
       PasswordManagementLive
     ).pipe(
-      Layer.provideMerge(WebCryptoPbkdf2PasswordHasherLayer),
+      Layer.provideMerge(ScryptPasswordHasherLayer),
       Layer.provideMerge(minimumPasswordRiskPolicyLayer),
       Layer.provideMerge(EmailAcceptancePolicyNoopLive)
     );
