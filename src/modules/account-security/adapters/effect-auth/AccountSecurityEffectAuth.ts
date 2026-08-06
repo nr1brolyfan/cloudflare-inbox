@@ -44,6 +44,7 @@ import * as Redacted from "effect/Redacted";
 import { RateLimiter as PersistenceRateLimiter } from "effect/unstable/persistence";
 
 import { AuthRuntimeConfig } from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
+import { AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX } from "#/modules/account-security/adapters/effect-auth/AuthRateLimitStorage";
 import { NodePbkdf2PasswordHasherLayer } from "#/modules/account-security/adapters/effect-auth/NodePbkdf2PasswordHasher";
 import { PasskeyEffectAuthLayer } from "#/modules/account-security/adapters/effect-auth/PasskeyEffectAuth";
 import { externalRecoveryLinkEvidence } from "#/modules/account-security/domain/AccountRecovery";
@@ -156,6 +157,7 @@ export const AccountSecurityEffectAuthLayer = Layer.unwrap(
       Layer.provide(
         RateLimitStoreDurableObject.layer({
           namespace: options.rateLimitNamespace,
+          prefix: AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX,
         })
       )
     );

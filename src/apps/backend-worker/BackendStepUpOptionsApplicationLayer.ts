@@ -14,6 +14,7 @@ import { AuthRuntimeConfig } from "#/modules/account-security/adapters/cloudflar
 import { EffectAuthSessionStoreD1Layer } from "#/modules/account-security/adapters/d1/AuthSessionStoreD1";
 import { PasskeyAuthenticationIdentityD1Layer } from "#/modules/account-security/adapters/d1/PasskeyAuthenticationIdentityD1";
 import { StepUpFactorReaderD1Layer } from "#/modules/account-security/adapters/d1/StepUpFactorReaderD1";
+import { AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX } from "#/modules/account-security/adapters/effect-auth/AuthRateLimitStorage";
 import { AuthStepUpOptionsHttpRouteLayer } from "#/modules/account-security/adapters/http/AuthStepUpOptionsHttpRoute";
 import { RequestSessionAuthenticatorEffectAuthLayer } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
 import { externalRecoveryLinkEvidence } from "#/modules/account-security/domain/AccountRecovery";
@@ -44,6 +45,7 @@ const StepUpOptionsAuthLayer = Layer.unwrap(
       Layer.provide(
         RateLimitStoreDurableObject.layer({
           namespace: config.rateLimitNamespace,
+          prefix: AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX,
         })
       )
     );

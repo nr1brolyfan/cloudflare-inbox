@@ -15,6 +15,7 @@ import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 
 import type { MailboxDONamespace } from "#/apps/mailbox-do/MailboxDO";
+import { AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX } from "#/modules/account-security/adapters/effect-auth/AuthRateLimitStorage";
 import {
   AuthorizationPermission,
   makeMailboxScopeId,
@@ -74,7 +75,7 @@ export const BackendHealthLayer = Layer.effect(
       });
     });
     const probeAuthRateLimit = bindings.authRateLimit
-      .getByName("health")
+      .getByName(`${AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX}health`)
       .fixedWindow({
         limit: 1,
         refillMillis: 1,

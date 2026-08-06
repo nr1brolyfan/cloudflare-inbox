@@ -22,6 +22,7 @@ import { RateLimiter as PersistenceRateLimiter } from "effect/unstable/persisten
 import { AuthRuntimeConfig } from "#/modules/account-security/adapters/cloudflare/AuthRuntimeConfigCloudflare";
 import { EffectAuthVerificationStoreD1Layer } from "#/modules/account-security/adapters/d1/AuthMagicLinkStartStorageD1";
 import { RecoverySafeIdentityD1Layer } from "#/modules/account-security/adapters/d1/RecoverySafeIdentityD1";
+import { AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX } from "#/modules/account-security/adapters/effect-auth/AuthRateLimitStorage";
 import { MagicLinkStarterLayer } from "#/modules/account-security/adapters/effect-auth/MagicLinkStartEffectAuth";
 import { AuthMagicLinkStartHttpRouteLayer } from "#/modules/account-security/adapters/http/AuthMagicLinkStartHttpRoute";
 import { ControlPlaneD1Layer } from "#/platform/control-plane-d1/ControlPlaneBatch";
@@ -90,6 +91,7 @@ const MagicLinkStartCoreLayer = Layer.unwrap(
       Layer.provide(
         RateLimitStoreDurableObject.layer({
           namespace: config.rateLimitNamespace,
+          prefix: AUTH_RATE_LIMIT_DURABLE_OBJECT_PREFIX,
         })
       )
     );
