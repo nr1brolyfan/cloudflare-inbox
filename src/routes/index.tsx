@@ -394,7 +394,7 @@ function Home() {
 
         <section className="flex items-center p-7 sm:p-12 lg:p-14">
           <div className="mx-auto w-full max-w-md">
-            {session.isLoading ? (
+            {session.isLoading || (session.isFetching && !session.data) ? (
               <div className="flex items-center justify-center py-24 text-[var(--sea-ink-soft)]">
                 <LoaderCircle className="animate-spin" />
               </div>

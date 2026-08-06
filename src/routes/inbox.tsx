@@ -523,7 +523,7 @@ function MailboxUnavailable({
           {detail}
         </p>
         <div className="mt-7 flex flex-wrap justify-center gap-3">
-          {!denied && !missing && onRetry ? (
+          {!denied && onRetry ? (
             <button
               type="button"
               onClick={onRetry}
@@ -1851,6 +1851,7 @@ function AuthenticatedInbox({
   );
 }
 
+// oxlint-disable-next-line eslint/complexity -- The route exhaustively selects session, authorization, navigation, and mailbox states.
 function InboxRoute() {
   const navigate = useNavigate();
   const search = Route.useSearch();
@@ -1864,22 +1865,36 @@ function InboxRoute() {
     queryFn: ({ signal }) => currentSessionForQuery(signal),
     retry: false,
   });
+  const activeNavigationQueryKey = [
+    ...mailboxNavigationQueryKey,
+    session.data?.userId,
+    session.data?.sessionId,
+  ] as const;
   const navigation = useQuery({
     enabled:
       session.data !== null &&
       session.data !== undefined &&
       mailboxDenial.data?.status !== 403,
     queryFn: async () => {
+      const previousNavigation = queryClient.getQueryData<{
+        readonly ok: boolean;
+      }>(activeNavigationQueryKey);
       const result = await getMailboxNavigation();
       await handleMailboxReadDenial(queryClient, result);
+      if (
+        !result.ok &&
+        result.status !== 401 &&
+        result.status !== 403 &&
+        (result.status !== 404 || previousNavigation?.ok === true)
+      ) {
+        throw new MailboxRequestError(result.status);
+      }
       return result;
     },
-    queryKey: [
-      ...mailboxNavigationQueryKey,
-      session.data?.userId,
-      session.data?.sessionId,
-    ],
-    retry: false,
+    queryKey: activeNavigationQueryKey,
+    retry: 2,
+    retryDelay: (attempt) => 250 * (attempt + 1),
+    staleTime: 30_000,
   });
   const logout = useMutation({
     mutationFn: () => authClient.session.logout(),
@@ -1890,7 +1905,13 @@ function InboxRoute() {
     },
   });
 
-  if (session.isLoading || (session.data && navigation.isLoading)) {
+  if (
+    session.isLoading ||
+    (session.isFetching && !session.data) ||
+    (session.data &&
+      (navigation.isLoading ||
+        (navigation.isFetching && navigation.data?.ok !== true)))
+  ) {
     return (
       <output className="flex min-h-dvh items-center justify-center text-[var(--sea-ink-soft)]">
         <LoaderCircle aria-label="Loading mailbox" className="animate-spin" />
@@ -1916,7 +1937,7 @@ function InboxRoute() {
     return <MailboxUnavailable status={403} />;
   }
 
-  if (navigation.error || !navigation.data?.ok) {
+  if (navigation.data?.ok !== true) {
     const status = navigation.data?.ok === false ? navigation.data.status : 502;
     return (
       <MailboxUnavailable

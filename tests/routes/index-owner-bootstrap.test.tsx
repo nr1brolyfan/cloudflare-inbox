@@ -90,7 +90,8 @@ const password = "correct horse battery staple";
 const renderBootstrap = (
   onLogout = vi.fn<() => void>(),
   onMailboxFound = vi.fn<() => void>(),
-  initialNavigation: unknown | null = mailboxNotFound
+  initialNavigation: unknown | null = mailboxNotFound,
+  navigationStaleTime = Number.POSITIVE_INFINITY
 ) => {
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -101,11 +102,12 @@ const renderBootstrap = (
   if (initialNavigation !== null) {
     queryClient.setQueryDefaults(
       ["mailbox", "navigation", "user-a", "session-a"],
-      { staleTime: Number.POSITIVE_INFINITY }
+      { staleTime: navigationStaleTime }
     );
     queryClient.setQueryData(
       ["mailbox", "navigation", "user-a", "session-a"],
-      initialNavigation
+      initialNavigation,
+      navigationStaleTime === 0 ? { updatedAt: 1 } : undefined
     );
   }
   return render(
@@ -122,7 +124,6 @@ const renderBootstrap = (
 };
 
 const openFirstPasswordPanel = async () => {
-  fireEvent.click(screen.getByRole("button", { name: "Begin secure setup" }));
   await screen.findByRole("heading", { name: "Create your first password" });
 };
 
@@ -138,10 +139,9 @@ const submitFirstPassword = (confirmation = password) => {
   );
 };
 
-const openMailboxCreation = async () => {
+const openMailboxCreation = async (onMailboxFound = vi.fn<() => void>()) => {
   mocks.stepUpOptions.mockResolvedValue({ factors: [{ type: "password" }] });
-  renderBootstrap();
-  fireEvent.click(screen.getByRole("button", { name: "Begin secure setup" }));
+  renderBootstrap(vi.fn(), onMailboxFound);
   fireEvent.change(await screen.findByLabelText("Password"), {
     target: { value: password },
   });
@@ -220,6 +220,32 @@ describe(SignedInOwnerBootstrap, () => {
       screen.queryByRole("button", { name: "Create primary inbox" })
     ).toBeNull();
     expect(screen.queryByText(/Recovery addresses, passkeys/u)).toBeNull();
+  });
+
+  it("keeps an existing mailbox while background discovery fails", async () => {
+    const onMailboxFound = vi.fn<() => void>();
+    mocks.getMailboxNavigation.mockRejectedValue(
+      new Error("Navigation temporarily unavailable")
+    );
+
+    renderBootstrap(
+      vi.fn(),
+      onMailboxFound,
+      {
+        mailbox: { displayName: "Inbox", id: "primary" },
+        ok: true,
+      },
+      0
+    );
+
+    await waitFor(() =>
+      expect(mocks.getMailboxNavigation).toHaveBeenCalledWith()
+    );
+    await waitFor(() => expect(onMailboxFound).toHaveBeenCalledOnce());
+    expect(
+      screen.queryByRole("button", { name: "Create primary inbox" })
+    ).toBeNull();
+    expect(screen.queryByText(/could not check whether/u)).toBeNull();
   });
 
   it("does not show onboarding when mailbox discovery fails", async () => {
@@ -347,7 +373,6 @@ describe(SignedInOwnerBootstrap, () => {
     mocks.stepUpPassword.mockRejectedValue(new Error("Step-up failed"));
     mocks.stepUpOptions.mockResolvedValue({ factors: [{ type: "password" }] });
     renderBootstrap();
-    fireEvent.click(screen.getByRole("button", { name: "Begin secure setup" }));
     await screen.findByText("Confirm this ownership action");
     fireEvent.change(await screen.findByLabelText("Password"), {
       target: { value: password },
@@ -378,5 +403,38 @@ describe(SignedInOwnerBootstrap, () => {
         },
       })
     );
+  });
+
+  it("keeps showing preparation until the created inbox is ready", async () => {
+    const navigationRequest: { resolve?: (value: unknown) => void } = {};
+    // oxlint-disable-next-line promise/avoid-new -- The pending request models backend provisioning.
+    const navigationReady = new Promise<unknown>((resolve) => {
+      navigationRequest.resolve = resolve;
+    });
+    const onMailboxFound = vi.fn<() => void>();
+    mocks.bootstrapMailboxOwner.mockResolvedValue({
+      mailbox: { displayName: "Inbox", id: "primary" },
+      ok: true,
+    });
+    mocks.getMailboxNavigation.mockReturnValue(navigationReady);
+    const create = await openMailboxCreation(onMailboxFound);
+
+    fireEvent.click(create);
+
+    await screen.findByText("Preparing your inbox...");
+    expect(onMailboxFound).not.toHaveBeenCalled();
+    expect(
+      screen.queryByRole("button", { name: "Create primary inbox" })
+    ).toBeNull();
+
+    navigationRequest.resolve?.({
+      navigation: {
+        folders: { items: [] },
+        labels: { items: [] },
+        mailbox: { displayName: "Inbox", id: "primary" },
+      },
+      ok: true,
+    });
+    await waitFor(() => expect(onMailboxFound).toHaveBeenCalledOnce());
   });
 });
