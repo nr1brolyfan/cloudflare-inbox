@@ -9,11 +9,11 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
-import { NodePbkdf2PasswordHasherLayer } from "#/modules/account-security/adapters/effect-auth/NodePbkdf2PasswordHasher";
+import { WebCryptoPbkdf2PasswordHasherLayer } from "#/modules/account-security/adapters/effect-auth/WebCryptoPbkdf2PasswordHasher";
 
 const password = Redacted.make("correct horse battery staple");
 
-describe("NodePbkdf2PasswordHasher", () => {
+describe("WebCryptoPbkdf2PasswordHasher", () => {
   it.effect("round-trips hashes", () =>
     Effect.gen(function* () {
       const hasher = yield* PasswordHasher;
@@ -29,7 +29,7 @@ describe("NodePbkdf2PasswordHasher", () => {
         throw new Error("Expected PBKDF2 rehash policy");
       }
       expect(yield* needsRehash({ hash })).toBeFalsy();
-    }).pipe(Effect.provide(NodePbkdf2PasswordHasherLayer))
+    }).pipe(Effect.provide(WebCryptoPbkdf2PasswordHasherLayer))
   );
 
   it.effect("produces hashes accepted by the Effect Auth verifier", () =>
@@ -47,7 +47,7 @@ describe("NodePbkdf2PasswordHasher", () => {
       );
 
       expect(verified).toBeTruthy();
-    }).pipe(Effect.provide(NodePbkdf2PasswordHasherLayer))
+    }).pipe(Effect.provide(WebCryptoPbkdf2PasswordHasherLayer))
   );
 
   it.effect("accepts Effect Auth PBKDF2 hashes", () =>
@@ -63,7 +63,7 @@ describe("NodePbkdf2PasswordHasher", () => {
       );
       const verified = yield* PasswordHasher.use((hasher) =>
         hasher.verify({ hash, password })
-      ).pipe(Effect.provide(NodePbkdf2PasswordHasherLayer));
+      ).pipe(Effect.provide(WebCryptoPbkdf2PasswordHasherLayer));
 
       expect(verified).toBeTruthy();
     })

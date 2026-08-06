@@ -1,6 +1,3 @@
-import { pbkdf2, randomBytes, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
-
 import {
   defaultPbkdf2HashBytes,
   defaultPbkdf2Iterations,
@@ -21,7 +18,7 @@ import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 
 const prefix = "pbkdf2-sha256";
-const pbkdf2Async = promisify(pbkdf2);
+const encoder = new TextEncoder();
 
 const passwordHashError = (
   operation: "hash" | "verify" | "needsRehash",
@@ -37,16 +34,26 @@ const derive = (
   operation: "hash" | "verify"
 ) =>
   Effect.tryPromise({
-    try: async () =>
-      new Uint8Array(
-        await pbkdf2Async(
-          Redacted.value(password),
-          salt,
+    try: async () => {
+      const key = await crypto.subtle.importKey(
+        "raw",
+        encoder.encode(Redacted.value(password)),
+        "PBKDF2",
+        false,
+        ["deriveBits"]
+      );
+      const bits = await crypto.subtle.deriveBits(
+        {
+          hash: "SHA-256",
           iterations,
-          hashBytes,
-          "sha256"
-        )
-      ),
+          name: "PBKDF2",
+          salt: Uint8Array.from(salt),
+        },
+        key,
+        hashBytes * 8
+      );
+      return new Uint8Array(bits);
+    },
     catch: (cause) =>
       passwordHashError(
         operation,
@@ -55,13 +62,39 @@ const derive = (
       ),
   });
 
+const encodeBase64Url = (value: Uint8Array): string =>
+  btoa(String.fromCodePoint(...value))
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/u, "");
+
 const decodeCanonicalBase64Url = (value: string): Uint8Array | undefined => {
   try {
-    const decoded = Buffer.from(value, "base64url");
-    return decoded.toString("base64url") === value ? decoded : undefined;
+    const standard = value.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = standard.padEnd(
+      standard.length + ((4 - (standard.length % 4)) % 4),
+      "="
+    );
+    const decoded = Uint8Array.from(
+      atob(padded),
+      (character) => character.codePointAt(0) ?? 0
+    );
+    return encodeBase64Url(decoded) === value ? decoded : undefined;
   } catch {
     return undefined;
   }
+};
+
+const equalBytes = (left: Uint8Array, right: Uint8Array): boolean => {
+  if (left.byteLength !== right.byteLength) {
+    return false;
+  }
+  let difference = 0;
+  for (let index = 0; index < left.byteLength; index += 1) {
+    // oxlint-disable-next-line eslint/no-bitwise -- Compare every derived-key byte without early exit.
+    difference |= left[index] ^ right[index];
+  }
+  return difference === 0;
 };
 
 const parse = (hash: string) => {
@@ -98,8 +131,8 @@ const parse = (hash: string) => {
   return { derivedKey, encodedDerivedKey, iterations, salt };
 };
 
-/** PBKDF2 adapter using Workers' native node:crypto implementation. */
-export const NodePbkdf2PasswordHasherLayer = Layer.succeed(
+/** PBKDF2 adapter using the Web Crypto API available natively in Workers. */
+export const WebCryptoPbkdf2PasswordHasherLayer = Layer.succeed(
   PasswordHasher,
   PasswordHasher.of({
     hash: ({ password }) =>
@@ -115,7 +148,8 @@ export const NodePbkdf2PasswordHasherLayer = Layer.succeed(
           );
         }
         const salt = yield* Effect.try({
-          try: () => randomBytes(defaultPbkdf2SaltBytes),
+          try: () =>
+            crypto.getRandomValues(new Uint8Array(defaultPbkdf2SaltBytes)),
           catch: (cause) =>
             passwordHashError(
               "hash",
@@ -133,8 +167,8 @@ export const NodePbkdf2PasswordHasherLayer = Layer.succeed(
         return [
           prefix,
           defaultPbkdf2Iterations,
-          salt.toString("base64url"),
-          Buffer.from(derivedKey).toString("base64url"),
+          encodeBase64Url(salt),
+          encodeBase64Url(derivedKey),
         ].join("$");
       }),
     verify: ({ hash, password }) =>
@@ -153,7 +187,7 @@ export const NodePbkdf2PasswordHasherLayer = Layer.succeed(
           parsed.derivedKey.byteLength,
           "verify"
         );
-        return timingSafeEqual(derivedKey, parsed.derivedKey);
+        return equalBytes(derivedKey, parsed.derivedKey);
       }),
     verifyDummy: ({ password }) =>
       derive(
