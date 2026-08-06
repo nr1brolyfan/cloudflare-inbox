@@ -418,7 +418,6 @@ function Home() {
                 isLogoutPending={logout.isPending}
                 onMailboxFound={() => navigate({ replace: true, to: "/inbox" })}
                 onLogout={() => logout.mutate()}
-                securitySetupRequired={!devEmailInbox.enabled}
               />
             ) : (
               <>

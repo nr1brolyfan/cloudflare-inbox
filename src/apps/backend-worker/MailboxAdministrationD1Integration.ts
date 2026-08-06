@@ -15,18 +15,11 @@ import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
 
 import { authUserIdentity } from "#/auth/schema/modules/core";
-import { authPasskeyCredential } from "#/auth/schema/modules/passkeys";
 import {
   authRoleDefinition,
   authRoleGrant,
 } from "#/auth/schema/modules/permissions";
-import { authRecoveryCode } from "#/auth/schema/modules/recovery-codes";
-import {
-  appExternalRecoveryIdentity,
-  appFirstOwnerPasswordEnrollment,
-  appPasskeyEnrollmentReceipt,
-  appRecoveryCodeRotationReceipt,
-} from "#/modules/account-security/adapters/d1/AccountSecuritySchema";
+import { appFirstOwnerPasswordEnrollment } from "#/modules/account-security/adapters/d1/AccountSecuritySchema";
 import { requireSensitiveOperationStepUp } from "#/modules/account-security/domain/StepUpPolicy";
 import {
   sensitiveSessionPredicate,
@@ -48,11 +41,9 @@ import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorizati
 import {
   appMailbox,
   appMailboxAdministrationReceipt,
-  appMailboxBootstrapDevelopmentIntent,
   appMailboxBootstrapDomainIntent,
   appMailboxBootstrapReceiptV1Intent,
   appMailboxBootstrapReceiptV2,
-  appMailboxBootstrapSecurityIntent,
   appMailboxMember,
 } from "#/modules/organization/adapters/d1/OrganizationSchema";
 import {
@@ -95,7 +86,6 @@ import { UnixMillis } from "#/shared/Temporal";
 export interface MailboxAdministrationRuntime {
   readonly now: () => number;
   readonly randomId: () => string;
-  readonly securitySetupRequired?: boolean;
 }
 
 /** Clock and identifier source captured by mailbox administration. */
@@ -104,15 +94,12 @@ export const MailboxAdministrationRuntime =
     "cloudflare-inbox/MailboxAdministrationRuntime"
   );
 
-export const mailboxAdministrationRuntimeLayer = (
-  securitySetupRequired = true
-) =>
+export const mailboxAdministrationRuntimeLayer = () =>
   Layer.succeed(
     MailboxAdministrationRuntime,
     MailboxAdministrationRuntime.of({
       now: Date.now,
       randomId: () => crypto.randomUUID(),
-      securitySetupRequired,
     })
   );
 
@@ -272,12 +259,9 @@ const BootstrapStatusRow = Schema.Struct({
   authorized: Schema.Number,
   base_session_valid: Schema.Number,
   catalog_valid: Schema.Number,
-  recovery_ready: Schema.Number,
-  recovery_codes_ready: Schema.Number,
   mailbox_available: Schema.Number,
   operation_available: Schema.Number,
   owner_eligible: Schema.Number,
-  passkeys_ready: Schema.Number,
   seal_actor_valid: Schema.Number,
   step_up_valid: Schema.Number,
 });
@@ -388,7 +372,6 @@ const decodeReceipt = (
 const receiptMatches = (
   receipt: MailboxAdministrationReceipt,
   intent: {
-    readonly acknowledgedRecoveryCodeRotationOperationId?: string;
     readonly displayName: string;
     readonly expectedVersion?: number;
     readonly initialAddress?: string;
@@ -414,7 +397,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
     const authorization = yield* MailboxAuthorization;
     const audit = yield* AdministrativeAudit;
     const { now, randomId } = runtime;
-    const securitySetupRequired = runtime.securitySetupRequired !== false;
 
     const readHistoricalBootstrapIntent = (
       operationId: string,
@@ -568,41 +550,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
           )
         );
 
-    const readCurrentSecurityIntent = (
-      operationId: string,
-      operation: MailboxAdministrationError["operation"]
-    ) =>
-      database
-        .select({
-          recoveryRotationOperationId:
-            appMailboxBootstrapSecurityIntent.recoveryRotationOperationId,
-        })
-        .from(appMailboxBootstrapSecurityIntent)
-        .where(eq(appMailboxBootstrapSecurityIntent.operationId, operationId))
-        .limit(2)
-        .pipe(
-          Effect.mapError(
-            (cause) =>
-              new MailboxAdministrationError({
-                cause,
-                message: "Bootstrap security intent read failed",
-                operation,
-                reason: "storage",
-              })
-          ),
-          Effect.flatMap((rows) =>
-            rows.length > 1
-              ? Effect.fail(
-                  new MailboxAdministrationError({
-                    message: "Stored bootstrap security intent was invalid",
-                    operation,
-                    reason: "storage",
-                  })
-                )
-              : Effect.succeed(rows[0]?.recoveryRotationOperationId)
-          )
-        );
-
     const receiptMatchesIntent = (
       receipt: MailboxAdministrationReceipt,
       intent: Parameters<typeof receiptMatches>[1],
@@ -618,15 +565,7 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                 historicalInitialAddress === intent.initialAddress
             )
           )
-        : readCurrentSecurityIntent(receipt.operationId, operation).pipe(
-            Effect.map(
-              (storedAcknowledgement) =>
-                receiptMatches(receipt, intent) &&
-                (storedAcknowledgement === undefined ||
-                  storedAcknowledgement ===
-                    intent.acknowledgedRecoveryCodeRotationOperationId)
-            )
-          );
+        : Effect.succeed(receiptMatches(receipt, intent));
 
     const receiptReturning = {
       actor_user_id: appMailboxAdministrationReceipt.actorUserId,
@@ -680,8 +619,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
               replay,
               {
                 displayName: input.displayName,
-                acknowledgedRecoveryCodeRotationOperationId:
-                  input.acknowledgedRecoveryCodeRotationOperationId,
                 initialAddress: input.initialAddress,
                 mailboxId,
                 operationKind: "bootstrap-owner",
@@ -716,8 +653,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
             input.displayName,
             "bootstrap-owner"
           );
-          const acknowledgedRotationOperationId =
-            input.acknowledgedRecoveryCodeRotationOperationId ?? "";
           const timestamp = Schema.decodeUnknownSync(UnixMillis)(now());
           const nonce = randomId();
           const auditEvent = yield* audit
@@ -764,69 +699,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                 )
               )
           );
-          const recoveryReady = sql`(
-            select count(*) from ${appExternalRecoveryIdentity}
-             where ${appExternalRecoveryIdentity.userId} = ${validated.actor.userId}
-               and ${appExternalRecoveryIdentity.status} = 'verified'
-               and ${appExternalRecoveryIdentity.verifiedAt} is not null
-               and ${appExternalRecoveryIdentity.verifiedAt} <= ${controlPlaneDatabaseNow}
-               and ${appExternalRecoveryIdentity.revokedAt} is null
-          ) = 1`;
-          const passkeysReady = sql`(
-            select count(*)
-              from ${authPasskeyCredential} credential
-              join ${appPasskeyEnrollmentReceipt} receipt
-                on receipt.${sql.identifier("credential_record_id")} = credential.${sql.identifier("id")}
-               and receipt.${sql.identifier("actor_user_id")} = credential.${sql.identifier("user_id")}
-               and receipt.${sql.identifier("committed_at")} = credential.${sql.identifier("created_at")}
-             where credential.${sql.identifier("user_id")} = ${validated.actor.userId}
-               and credential.${sql.identifier("revoked_at")} is null
-               and credential.${sql.identifier("created_at")} <= ${controlPlaneDatabaseNow}
-          ) >= 2`;
-          const acknowledgedRotationMatches =
-            input.acknowledgedRecoveryCodeRotationOperationId === undefined
-              ? sql`0`
-              : eq(
-                  appRecoveryCodeRotationReceipt.operationId,
-                  acknowledgedRotationOperationId
-                );
-          const recoveryCodesReady = exists(
-            database
-              .select({ value: sql`1` })
-              .from(appRecoveryCodeRotationReceipt)
-              .where(
-                and(
-                  eq(
-                    appRecoveryCodeRotationReceipt.userId,
-                    validated.actor.userId
-                  ),
-                  acknowledgedRotationMatches,
-                  eq(appRecoveryCodeRotationReceipt.codeCount, 10),
-                  sql`${appRecoveryCodeRotationReceipt.generatedAt}
-                    <= ${controlPlaneDatabaseNow}`,
-                  sql`${appRecoveryCodeRotationReceipt.committedAt}
-                    <= ${controlPlaneDatabaseNow}`,
-                  sql`(
-                    select count(*) from ${authRecoveryCode} code
-                     where code.${sql.identifier("user_id")} = ${validated.actor.userId}
-                       and code.${sql.identifier("used_at")} is null
-                       and code.${sql.identifier("revoked_at")} is null
-                  ) = 10`,
-                  sql`(
-                    select count(*) from ${authRecoveryCode} code
-                     where code.${sql.identifier("user_id")} = ${validated.actor.userId}
-                       and code.${sql.identifier("used_at")} is null
-                       and code.${sql.identifier("revoked_at")} is null
-                       and code.${sql.identifier("created_at")} = ${appRecoveryCodeRotationReceipt.generatedAt}
-                       and code.${sql.identifier("metadata")} = json_object(
-                         'setId', ${appRecoveryCodeRotationReceipt.resultingSetId})
-                  ) = 10`
-                )
-              )
-          );
-          const securitySetupReady = securitySetupRequired
-            ? and(recoveryReady, passkeysReady, recoveryCodesReady)
-            : sql`1`;
           const mailboxAvailable = notExists(
             database.select({ value: sql`1` }).from(appMailbox)
           );
@@ -859,50 +731,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
               .from(appMailbox)
               .where(createdMailbox)
           );
-          const bootstrapIntentStatement = securitySetupRequired
-            ? database.insert(appMailboxBootstrapSecurityIntent).select(
-                sql`select ${input.operationId}, ${validated.actor.userId},
-                            ${acknowledgedRotationOperationId}, 1
-                       where ${authorized}`
-              )
-            : database.insert(appMailboxBootstrapDevelopmentIntent).select(
-                sql`select ${input.operationId}, ${validated.actor.userId}, 1
-                       where ${authorized}`
-              );
-          const bootstrapReceiptMissing = notExists(
-            database
-              .select({ value: sql`1` })
-              .from(appMailboxAdministrationReceipt)
-              .where(
-                eq(
-                  appMailboxAdministrationReceipt.operationId,
-                  input.operationId
-                )
-              )
-          );
-          const bootstrapIntentCleanupStatement = securitySetupRequired
-            ? database
-                .delete(appMailboxBootstrapSecurityIntent)
-                .where(
-                  and(
-                    eq(
-                      appMailboxBootstrapSecurityIntent.operationId,
-                      input.operationId
-                    ),
-                    bootstrapReceiptMissing
-                  )
-                )
-            : database
-                .delete(appMailboxBootstrapDevelopmentIntent)
-                .where(
-                  and(
-                    eq(
-                      appMailboxBootstrapDevelopmentIntent.operationId,
-                      input.operationId
-                    ),
-                    bootstrapReceiptMissing
-                  )
-                );
           const statements: ControlPlane.ControlPlaneStatements = [
             database.insert(appAuthorizationGuard).select(
               sql`select ${nonce}
@@ -910,7 +738,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                         and ${ownerRoleActive}
                         and ${ownerIdentityValid}
                         and ${sealActorValid}
-                        and ${securitySetupReady}
                         and ${mailboxAvailable}
                         and ${operationAvailable}`
             ),
@@ -922,14 +749,8 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                                       as catalog_valid,
                                     cast(${ownerIdentityValid} as integer)
                                        as owner_eligible,
-                                    cast(${sealActorValid} as integer)
-                                       as seal_actor_valid,
-                                    cast(${recoveryReady} as integer)
-                                       as recovery_ready,
-                                    cast(${passkeysReady} as integer)
-                                       as passkeys_ready,
-                                    cast(${recoveryCodesReady} as integer)
-                                       as recovery_codes_ready,
+                                     cast(${sealActorValid} as integer)
+                                        as seal_actor_valid,
                                    cast(${mailboxAvailable} as integer)
                                       as mailbox_available,
                                     cast(${operationAvailable} as integer)
@@ -1009,7 +830,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                   .where(eq(appAuthorizationGuard.nonce, nonce))
               )
               .onConflictDoNothing(),
-            bootstrapIntentStatement,
             database
               .insert(appMailboxAdministrationReceipt)
               .select(
@@ -1097,7 +917,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                 )
             ),
             administrativeAuditInsertStatement(database, auditEvent, nonce),
-            bootstrapIntentCleanupStatement,
             database
               .delete(appAuthorizationGuard)
               .where(eq(appAuthorizationGuard.nonce, nonce)),
@@ -1117,8 +936,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                             receipt,
                             {
                               displayName,
-                              acknowledgedRecoveryCodeRotationOperationId:
-                                input.acknowledgedRecoveryCodeRotationOperationId,
                               initialAddress: input.initialAddress,
                               mailboxId,
                               operationKind: "bootstrap-owner",
@@ -1198,8 +1015,6 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                   concurrentReplay,
                   {
                     displayName,
-                    acknowledgedRecoveryCodeRotationOperationId:
-                      input.acknowledgedRecoveryCodeRotationOperationId,
                     initialAddress: input.initialAddress,
                     mailboxId,
                     operationKind: "bootstrap-owner",
@@ -1215,12 +1030,7 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
                 reason: "operation-conflict",
               });
             }
-            if (
-              status.seal_actor_valid !== 1 ||
-              status.recovery_ready !== 1 ||
-              status.passkeys_ready !== 1 ||
-              status.recovery_codes_ready !== 1
-            ) {
+            if (status.seal_actor_valid !== 1) {
               return yield* new MailboxAdministrationError({
                 message:
                   "Complete account security setup before creating the mailbox",
@@ -1250,7 +1060,7 @@ const OrganizationTransactionsD1Layer = Layer.effectContext(
           const [receiptV2Row] = yield* decodeResultRows(
             BootstrapReceiptV2Row,
             results,
-            9,
+            8,
             "bootstrap-owner"
           );
           if (

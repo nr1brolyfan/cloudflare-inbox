@@ -8,8 +8,6 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import * as Deferred from "effect/Deferred";
-import * as Effect from "effect/Effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SignedInOwnerBootstrap } from "#/routes/-index-owner-bootstrap";
@@ -275,8 +273,9 @@ describe(SignedInOwnerBootstrap, () => {
     expect(mocks.enrollFirstOwnerPassword).toHaveBeenCalledOnce();
     expect(mocks.bootstrapMailboxOwner).not.toHaveBeenCalled();
     await expect(
-      screen.findByRole("heading", { name: "External recovery address" })
+      screen.findByRole("button", { name: "Create primary inbox" })
     ).resolves.toBeTruthy();
+    expect(screen.queryByText("External recovery address")).toBeNull();
   });
 
   it("uses ordinary password step-up after enrollment commits and immediate step-up fails", async () => {
@@ -363,147 +362,21 @@ describe(SignedInOwnerBootstrap, () => {
     );
   });
 
-  it("requires acknowledgement of the exact plaintext generation before one final click", async () => {
+  it("creates the inbox without recovery, passkeys, or recovery codes", async () => {
     const create = await openMailboxCreation();
 
-    expect({
-      authoritative: screen.getByText(
-        /The server is authoritative for recovery/u
-      ).textContent,
-      createDisabled: (create as HTMLButtonElement).disabled,
-      oldCheckbox: screen.queryByRole("checkbox"),
-    }).toStrictEqual({
-      authoritative: expect.stringContaining("server is authoritative"),
-      createDisabled: true,
-      oldCheckbox: null,
-    });
-    fireEvent.click(create);
-    expect(mocks.bootstrapMailboxOwner).not.toHaveBeenCalled();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Generate new recovery codes" })
-    );
-    const acknowledgement = await screen.findByRole("button", {
-      name: "I saved these codes",
-    });
-    fireEvent.click(acknowledgement);
     expect((create as HTMLButtonElement).disabled).toBeFalsy();
+    expect(screen.queryByText("External recovery address")).toBeNull();
+    expect(screen.queryByText("Enroll a passkey")).toBeNull();
+    expect(screen.queryByText("Recovery codes")).toBeNull();
     fireEvent.click(create);
-    const acknowledgedOperationId = (
-      mocks.generateRecoveryCodes.mock.calls[0]?.[0] as
-        | { operationId: string }
-        | undefined
-    )?.operationId;
     await waitFor(() =>
       expect(mocks.bootstrapMailboxOwner).toHaveBeenCalledWith({
         data: {
-          acknowledgedRecoveryCodeRotationOperationId: acknowledgedOperationId,
           displayName: "Inbox",
           operationId: "00000000-0000-4000-8000-000000000101",
         },
       })
     );
-  });
-
-  it("resets an exact acknowledgement while a replacement starts and requires the replacement acknowledgement", async () => {
-    const create = await openMailboxCreation();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Generate new recovery codes" })
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "I saved these codes" })
-    );
-    expect((create as HTMLButtonElement).disabled).toBeFalsy();
-    const replacement = Effect.runSync(Deferred.make<unknown>());
-    mocks.generateRecoveryCodes.mockReturnValueOnce(
-      Effect.runPromise(Deferred.await(replacement))
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Generate replacement codes" })
-    );
-    expect((create as HTMLButtonElement).disabled).toBeTruthy();
-    Effect.runSync(
-      Deferred.succeed(
-        replacement,
-        generatedCodes("00000000-0000-4000-8000-000000000202")
-      )
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "I saved these codes" })
-    );
-    expect((create as HTMLButtonElement).disabled).toBeFalsy();
-  });
-
-  it("keeps create disabled after an unknown committed receipt-only replacement", async () => {
-    const create = await openMailboxCreation();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Generate new recovery codes" })
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "I saved these codes" })
-    );
-    mocks.generateRecoveryCodes.mockImplementationOnce((command) =>
-      Promise.resolve({
-        _tag: "RecoveryCodesAlreadyGenerated",
-        receipt: generatedCodes(
-          (command as { operationId: string }).operationId
-        ).receipt,
-      })
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Generate replacement codes" })
-    );
-    await screen.findByText(/one-time codes cannot be recovered/u);
-    expect((create as HTMLButtonElement).disabled).toBeTruthy();
-    expect(mocks.bootstrapMailboxOwner).not.toHaveBeenCalled();
-  });
-
-  it("resets acknowledgement on a failed replacement retry even while old plaintext remains in memory", async () => {
-    const create = await openMailboxCreation();
-    fireEvent.click(
-      screen.getByRole("button", { name: "Generate new recovery codes" })
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "I saved these codes" })
-    );
-    mocks.generateRecoveryCodes.mockRejectedValueOnce(
-      new Error("Replacement unavailable")
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Generate replacement codes" })
-    );
-    await screen.findByText("Replacement unavailable");
-    expect((create as HTMLButtonElement).disabled).toBeTruthy();
-  });
-
-  it("does not retain acknowledgement across component remount", async () => {
-    const rendered = renderBootstrap();
-    mocks.stepUpOptions.mockResolvedValue({ factors: [{ type: "password" }] });
-    fireEvent.click(screen.getByRole("button", { name: "Begin secure setup" }));
-    fireEvent.change(await screen.findByLabelText("Password"), {
-      target: { value: password },
-    });
-    fireEvent.click(
-      screen.getByRole("button", { name: "Confirm with password" })
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "Generate new recovery codes" })
-    );
-    fireEvent.click(
-      await screen.findByRole("button", { name: "I saved these codes" })
-    );
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Create primary inbox",
-        }) as HTMLButtonElement
-      ).disabled
-    ).toBeFalsy();
-
-    rendered.unmount();
-    const create = await openMailboxCreation();
-    expect((create as HTMLButtonElement).disabled).toBeTruthy();
   });
 });

@@ -1039,7 +1039,7 @@ export function SignedInOwnerBootstrap({
   isLogoutPending,
   onMailboxFound,
   onLogout,
-  securitySetupRequired = true,
+  securitySetupRequired = false,
   sessionId,
   userId,
 }: {
@@ -1160,8 +1160,7 @@ export function SignedInOwnerBootstrap({
         </div>
       ) : (
         <Notice>
-          Recovery addresses, passkeys, and recovery codes are optional in local
-          development and can be added later.
+          Your identity is confirmed. Create the primary inbox below.
         </Notice>
       )}
       <div className="mt-6">
@@ -1176,8 +1175,8 @@ export function SignedInOwnerBootstrap({
         ) : null}
         {ownerBootstrap.stepUpComplete ? (
           <Notice>
-            Identity confirmed. Complete the security steps below before the
-            five-minute confirmation expires.
+            Identity confirmed. Create the inbox before the five-minute
+            confirmation expires.
           </Notice>
         ) : null}
       </div>
@@ -1234,7 +1233,7 @@ export function SignedInOwnerBootstrap({
             </>
           ) : null}
           <section className="mt-8 border-t border-[var(--line)] pt-8">
-            <p className="island-kicker">Step 4 / Mailbox creation</p>
+            <p className="island-kicker">Mailbox creation</p>
             <h3 className="mt-2 text-xl font-bold">Create the primary inbox</h3>
             {securitySetupRequired ? (
               <>
@@ -1252,8 +1251,7 @@ export function SignedInOwnerBootstrap({
               </>
             ) : (
               <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
-                Local development can create the inbox immediately. Security
-                recovery options remain available after setup.
+                Your confirmed identity is enough to create the inbox.
               </p>
             )}
             <button

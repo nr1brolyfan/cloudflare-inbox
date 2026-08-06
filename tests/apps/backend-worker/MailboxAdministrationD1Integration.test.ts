@@ -645,7 +645,6 @@ const bootstrap = (
     readonly initialDomain?: string;
     readonly omitAcknowledgement?: boolean;
     readonly ownerEmailAllowlist?: readonly string[];
-    readonly securitySetupRequired?: boolean;
   }
 ) =>
   provideRequestAuth(
@@ -726,8 +725,6 @@ const bootstrap = (
                 MailboxAdministrationRuntime.of({
                   now: () => now,
                   randomId: () => nonce,
-                  securitySetupRequired:
-                    trustedOverrides?.securitySetupRequired,
                 })
               ),
               Layer.succeed(
@@ -935,6 +932,18 @@ const expectSecuritySetupRequired = async (
   expect(countRows(database, "app_authorization_guard")).toBe(0);
 };
 
+const expectOptionalSecurityDoesNotBlock = async (
+  database: DatabaseSync,
+  d1: TestD1DatabaseLike,
+  validated: ValidatedSession
+) => {
+  const mailbox = await Effect.runPromise(
+    bootstrap(d1, validated, "bootstrap-guard")
+  );
+  expect(mailbox).toMatchObject({ id: "primary", status: "active" });
+  expect(countRows(database, "app_mailbox_bootstrap_security_intent")).toBe(0);
+};
+
 const seedHistoricalBootstrapReceipt = (
   database: DatabaseSync,
   address = "inbox@example.test",
@@ -1103,7 +1112,7 @@ describe("mailbox administration", () => {
         },
         receiptV1: 0,
         receiptV2: 1,
-        securityIntents: 1,
+        securityIntents: 0,
         receipts: 1,
       });
       expect(
@@ -1226,14 +1235,14 @@ describe("mailbox administration", () => {
         organizations: 1,
         ownerReceipts: 1,
         receiptV2: 1,
-        securityIntents: 1,
+        securityIntents: 0,
       });
     } finally {
       database.close();
     }
   });
 
-  it("allows development bootstrap without recovery credentials", async () => {
+  it("allows bootstrap without recovery credentials", async () => {
     const database = new DatabaseSync(":memory:");
     try {
       await applyControlPlaneMigrations(database);
@@ -1261,7 +1270,7 @@ describe("mailbox administration", () => {
           undefined,
           undefined,
           undefined,
-          { omitAcknowledgement: true, securitySetupRequired: false }
+          { omitAcknowledgement: true }
         )
       );
 
@@ -1275,7 +1284,7 @@ describe("mailbox administration", () => {
     ["zero", [1, 2]],
     ["one", [2]],
   ] as const)(
-    "requires at least two active receipt-backed passkeys: %s",
+    "does not require active receipt-backed passkeys: %s",
     async (_, revoked) => {
       expect.hasAssertions();
       const database = new DatabaseSync(":memory:");
@@ -1292,7 +1301,7 @@ describe("mailbox administration", () => {
             .run(now, `bootstrap-passkey-${index}`);
         }
 
-        await expectSecuritySetupRequired(database, d1, validated);
+        await expectOptionalSecurityDoesNotBlock(database, d1, validated);
       } finally {
         database.close();
       }
@@ -1380,7 +1389,7 @@ describe("mailbox administration", () => {
     }
   });
 
-  it("does not count an active passkey without its persisted verification receipt", async () => {
+  it("does not require a persisted passkey verification receipt", async () => {
     expect.hasAssertions();
     const database = new DatabaseSync(":memory:");
     try {
@@ -1398,14 +1407,14 @@ describe("mailbox administration", () => {
           'dW52ZXJpZmllZC1wdWJsaWMta2V5', 0, ${now - 1000});
       `);
 
-      await expectSecuritySetupRequired(database, d1, validated);
+      await expectOptionalSecurityDoesNotBlock(database, d1, validated);
     } finally {
       database.close();
     }
   });
 
   it.each(["unverified", "revoked"] as const)(
-    "requires one active verified external recovery identity: %s",
+    "does not require an external recovery identity: %s",
     async (state) => {
       expect.hasAssertions();
       const database = new DatabaseSync(":memory:");
@@ -1441,7 +1450,7 @@ describe("mailbox administration", () => {
           `);
         }
 
-        await expectSecuritySetupRequired(database, d1, validated);
+        await expectOptionalSecurityDoesNotBlock(database, d1, validated);
       } finally {
         database.close();
       }
@@ -1455,7 +1464,7 @@ describe("mailbox administration", () => {
     ["used code", "used"],
     ["revoked code", "revoked"],
   ] as const)(
-    "requires exactly the current intact ten-code set: %s",
+    "does not require a current recovery-code set: %s",
     async (_, mutation) => {
       expect.hasAssertions();
       const database = new DatabaseSync(":memory:");
@@ -1484,7 +1493,7 @@ describe("mailbox administration", () => {
           where id = 'bootstrap-recovery-code-0'`);
         }
 
-        await expectSecuritySetupRequired(database, d1, validated);
+        await expectOptionalSecurityDoesNotBlock(database, d1, validated);
       } finally {
         database.close();
       }
@@ -1524,25 +1533,18 @@ describe("mailbox administration", () => {
           acknowledgedOperationId = "00000000-0000-4000-8000-000000000209";
         }
 
-        const error = await Effect.runPromise(
-          bootstrapWithAcknowledgement(
-            d1,
-            validated,
-            acknowledgedOperationId
-          ).pipe(Effect.flip)
+        const mailbox = await Effect.runPromise(
+          bootstrapWithAcknowledgement(d1, validated, acknowledgedOperationId)
         );
 
-        expect(error).toMatchObject({ reason: "security-setup-required" });
-        expect(bootstrapClosureCounts(database)).toStrictEqual(
-          emptyBootstrapClosure
-        );
+        expect(mailbox).toMatchObject({ id: "primary", status: "active" });
       } finally {
         database.close();
       }
     }
   );
 
-  it("detects a changed-tab recovery rotation immediately before the atomic batch", async () => {
+  it("ignores a changed-tab recovery rotation during mailbox bootstrap", async () => {
     const database = new DatabaseSync(":memory:");
     try {
       await applyControlPlaneMigrations(database);
@@ -1563,24 +1565,21 @@ describe("mailbox administration", () => {
         prepare: baseD1.prepare,
       };
 
-      const error = await Effect.runPromise(
+      const mailbox = await Effect.runPromise(
         bootstrapWithAcknowledgement(
           racedD1,
           validated,
           "00000000-0000-4000-8000-000000000105"
-        ).pipe(Effect.flip)
+        )
       );
 
-      expect(error).toMatchObject({ reason: "security-setup-required" });
-      expect(bootstrapClosureCounts(database)).toStrictEqual(
-        emptyBootstrapClosure
-      );
+      expect(mailbox).toMatchObject({ id: "primary", status: "active" });
     } finally {
       database.close();
     }
   });
 
-  it("accepts only the exact current acknowledged rotation operation", async () => {
+  it("does not persist recovery acknowledgement as bootstrap intent", async () => {
     const database = new DatabaseSync(":memory:");
     try {
       await applyControlPlaneMigrations(database);
@@ -1607,11 +1606,7 @@ describe("mailbox administration", () => {
         database
           .prepare("select * from app_mailbox_bootstrap_security_intent")
           .get()
-      ).toMatchObject({
-        actor_user_id: "user-a",
-        recovery_rotation_operation_id: "00000000-0000-4000-8000-000000000205",
-        schema_version: 1,
-      });
+      ).toBeUndefined();
     } finally {
       database.close();
     }
@@ -2043,13 +2038,11 @@ describe("mailbox administration", () => {
           d1,
           validated,
           "00000000-0000-4000-8000-000000000205"
-        ).pipe(Effect.flip)
+        )
       );
 
       expect(replay).toStrictEqual(first);
-      expect(changedAcknowledgement).toMatchObject({
-        reason: "operation-conflict",
-      });
+      expect(changedAcknowledgement).toStrictEqual(first);
       expect(countRows(database, "app_administrative_audit_event")).toBe(1);
       expect(countRows(database, "app_mailbox_administration_receipt")).toBe(1);
     } finally {
@@ -2076,7 +2069,7 @@ describe("mailbox administration", () => {
         where id = 'bootstrap-recovery-code-0'`,
     ],
   ] as const)(
-    "rechecks %s readiness inside the same atomic batch",
+    "does not gate bootstrap on %s readiness inside the atomic batch",
     async (_, mutation) => {
       expect.hasAssertions();
       const database = new DatabaseSync(":memory:");
@@ -2093,7 +2086,7 @@ describe("mailbox administration", () => {
           prepare: baseD1.prepare,
         };
 
-        await expectSecuritySetupRequired(database, racedD1, validated);
+        await expectOptionalSecurityDoesNotBlock(database, racedD1, validated);
       } finally {
         database.close();
       }
@@ -2621,7 +2614,7 @@ describe("mailbox administration", () => {
                      'primary', 'Wrong', 'active', 'user-a', ?, ?, 1, ?, 1)`
           )
           .run("00000000-0000-4000-8000-000000000099", now, now, now)
-      ).toThrow("sealed mailbox bootstrap security intent is required");
+      ).toThrow("invalid mailbox administration receipt binding");
     } finally {
       database.close();
     }
