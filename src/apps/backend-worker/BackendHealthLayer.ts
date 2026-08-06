@@ -76,9 +76,9 @@ export const BackendHealthLayer = Layer.effect(
     const probeAuthRateLimit = bindings.authRateLimit
       .getByName("health")
       .fixedWindow({
-        limit: undefined,
+        limit: 1,
         refillMillis: 1,
-        tokens: 0,
+        tokens: 1,
       })
       .pipe(Effect.provide(RuntimeContext.phantom));
     const probeControlPlane = controlPlane.get<{ readonly ready: number }>(
