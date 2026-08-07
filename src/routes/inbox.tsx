@@ -1247,7 +1247,7 @@ function MailboxWorkspace({
   };
 
   return (
-    <div className="grid h-full min-h-0 lg:grid-cols-[minmax(22rem,28rem)_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 min-w-0 overflow-hidden lg:grid-cols-[minmax(20rem,38%)_minmax(0,1fr)] xl:grid-cols-[minmax(22rem,28rem)_minmax(0,1fr)]">
       <MessageList
         key={JSON.stringify([selection, filters])}
         actionErrors={[
@@ -2341,7 +2341,7 @@ function AuthenticatedInbox({
                   }),
                 })
               }
-              className="inline-flex h-auto items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-3 py-2.5 text-xs font-extrabold text-[var(--bg-base)] shadow-[0_9px_22px_rgba(23,58,64,0.16)] sm:px-4"
+              className="inline-flex h-auto items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-2 py-2.5 text-xs font-extrabold text-[var(--bg-base)] shadow-[0_9px_22px_rgba(23,58,64,0.16)] min-[360px]:px-3 sm:px-4"
             >
               <PenLine size={15} />{" "}
               <span className="hidden sm:inline">Compose</span>

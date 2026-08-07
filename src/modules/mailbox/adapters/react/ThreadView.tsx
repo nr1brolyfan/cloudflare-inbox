@@ -378,7 +378,7 @@ function MessageBody({
       ) : plainText === undefined ? null : (
         <div>
           {plainText.authoredText === "" ? null : (
-            <pre className="font-sans text-sm leading-7 whitespace-pre-wrap text-[var(--sea-ink)]">
+            <pre className="max-w-full font-sans text-sm leading-7 break-words whitespace-pre-wrap text-[var(--sea-ink)]">
               {plainText.authoredText}
             </pre>
           )}
@@ -446,7 +446,7 @@ export function ThreadView({
   return (
     <section
       aria-label="Conversation"
-      className="flex min-h-0 flex-1 flex-col bg-[var(--workspace-bg)]"
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[var(--workspace-bg)]"
     >
       <header className="border-b border-[var(--line)] bg-[var(--control-bg)] px-4 py-4 sm:px-7 sm:py-5">
         <div className="flex items-start gap-3">
@@ -482,17 +482,17 @@ export function ThreadView({
       </header>
 
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 lg:p-7">
-        <div className="mx-auto max-w-3xl space-y-4">
+        <div className="mx-auto w-full max-w-3xl min-w-0 space-y-4">
           {data.messages.map((message) => {
             const outbound = message.direction === "outbound";
             return (
               <article
                 key={message.id}
                 data-direction={message.direction}
-                className={`overflow-hidden rounded-2xl border shadow-[0_10px_30px_rgba(23,58,64,0.06)] ${
+                className={`max-w-full min-w-0 overflow-hidden rounded-2xl border shadow-[0_10px_30px_rgba(23,58,64,0.06)] ${
                   outbound
-                    ? "ml-5 border-[var(--lagoon-deep)]/45 bg-[var(--foam)] sm:ml-12"
-                    : "mr-5 border-[var(--line)] bg-[var(--surface-strong)] sm:mr-12"
+                    ? "border-[var(--lagoon-deep)]/45 bg-[var(--foam)] sm:ml-12"
+                    : "border-[var(--line)] bg-[var(--surface-strong)] sm:mr-12"
                 }`}
               >
                 <header

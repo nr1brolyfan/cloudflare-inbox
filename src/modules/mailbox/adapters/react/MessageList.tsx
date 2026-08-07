@@ -568,7 +568,7 @@ export function MessageList({
   return (
     <section
       aria-label="Messages"
-      className={`min-h-0 border-[var(--line)] bg-[var(--workspace-bg)] lg:border-r ${selectedThreadId === undefined ? "flex" : "hidden lg:flex"} flex-col`}
+      className={`min-h-0 min-w-0 overflow-hidden border-[var(--line)] bg-[var(--workspace-bg)] lg:border-r ${selectedThreadId === undefined ? "flex" : "hidden lg:flex"} flex-col`}
     >
       <div className="shrink-0 border-b border-[var(--line)] p-3 sm:p-4">
         <div className="flex min-h-8 items-center gap-1">
@@ -784,7 +784,7 @@ export function MessageList({
                   <ContextMenu.Trigger
                     render={
                       <article
-                        className={`group mail-list-item rounded-2xl border ${
+                        className={`group mail-list-item min-w-0 overflow-hidden rounded-2xl border ${
                           selected || checked
                             ? "border-[var(--lagoon)] bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-[0_9px_24px_rgba(23,58,64,0.09)] hover:text-[var(--sea-ink)]"
                             : "border-transparent text-[var(--sea-ink)] hover:border-[var(--line)] hover:bg-[var(--control-bg)] hover:text-[var(--sea-ink)]"

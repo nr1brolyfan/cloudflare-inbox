@@ -88,7 +88,7 @@ export function ThemeToggle() {
   return (
     <fieldset
       aria-label="Color theme"
-      className="flex items-center rounded-xl border border-[var(--line)] bg-[var(--control-bg)] p-1"
+      className="flex shrink-0 items-center rounded-xl border border-[var(--line)] bg-[var(--control-bg)] p-1"
     >
       {themes.map(({ icon: Icon, label, value }) => (
         <Button
@@ -98,7 +98,7 @@ export function ThemeToggle() {
           aria-label={label}
           aria-pressed={theme === value}
           onClick={() => setTheme(value)}
-          className={`flex size-7 items-center justify-center rounded-lg ${
+          className={`flex size-6 items-center justify-center rounded-lg min-[360px]:size-7 ${
             theme === value
               ? "bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-sm"
               : "text-[var(--sea-ink-soft)] hover:text-[var(--sea-ink)]"

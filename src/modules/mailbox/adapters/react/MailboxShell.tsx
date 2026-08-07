@@ -128,7 +128,7 @@ function MailboxNavigation({
             type="button"
             aria-label="Close mailbox navigation"
             onClick={onClose}
-            className="size-10 rounded-xl text-white/65 hover:bg-white/10 hover:text-white lg:hidden"
+            className="size-10 rounded-xl text-white/65 hover:bg-white/10 hover:text-white xl:hidden"
           >
             <PanelLeftClose size={20} />
           </Button>
@@ -355,7 +355,7 @@ export function MailboxShell({
     <Sheet open={navigationOpen} onOpenChange={setNavigationOpen}>
       <main className="fixed inset-0 overflow-hidden bg-[var(--surface-strong)]">
         <div className="flex h-full min-h-0 overflow-hidden bg-[var(--surface-strong)]">
-          <aside className="hidden w-72 shrink-0 lg:block">
+          <aside className="hidden w-72 shrink-0 xl:block">
             <MailboxNavigation
               folders={folders}
               isSigningOut={isSigningOut}
@@ -376,7 +376,7 @@ export function MailboxShell({
           <SheetContent
             side="left"
             showCloseButton={false}
-            className="h-full w-[min(19rem,88vw)] max-w-none gap-0 border-0 p-0 shadow-2xl lg:hidden"
+            className="h-full w-[min(19rem,88vw)] max-w-none gap-0 border-0 p-0 shadow-2xl xl:hidden"
           >
             <SheetTitle className="sr-only">Mailbox navigation</SheetTitle>
             <MailboxNavigation
@@ -397,16 +397,16 @@ export function MailboxShell({
             />
           </SheetContent>
 
-          <section className="flex min-w-0 flex-1 flex-col">
-            <header className="flex h-20 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--header-bg)] px-4 sm:px-6 lg:px-8">
-              <div className="flex min-w-0 items-center gap-3">
+          <section className="flex min-w-0 flex-1 flex-col overflow-hidden">
+            <header className="flex h-20 min-w-0 shrink-0 items-center justify-between gap-1 border-b border-[var(--line)] bg-[var(--header-bg)] px-3 min-[360px]:gap-2 min-[360px]:px-4 sm:px-6 lg:px-8">
+              <div className="flex min-w-0 flex-1 items-center gap-2 min-[360px]:gap-3">
                 <SheetTrigger
                   render={
                     <Button
                       variant="outline"
                       size="icon-lg"
                       aria-label="Open mailbox navigation"
-                      className="size-10 shrink-0 rounded-xl border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] lg:hidden"
+                      className="size-10 shrink-0 rounded-xl border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] xl:hidden"
                     />
                   }
                 >
@@ -416,12 +416,12 @@ export function MailboxShell({
                   <p className="text-[0.62rem] font-extrabold tracking-[0.16em] text-[var(--palm)] uppercase">
                     {mailboxName}
                   </p>
-                  <h1 className="display-title truncate text-2xl font-bold tracking-tight sm:text-[1.7rem]">
+                  <h1 className="display-title truncate text-xl font-bold tracking-tight min-[360px]:text-2xl sm:text-[1.7rem]">
                     {viewTitle}
                   </h1>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex shrink-0 items-center gap-1 min-[360px]:gap-2">
                 {headerAction}
                 <ThemeToggle />
               </div>
