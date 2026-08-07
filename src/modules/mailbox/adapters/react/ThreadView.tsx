@@ -78,7 +78,7 @@ function MessageBody({
             type="button"
             aria-pressed={!showHtml}
             onClick={() => setShowHtml(false)}
-            className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-bold"
+            className="rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-1.5 text-xs font-bold text-[var(--sea-ink)] aria-pressed:bg-[var(--sand)] aria-pressed:text-[var(--palm)]"
           >
             Plain text
           </button>
@@ -86,7 +86,7 @@ function MessageBody({
             type="button"
             aria-pressed={showHtml}
             onClick={() => setShowHtml(true)}
-            className="rounded-lg border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-bold"
+            className="rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-1.5 text-xs font-bold text-[var(--sea-ink)] aria-pressed:bg-[var(--sand)] aria-pressed:text-[var(--palm)]"
           >
             Sandboxed HTML
           </button>
@@ -158,7 +158,7 @@ export function ThreadView({
                 onClose();
               }
             }}
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-white/72 text-[var(--sea-ink-soft)] no-underline hover:bg-white hover:text-[var(--sea-ink)] lg:hidden"
+            className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)] no-underline hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)] lg:hidden"
           >
             <ArrowLeft size={18} />
           </a>
@@ -242,7 +242,7 @@ export function ThreadView({
                           attachment.disposition === "attachment" ? (
                             <a
                               aria-label={`Download ${attachment.fileName}`}
-                              className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-[var(--sea-ink)] no-underline hover:bg-[var(--sand)]"
+                              className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--sea-ink)] no-underline hover:bg-[var(--sand)]"
                               download
                               href={mailboxInboundAttachmentHref(
                                 mailboxId,
@@ -265,7 +265,7 @@ export function ThreadView({
                       type="button"
                       disabled={replyingMessageId !== undefined}
                       onClick={() => onReply(message.id)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3.5 py-2 text-xs font-extrabold disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3.5 py-2 text-xs font-extrabold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Reply aria-hidden="true" size={14} />
                       {replyingMessageId === message.id
@@ -278,7 +278,7 @@ export function ThreadView({
                     {replyError?.messageId === message.id ? (
                       <p
                         role="alert"
-                        className="text-xs font-bold text-red-700"
+                        className="text-xs font-bold text-[var(--danger-fg)]"
                       >
                         Reply draft could not be created.
                       </p>

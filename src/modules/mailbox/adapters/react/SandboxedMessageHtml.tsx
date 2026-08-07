@@ -37,7 +37,7 @@ export function SandboxedMessageHtml({
               setFailed(false);
               setLoaded(false);
             }}
-            className="mt-3 rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs font-extrabold"
+            className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-2 text-xs font-extrabold text-[var(--sea-ink)]"
           >
             Try again
           </button>

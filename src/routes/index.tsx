@@ -140,7 +140,7 @@ function RecoveryRemediationPanel({
 
   return (
     <div>
-      <div className="flex size-14 items-center justify-center rounded-2xl bg-amber-100 text-amber-900">
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-[var(--warning-bg)] text-[var(--warning-fg)]">
         <ShieldCheck size={28} />
       </div>
       <p className="island-kicker mt-8">Recovery checkpoint</p>
@@ -173,7 +173,7 @@ function RecoveryRemediationPanel({
         type="button"
         disabled={!passkeySupported || enrollment.isPending}
         onClick={() => enrollment.mutate()}
-        className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-white shadow-lg disabled:opacity-50"
+        className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-[var(--bg-base)] shadow-lg disabled:opacity-50"
       >
         {enrollment.isPending ? (
           <LoaderCircle className="animate-spin" size={18} />
@@ -186,7 +186,7 @@ function RecoveryRemediationPanel({
         type="button"
         disabled={isLogoutPending}
         onClick={onLogout}
-        className="mt-3 w-full rounded-xl border border-[var(--line)] bg-white/70 px-5 py-3 font-bold disabled:opacity-50"
+        className="mt-3 w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 font-bold text-[var(--sea-ink)] disabled:opacity-50"
       >
         Sign out
       </button>
@@ -203,7 +203,7 @@ function RecoveredCodesPanel({
 }) {
   return (
     <div>
-      <div className="flex size-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-900">
+      <div className="flex size-14 items-center justify-center rounded-2xl bg-[var(--success-bg)] text-[var(--success-fg)]">
         <ShieldCheck size={28} />
       </div>
       <p className="island-kicker mt-8">Recovery complete</p>
@@ -214,9 +214,12 @@ function RecoveredCodesPanel({
         The previous code set is no longer valid. These codes are shown once and
         are not stored in plaintext.
       </p>
-      <div className="mt-6 grid gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-5 font-mono text-sm sm:grid-cols-2">
+      <div className="mt-6 grid gap-2 rounded-2xl border border-[var(--warning-border)] bg-[var(--warning-bg)] p-5 font-mono text-sm text-[var(--warning-fg)] sm:grid-cols-2">
         {codes.map((code) => (
-          <code key={code} className="rounded-lg bg-white px-3 py-2">
+          <code
+            key={code}
+            className="rounded-lg bg-[var(--surface-strong)] px-3 py-2"
+          >
             {code}
           </code>
         ))}
@@ -224,7 +227,7 @@ function RecoveredCodesPanel({
       <button
         type="button"
         onClick={onSaved}
-        className="mt-6 w-full rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-white shadow-lg"
+        className="mt-6 w-full rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-[var(--bg-base)] shadow-lg"
       >
         I saved these codes
       </button>
@@ -363,8 +366,8 @@ function Home() {
 
   return (
     <main className="min-h-screen px-4 py-6 sm:px-6 sm:py-10">
-      <div className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl overflow-hidden rounded-[2.25rem] border border-[var(--line)] bg-white/55 shadow-[0_28px_80px_rgba(23,58,64,0.14)] backdrop-blur-md lg:grid-cols-[1.08fr_0.92fr]">
-        <section className="relative flex min-h-[28rem] flex-col justify-between overflow-hidden bg-[var(--sea-ink)] p-8 text-white sm:p-12 lg:p-16">
+      <div className="mx-auto grid min-h-[calc(100vh-3rem)] max-w-6xl overflow-hidden rounded-[2.25rem] border border-[var(--line)] bg-[var(--surface)] shadow-[0_28px_80px_rgba(23,58,64,0.14)] backdrop-blur-md lg:grid-cols-[1.08fr_0.92fr]">
+        <section className="relative flex min-h-[28rem] flex-col justify-between overflow-hidden bg-[var(--nav-bg)] p-8 text-white sm:p-12 lg:p-16">
           <div className="absolute -top-24 -right-24 size-80 rounded-full border border-white/10 bg-[var(--lagoon)]/20 blur-sm" />
           <div className="absolute -bottom-28 -left-20 size-72 rounded-full border border-white/10 bg-emerald-300/10" />
           <div className="relative">
@@ -446,7 +449,7 @@ function Home() {
                         setMode(value);
                         setNotice(undefined);
                       }}
-                      className={`rounded-lg px-2 py-2.5 text-xs font-bold capitalize ${mode === value ? "bg-white text-[var(--sea-ink)] shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
+                      className={`rounded-lg px-2 py-2.5 text-xs font-bold capitalize ${mode === value ? "bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
                     >
                       {authModeLabel(value)}
                     </button>
@@ -455,7 +458,7 @@ function Home() {
 
                 <form className="mt-7 space-y-5" onSubmit={submit}>
                   {mode === "passkey" ? (
-                    <p className="rounded-2xl border border-[var(--line)] bg-white/70 px-4 py-4 text-sm leading-6 text-[var(--sea-ink-soft)]">
+                    <p className="rounded-2xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-4 text-sm leading-6 text-[var(--sea-ink-soft)]">
                       Your browser will ask for a discoverable passkey. No email
                       address or account identifier is sent first.
                     </p>
@@ -472,7 +475,7 @@ function Home() {
                         autoComplete="email"
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
-                        className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3.5 outline-none focus:border-[var(--lagoon-deep)]"
+                        className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
                       />
                     </label>
                   )}
@@ -488,7 +491,7 @@ function Home() {
                         pattern="[0-9]{6}"
                         value={otpCode}
                         onChange={(event) => setOtpCode(event.target.value)}
-                        className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3.5 tracking-[0.35em] outline-none focus:border-[var(--lagoon-deep)]"
+                        className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 tracking-[0.35em] text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
                       />
                     </label>
                   ) : null}
@@ -502,7 +505,7 @@ function Home() {
                         autoComplete="current-password"
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
-                        className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3.5 outline-none focus:border-[var(--lagoon-deep)]"
+                        className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
                       />
                     </label>
                   ) : null}
@@ -515,7 +518,7 @@ function Home() {
                   <button
                     type="submit"
                     disabled={activeMutation.isPending}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-white shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
+                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-[var(--bg-base)] shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
                   >
                     <AuthSubmitContent
                       mode={mode}
@@ -551,7 +554,7 @@ function Home() {
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-xl border border-emerald-300/60 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-900">
+    <p className="rounded-xl border border-[var(--success-border)] bg-[var(--success-bg)] px-4 py-3 text-sm text-[var(--success-fg)]">
       {children}
     </p>
   );
@@ -559,7 +562,7 @@ function Notice({ children }: { children: React.ReactNode }) {
 
 function ErrorNotice({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-xl border border-red-300/60 bg-red-50/80 px-4 py-3 text-sm text-red-800">
+    <p className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger-fg)]">
       {children}
     </p>
   );

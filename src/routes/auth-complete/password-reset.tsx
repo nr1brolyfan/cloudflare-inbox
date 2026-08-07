@@ -67,7 +67,7 @@ function PasswordResetCompletion() {
           minLength={minimumPasswordCodePoints}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
-          className="w-full rounded-xl border border-[var(--line)] bg-white/75 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
+          className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
         />
       </label>
       <label className="block space-y-2 text-sm font-semibold">
@@ -78,7 +78,7 @@ function PasswordResetCompletion() {
           minLength={minimumPasswordCodePoints}
           value={confirmation}
           onChange={(event) => setConfirmation(event.target.value)}
-          className="w-full rounded-xl border border-[var(--line)] bg-white/75 px-4 py-3 outline-none focus:border-[var(--lagoon-deep)]"
+          className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
         />
       </label>
     </CompletionShell>

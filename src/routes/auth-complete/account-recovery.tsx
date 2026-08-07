@@ -89,7 +89,7 @@ function AccountRecoveryCompletion() {
           autoComplete="one-time-code"
           value={code}
           onChange={(event) => setCode(event.target.value)}
-          className="w-full rounded-xl border border-[var(--line)] bg-white/80 px-4 py-3.5 font-mono uppercase outline-none focus:border-[var(--lagoon-deep)]"
+          className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 font-mono text-[var(--sea-ink)] uppercase outline-none focus:border-[var(--lagoon-deep)]"
         />
       </label>
     </CompletionShell>

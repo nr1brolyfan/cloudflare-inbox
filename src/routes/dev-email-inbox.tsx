@@ -72,8 +72,8 @@ function DevEmailInbox() {
 
   return (
     <main className="min-h-screen px-3 py-3 sm:px-6 sm:py-6">
-      <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-7xl flex-col overflow-hidden rounded-[2rem] border border-[var(--line)] bg-white/68 shadow-[0_28px_80px_rgba(23,58,64,0.14)] backdrop-blur-md sm:min-h-[calc(100vh-3rem)]">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] bg-[var(--sea-ink)] px-6 py-5 text-white sm:px-8">
+      <div className="mx-auto flex min-h-[calc(100vh-1.5rem)] max-w-7xl flex-col overflow-hidden rounded-[2rem] border border-[var(--line)] bg-[var(--surface)] shadow-[0_28px_80px_rgba(23,58,64,0.14)] backdrop-blur-md sm:min-h-[calc(100vh-3rem)]">
+        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-[var(--line)] bg-[var(--nav-bg)] px-6 py-5 text-white sm:px-8">
           <div className="flex items-center gap-4">
             <span className="flex size-11 items-center justify-center rounded-2xl bg-white/10">
               <MailOpen size={21} />
@@ -110,7 +110,7 @@ function DevEmailInbox() {
           <aside className="border-b border-[var(--line)] bg-[var(--sand)]/45 lg:border-r lg:border-b-0">
             <div className="flex items-center justify-between px-5 py-4">
               <span className="text-sm font-extrabold">Messages</span>
-              <span className="rounded-full bg-white/75 px-2.5 py-1 text-xs font-bold text-[var(--sea-ink-soft)]">
+              <span className="rounded-full bg-[var(--surface-strong)] px-2.5 py-1 text-xs font-bold text-[var(--sea-ink-soft)]">
                 {messages.length}
               </span>
             </div>
@@ -123,7 +123,7 @@ function DevEmailInbox() {
                     setSelectedId(message.id);
                     setPreview("text");
                   }}
-                  className={`mb-2 w-full rounded-2xl border p-4 text-left transition ${selected?.id === message.id ? "border-[var(--lagoon)] bg-white shadow-sm" : "border-transparent bg-white/45 hover:border-[var(--line)] hover:bg-white/75"}`}
+                  className={`mb-2 w-full rounded-2xl border p-4 text-left transition ${selected?.id === message.id ? "border-[var(--lagoon)] bg-[var(--surface-strong)] shadow-sm" : "border-transparent bg-[var(--surface)] hover:border-[var(--line)] hover:bg-[var(--control-bg)]"}`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="truncate text-xs font-extrabold tracking-wide text-[var(--palm)] uppercase">
@@ -153,7 +153,7 @@ function DevEmailInbox() {
             </div>
           </aside>
 
-          <section className="min-w-0 bg-white/55 p-5 sm:p-8">
+          <section className="min-w-0 bg-[var(--workspace-bg)] p-5 sm:p-8">
             {selected ? (
               <div className="mx-auto max-w-4xl">
                 <div className="border-b border-[var(--line)] pb-6">
@@ -199,7 +199,7 @@ function DevEmailInbox() {
                         href={link}
                         target="_blank"
                         rel="noreferrer"
-                        className="flex max-w-full items-center gap-2 rounded-2xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-white no-underline hover:text-white"
+                        className="flex max-w-full items-center gap-2 rounded-2xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-[var(--bg-base)] no-underline hover:text-[var(--bg-base)]"
                       >
                         <ExternalLink size={16} />
                         <span className="truncate">Open action link</span>
@@ -215,7 +215,7 @@ function DevEmailInbox() {
                         key={value}
                         type="button"
                         onClick={() => setPreview(value)}
-                        className={`rounded-lg px-4 py-2 text-xs font-extrabold uppercase ${preview === value ? "bg-white shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
+                        className={`rounded-lg px-4 py-2 text-xs font-extrabold uppercase ${preview === value ? "bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
                       >
                         {value}
                       </button>

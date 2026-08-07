@@ -378,7 +378,7 @@ export function OutboundDeliveryTracker({
       aria-live="polite"
       className="fixed inset-x-0 bottom-0 z-40 px-3 pt-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:right-5 sm:left-auto sm:w-[27rem] sm:px-0 sm:pb-5"
     >
-      <div className="rounded-2xl border border-[var(--line)] bg-[var(--sea-ink)] p-3 text-white shadow-[0_20px_60px_rgba(10,35,40,0.3)] sm:p-4">
+      <div className="rounded-2xl border border-[var(--line)] bg-[var(--nav-bg)] p-3 text-white shadow-[0_20px_60px_rgba(10,35,40,0.3)] sm:p-4">
         <div className="flex items-start gap-3">
           {status.isLoading ? (
             <LoaderCircle
@@ -455,7 +455,7 @@ export function OutboundDeliveryTracker({
                 type="button"
                 disabled={undoState === "pending"}
                 onClick={() => void runUndo()}
-                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-white px-4 text-xs font-extrabold text-[var(--sea-ink)] disabled:opacity-60"
+                className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--nav-selection)] px-4 text-xs font-extrabold text-[var(--sea-ink)] disabled:opacity-60"
               >
                 {undoState === "pending" ? (
                   <LoaderCircle

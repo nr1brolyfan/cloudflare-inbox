@@ -104,7 +104,7 @@ function MailboxNavigation({
             <Mail size={20} strokeWidth={2.25} />
           </span>
           <div>
-            <p className="text-[0.62rem] font-extrabold tracking-[0.17em] text-white/48 uppercase">
+            <p className="text-[0.62rem] font-extrabold tracking-[0.17em] text-white/60 uppercase">
               Cloudflare
             </p>
             <p className="display-title text-lg leading-tight font-bold">
@@ -133,7 +133,7 @@ function MailboxNavigation({
             <span className="block truncate text-sm font-bold">
               {mailboxName}
             </span>
-            <span className="block truncate text-[0.68rem] text-white/48">
+            <span className="block truncate text-[0.68rem] text-white/60">
               {mailboxAddress}
             </span>
           </span>
@@ -145,7 +145,7 @@ function MailboxNavigation({
         className="min-h-0 flex-1 overflow-y-auto px-4 pt-7 pb-5"
       >
         <section aria-label="Folders">
-          <h2 className="px-3 text-[0.62rem] font-extrabold tracking-[0.16em] text-white/36 uppercase">
+          <h2 className="px-3 text-[0.62rem] font-extrabold tracking-[0.16em] text-white/60 uppercase">
             Folders
           </h2>
           <div className="mt-2 space-y-1">
@@ -219,7 +219,7 @@ function MailboxNavigation({
         </section>
 
         <section aria-label="Labels" className="mt-7">
-          <h2 className="px-3 text-[0.62rem] font-extrabold tracking-[0.16em] text-white/36 uppercase">
+          <h2 className="px-3 text-[0.62rem] font-extrabold tracking-[0.16em] text-white/60 uppercase">
             Labels
           </h2>
           {labels.length > 0 ? (
@@ -271,7 +271,7 @@ function MailboxNavigation({
               })}
             </div>
           ) : (
-            <p className="px-3 pt-3 text-xs leading-5 text-white/38">
+            <p className="px-3 pt-3 text-xs leading-5 text-white/60">
               No labels yet
             </p>
           )}
@@ -279,7 +279,7 @@ function MailboxNavigation({
       </nav>
 
       <div className="border-t border-white/10 p-4">
-        <div className="mb-3 flex items-center gap-2 px-2 text-[0.68rem] font-bold text-white/46">
+        <div className="mb-3 flex items-center gap-2 px-2 text-[0.68rem] font-bold text-white/60">
           <ShieldCheck size={14} className="text-[var(--lagoon)]" />
           Private edge workspace
         </div>
@@ -379,7 +379,7 @@ export function MailboxShell({
               type="button"
               aria-label="Dismiss mailbox navigation"
               onClick={() => setNavigationOpen(false)}
-              className="absolute inset-0 bg-[var(--sea-ink)]/46 backdrop-blur-sm"
+              className="absolute inset-0 bg-[var(--nav-bg)]/70 backdrop-blur-sm"
             />
             <dialog
               open

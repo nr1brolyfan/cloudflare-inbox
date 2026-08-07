@@ -135,7 +135,7 @@ export function DraftList({
       {data.nextCursor === undefined ? null : (
         <div className="border-t border-[var(--line)] p-3 text-center">
           {loadMoreFailed ? (
-            <p className="mb-2 text-[0.68rem] font-bold text-red-700">
+            <p className="mb-2 text-[0.68rem] font-bold text-[var(--danger-fg)]">
               More drafts could not be loaded.
             </p>
           ) : null}
@@ -143,7 +143,7 @@ export function DraftList({
             type="button"
             disabled={isLoadingMore}
             onClick={onLoadMore}
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/72 px-4 py-2 text-[0.7rem] font-extrabold disabled:opacity-55"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2 text-[0.7rem] font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
           >
             {isLoadingMore ? (
               <LoaderCircle className="animate-spin" size={14} />

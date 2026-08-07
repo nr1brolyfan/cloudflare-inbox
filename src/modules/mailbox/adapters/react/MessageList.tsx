@@ -120,7 +120,7 @@ function MessageSearchControls({
         <p
           id="message-search-error"
           role="alert"
-          className="px-1 text-[0.68rem] font-bold text-red-700"
+          className="px-1 text-[0.68rem] font-bold text-[var(--danger-fg)]"
         >
           Enter at least one letter or number.
         </p>
@@ -163,9 +163,6 @@ function MessageSearchControls({
         >
           <Paperclip size={13} /> Files
         </button>
-        <span className="ml-auto text-[0.65rem] font-bold text-[var(--sea-ink-soft)]">
-          Updates automatically
-        </span>
         {hasActiveMailboxFilters(filters) ? (
           <button
             type="button"
@@ -238,7 +235,7 @@ function MessageActionButtons({
         disabled={pending || message.folderId === trashFolderId}
         onClick={() => onAction("trash", message)}
         aria-label="Move message to trash"
-        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-red-50 hover:text-red-700 disabled:opacity-30"
+        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger-fg)] disabled:opacity-30"
       >
         <Trash2 size={14} />
       </button>
@@ -307,7 +304,6 @@ export function MessageList({
   onRetryAction,
   onRetryRefresh,
   pendingMessageIds = noPendingMessageIds,
-  refreshFailed = false,
   selectedThreadId,
   selection,
   trashFolderId,
@@ -334,7 +330,6 @@ export function MessageList({
   readonly onRetryAction?: () => void;
   readonly onRetryRefresh?: () => void;
   readonly pendingMessageIds?: ReadonlySet<string>;
-  readonly refreshFailed?: boolean;
   readonly selectedThreadId?: string;
   readonly selection: MailboxViewSelection;
   readonly trashFolderId?: string;
@@ -375,7 +370,7 @@ export function MessageList({
                 aria-label="Refresh messages"
                 disabled={isRefreshing}
                 onClick={onRetryRefresh}
-                className="inline-flex size-7 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-white/70 hover:text-[var(--sea-ink)] disabled:cursor-wait disabled:opacity-50"
+                className="inline-flex size-7 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)] disabled:cursor-wait disabled:opacity-50"
               >
                 <RefreshCw aria-hidden="true" size={14} />
               </button>
@@ -406,39 +401,20 @@ export function MessageList({
           <div
             key={failure.messageId}
             role="alert"
-            className="mt-3 flex items-center gap-2 rounded-lg bg-red-50 px-3 py-2 text-[0.68rem] font-bold text-red-700"
+            className="mt-3 flex items-center gap-2 rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[0.68rem] font-bold text-[var(--danger-fg)]"
           >
             <span className="flex-1">{failure.text}</span>
             {failure.handleRetry === undefined ? null : (
               <button
                 type="button"
                 onClick={failure.handleRetry}
-                className="rounded-md bg-white px-2 py-1 text-red-800"
+                className="rounded-md bg-[var(--surface-strong)] px-2 py-1 text-[var(--danger-fg)]"
               >
                 Try again
               </button>
             )}
           </div>
         ))}
-        {refreshFailed ? (
-          <div
-            role="alert"
-            className="mt-3 flex items-center gap-2 rounded-lg bg-amber-50 px-3 py-2 text-[0.68rem] font-bold text-amber-900"
-          >
-            <span className="flex-1">
-              Messages could not be refreshed. Showing saved results.
-            </span>
-            {onRetryRefresh === undefined ? null : (
-              <button
-                type="button"
-                onClick={onRetryRefresh}
-                className="rounded-md bg-white px-2 py-1"
-              >
-                Try again
-              </button>
-            )}
-          </div>
-        ) : null}
       </div>
 
       <div
@@ -579,7 +555,7 @@ export function MessageList({
       {data.nextCursor === undefined ? null : (
         <div className="border-t border-[var(--line)] p-3 text-center">
           {loadMoreFailed ? (
-            <p className="mb-2 text-[0.68rem] font-bold text-red-700">
+            <p className="mb-2 text-[0.68rem] font-bold text-[var(--danger-fg)]">
               More messages could not be loaded.
             </p>
           ) : null}

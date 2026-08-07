@@ -30,6 +30,15 @@
   --workspace-bg: rgba(255, 255, 255, 0.42);
   --hero-a: rgba(79, 184, 178, 0.36);
   --hero-b: rgba(47, 106, 74, 0.2);
+  --danger-bg: #fdefed;
+  --danger-border: rgba(185, 45, 37, 0.28);
+  --danger-fg: #982c25;
+  --success-bg: #e6f5eb;
+  --success-border: rgba(35, 121, 70, 0.28);
+  --success-fg: #22683e;
+  --warning-bg: #fff4d6;
+  --warning-border: rgba(161, 98, 7, 0.3);
+  --warning-fg: #7a4705;
 
   --background: oklch(1 0 0);
   --foreground: oklch(0.141 0.005 285.823);
@@ -90,6 +99,15 @@
   --workspace-bg: rgba(9, 22, 26, 0.72);
   --hero-a: rgba(96, 215, 207, 0.18);
   --hero-b: rgba(110, 200, 154, 0.12);
+  --danger-bg: rgba(248, 113, 113, 0.12);
+  --danger-border: rgba(252, 165, 165, 0.28);
+  --danger-fg: #fca5a5;
+  --success-bg: rgba(74, 222, 128, 0.11);
+  --success-border: rgba(134, 239, 172, 0.25);
+  --success-fg: #86efac;
+  --warning-bg: rgba(251, 191, 36, 0.12);
+  --warning-border: rgba(253, 224, 71, 0.26);
+  --warning-fg: #fde68a;
 
   --background: oklch(0.141 0.005 285.823);
   --foreground: oklch(0.985 0 0);
@@ -190,7 +208,7 @@ body {
     ),
     linear-gradient(
       180deg,
-      color-mix(in oklab, var(--sand) 68%, white) 0%,
+      color-mix(in oklab, var(--sand) 68%, var(--bg-base)) 0%,
       var(--foam) 44%,
       var(--bg-base) 100%
     );
@@ -242,13 +260,13 @@ a {
 }
 
 a:hover {
-  color: #246f76;
+  color: var(--lagoon);
 }
 
 code {
   font-size: 0.9em;
   border: 1px solid var(--line);
-  background: color-mix(in oklab, var(--surface-strong) 82%, white 18%);
+  background: var(--surface-strong);
   border-radius: 7px;
   padding: 2px 7px;
 }
@@ -289,11 +307,7 @@ pre code {
 }
 
 .feature-card {
-  background: linear-gradient(
-    165deg,
-    color-mix(in oklab, var(--surface-strong) 93%, white 7%),
-    var(--surface)
-  );
+  background: linear-gradient(165deg, var(--surface-strong), var(--surface));
   box-shadow:
     0 1px 0 var(--inset-glint) inset,
     0 18px 34px rgba(30, 90, 72, 0.1),

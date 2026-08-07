@@ -509,14 +509,14 @@ function MailboxUnavailable({
             <button
               type="button"
               onClick={onRetry}
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-white"
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-[var(--bg-base)]"
             >
               <RotateCcw size={17} /> Try again
             </button>
           ) : null}
           <Link
             to="/"
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/70 px-5 py-3 text-sm font-bold text-[var(--sea-ink)] no-underline hover:bg-white hover:text-[var(--sea-ink)]"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 text-sm font-bold text-[var(--sea-ink)] no-underline hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)]"
           >
             <ArrowLeft size={17} /> Return home
           </Link>
@@ -542,7 +542,7 @@ function SignInRequired() {
         </p>
         <Link
           to="/"
-          className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-white no-underline hover:text-white"
+          className="mt-7 inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-[var(--bg-base)] no-underline hover:text-[var(--bg-base)]"
         >
           <ArrowLeft size={17} /> Return to sign in
         </Link>
@@ -568,13 +568,12 @@ function WorkspaceStatus({
     <section
       role="alert"
       aria-live="polite"
-      className="flex min-h-80 flex-1 items-center justify-center bg-white/48 px-6 text-center"
+      className="flex min-h-80 flex-1 items-center justify-center bg-[var(--workspace-bg)] px-6 text-center text-[var(--sea-ink)]"
     >
-      <div className="max-w-sm">
-        <CircleAlert
-          className="mx-auto text-[var(--sea-ink-soft)] opacity-35"
-          size={34}
-        />
+      <div className="island-shell max-w-sm rounded-2xl px-7 py-6">
+        <span className="mx-auto flex size-11 items-center justify-center rounded-xl bg-[var(--sand)] text-[var(--palm)]">
+          <CircleAlert size={24} />
+        </span>
         <p className="mt-4 text-sm font-extrabold">{title}</p>
         <p className="mt-1 text-xs leading-5 text-[var(--sea-ink-soft)]">
           {detail}
@@ -583,7 +582,7 @@ function WorkspaceStatus({
           <button
             type="button"
             onClick={onRetry}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-xs font-extrabold"
+            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-4 py-2.5 text-xs font-extrabold text-[var(--bg-base)] hover:bg-[var(--palm)]"
           >
             <RotateCcw size={14} /> Try again
           </button>
@@ -657,6 +656,9 @@ function ConversationPane({
         : async () => {
             const result = await getMailboxThread({ data: threadInput });
             await handleMailboxReadDenial(queryClient, result);
+            if (!result.ok) {
+              throw new MailboxRequestError(result.status);
+            }
             return result;
           },
     queryKey: [
@@ -726,8 +728,15 @@ function ConversationPane({
       </output>
     );
   }
-  if (thread.error || !thread.data?.ok) {
-    const status = thread.data?.ok === false ? thread.data.status : 502;
+  const threadErrorStatus =
+    thread.error instanceof MailboxRequestError
+      ? thread.error.status
+      : undefined;
+  if (
+    thread.data === undefined ||
+    (thread.error !== null && threadErrorStatus === 404)
+  ) {
+    const status = threadErrorStatus ?? 502;
     const failure = conversationFailure(status);
     return (
       <WorkspaceStatus
@@ -1087,11 +1096,6 @@ function MailboxWorkspace({
         pendingMessageIds={pendingMessageIds}
         selectedThreadId={threadId}
         selection={selection}
-        refreshFailed={
-          messages.data !== undefined &&
-          messages.error !== null &&
-          !messages.isFetchNextPageError
-        }
         trashFolderId={trashFolderId}
       />
       <ConversationPane
@@ -2119,7 +2123,7 @@ function AuthenticatedInbox({
                   }),
                 })
               }
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-3 py-2.5 text-xs font-extrabold text-white shadow-[0_9px_22px_rgba(23,58,64,0.16)] sm:px-4"
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-3 py-2.5 text-xs font-extrabold text-[var(--bg-base)] shadow-[0_9px_22px_rgba(23,58,64,0.16)] sm:px-4"
             >
               <PenLine size={15} />{" "}
               <span className="hidden sm:inline">Compose</span>

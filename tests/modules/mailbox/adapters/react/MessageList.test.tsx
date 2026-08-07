@@ -303,8 +303,7 @@ describe(MessageList, () => {
     });
   });
 
-  it("keeps saved results visible after a background refresh failure", () => {
-    const onRetryRefresh = vi.fn<() => void>();
+  it("does not show redundant automatic-update messaging", () => {
     render(
       <MessageList
         data={messages}
@@ -317,21 +316,13 @@ describe(MessageList, () => {
         >()}
         onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
         onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
-        onRetryRefresh={onRetryRefresh}
-        refreshFailed
         selection={{ folder: "inbox" }}
       />
     );
 
-    expect({
-      alert: screen.getByRole("alert").textContent,
-      messageVisible: Boolean(screen.getByText("Second subject")),
-    }).toMatchObject({
-      alert: expect.stringContaining("Showing saved results"),
-      messageVisible: true,
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
-    expect(onRetryRefresh).toHaveBeenCalledOnce();
+    expect(screen.getByText("Second subject")).toBeTruthy();
+    expect(screen.queryByText("Updates automatically")).toBeNull();
+    expect(screen.queryByText(/could not be refreshed/iu)).toBeNull();
   });
 
   it("keeps the count anchored while refresh state changes", () => {

@@ -241,7 +241,7 @@ export function DraftEditor({
     fields.bcc.trim() !== "";
 
   return (
-    <section className="flex h-full min-h-0 flex-col bg-[linear-gradient(145deg,rgba(243,250,245,0.92),rgba(255,255,255,0.72))]">
+    <section className="flex h-full min-h-0 flex-col bg-[var(--workspace-bg)]">
       <div className="flex shrink-0 items-center justify-between border-b border-[var(--line)] px-4 py-3 sm:px-7 sm:py-4">
         <div>
           <p className="island-kicker">{isNew ? "New message" : "Draft"}</p>
@@ -259,7 +259,7 @@ export function DraftEditor({
               onClose(snapshot);
             }
           }}
-          className="flex size-10 items-center justify-center rounded-xl border border-[var(--line)] bg-white/70 text-[var(--sea-ink-soft)] hover:bg-white disabled:opacity-55"
+          className="flex size-10 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] disabled:opacity-55"
         >
           <X size={18} />
         </button>
@@ -275,7 +275,7 @@ export function DraftEditor({
           }
         }}
       >
-        <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white/84 shadow-[0_18px_50px_rgba(23,58,64,0.08)]">
+        <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_18px_50px_rgba(23,58,64,0.08)]">
           <label className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center">
             <span className="text-xs font-extrabold text-[var(--sea-ink-soft)]">
               To
@@ -330,7 +330,7 @@ export function DraftEditor({
           </label>
         </div>
 
-        <label className="mt-4 flex min-h-52 flex-1 flex-col rounded-2xl border border-[var(--line)] bg-white/84 p-4 shadow-[0_18px_50px_rgba(23,58,64,0.08)] sm:p-6">
+        <label className="mt-4 flex min-h-52 flex-1 flex-col rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] p-4 shadow-[0_18px_50px_rgba(23,58,64,0.08)] sm:p-6">
           <span className="sr-only">Message</span>
           <textarea
             aria-label="Message"
@@ -345,7 +345,7 @@ export function DraftEditor({
 
         <section
           aria-label="Draft attachments"
-          className="mt-4 shrink-0 rounded-2xl border border-[var(--line)] bg-white/72 p-4 sm:p-5"
+          className="mt-4 shrink-0 rounded-2xl border border-[var(--line)] bg-[var(--control-bg)] p-4 sm:p-5"
         >
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -355,7 +355,7 @@ export function DraftEditor({
               </p>
             </div>
             <label
-              className={`inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3.5 py-2 text-xs font-extrabold ${
+              className={`inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-3.5 py-2 text-xs font-extrabold ${
                 editorLocked
                   ? "cursor-not-allowed opacity-45"
                   : "cursor-pointer hover:bg-[var(--foam)]"
@@ -411,13 +411,13 @@ export function DraftEditor({
               {attachmentUploads.map((upload) => (
                 <li
                   key={upload.id}
-                  className="rounded-xl border border-[var(--line)] bg-white px-3 py-2.5"
+                  className="rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-3 py-2.5"
                 >
                   <div className="flex items-center gap-3">
                     {upload.status === "failed" ? (
                       <CircleAlert
                         aria-hidden="true"
-                        className="shrink-0 text-red-700"
+                        className="shrink-0 text-[var(--danger-fg)]"
                         size={17}
                       />
                     ) : (
@@ -483,7 +483,7 @@ export function DraftEditor({
             {visibleError === undefined ? null : (
               <p
                 role="alert"
-                className="flex items-center gap-2 text-xs font-bold text-red-700"
+                className="flex items-center gap-2 text-xs font-bold text-[var(--danger-fg)]"
               >
                 <CircleAlert size={15} /> {visibleError}
               </p>
@@ -495,7 +495,7 @@ export function DraftEditor({
                 type="button"
                 disabled={isSaving || isSending}
                 onClick={onRetry}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 text-xs font-extrabold disabled:opacity-55"
+                className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2.5 text-xs font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
               >
                 <RotateCcw size={15} /> Retry
               </button>
@@ -503,7 +503,7 @@ export function DraftEditor({
             <button
               type="submit"
               disabled={editorLocked || !hasRecipient}
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--lagoon-deep)] px-5 py-2.5 text-xs font-extrabold text-white shadow-[0_10px_26px_rgba(16,116,110,0.2)] disabled:opacity-45"
+              className="inline-flex items-center gap-2 rounded-xl bg-[var(--palm)] px-5 py-2.5 text-xs font-extrabold text-[var(--bg-base)] shadow-[0_10px_26px_rgba(16,116,110,0.2)] disabled:opacity-45"
             >
               {isSending ? (
                 <LoaderCircle className="animate-spin" size={15} />
