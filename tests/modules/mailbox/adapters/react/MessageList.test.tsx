@@ -1,7 +1,13 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MailboxMessageQueryState } from "#/modules/mailbox/adapters/react/MailboxViewLinks";
 import type {
@@ -47,7 +53,11 @@ const messages = {
 };
 
 describe(MessageList, () => {
-  afterEach(cleanup);
+  beforeEach(() => vi.useFakeTimers());
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
   it("preserves server order and keeps the folder context in thread links", () => {
     const onLoadMore = vi.fn<() => void>();
@@ -88,7 +98,7 @@ describe(MessageList, () => {
     expect(onLoadMore).toHaveBeenCalledOnce();
   });
 
-  it("submits search and filter controls as one query state", () => {
+  it("applies search and filter controls as one debounced query state", () => {
     const onQueryChange = vi.fn<(state: MailboxMessageQueryState) => void>();
     render(
       <MessageList
@@ -117,7 +127,7 @@ describe(MessageList, () => {
     });
     fireEvent.click(screen.getByRole("button", { name: "Starred" }));
     fireEvent.click(screen.getByRole("button", { name: "Files" }));
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    act(() => vi.advanceTimersByTime(350));
 
     expect(onQueryChange).toHaveBeenCalledWith({
       delivery: "delivery-1",
@@ -177,7 +187,7 @@ describe(MessageList, () => {
         target: { value: "!!!" },
       }
     );
-    fireEvent.click(screen.getByRole("button", { name: "Apply" }));
+    act(() => vi.advanceTimersByTime(350));
 
     expect(onQueryChange).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain(

@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import type { MailboxViewSelection } from "./MailboxViewLinks";
 import { mailboxViewHref } from "./MailboxViewLinks";
+import { ThemeToggle } from "./ThemeProvider";
 
 interface NavigationFolder {
   readonly id: string;
@@ -96,7 +97,7 @@ function MailboxNavigation({
   signOutError,
 }: MailboxNavigationProps) {
   return (
-    <div className="flex h-full flex-col bg-[var(--sea-ink)] text-white">
+    <div className="flex h-full flex-col bg-[var(--nav-bg)] text-white">
       <div className="flex h-20 items-center justify-between border-b border-white/10 px-5">
         <div className="flex items-center gap-3">
           <span className="flex size-10 items-center justify-center rounded-2xl bg-white/10 text-[var(--lagoon)]">
@@ -191,7 +192,7 @@ function MailboxNavigation({
                   onMouseEnter={() => onPrefetch({ folder: folder.id })}
                   className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
                     selected
-                      ? "bg-white font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
+                      ? "bg-[var(--nav-selection)] font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
                       : "font-bold text-white/66 hover:bg-white/8 hover:text-white"
                   }`}
                 >
@@ -252,7 +253,7 @@ function MailboxNavigation({
                     onMouseEnter={() => onPrefetch({ label: label.id })}
                     className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
                       selected
-                        ? "bg-white font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
+                        ? "bg-[var(--nav-selection)] font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
                         : "font-bold text-white/66 hover:bg-white/8 hover:text-white"
                     }`}
                   >
@@ -352,8 +353,8 @@ export function MailboxShell({
   }, [navigationOpen]);
 
   return (
-    <main className="min-h-dvh p-0 sm:p-3 lg:p-5">
-      <div className="mx-auto flex min-h-dvh max-w-[100rem] overflow-hidden bg-[var(--surface-strong)] shadow-[0_28px_90px_rgba(23,58,64,0.16)] backdrop-blur-xl sm:min-h-[calc(100dvh-1.5rem)] sm:rounded-[1.75rem] sm:border sm:border-[var(--line)] lg:min-h-[calc(100dvh-2.5rem)]">
+    <main className="h-dvh overflow-hidden bg-[var(--surface-strong)]">
+      <div className="flex h-full min-h-0 overflow-hidden bg-[var(--surface-strong)]">
         <aside className="hidden w-72 shrink-0 lg:block">
           <MailboxNavigation
             folders={folders}
@@ -407,14 +408,14 @@ export function MailboxShell({
         ) : null}
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-20 shrink-0 items-center justify-between border-b border-[var(--line)] bg-white/58 px-4 sm:px-6 lg:px-8">
+          <header className="flex h-20 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--header-bg)] px-4 sm:px-6 lg:px-8">
             <div className="flex min-w-0 items-center gap-3">
               <button
                 type="button"
                 aria-label="Open mailbox navigation"
                 aria-expanded={navigationOpen}
                 onClick={() => setNavigationOpen(true)}
-                className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-white/70 text-[var(--sea-ink-soft)] hover:bg-white lg:hidden"
+                className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] lg:hidden"
               >
                 <Menu size={20} />
               </button>
@@ -429,7 +430,8 @@ export function MailboxShell({
             </div>
             <div className="flex items-center gap-2">
               {headerAction}
-              <div className="flex items-center gap-2 rounded-full border border-[var(--line)] bg-white/66 py-1.5 pr-3 pl-1.5">
+              <ThemeToggle />
+              <div className="hidden items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--control-bg)] py-1.5 pr-3 pl-1.5 sm:flex">
                 <span className="flex size-8 items-center justify-center rounded-full bg-[var(--sand)] text-[0.65rem] font-extrabold text-[var(--palm)]">
                   {principalLabel.slice(0, 2).toUpperCase()}
                 </span>

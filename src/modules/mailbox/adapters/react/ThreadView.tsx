@@ -137,8 +137,11 @@ export function ThreadView({
   readonly selection: MailboxViewSelection;
 }) {
   return (
-    <section aria-label="Conversation" className="min-h-0 flex-1 bg-white/58">
-      <header className="border-b border-[var(--line)] bg-white/58 px-4 py-4 sm:px-7 sm:py-5">
+    <section
+      aria-label="Conversation"
+      className="min-h-0 flex-1 bg-[var(--workspace-bg)]"
+    >
+      <header className="border-b border-[var(--line)] bg-[var(--control-bg)] px-4 py-4 sm:px-7 sm:py-5">
         <div className="flex items-start gap-3">
           <a
             href={mailboxViewHref(selection, undefined, undefined, filters)}
@@ -175,7 +178,7 @@ export function ThreadView({
           {data.messages.map((message) => (
             <article
               key={message.id}
-              className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white/78 shadow-[0_10px_30px_rgba(23,58,64,0.06)]"
+              className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_10px_30px_rgba(23,58,64,0.06)]"
             >
               <header className="border-b border-[var(--line)] px-4 py-4 sm:px-5">
                 <div className="flex items-start gap-3">
@@ -301,7 +304,7 @@ export function NoThreadSelected() {
   return (
     <section
       aria-label="Conversation"
-      className="hidden min-h-0 flex-1 items-center justify-center bg-white/58 px-8 text-center text-[var(--sea-ink-soft)] lg:flex"
+      className="hidden min-h-0 flex-1 items-center justify-center bg-[var(--workspace-bg)] px-8 text-center text-[var(--sea-ink-soft)] lg:flex"
     >
       <div>
         <MailOpen className="mx-auto opacity-25" size={42} />

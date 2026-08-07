@@ -14,7 +14,7 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import type { MailboxMessageListResult } from "#/modules/mailbox/application/MailboxMessageReading";
 import { hasSearchableMessageTerm } from "#/modules/mailbox/domain/Mailbox";
@@ -62,27 +62,44 @@ function MessageSearchControls({
   );
   const [searchError, setSearchError] = useState(false);
 
+  const submitFilters = useEffectEvent(() => {
+    const trimmedQuery = query.trim();
+    if (trimmedQuery !== "" && !hasSearchableMessageTerm(trimmedQuery)) {
+      setSearchError(true);
+      return;
+    }
+    setSearchError(false);
+    const nextFilters = {
+      delivery: filters.delivery,
+      hasAttachment: hasAttachment || undefined,
+      query: trimmedQuery === "" ? undefined : trimmedQuery,
+      read: read === "" ? undefined : read,
+      starred: starred || undefined,
+    };
+    if (
+      nextFilters.query === filters.query &&
+      nextFilters.read === filters.read &&
+      nextFilters.starred === filters.starred &&
+      nextFilters.hasAttachment === filters.hasAttachment
+    ) {
+      return;
+    }
+    onQueryChange(nextFilters);
+  });
+
+  useEffect(() => {
+    const timeout = window.setTimeout(submitFilters, 350);
+    return () => window.clearTimeout(timeout);
+  }, [hasAttachment, query, read, starred]);
+
   return (
     <form
       className="mt-3 space-y-2"
       onSubmit={(event) => {
         event.preventDefault();
-        const trimmedQuery = query.trim();
-        if (trimmedQuery === "" || hasSearchableMessageTerm(trimmedQuery)) {
-          setSearchError(false);
-          onQueryChange({
-            delivery: filters.delivery,
-            hasAttachment: hasAttachment || undefined,
-            query: trimmedQuery === "" ? undefined : trimmedQuery,
-            read: read === "" ? undefined : read,
-            starred: starred || undefined,
-          });
-        } else {
-          setSearchError(true);
-        }
       }}
     >
-      <label className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/72 px-3 py-2 text-[var(--sea-ink-soft)] focus-within:border-[var(--lagoon-deep)] focus-within:bg-white">
+      <label className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3 py-2 text-[var(--sea-ink-soft)] focus-within:border-[var(--lagoon-deep)] focus-within:bg-[var(--surface-strong)]">
         <Search size={15} />
         <span className="sr-only">Search messages</span>
         <input
@@ -116,7 +133,7 @@ function MessageSearchControls({
             const { value } = event.currentTarget;
             setRead(value === "read" || value === "unread" ? value : "");
           }}
-          className="h-8 rounded-lg border border-[var(--line)] bg-white/72 px-2 text-[0.7rem] font-bold text-[var(--sea-ink)]"
+          className="h-8 rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-2 text-[0.7rem] font-bold text-[var(--sea-ink)]"
         >
           <option value="">Any status</option>
           <option value="unread">Unread</option>
@@ -129,7 +146,7 @@ function MessageSearchControls({
           className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[0.7rem] font-bold ${
             starred
               ? "border-[var(--lagoon)] bg-[var(--sand)] text-[var(--palm)]"
-              : "border-[var(--line)] bg-white/72 text-[var(--sea-ink-soft)]"
+              : "border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)]"
           }`}
         >
           <Star size={13} fill={starred ? "currentColor" : "none"} /> Starred
@@ -141,23 +158,20 @@ function MessageSearchControls({
           className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[0.7rem] font-bold ${
             hasAttachment
               ? "border-[var(--lagoon)] bg-[var(--sand)] text-[var(--palm)]"
-              : "border-[var(--line)] bg-white/72 text-[var(--sea-ink-soft)]"
+              : "border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)]"
           }`}
         >
           <Paperclip size={13} /> Files
         </button>
-        <button
-          type="submit"
-          className="ml-auto h-8 rounded-lg bg-[var(--sea-ink)] px-3 text-[0.7rem] font-extrabold text-white"
-        >
-          Apply
-        </button>
+        <span className="ml-auto text-[0.65rem] font-bold text-[var(--sea-ink-soft)]">
+          Updates automatically
+        </span>
         {hasActiveMailboxFilters(filters) ? (
           <button
             type="button"
             aria-label="Clear search and filters"
             onClick={() => onQueryChange({ delivery: filters.delivery })}
-            className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-white"
+            className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)]"
           >
             <X size={14} />
           </button>
@@ -232,6 +246,51 @@ function MessageActionButtons({
   );
 }
 
+const useInfiniteMessageScroll = ({
+  hasNextPage,
+  isLoadingMore,
+  loadMoreFailed,
+  onLoadMore,
+}: {
+  readonly hasNextPage: boolean;
+  readonly isLoadingMore: boolean;
+  readonly loadMoreFailed: boolean;
+  readonly onLoadMore: () => void;
+}) => {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const requestNextPage = useEffectEvent(onLoadMore);
+
+  useEffect(() => {
+    const target = loadMoreRef.current;
+    const root = scrollContainerRef.current;
+    if (
+      target === null ||
+      root === null ||
+      !hasNextPage ||
+      isLoadingMore ||
+      loadMoreFailed ||
+      typeof IntersectionObserver === "undefined"
+    ) {
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting === true) {
+          observer.disconnect();
+          requestNextPage();
+        }
+      },
+      { root, rootMargin: "240px 0px" }
+    );
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [hasNextPage, isLoadingMore, loadMoreFailed]);
+
+  return { loadMoreRef, scrollContainerRef };
+};
+
+// oxlint-disable-next-line eslint/complexity -- The list renders independent loading, error, filtering, action, and pagination states.
 export function MessageList({
   actionError,
   actionErrors,
@@ -281,6 +340,12 @@ export function MessageList({
   readonly trashFolderId?: string;
 }) {
   const hasActiveFilters = hasActiveMailboxFilters(filters);
+  const { loadMoreRef, scrollContainerRef } = useInfiniteMessageScroll({
+    hasNextPage: data.nextCursor !== undefined,
+    isLoadingMore,
+    loadMoreFailed,
+    onLoadMore,
+  });
   const displayedActionErrors =
     actionErrors ??
     (actionError === undefined
@@ -296,7 +361,7 @@ export function MessageList({
   return (
     <section
       aria-label="Messages"
-      className={`min-h-0 border-[var(--line)] bg-white/42 lg:border-r ${selectedThreadId === undefined ? "flex" : "hidden lg:flex"} flex-col`}
+      className={`min-h-0 border-[var(--line)] bg-[var(--workspace-bg)] lg:border-r ${selectedThreadId === undefined ? "flex" : "hidden lg:flex"} flex-col`}
     >
       <div className="shrink-0 border-b border-[var(--line)] p-3 sm:p-4">
         <div className="flex items-center justify-between px-1">
@@ -333,6 +398,7 @@ export function MessageList({
           </div>
         </div>
         <MessageSearchControls
+          key={`${filters.query ?? ""}:${filters.read ?? ""}:${filters.starred === true}:${filters.hasAttachment === true}`}
           filters={filters}
           onQueryChange={onQueryChange}
         />
@@ -375,7 +441,10 @@ export function MessageList({
         ) : null}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto p-2 sm:p-3">
+      <div
+        ref={scrollContainerRef}
+        className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 sm:p-3"
+      >
         {data.items.length === 0 ? (
           <div className="flex min-h-72 items-center justify-center px-6 text-center text-[var(--sea-ink-soft)]">
             <div>
@@ -404,10 +473,10 @@ export function MessageList({
               return (
                 <article
                   key={message.id}
-                  className={`overflow-hidden rounded-2xl border ${
+                  className={`mail-list-item overflow-hidden rounded-2xl border ${
                     selected
-                      ? "border-[var(--lagoon)] bg-white text-[var(--sea-ink)] shadow-[0_9px_24px_rgba(23,58,64,0.09)] hover:text-[var(--sea-ink)]"
-                      : "border-transparent text-[var(--sea-ink)] hover:border-[var(--line)] hover:bg-white/68 hover:text-[var(--sea-ink)]"
+                      ? "border-[var(--lagoon)] bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-[0_9px_24px_rgba(23,58,64,0.09)] hover:text-[var(--sea-ink)]"
+                      : "border-transparent text-[var(--sea-ink)] hover:border-[var(--line)] hover:bg-[var(--control-bg)] hover:text-[var(--sea-ink)]"
                   }`}
                 >
                   <a
@@ -491,6 +560,20 @@ export function MessageList({
             })}
           </div>
         )}
+        {data.nextCursor === undefined ? null : (
+          <div
+            ref={loadMoreRef}
+            className="flex min-h-16 items-center justify-center"
+          >
+            {isLoadingMore ? (
+              <LoaderCircle
+                aria-label="Loading more messages"
+                className="animate-spin text-[var(--sea-ink-soft)]"
+                size={16}
+              />
+            ) : null}
+          </div>
+        )}
       </div>
 
       {data.nextCursor === undefined ? null : (
@@ -504,7 +587,7 @@ export function MessageList({
             type="button"
             disabled={isLoadingMore}
             onClick={onLoadMore}
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white/72 px-4 py-2 text-[0.7rem] font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
+            className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2 text-[0.7rem] font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
           >
             {isLoadingMore ? (
               <LoaderCircle className="animate-spin" size={14} />

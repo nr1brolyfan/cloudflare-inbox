@@ -1040,7 +1040,6 @@ function MailboxWorkspace({
   return (
     <div className="grid h-full min-h-0 lg:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)]">
       <MessageList
-        key={JSON.stringify(filters)}
         actionErrors={actionFailures.map((failure) => ({
           handleRetry: failure.retryable
             ? () => submitMessageAction(failure.command)

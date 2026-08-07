@@ -43,7 +43,7 @@ export function DraftList({
   return (
     <section
       aria-label="Drafts"
-      className="flex h-full min-h-0 flex-col bg-white/42"
+      className="flex h-full min-h-0 flex-col bg-[var(--workspace-bg)]"
     >
       <div className="flex shrink-0 items-center justify-between border-b border-[var(--line)] px-5 py-4 sm:px-7">
         <div>
@@ -77,7 +77,7 @@ export function DraftList({
               return (
                 <article
                   key={draft.id}
-                  className="overflow-hidden rounded-2xl border border-transparent text-[var(--sea-ink)] hover:border-[var(--line)] hover:bg-white/72"
+                  className="overflow-hidden rounded-2xl border border-transparent text-[var(--sea-ink)] hover:border-[var(--line)] hover:bg-[var(--control-bg)]"
                 >
                   <a
                     href={mailboxDraftHref(folderId, draft.id, deliveryId)}

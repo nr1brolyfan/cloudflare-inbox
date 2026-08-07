@@ -24,6 +24,10 @@
   --chip-bg: rgba(255, 255, 255, 0.8);
   --chip-line: rgba(47, 106, 74, 0.18);
   --link-bg-hover: rgba(255, 255, 255, 0.9);
+  --control-bg: rgba(255, 255, 255, 0.72);
+  --nav-bg: #173a40;
+  --nav-selection: #ffffff;
+  --workspace-bg: rgba(255, 255, 255, 0.42);
   --hero-a: rgba(79, 184, 178, 0.36);
   --hero-b: rgba(47, 106, 74, 0.2);
 
@@ -80,6 +84,10 @@
   --chip-bg: rgba(13, 28, 32, 0.9);
   --chip-line: rgba(141, 229, 219, 0.24);
   --link-bg-hover: rgba(24, 44, 49, 0.8);
+  --control-bg: rgba(24, 44, 49, 0.72);
+  --nav-bg: #081418;
+  --nav-selection: #20363b;
+  --workspace-bg: rgba(9, 22, 26, 0.72);
   --hero-a: rgba(96, 215, 207, 0.18);
   --hero-b: rgba(110, 200, 154, 0.12);
 
@@ -161,6 +169,10 @@ html,
 body,
 #app {
   min-height: 100%;
+}
+
+html {
+  background: var(--bg-base);
 }
 
 body {
@@ -358,6 +370,11 @@ a {
 .site-footer {
   border-top: 1px solid var(--line);
   background: color-mix(in oklab, var(--header-bg) 84%, transparent 16%);
+}
+
+.mail-list-item {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 128px;
 }
 
 @layer base {
