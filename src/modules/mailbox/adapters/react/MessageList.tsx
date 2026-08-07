@@ -505,19 +505,21 @@ export function MessageList({
                             className="shrink-0 text-[var(--lagoon-deep)]"
                           />
                         )}
-                        <p
-                          className={`truncate text-sm ${message.read ? "font-semibold" : "font-extrabold"}`}
-                        >
-                          {message.subject || "(No subject)"}
-                        </p>
-                        {(message.threadMessageCount ?? 1) > 1 ? (
+                        <span className="flex min-w-0 items-baseline gap-1">
                           <span
-                            aria-label={`${message.threadMessageCount ?? 1} messages in conversation`}
-                            className="shrink-0 text-xs font-extrabold text-[var(--sea-ink-soft)]"
+                            className={`truncate text-sm ${message.read ? "font-semibold" : "font-extrabold"}`}
                           >
-                            ({message.threadMessageCount ?? 1})
+                            {message.subject || "(No subject)"}
                           </span>
-                        ) : null}
+                          {(message.threadMessageCount ?? 1) > 1 ? (
+                            <span
+                              aria-label={`${message.threadMessageCount ?? 1} messages in conversation`}
+                              className="shrink-0 text-sm font-extrabold text-[var(--sea-ink-soft)]"
+                            >
+                              ({message.threadMessageCount ?? 1})
+                            </span>
+                          ) : null}
+                        </span>
                         {message.hasAttachments ? (
                           <Paperclip
                             aria-label="Has attachments"

@@ -150,6 +150,60 @@ describe(ThreadView, () => {
     );
   });
 
+  it("collapses and styles nested plain-text quotes", () => {
+    const quotedBody = [
+      "This is the new reply.",
+      "",
+      "On Friday, Sender <sender@example.test> wrote:",
+      "",
+      "> Previous reply",
+      ">",
+      "> > Older reply",
+      "> > > Oldest reply",
+    ].join("\n");
+    const { container } = render(
+      <ThreadView
+        data={{
+          hasMore: false,
+          messages: [
+            {
+              ...thread.messages[0],
+              attachments: [],
+              hasHtmlBody: false,
+              textBody: quotedBody,
+            },
+          ],
+          thread: { ...thread.thread, messageCount: 1, unreadCount: 1 },
+        }}
+        filters={{}}
+        mailboxId="primary"
+        onClose={vi.fn<() => void>()}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    expect({
+      authored: Boolean(screen.getByText("This is the new reply.")),
+      collapsed: screen.queryByText("Previous reply"),
+    }).toStrictEqual({ authored: true, collapsed: null });
+
+    fireEvent.click(screen.getByRole("button", { name: "Show quoted text" }));
+
+    expect({
+      attribution: Boolean(screen.getByText(/On Friday.+wrote:/u)),
+      nestedDepth: container.querySelector('[data-quote-depth="3"]')
+        ?.textContent,
+      quoteMarkers: container.textContent?.includes("> Previous reply"),
+    }).toStrictEqual({
+      attribution: true,
+      nestedDepth: "Oldest reply",
+      quoteMarkers: false,
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Hide quoted text" }));
+    expect(screen.queryByText("Previous reply")).toBeNull();
+  });
+
   it.each([
     ["folder", { folder: "inbox" } as const],
     ["label", { label: "work" } as const],

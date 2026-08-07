@@ -1,5 +1,12 @@
 import type * as Schema from "effect/Schema";
-import { ArrowLeft, Download, MailOpen, Paperclip, Reply } from "lucide-react";
+import {
+  ArrowLeft,
+  Download,
+  Ellipsis,
+  MailOpen,
+  Paperclip,
+  Reply,
+} from "lucide-react";
 import { useState } from "react";
 
 import type { MailboxThreadResult } from "#/modules/mailbox/application/MailboxMessageReading";
@@ -54,6 +61,107 @@ const byteSize = (size: number) => {
   return `${(size / (1024 * 1024)).toFixed(1)} MB`;
 };
 
+interface QuotedTextLine {
+  readonly depth: number;
+  readonly text: string;
+}
+
+const quoteLine = (line: string): QuotedTextLine => {
+  const match = /^\s*(?<markers>(?:>\s*)+)(?<content>.*)$/u.exec(line)?.groups;
+  return match === undefined
+    ? { depth: 0, text: line }
+    : {
+        depth: match?.["markers"]?.match(/>/gu)?.length ?? 1,
+        text: match?.["content"] ?? "",
+      };
+};
+
+const splitPlainTextQuote = (text: string) => {
+  const lines = text.split("\n");
+  let quoteTailEnd = lines.length - 1;
+  while (quoteTailEnd >= 0 && lines[quoteTailEnd]?.trim() === "") {
+    quoteTailEnd -= 1;
+  }
+  if (quoteTailEnd < 0 || !/^\s*>/u.test(lines[quoteTailEnd] ?? "")) {
+    return { authoredText: text, quotedLines: [] };
+  }
+
+  let firstQuotedLine = quoteTailEnd;
+  while (
+    firstQuotedLine > 0 &&
+    (lines[firstQuotedLine - 1]?.trim() === "" ||
+      /^\s*>/u.test(lines[firstQuotedLine - 1] ?? ""))
+  ) {
+    firstQuotedLine -= 1;
+  }
+
+  let quoteStart = firstQuotedLine;
+  let attributionEnd = firstQuotedLine - 1;
+  while (attributionEnd >= 0 && lines[attributionEnd]?.trim() === "") {
+    attributionEnd -= 1;
+  }
+  let attributionStart = attributionEnd;
+  while (attributionStart > 0 && lines[attributionStart - 1]?.trim() !== "") {
+    attributionStart -= 1;
+  }
+  const attribution = lines
+    .slice(attributionStart, attributionEnd + 1)
+    .join(" ")
+    .trim();
+  if (/(?:wrote|napisał|napisała):\s*$/iu.test(attribution)) {
+    quoteStart = attributionStart;
+  }
+
+  return {
+    authoredText: lines.slice(0, quoteStart).join("\n").trimEnd(),
+    quotedLines: lines.slice(quoteStart).map(quoteLine),
+  };
+};
+
+function QuotedPlainText({
+  lines,
+}: {
+  readonly lines: readonly QuotedTextLine[];
+}) {
+  return (
+    <div className="mt-2 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3 py-3 text-[var(--sea-ink-soft)]">
+      {lines.map((line, index) => {
+        const visibleDepth = Math.min(line.depth, 5);
+        return (
+          <div
+            // Quote bodies have no stable line identifiers and duplicate lines are common.
+            // oxlint-disable-next-line react/no-array-index-key
+            key={index}
+            data-quote-depth={line.depth}
+            className={`flex min-h-6 text-sm leading-6 ${line.depth === 0 ? "italic" : ""}`}
+          >
+            {visibleDepth > 0 ? (
+              <span aria-hidden="true" className="mr-2 flex shrink-0 gap-1.5">
+                {Array.from({ length: visibleDepth }, (_, depth) => (
+                  <span
+                    // The position is the identity of each visual nesting guide.
+                    // oxlint-disable-next-line react/no-array-index-key
+                    key={depth}
+                    className="w-0.5 rounded-full bg-[var(--lagoon-deep)]/35"
+                  />
+                ))}
+              </span>
+            ) : null}
+            {line.depth > visibleDepth ? (
+              <span className="mr-2 shrink-0 text-[0.65rem] font-bold text-[var(--sea-ink-soft)]/70">
+                +{line.depth - visibleDepth}
+              </span>
+            ) : null}
+            <span className="min-w-0 break-words whitespace-pre-wrap">
+              {line.text || "\u00A0"}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function MessageBody({
   authorLabel,
   hasHtmlBody,
@@ -70,6 +178,9 @@ function MessageBody({
   const [showHtml, setShowHtml] = useState(
     textBody === undefined && hasHtmlBody
   );
+  const [showQuotedText, setShowQuotedText] = useState(false);
+  const plainText =
+    textBody === undefined ? undefined : splitPlainTextQuote(textBody);
 
   return (
     <>
@@ -107,10 +218,33 @@ function MessageBody({
         <p className="text-sm text-[var(--sea-ink-soft)] italic">
           This message has no readable text body.
         </p>
-      ) : (
-        <pre className="font-sans text-sm leading-7 whitespace-pre-wrap text-[var(--sea-ink)]">
-          {textBody}
-        </pre>
+      ) : plainText === undefined ? null : (
+        <div>
+          {plainText.authoredText === "" ? null : (
+            <pre className="font-sans text-sm leading-7 whitespace-pre-wrap text-[var(--sea-ink)]">
+              {plainText.authoredText}
+            </pre>
+          )}
+          {plainText.quotedLines.length > 0 ? (
+            <div className={plainText.authoredText === "" ? "" : "mt-3"}>
+              <Button
+                type="button"
+                variant="ghost"
+                aria-expanded={showQuotedText}
+                aria-label={
+                  showQuotedText ? "Hide quoted text" : "Show quoted text"
+                }
+                onClick={() => setShowQuotedText((current) => !current)}
+                className="flex h-7 min-w-10 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-2 text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)]"
+              >
+                <Ellipsis aria-hidden="true" size={18} />
+              </Button>
+              {showQuotedText ? (
+                <QuotedPlainText lines={plainText.quotedLines} />
+              ) : null}
+            </div>
+          ) : null}
+        </div>
       )}
     </>
   );
