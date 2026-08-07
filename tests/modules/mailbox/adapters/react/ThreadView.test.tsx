@@ -75,7 +75,14 @@ describe(ThreadView, () => {
       Boolean(screen.getByText(maliciousText)),
       Boolean(screen.getByText('<img src=x onerror="pwn()">.txt')),
     ]).toStrictEqual([true, true]);
-    expect(container.querySelector("script, img")).toBeNull();
+    expect({
+      activeContent: container.querySelector("script, img"),
+      outbound: container.querySelector('[data-direction="outbound"]')
+        ?.textContent,
+    }).toStrictEqual({
+      activeContent: null,
+      outbound: expect.stringContaining("You"),
+    });
     expect(
       screen
         .getByRole("link", {

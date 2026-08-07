@@ -110,6 +110,8 @@ export type ReadMailboxMessageInput = Schema.Schema.Type<
   typeof ReadMailboxMessageInput
 >;
 
+const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)));
+
 export class MailboxMessageListItem extends Schema.Class<MailboxMessageListItem>(
   "cloudflare-inbox/MailboxMessageListItem"
 )({
@@ -124,6 +126,7 @@ export class MailboxMessageListItem extends Schema.Class<MailboxMessageListItem>
   read: Schema.Boolean,
   starred: Schema.Boolean,
   hasAttachments: Schema.Boolean,
+  threadMessageCount: Schema.optional(Count),
   folderId: FolderId,
   version: Version,
 }) {}
@@ -177,8 +180,6 @@ export class MailboxMessageReadResult extends Schema.Class<MailboxMessageReadRes
   hasHtmlBody: Schema.Boolean,
   hasAttachments: Schema.Boolean,
 }) {}
-
-const Count = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)));
 
 export class MailboxThreadHeader extends Schema.Class<MailboxThreadHeader>(
   "cloudflare-inbox/MailboxThreadHeader"
@@ -333,12 +334,14 @@ export class MailboxMessageReading extends Context.Service<
               ? repository.listMessages({
                   mailboxId: input.mailboxId,
                   filters,
+                  groupByThread: true,
                   page: pageRequest,
                 })
               : repository.searchMessages({
                   mailboxId: input.mailboxId,
                   query: input.query,
                   filters,
+                  groupByThread: true,
                   page: pageRequest,
                 })
           ).pipe(Effect.mapError(mapRepositoryError));
@@ -361,6 +364,7 @@ export class MailboxMessageReading extends Context.Service<
               activityAt: message.activityAt,
               direction: message.direction,
               hasAttachments: message.hasAttachments,
+              threadMessageCount: message.threadMessageCount ?? 1,
               folderId: message.folderId,
               id: message.id,
               read: message.read,

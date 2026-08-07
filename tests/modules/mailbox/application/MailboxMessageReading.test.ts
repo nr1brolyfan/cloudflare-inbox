@@ -218,6 +218,7 @@ describe("mailbox message reading", () => {
       nextCursor: "next-page",
       input: {
         filters: { folderId: "inbox" },
+        groupByThread: true,
         mailboxId: "primary",
         page: { limit: 25 },
       },

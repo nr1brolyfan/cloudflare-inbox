@@ -179,117 +179,132 @@ export function ThreadView({
 
       <div className="h-[calc(100dvh-8.75rem)] overflow-y-auto p-3 sm:p-5 lg:h-[calc(100dvh-9rem)] lg:p-7">
         <div className="mx-auto max-w-3xl space-y-4">
-          {data.messages.map((message) => (
-            <article
-              key={message.id}
-              className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_10px_30px_rgba(23,58,64,0.06)]"
-            >
-              <header className="border-b border-[var(--line)] px-4 py-4 sm:px-5">
-                <div className="flex items-start gap-3">
-                  <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-[var(--sand)] text-xs font-extrabold text-[var(--palm)]">
-                    {messageAuthor(message).slice(0, 2).toUpperCase()}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-extrabold">
-                      {messageAuthor(message)}
-                    </p>
-                    <p className="mt-1 truncate text-[0.68rem] text-[var(--sea-ink-soft)]">
-                      To{" "}
-                      {message.to.map(addressText).join(", ") || "undisclosed"}
-                    </p>
-                    {message.cc.length > 0 ? (
-                      <p className="mt-0.5 truncate text-[0.68rem] text-[var(--sea-ink-soft)]">
-                        Cc {message.cc.map(addressText).join(", ")}
-                      </p>
-                    ) : null}
-                  </div>
-                  <time className="shrink-0 text-[0.65rem] font-bold text-[var(--sea-ink-soft)]">
-                    {messageDate.format(new Date(message.activityAt))}
-                  </time>
-                </div>
-              </header>
-
-              <div className="px-4 py-5 sm:px-6 sm:py-6">
-                <MessageBody
-                  authorLabel={messageAuthor(message)}
-                  hasHtmlBody={message.hasHtmlBody}
-                  htmlSrc={mailboxMessageHtmlHref(
-                    mailboxId,
-                    message.id,
-                    selection
-                  )}
-                  onPreviewAccessFailure={onPreviewAccessFailure}
-                  textBody={message.textBody}
-                />
-
-                {message.attachments.length > 0 ? (
-                  <div className="mt-6 border-t border-[var(--line)] pt-4">
-                    <p className="flex items-center gap-2 text-[0.65rem] font-extrabold tracking-[0.12em] text-[var(--sea-ink-soft)] uppercase">
-                      <Paperclip size={13} /> Attachments
-                    </p>
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {message.attachments.map((attachment) => (
-                        <div
-                          key={attachment.id}
-                          className="flex max-w-full items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--foam)] px-3.5 py-2.5"
-                        >
-                          <div className="min-w-0">
-                            <p className="max-w-64 truncate text-xs font-extrabold">
-                              {attachment.fileName}
-                            </p>
-                            <p className="mt-0.5 text-[0.62rem] text-[var(--sea-ink-soft)]">
-                              {attachment.mimeType} ·{" "}
-                              {byteSize(attachment.size)}
-                            </p>
-                          </div>
-                          {message.direction === "inbound" &&
-                          attachment.disposition === "attachment" ? (
-                            <a
-                              aria-label={`Download ${attachment.fileName}`}
-                              className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--sea-ink)] no-underline hover:bg-[var(--sand)]"
-                              download
-                              href={mailboxInboundAttachmentHref(
-                                mailboxId,
-                                message.id,
-                                attachment.id,
-                                selection
-                              )}
-                            >
-                              <Download aria-hidden="true" size={15} />
-                            </a>
-                          ) : null}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : null}
-                {message.direction === "inbound" && message.replyEligible ? (
-                  <div className="mt-5 flex items-center gap-3 border-t border-[var(--line)] pt-4">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      disabled={replyingMessageId !== undefined}
-                      onClick={() => onReply(message.id)}
-                      className="inline-flex h-auto items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3.5 py-2 text-xs font-extrabold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+          {data.messages.map((message) => {
+            const outbound = message.direction === "outbound";
+            return (
+              <article
+                key={message.id}
+                data-direction={message.direction}
+                className={`overflow-hidden rounded-2xl border shadow-[0_10px_30px_rgba(23,58,64,0.06)] ${
+                  outbound
+                    ? "ml-5 border-[var(--lagoon-deep)]/45 bg-[var(--foam)] sm:ml-12"
+                    : "mr-5 border-[var(--line)] bg-[var(--surface-strong)] sm:mr-12"
+                }`}
+              >
+                <header
+                  className={`border-b px-4 py-4 sm:px-5 ${outbound ? "border-[var(--lagoon-deep)]/25" : "border-[var(--line)]"}`}
+                >
+                  <div className="flex items-start gap-3">
+                    <span
+                      className={`flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-extrabold ${outbound ? "bg-[var(--lagoon-deep)] text-white" : "bg-[var(--sand)] text-[var(--palm)]"}`}
                     >
-                      <Reply aria-hidden="true" size={14} />
-                      {replyingMessageId === message.id
-                        ? "Creating reply..."
-                        : replyError?.messageId === message.id &&
-                            replyError.retryable
-                          ? "Retry reply"
-                          : "Reply"}
-                    </Button>
-                    {replyError?.messageId === message.id ? (
-                      <Alert className="block w-auto rounded-none border-0 bg-transparent p-0 text-xs font-bold text-[var(--danger-fg)]">
-                        Reply draft could not be created.
-                      </Alert>
-                    ) : null}
+                      {outbound
+                        ? "YOU"
+                        : messageAuthor(message).slice(0, 2).toUpperCase()}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-extrabold">
+                        {outbound ? "You" : messageAuthor(message)}
+                      </p>
+                      <p className="mt-1 truncate text-[0.68rem] text-[var(--sea-ink-soft)]">
+                        To{" "}
+                        {message.to.map(addressText).join(", ") ||
+                          "undisclosed"}
+                      </p>
+                      {message.cc.length > 0 ? (
+                        <p className="mt-0.5 truncate text-[0.68rem] text-[var(--sea-ink-soft)]">
+                          Cc {message.cc.map(addressText).join(", ")}
+                        </p>
+                      ) : null}
+                    </div>
+                    <time className="shrink-0 text-[0.65rem] font-bold text-[var(--sea-ink-soft)]">
+                      {messageDate.format(new Date(message.activityAt))}
+                    </time>
                   </div>
-                ) : null}
-              </div>
-            </article>
-          ))}
+                </header>
+
+                <div className="px-4 py-5 sm:px-6 sm:py-6">
+                  <MessageBody
+                    authorLabel={messageAuthor(message)}
+                    hasHtmlBody={message.hasHtmlBody}
+                    htmlSrc={mailboxMessageHtmlHref(
+                      mailboxId,
+                      message.id,
+                      selection
+                    )}
+                    onPreviewAccessFailure={onPreviewAccessFailure}
+                    textBody={message.textBody}
+                  />
+
+                  {message.attachments.length > 0 ? (
+                    <div className="mt-6 border-t border-[var(--line)] pt-4">
+                      <p className="flex items-center gap-2 text-[0.65rem] font-extrabold tracking-[0.12em] text-[var(--sea-ink-soft)] uppercase">
+                        <Paperclip size={13} /> Attachments
+                      </p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {message.attachments.map((attachment) => (
+                          <div
+                            key={attachment.id}
+                            className="flex max-w-full items-center gap-3 rounded-xl border border-[var(--line)] bg-[var(--foam)] px-3.5 py-2.5"
+                          >
+                            <div className="min-w-0">
+                              <p className="max-w-64 truncate text-xs font-extrabold">
+                                {attachment.fileName}
+                              </p>
+                              <p className="mt-0.5 text-[0.62rem] text-[var(--sea-ink-soft)]">
+                                {attachment.mimeType} ·{" "}
+                                {byteSize(attachment.size)}
+                              </p>
+                            </div>
+                            {message.direction === "inbound" &&
+                            attachment.disposition === "attachment" ? (
+                              <a
+                                aria-label={`Download ${attachment.fileName}`}
+                                className="flex size-8 shrink-0 items-center justify-center rounded-lg border border-[var(--line)] bg-[var(--surface-strong)] text-[var(--sea-ink)] no-underline hover:bg-[var(--sand)]"
+                                download
+                                href={mailboxInboundAttachmentHref(
+                                  mailboxId,
+                                  message.id,
+                                  attachment.id,
+                                  selection
+                                )}
+                              >
+                                <Download aria-hidden="true" size={15} />
+                              </a>
+                            ) : null}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {message.direction === "inbound" && message.replyEligible ? (
+                    <div className="mt-5 flex items-center gap-3 border-t border-[var(--line)] pt-4">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={replyingMessageId !== undefined}
+                        onClick={() => onReply(message.id)}
+                        className="inline-flex h-auto items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3.5 py-2 text-xs font-extrabold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Reply aria-hidden="true" size={14} />
+                        {replyingMessageId === message.id
+                          ? "Creating reply..."
+                          : replyError?.messageId === message.id &&
+                              replyError.retryable
+                            ? "Retry reply"
+                            : "Reply"}
+                      </Button>
+                      {replyError?.messageId === message.id ? (
+                        <Alert className="block w-auto rounded-none border-0 bg-transparent p-0 text-xs font-bold text-[var(--danger-fg)]">
+                          Reply draft could not be created.
+                        </Alert>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              </article>
+            );
+          })}
 
           {data.hasMore ? (
             <p className="rounded-xl border border-[var(--line)] bg-[var(--sand)]/55 px-4 py-3 text-center text-xs font-bold text-[var(--sea-ink-soft)]">

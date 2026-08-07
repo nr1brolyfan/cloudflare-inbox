@@ -8,7 +8,6 @@ import {
   Mail,
   MailOpen,
   Paperclip,
-  RefreshCw,
   Search,
   Star,
   Trash2,
@@ -315,7 +314,6 @@ export function MessageList({
   onOpenMessage,
   onQueryChange,
   onRetryAction,
-  onRetryRefresh,
   pendingMessageIds = noPendingMessageIds,
   selectedThreadId,
   selection,
@@ -341,7 +339,6 @@ export function MessageList({
   readonly onOpenMessage: (threadId: string, messageId: string) => void;
   readonly onQueryChange: (state: MailboxMessageQueryState) => void;
   readonly onRetryAction?: () => void;
-  readonly onRetryRefresh?: () => void;
   readonly pendingMessageIds?: ReadonlySet<string>;
   readonly selectedThreadId?: string;
   readonly selection: MailboxViewSelection;
@@ -377,18 +374,6 @@ export function MessageList({
             Messages
           </p>
           <div className="flex shrink-0 items-center gap-2">
-            {onRetryRefresh === undefined ? null : (
-              <Button
-                type="button"
-                variant="ghost"
-                aria-label="Refresh messages"
-                disabled={isRefreshing}
-                onClick={onRetryRefresh}
-                className="inline-flex size-7 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)] disabled:cursor-wait disabled:opacity-50"
-              >
-                <RefreshCw aria-hidden="true" size={14} />
-              </Button>
-            )}
             <output className="inline-flex size-3.5 shrink-0 items-center justify-center">
               {isRefreshing ? (
                 <>
@@ -525,6 +510,14 @@ export function MessageList({
                         >
                           {message.subject || "(No subject)"}
                         </p>
+                        {(message.threadMessageCount ?? 1) > 1 ? (
+                          <span
+                            aria-label={`${message.threadMessageCount ?? 1} messages in conversation`}
+                            className="shrink-0 text-xs font-extrabold text-[var(--sea-ink-soft)]"
+                          >
+                            ({message.threadMessageCount ?? 1})
+                          </span>
+                        ) : null}
                         {message.hasAttachments ? (
                           <Paperclip
                             aria-label="Has attachments"

@@ -1094,7 +1094,6 @@ function MailboxWorkspace({
             search: inboxSearchFor(selection, state),
           })
         }
-        onRetryRefresh={() => void messages.refetch()}
         pendingMessageIds={pendingMessageIds}
         selectedThreadId={threadId}
         selection={selection}

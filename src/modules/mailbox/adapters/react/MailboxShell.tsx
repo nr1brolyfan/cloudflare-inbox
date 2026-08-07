@@ -163,14 +163,18 @@ function MailboxNavigation({
             {folders.map((folder) => {
               const selected = folder.id === selectedFolderId;
               const FolderIcon = folderIconByKind[folder.kind];
-              const count =
-                folder.kind === "drafts"
-                  ? folder.messageCount
-                  : folder.unreadCount;
-              const countLabel =
-                folder.kind === "drafts"
-                  ? `${count} drafts`
-                  : `${count} unread`;
+              const showsTotal =
+                folder.kind === "drafts" || folder.kind === "scheduled";
+              const showsUnread =
+                folder.kind === "inbox" || folder.kind === "spam";
+              const count = showsTotal
+                ? folder.messageCount
+                : showsUnread
+                  ? folder.unreadCount
+                  : 0;
+              const countLabel = showsTotal
+                ? `${count} ${folder.kind}`
+                : `${count} unread`;
               return (
                 <a
                   key={folder.id}
@@ -420,14 +424,6 @@ export function MailboxShell({
               <div className="flex items-center gap-2">
                 {headerAction}
                 <ThemeToggle />
-                <div className="hidden items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--control-bg)] py-1.5 pr-3 pl-1.5 sm:flex">
-                  <span className="flex size-8 items-center justify-center rounded-full bg-[var(--sand)] text-[0.65rem] font-extrabold text-[var(--palm)]">
-                    {principalLabel.slice(0, 2).toUpperCase()}
-                  </span>
-                  <span className="hidden max-w-40 truncate text-xs font-bold text-[var(--sea-ink-soft)] sm:block">
-                    {principalLabel}
-                  </span>
-                </div>
               </div>
             </header>
 

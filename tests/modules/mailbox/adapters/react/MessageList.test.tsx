@@ -30,6 +30,7 @@ const messages = {
       snippet: "Newest message",
       starred: false,
       subject: "Second subject",
+      threadMessageCount: 2,
       threadId: "thread-shared",
       version: 1,
     },
@@ -45,6 +46,7 @@ const messages = {
       snippet: "Older message",
       starred: false,
       subject: "First subject",
+      threadMessageCount: 2,
       threadId: "thread-shared",
       version: 2,
     },
@@ -89,7 +91,11 @@ describe(MessageList, () => {
       "/mail/inbox?message=message-b&thread=thread-shared&q=invoice&starred=true&delivery=delivery-1",
       "/mail/inbox?message=message-a&thread=thread-shared&q=invoice&starred=true&delivery=delivery-1",
     ]);
-    expect(links).toHaveLength(2);
+    expect({
+      conversations: screen.getAllByLabelText("2 messages in conversation")
+        .length,
+      links: links.length,
+    }).toStrictEqual({ conversations: 2, links: 2 });
     fireEvent.click(
       screen.getByRole("link", { name: "Second: Second subject" })
     );
@@ -325,8 +331,7 @@ describe(MessageList, () => {
     expect(screen.queryByText(/could not be refreshed/iu)).toBeNull();
   });
 
-  it("keeps the count anchored while refresh state changes", () => {
-    const onRefresh = vi.fn<() => void>();
+  it("keeps the count anchored during automatic refreshes", () => {
     const props = {
       data: messages,
       filters: {},
@@ -339,7 +344,6 @@ describe(MessageList, () => {
         >(),
       onOpenMessage: vi.fn<(threadId: string, messageId: string) => void>(),
       onQueryChange: vi.fn<(state: MailboxMessageQueryState) => void>(),
-      onRetryRefresh: onRefresh,
       selection: { folder: "inbox" } as const,
     };
     const view = render(<MessageList {...props} />);
@@ -347,17 +351,11 @@ describe(MessageList, () => {
     const count = refreshSlot.nextElementSibling;
 
     expect(count?.textContent).toBe("2");
-    fireEvent.click(screen.getByRole("button", { name: "Refresh messages" }));
-    expect(onRefresh).toHaveBeenCalledOnce();
+    expect(
+      screen.queryByRole("button", { name: "Refresh messages" })
+    ).toBeNull();
     view.rerender(<MessageList {...props} isRefreshing />);
     expect(screen.getByText("Refreshing messages")).toBeTruthy();
-    expect(
-      (
-        screen.getByRole("button", {
-          name: "Refresh messages",
-        }) as HTMLButtonElement
-      ).disabled
-    ).toBeTruthy();
     expect(refreshSlot.nextElementSibling).toBe(count);
   });
 });

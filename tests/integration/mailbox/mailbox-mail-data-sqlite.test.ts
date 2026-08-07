@@ -449,6 +449,14 @@ describe("Mailbox mail data SQLite", () => {
             },
           })
         );
+        const conversations = yield* listMessages(
+          Schema.decodeUnknownSync(ListMessagesInput)({
+            mailboxId,
+            filters: { folderId: "inbox" },
+            groupByThread: true,
+            page: { limit: 1 },
+          })
+        );
 
         expect({
           first: page.items[0]?.id,
@@ -459,6 +467,11 @@ describe("Mailbox mail data SQLite", () => {
           sender: detail.sender?.address,
           cursorError: wrongCursor.reason,
           filtered: filtered.items.map((item) => item.id),
+          conversations: conversations.items.map((item) => ({
+            id: item.id,
+            messageCount: item.threadMessageCount,
+          })),
+          conversationCursor: conversations.nextCursor,
         }).toStrictEqual({
           first: "m2",
           next: "m1",
@@ -470,6 +483,8 @@ describe("Mailbox mail data SQLite", () => {
           sender: "sender@example.com",
           cursorError: "validation",
           filtered: ["m1"],
+          conversations: [{ id: "m2", messageCount: 2 }],
+          conversationCursor: undefined,
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive()))
     );

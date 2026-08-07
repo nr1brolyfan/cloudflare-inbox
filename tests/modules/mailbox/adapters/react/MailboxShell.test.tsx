@@ -26,6 +26,28 @@ const folders = [
   },
   {
     createdAt: 1000,
+    id: "sent",
+    kind: "sent" as const,
+    mailboxId: "primary",
+    messageCount: 8,
+    name: "Sent",
+    unreadCount: 4,
+    updatedAt: 1000,
+    version: 1,
+  },
+  {
+    createdAt: 1000,
+    id: "scheduled",
+    kind: "scheduled" as const,
+    mailboxId: "primary",
+    messageCount: 2,
+    name: "Scheduled",
+    unreadCount: 0,
+    updatedAt: 1000,
+    version: 1,
+  },
+  {
+    createdAt: 1000,
     id: "inbox",
     kind: "inbox" as const,
     mailboxId: "primary",
@@ -101,6 +123,8 @@ describe(MailboxShell, () => {
     expect({
       archiveHref: archiveLink.getAttribute("href"),
       badge: Boolean(screen.getAllByLabelText("3 drafts")[0]),
+      scheduledBadge: Boolean(screen.getAllByLabelText("2 scheduled")[0]),
+      sentBadge: screen.queryByLabelText("4 unread"),
       labelHref: screen
         .getByRole("link", { name: "Work & travel" })
         .getAttribute("href"),
@@ -110,6 +134,8 @@ describe(MailboxShell, () => {
     }).toStrictEqual({
       archiveHref: "/mail/archive?delivery=delivery-1",
       badge: true,
+      scheduledBadge: true,
+      sentBadge: null,
       labelHref: "/mail/labels/label-work?delivery=delivery-1",
       title: "3 drafts",
     });

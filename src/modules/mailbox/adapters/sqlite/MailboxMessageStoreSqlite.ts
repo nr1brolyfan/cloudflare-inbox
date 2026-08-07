@@ -229,18 +229,24 @@ const fingerprint = (value: string) => {
     .join("");
 };
 
-const filterFingerprint = (filters: MessageFilters | undefined) =>
+const filterFingerprint = (
+  filters: MessageFilters | undefined,
+  groupByThread = false
+) =>
   fingerprint(
-    JSON.stringify(
-      filters === undefined
-        ? {}
-        : Schema.encodeSync(MessageFiltersSchema)(filters)
-    )
+    JSON.stringify({
+      filters:
+        filters === undefined
+          ? {}
+          : Schema.encodeSync(MessageFiltersSchema)(filters),
+      groupByThread,
+    })
   );
 
 const searchFingerprint = (
   ftsQuery: string,
-  filters: MessageFilters | undefined
+  filters: MessageFilters | undefined,
+  groupByThread = false
 ) =>
   fingerprint(
     JSON.stringify({
@@ -249,6 +255,7 @@ const searchFingerprint = (
         filters === undefined
           ? {}
           : Schema.encodeSync(MessageFiltersSchema)(filters),
+      groupByThread,
     })
   );
 
@@ -352,10 +359,41 @@ const matchesFilters = (
   (matchesLocationFilters(messageSummary, detail, filters) &&
     matchesStateFilters(messageSummary, row, filters));
 
+const groupMessagesByThread = <
+  T extends { readonly summary: { readonly threadId: string } },
+>(
+  items: readonly T[]
+) => {
+  const grouped = new Map<
+    string,
+    T & {
+      readonly summary: T["summary"] & { readonly threadMessageCount: number };
+    }
+  >();
+  for (const item of items) {
+    const current = grouped.get(item.summary.threadId);
+    if (current === undefined) {
+      grouped.set(item.summary.threadId, {
+        ...item,
+        summary: { ...item.summary, threadMessageCount: 1 },
+      });
+    } else {
+      grouped.set(item.summary.threadId, {
+        ...current,
+        summary: {
+          ...current.summary,
+          threadMessageCount: current.summary.threadMessageCount + 1,
+        },
+      });
+    }
+  }
+  return [...grouped.values()];
+};
+
 const listMessages = (mailboxId: MailboxId, input: ListMessagesInput) =>
   Effect.gen(function* () {
     const db = yield* MailboxDatabase;
-    const key = filterFingerprint(input.filters);
+    const key = filterFingerprint(input.filters, input.groupByThread);
     const decodedCursor =
       input.page?.cursor === undefined
         ? Result.void
@@ -385,7 +423,7 @@ const listMessages = (mailboxId: MailboxId, input: ListMessagesInput) =>
     const hydrated = yield* Effect.all(
       rows
         .filter((row) =>
-          cursor === undefined
+          input.groupByThread === true || cursor === undefined
             ? true
             : row.activityAt < cursor.activityAt ||
               (row.activityAt === cursor.activityAt && row.id < cursor.id)
@@ -401,8 +439,16 @@ const listMessages = (mailboxId: MailboxId, input: ListMessagesInput) =>
           )
         )
     );
-    const filtered = hydrated.filter(({ detail, row, summary }) =>
+    const matching = hydrated.filter(({ detail, row, summary }) =>
       matchesFilters(summary, detail, row, input.filters)
+    );
+    const grouped =
+      input.groupByThread === true ? groupMessagesByThread(matching) : matching;
+    const filtered = grouped.filter(({ summary }) =>
+      cursor === undefined
+        ? true
+        : summary.activityAt < cursor.activityAt ||
+          (summary.activityAt === cursor.activityAt && summary.id < cursor.id)
     );
     const limit = input.page?.limit ?? 50;
     const items = filtered.slice(0, limit).map(({ summary }) => summary);
@@ -433,7 +479,7 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
         "Search query has no searchable terms"
       );
     }
-    const key = searchFingerprint(ftsQuery, input.filters);
+    const key = searchFingerprint(ftsQuery, input.filters, input.groupByThread);
     const decodedCursor =
       input.page?.cursor === undefined
         ? Result.void
@@ -496,9 +542,11 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
     const matching = hydrated.filter(({ detail, row, summary }) =>
       matchesFilters(summary, detail, row, input.filters)
     );
+    const grouped =
+      input.groupByThread === true ? groupMessagesByThread(matching) : matching;
     const snapshotFingerprint = fingerprint(
       JSON.stringify(
-        matching.map(({ rank: searchRank, summary }) => [
+        grouped.map(({ rank: searchRank, summary }) => [
           searchRank,
           summary.activityAt,
           summary.id,
@@ -515,7 +563,7 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
         "Message cursor does not match the current search results"
       );
     }
-    const filtered = matching.filter(
+    const filtered = grouped.filter(
       ({ rank: searchRank, summary }) =>
         cursor === undefined ||
         searchRank > cursorRank ||

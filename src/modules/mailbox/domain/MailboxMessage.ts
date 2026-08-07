@@ -59,6 +59,9 @@ export class MessageSummary extends Schema.Class<MessageSummary>(
   read: Schema.Boolean,
   starred: Schema.Boolean,
   hasAttachments: Schema.Boolean,
+  threadMessageCount: Schema.optional(
+    Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(1)))
+  ),
   labelIds: Schema.Array(LabelId),
   size: ByteSize,
   version: Version,
@@ -246,6 +249,7 @@ export type MessagePage = Schema.Schema.Type<typeof MessagePage>;
 export const ListMessagesInput = Schema.Struct({
   mailboxId: MailboxId,
   filters: Schema.optional(MessageFilters),
+  groupByThread: Schema.optional(Schema.Boolean),
   page: Schema.optional(PageRequest),
 });
 export type ListMessagesInput = Schema.Schema.Type<typeof ListMessagesInput>;
@@ -255,6 +259,7 @@ export const SearchMessagesInput = Schema.Struct({
   mailboxId: MailboxId,
   query: SearchQuery,
   filters: Schema.optional(MessageFilters),
+  groupByThread: Schema.optional(Schema.Boolean),
   page: Schema.optional(PageRequest),
 });
 export type SearchMessagesInput = Schema.Schema.Type<
