@@ -21,7 +21,7 @@ const websiteBaseProps = {
   memo: {
     include: [
       "public/**",
-      "src/**",
+      "src/**/*",
       "bun.lock",
       "package.json",
       "tsconfig.json",

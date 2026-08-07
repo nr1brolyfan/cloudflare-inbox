@@ -297,7 +297,7 @@ describe("job mail production resource structure", () => {
     const runner = readRoot("scripts/run-production-alchemy.ts");
     expect(graph).toContain("const workspaceRoot = import.meta.dirname");
     expect(graph).toContain("rootDir: workspaceRoot");
-    expect(graph).toContain('"src/**"');
+    expect(graph).toContain('"src/**/*"');
     expect(graph).toContain('"vite.config.ts"');
     expect(runner).toContain(
       'const workspaceRoot = fileURLToPath(new URL("../", import.meta.url))'
