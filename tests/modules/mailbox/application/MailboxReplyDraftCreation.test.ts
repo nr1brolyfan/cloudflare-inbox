@@ -39,6 +39,7 @@ const authorizationWith = (
     requireMailbox: unused,
     requireMailboxDraftSend: unused,
     requireMailboxMessageRead: unused,
+    requireMailboxMessageModify: unused,
     requireMessage: unused,
     requireRuleManage: unused,
     ...overrides,

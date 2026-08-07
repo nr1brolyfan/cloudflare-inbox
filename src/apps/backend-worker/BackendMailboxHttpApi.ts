@@ -30,6 +30,8 @@ import {
   MailboxMessageActionResult,
   MailboxMessageBatchActionPayload,
   MailboxMessageBatchActionResult,
+  SetMailboxThreadReadCommand,
+  SetMailboxThreadReadResult,
 } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlResult } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import {
@@ -229,6 +231,19 @@ export const ActOnMailboxMessagesEndpoint = HttpApiEndpoint.post(
     params: MailboxParams,
     payload: MailboxMessageBatchActionPayload,
     success: MailboxMessageBatchActionResult,
+  }
+);
+
+export const SetMailboxThreadReadEndpoint = HttpApiEndpoint.post(
+  MailboxOperation.setThreadRead,
+  "/api/mailboxes/:mailboxId/threads/:threadId/read",
+  {
+    error: MailboxErrors,
+    params: MailboxThreadParams,
+    payload: Schema.Struct({
+      operationId: SetMailboxThreadReadCommand.fields.operationId,
+    }),
+    success: SetMailboxThreadReadResult,
   }
 );
 
@@ -473,6 +488,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     ReserveDraftAttachmentEndpoint,
     ReplayInboundEndpoint,
     SendMailboxDraftEndpoint,
+    SetMailboxThreadReadEndpoint,
     SubscribeMailboxChangesEndpoint,
     UndoMailboxSendEndpoint,
     UpdateMailboxDraftEndpoint,

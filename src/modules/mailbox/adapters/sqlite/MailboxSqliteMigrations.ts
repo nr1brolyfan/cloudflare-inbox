@@ -760,7 +760,18 @@ const migrations = [
                AND outbound_delivery.status IN ('accepted', 'delivered', 'bounced')
                AND outbound_delivery.deleted_at IS NULL
                AND outbound_delivery.accepted_at IS NOT NULL
-          )`,
+      )`,
+    ],
+  },
+  {
+    version: 17,
+    statements: [
+      `UPDATE message
+          SET read = 1,
+              version = version + 1
+        WHERE direction = 'outbound'
+          AND read = 0
+          AND deleted_at IS NULL`,
     ],
   },
 ] as const satisfies readonly MailboxMigration[];

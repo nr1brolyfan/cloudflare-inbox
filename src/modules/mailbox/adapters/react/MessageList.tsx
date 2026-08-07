@@ -70,9 +70,11 @@ const hasActiveMailboxFilters = (filters: MailboxMessageQueryState) =>
 function MessageSearchControls({
   filters,
   onQueryChange,
+  readActionsEnabled,
 }: {
   readonly filters: MailboxMessageQueryState;
   readonly onQueryChange: (state: MailboxMessageQueryState) => void;
+  readonly readActionsEnabled: boolean;
 }) {
   const [query, setQuery] = useState(filters.query ?? "");
   const [read, setRead] = useState<ReadFilterValue>(filters.read ?? "any");
@@ -93,7 +95,7 @@ function MessageSearchControls({
       delivery: filters.delivery,
       hasAttachment: hasAttachment || undefined,
       query: trimmedQuery === "" ? undefined : trimmedQuery,
-      read: read === "any" ? undefined : read,
+      read: readActionsEnabled && read !== "any" ? read : undefined,
       starred: starred || undefined,
     };
     if (
@@ -149,45 +151,47 @@ function MessageSearchControls({
         </Alert>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <Select.Root
-          items={readFilterItems}
-          value={read}
-          onValueChange={(value) => setRead(value ?? "any")}
-        >
-          <Select.Trigger
-            aria-label="Read status"
-            className="group flex h-8 min-w-27 items-center justify-between gap-2 rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-2.5 text-[0.7rem] font-bold text-[var(--sea-ink-soft)] transition-colors outline-none hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)] focus-visible:border-[var(--lagoon-deep)] focus-visible:ring-2 focus-visible:ring-[var(--lagoon)]/20 data-popup-open:border-[var(--lagoon)] data-popup-open:bg-[var(--surface-strong)] data-popup-open:text-[var(--sea-ink)]"
+        {readActionsEnabled ? (
+          <Select.Root
+            items={readFilterItems}
+            value={read}
+            onValueChange={(value) => setRead(value ?? "any")}
           >
-            <Select.Value />
-            <Select.Icon className="text-[var(--sea-ink-soft)] transition-transform duration-150 group-data-popup-open:rotate-180">
-              <ChevronDown size={13} strokeWidth={2.5} />
-            </Select.Icon>
-          </Select.Trigger>
-          <Select.Portal>
-            <Select.Positioner
-              alignItemWithTrigger={false}
-              sideOffset={6}
-              className="z-50 outline-none"
+            <Select.Trigger
+              aria-label="Read status"
+              className="group flex h-8 min-w-27 items-center justify-between gap-2 rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-2.5 text-[0.7rem] font-bold text-[var(--sea-ink-soft)] transition-colors outline-none hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)] focus-visible:border-[var(--lagoon-deep)] focus-visible:ring-2 focus-visible:ring-[var(--lagoon)]/20 data-popup-open:border-[var(--lagoon)] data-popup-open:bg-[var(--surface-strong)] data-popup-open:text-[var(--sea-ink)]"
             >
-              <Select.Popup className="w-36 origin-[var(--transform-origin)] rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-1.5 text-[var(--sea-ink)] shadow-[0_14px_35px_rgba(0,0,0,0.22)] transition-[transform,opacity] duration-150 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
-                <Select.List>
-                  {readFilterItems.map((item) => (
-                    <Select.Item
-                      key={item.value}
-                      value={item.value}
-                      className="grid h-9 cursor-default grid-cols-[1rem_1fr] items-center gap-2 rounded-lg px-2 text-xs font-bold text-[var(--sea-ink-soft)] outline-none select-none data-highlighted:bg-[var(--sand)] data-highlighted:text-[var(--palm)] data-selected:text-[var(--sea-ink)]"
-                    >
-                      <Select.ItemIndicator className="text-[var(--lagoon-deep)]">
-                        <Check size={14} strokeWidth={2.5} />
-                      </Select.ItemIndicator>
-                      <Select.ItemText>{item.label}</Select.ItemText>
-                    </Select.Item>
-                  ))}
-                </Select.List>
-              </Select.Popup>
-            </Select.Positioner>
-          </Select.Portal>
-        </Select.Root>
+              <Select.Value />
+              <Select.Icon className="text-[var(--sea-ink-soft)] transition-transform duration-150 group-data-popup-open:rotate-180">
+                <ChevronDown size={13} strokeWidth={2.5} />
+              </Select.Icon>
+            </Select.Trigger>
+            <Select.Portal>
+              <Select.Positioner
+                alignItemWithTrigger={false}
+                sideOffset={6}
+                className="z-50 outline-none"
+              >
+                <Select.Popup className="w-36 origin-[var(--transform-origin)] rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-1.5 text-[var(--sea-ink)] shadow-[0_14px_35px_rgba(0,0,0,0.22)] transition-[transform,opacity] duration-150 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+                  <Select.List>
+                    {readFilterItems.map((item) => (
+                      <Select.Item
+                        key={item.value}
+                        value={item.value}
+                        className="grid h-9 cursor-default grid-cols-[1rem_1fr] items-center gap-2 rounded-lg px-2 text-xs font-bold text-[var(--sea-ink-soft)] outline-none select-none data-highlighted:bg-[var(--sand)] data-highlighted:text-[var(--palm)] data-selected:text-[var(--sea-ink)]"
+                      >
+                        <Select.ItemIndicator className="text-[var(--lagoon-deep)]">
+                          <Check size={14} strokeWidth={2.5} />
+                        </Select.ItemIndicator>
+                        <Select.ItemText>{item.label}</Select.ItemText>
+                      </Select.Item>
+                    ))}
+                  </Select.List>
+                </Select.Popup>
+              </Select.Positioner>
+            </Select.Portal>
+          </Select.Root>
+        ) : null}
         <Button
           type="button"
           variant="ghost"
@@ -272,6 +276,7 @@ function MessageMenuItems({
   onAction,
   onOpen,
   pending,
+  readActionsEnabled,
   trashFolderId,
   type,
 }: {
@@ -283,6 +288,7 @@ function MessageMenuItems({
   ) => void;
   readonly onOpen: () => void;
   readonly pending: boolean;
+  readonly readActionsEnabled: boolean;
   readonly trashFolderId?: string;
   readonly type: "context" | "menu";
 }) {
@@ -295,14 +301,16 @@ function MessageMenuItems({
         Open message
       </Item>
       <Separator className="my-1 h-px bg-[var(--line)]" />
-      <Item
-        className={menuItemClass}
-        disabled={pending}
-        onClick={() => onAction("read", message)}
-      >
-        {message.read ? <Mail size={14} /> : <MailOpen size={14} />}
-        {message.read ? "Mark unread" : "Mark read"}
-      </Item>
+      {readActionsEnabled ? (
+        <Item
+          className={menuItemClass}
+          disabled={pending}
+          onClick={() => onAction("read", message)}
+        >
+          {message.read ? <Mail size={14} /> : <MailOpen size={14} />}
+          {message.read ? "Mark unread" : "Mark read"}
+        </Item>
+      ) : null}
       <Item
         className={menuItemClass}
         disabled={pending}
@@ -338,6 +346,7 @@ function MessageOverflowMenu({
   onAction,
   onOpen,
   pending,
+  readActionsEnabled,
   trashFolderId,
 }: {
   readonly archiveFolderId?: string;
@@ -348,6 +357,7 @@ function MessageOverflowMenu({
   ) => void;
   readonly onOpen: () => void;
   readonly pending: boolean;
+  readonly readActionsEnabled: boolean;
   readonly trashFolderId?: string;
 }) {
   return (
@@ -371,6 +381,7 @@ function MessageOverflowMenu({
               onAction={onAction}
               onOpen={onOpen}
               pending={pending}
+              readActionsEnabled={readActionsEnabled}
               trashFolderId={trashFolderId}
               type="menu"
             />
@@ -443,6 +454,8 @@ export function MessageList({
   onQueryChange,
   onRetryAction,
   pendingMessageIds = noPendingMessageIds,
+  pendingThreadIds = noPendingMessageIds,
+  readActionsEnabled = true,
   selectedThreadId,
   selection,
   trashFolderId,
@@ -473,6 +486,8 @@ export function MessageList({
   readonly onQueryChange: (state: MailboxMessageQueryState) => void;
   readonly onRetryAction?: () => void;
   readonly pendingMessageIds?: ReadonlySet<string>;
+  readonly pendingThreadIds?: ReadonlySet<string>;
+  readonly readActionsEnabled?: boolean;
   readonly selectedThreadId?: string;
   readonly selection: MailboxViewSelection;
   readonly trashFolderId?: string;
@@ -578,28 +593,30 @@ export function MessageList({
                 className="flex shrink-0 items-center gap-0.5"
                 role="toolbar"
               >
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => executeBulkAction("read")}
-                  aria-label={
-                    allSelectedRead
-                      ? "Mark selected unread"
-                      : "Mark selected read"
-                  }
-                  title={
-                    allSelectedRead
-                      ? "Mark selected unread"
-                      : "Mark selected read"
-                  }
-                  className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)]"
-                >
-                  {allSelectedRead ? (
-                    <Mail size={14} />
-                  ) : (
-                    <MailOpen size={14} />
-                  )}
-                </Button>
+                {readActionsEnabled ? (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => executeBulkAction("read")}
+                    aria-label={
+                      allSelectedRead
+                        ? "Mark selected unread"
+                        : "Mark selected read"
+                    }
+                    title={
+                      allSelectedRead
+                        ? "Mark selected unread"
+                        : "Mark selected read"
+                    }
+                    className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)]"
+                  >
+                    {allSelectedRead ? (
+                      <Mail size={14} />
+                    ) : (
+                      <MailOpen size={14} />
+                    )}
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="ghost"
@@ -689,6 +706,7 @@ export function MessageList({
           key={`${filters.query ?? ""}:${filters.read ?? ""}:${filters.starred === true}:${filters.hasAttachment === true}`}
           filters={filters}
           onQueryChange={onQueryChange}
+          readActionsEnabled={readActionsEnabled}
         />
         {displayedActionErrors.map((failure) => (
           <Alert
@@ -751,7 +769,9 @@ export function MessageList({
             {data.items.map((message) => {
               const selected = message.threadId === selectedThreadId;
               const checked = selectedMessageIds.has(message.id);
-              const pending = pendingMessageIds.has(message.id);
+              const pending =
+                pendingMessageIds.has(message.id) ||
+                pendingThreadIds.has(message.threadId);
               const correspondent =
                 message.direction === "inbound"
                   ? message.sender === undefined
@@ -886,23 +906,25 @@ export function MessageList({
                           {messageDate.format(new Date(message.activityAt))}
                         </span>
                         <div className="hidden items-center gap-0.5 group-focus-within:flex group-hover:flex">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            disabled={pending}
-                            onClick={() => onMessageAction("read", message)}
-                            aria-label={
-                              message.read ? "Mark unread" : "Mark read"
-                            }
-                            title={message.read ? "Mark unread" : "Mark read"}
-                            className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-35"
-                          >
-                            {message.read ? (
-                              <Mail size={14} />
-                            ) : (
-                              <MailOpen size={14} />
-                            )}
-                          </Button>
+                          {readActionsEnabled ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              disabled={pending}
+                              onClick={() => onMessageAction("read", message)}
+                              aria-label={
+                                message.read ? "Mark unread" : "Mark read"
+                              }
+                              title={message.read ? "Mark unread" : "Mark read"}
+                              className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-35"
+                            >
+                              {message.read ? (
+                                <Mail size={14} />
+                              ) : (
+                                <MailOpen size={14} />
+                              )}
+                            </Button>
+                          ) : null}
                           <Button
                             type="button"
                             variant="ghost"
@@ -937,6 +959,7 @@ export function MessageList({
                               onOpenMessage(message.threadId, message.id)
                             }
                             pending={pending}
+                            readActionsEnabled={readActionsEnabled}
                             trashFolderId={trashFolderId}
                           />
                         </div>
@@ -950,6 +973,7 @@ export function MessageList({
                             onOpenMessage(message.threadId, message.id)
                           }
                           pending={pending}
+                          readActionsEnabled={readActionsEnabled}
                           trashFolderId={trashFolderId}
                         />
                       </div>
@@ -966,6 +990,7 @@ export function MessageList({
                             onOpenMessage(message.threadId, message.id)
                           }
                           pending={pending}
+                          readActionsEnabled={readActionsEnabled}
                           trashFolderId={trashFolderId}
                           type="context"
                         />

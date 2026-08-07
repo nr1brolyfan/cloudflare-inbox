@@ -121,6 +121,7 @@ const repositoryWith = (
     searchMessages,
     setMessageRead: unused,
     setMessageStarred: unused,
+    setThreadRead: unused,
   });
 
 const authorizationWith = (
@@ -152,6 +153,7 @@ const authorizationWith = (
     requireMailbox: unusedAuthorization,
     requireMailboxDraftSend: unusedAuthorization,
     requireMailboxMessageRead,
+    requireMailboxMessageModify: unusedAuthorization,
     requireMessage,
     requireRuleManage: unusedAuthorization,
   });

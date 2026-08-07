@@ -21,6 +21,8 @@ import type {
   SearchMessagesInput,
   SetMessageReadInput,
   SetMessageStarredInput,
+  SetThreadReadInput,
+  SetThreadReadResult,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import type { MailboxRepositoryError } from "#/modules/mailbox/ports/MailboxRepositoryError";
 
@@ -63,6 +65,9 @@ export interface MailboxMessageRepositoryService {
   readonly setMessageStarred: (
     input: SetMessageStarredInput
   ) => Effect.Effect<MessageMutationResult, RepositoryError>;
+  readonly setThreadRead: (
+    input: SetThreadReadInput
+  ) => Effect.Effect<SetThreadReadResult, RepositoryError>;
 }
 
 /** Message persistence capability required by mailbox application services. */

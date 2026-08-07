@@ -393,6 +393,7 @@ const makeHandler = (
   messageActions: MailboxMessageActionsService = MailboxMessageActions.of({
     executeBatch: () => Effect.die("Unexpected batch message action"),
     execute: () => Effect.succeed(mailboxMessageAction),
+    setThreadRead: () => Effect.die("Unexpected thread read action"),
   }),
   messageHtml: MailboxMessageHtmlReadingService = MailboxMessageHtmlReading.of({
     get: () => Effect.succeed(mailboxMessageHtml),
@@ -509,6 +510,7 @@ const makeHandler = (
           MailboxAuthorization,
           MailboxAuthorization.of({
             requireMailboxMessageRead: () => Effect.void,
+            requireMailboxMessageModify: () => Effect.void,
           } as unknown as MailboxAuthorizationService)
         ),
         Layer.succeed(
@@ -859,6 +861,7 @@ const makeCountingHandler = (session: ValidatedSession) => {
         executeBatch: () => Effect.die("Unexpected batch message action"),
         execute: () =>
           counted(MailboxOperation.actOnMessage, mailboxMessageAction),
+        setThreadRead: () => Effect.die("Unexpected thread read action"),
       }),
       MailboxMessageHtmlReading.of({
         get: () => counted(MailboxOperation.getMessageHtml, mailboxMessageHtml),
@@ -1472,6 +1475,7 @@ describe("protected mailbox API", () => {
           actionCommand = command;
           return Effect.succeed(mailboxMessageAction);
         },
+        setThreadRead: () => Effect.die("Unexpected thread read action"),
       })
     );
 
@@ -1526,6 +1530,7 @@ describe("protected mailbox API", () => {
             })),
           });
         },
+        setThreadRead: () => Effect.die("Unexpected thread read action"),
       })
     );
 
@@ -1572,6 +1577,56 @@ describe("protected mailbox API", () => {
     }
   });
 
+  it("sets a mailbox thread read through the dedicated endpoint", async () => {
+    let command: unknown;
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      undefined,
+      MailboxMessageActions.of({
+        execute: () => Effect.die("Unexpected single message action"),
+        executeBatch: () => Effect.die("Unexpected batch message action"),
+        setThreadRead: (input) => {
+          command = input;
+          return Effect.succeed({
+            changed: [mailboxMessageAction],
+            operationId: input.operationId,
+            threadId: input.threadId,
+          });
+        },
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest("/api/mailboxes/primary/threads/thread-1/read", "POST", {
+          body: { operationId: "thread-read-operation-1" },
+        })
+      );
+
+      expect({
+        body: await response.json(),
+        command,
+        status: response.status,
+      }).toMatchObject({
+        body: {
+          changed: [{ id: "message-1", read: true, version: 2 }],
+          operationId: "thread-read-operation-1",
+          threadId: "thread-1",
+        },
+        command: {
+          mailboxId: "primary",
+          operationId: "thread-read-operation-1",
+          threadId: "thread-1",
+        },
+        status: 200,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
   it("maps a missing action resource to not found", async () => {
     const { dispose, handler } = makeHandler(
       makeAdministration(),
@@ -1592,6 +1647,7 @@ describe("protected mailbox API", () => {
               },
             })
           ),
+        setThreadRead: () => Effect.die("Unexpected thread read action"),
       })
     );
 

@@ -270,6 +270,11 @@ export const MailboxAuthorizationApplicationLayer = Layer.effect(
           AuthorizationPermission.messageRead,
           mailboxResourceScope(resource.mailboxId)
         ).pipe(Effect.as(resource)),
+      requireMailboxMessageModify: ({ resource }) =>
+        requirePermission(
+          AuthorizationPermission.messageModify,
+          mailboxResourceScope(resource.mailboxId)
+        ).pipe(Effect.as(resource)),
       requireMessage: ({ action, resource }) =>
         resolveMessage(resource).pipe(
           Effect.flatMap((location) =>

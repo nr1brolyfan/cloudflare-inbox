@@ -22,10 +22,12 @@ import { isSafeInlineImageMimeType } from "#/modules/mailbox/application/Mailbox
 import type {
   MailboxMessageActionCommand,
   MailboxMessageBatchActionCommand,
+  SetMailboxThreadReadCommand,
 } from "#/modules/mailbox/application/MailboxMessageActions";
 import {
   MailboxMessageActionResult,
   MailboxMessageBatchActionResult,
+  SetMailboxThreadReadResult,
 } from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { MailboxMessageHtmlResult } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
@@ -146,6 +148,13 @@ export type MailboxMessageBatchActionServerResult =
         typeof MailboxMessageBatchActionResult
       >;
       readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type SetMailboxThreadReadServerResult =
+  | {
+      readonly ok: true;
+      readonly result: Schema.Codec.Encoded<typeof SetMailboxThreadReadResult>;
     }
   | MailboxServerErrorResult;
 
@@ -392,6 +401,10 @@ export interface MailboxBackendOperationsShape {
     readonly command: MailboxMessageBatchActionCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxMessageBatchActionServerResult>;
+  readonly setThreadRead: (input: {
+    readonly command: SetMailboxThreadReadCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<SetMailboxThreadReadServerResult>;
   readonly bootstrapOwner: (input: {
     readonly command: BootstrapOrganizationCommand;
     readonly incoming: Request;
@@ -713,6 +726,33 @@ export const MailboxBackendOperationsLayer = Layer.effect(
     };
 
     return MailboxBackendOperations.of({
+      setThreadRead: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "POST",
+          operation: "website.mailbox.message_action",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/threads/${encodeURIComponent(command.threadId)}/read`,
+          payload: { operationId: command.operationId },
+        }).pipe(
+          Effect.map((response): SetMailboxThreadReadServerResult => {
+            if (!response.ok) {
+              return response;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(SetMailboxThreadReadResult)
+            )(response.body);
+            return Exit.isSuccess(decoded) &&
+              decoded.value.operationId === command.operationId &&
+              decoded.value.threadId === command.threadId
+              ? {
+                  ok: true,
+                  result: Schema.encodeSync(SetMailboxThreadReadResult)(
+                    decoded.value
+                  ),
+                }
+              : invalidBackendResponse();
+          })
+        ),
       actOnMessages: ({ command, incoming }) =>
         forwardRequest({
           incoming,

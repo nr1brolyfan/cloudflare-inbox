@@ -76,6 +76,7 @@ const authorizationWith = (
     requireMailbox: unusedAuthorization,
     requireMailboxDraftSend: unusedAuthorization,
     requireMailboxMessageRead: unusedAuthorization,
+    requireMailboxMessageModify: unusedAuthorization,
     requireMessage: unusedAuthorization,
     requireRuleManage: unusedAuthorization,
   });

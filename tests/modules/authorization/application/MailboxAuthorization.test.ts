@@ -262,6 +262,30 @@ describe("mail authorization policies", () => {
     ]);
   });
 
+  it("requires mailbox-scoped message modify for thread mutations", async () => {
+    const fixture = makePermissions([
+      mailboxPermission(MailPermission.messageModify),
+    ]);
+    const location = await runAuthorization(
+      makeResolver(),
+      fixture.service,
+      (authorization) =>
+        authorization.requireMailboxMessageModify({ resource: mailboxRef })
+    );
+
+    expect(location).toStrictEqual({
+      _tag: "Mailbox",
+      mailboxId: "mailbox-a",
+    });
+    expect(fixture.checks).toMatchObject([
+      {
+        permission: MailPermission.messageModify,
+        scope: { id: "mailbox-a", type: "mailbox" },
+        subject: principal,
+      },
+    ]);
+  });
+
   it("allows a message collection through its trusted folder scope", async () => {
     const fixture = makePermissions([
       folderPermission(MailPermission.folderRead),

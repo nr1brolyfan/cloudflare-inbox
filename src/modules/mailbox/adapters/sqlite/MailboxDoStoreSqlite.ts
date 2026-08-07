@@ -121,6 +121,13 @@ const executeMailDataRequest = (
         (value) => ({ _tag: "ThreadFound", value })
       );
     }
+    case "SetThreadRead": {
+      return encodeMailDataResult(
+        request,
+        stores.setThreadRead(request.input),
+        (value) => ({ _tag: "ThreadReadSet", value })
+      );
+    }
     case "BatchMutateMessages": {
       return encodeMailDataResult(
         request,

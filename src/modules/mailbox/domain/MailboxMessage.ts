@@ -347,6 +347,33 @@ export type SetMessageReadInput = Schema.Schema.Type<
   typeof SetMessageReadInput
 >;
 
+export const SetThreadReadInput = Schema.Struct({
+  mailboxId: MailboxId,
+  operationId: OperationId,
+  threadId: ThreadId,
+});
+export type SetThreadReadInput = Schema.Schema.Type<typeof SetThreadReadInput>;
+
+export const ThreadReadMessageProjection = Schema.Struct({
+  folderId: FolderId,
+  id: MessageId,
+  read: Schema.Boolean,
+  starred: Schema.Boolean,
+  version: Version,
+});
+export type ThreadReadMessageProjection = Schema.Schema.Type<
+  typeof ThreadReadMessageProjection
+>;
+
+export const SetThreadReadResult = Schema.Struct({
+  changed: Schema.Array(ThreadReadMessageProjection),
+  operationId: OperationId,
+  threadId: ThreadId,
+});
+export type SetThreadReadResult = Schema.Schema.Type<
+  typeof SetThreadReadResult
+>;
+
 export const SetMessageStarredInput = Schema.Struct({
   mailboxId: MailboxId,
   operationId: OperationId,

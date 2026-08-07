@@ -70,6 +70,7 @@ import {
   MoveMessageInput,
   SearchMessagesInput,
   SetMessageReadInput,
+  SetThreadReadInput,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import {
   CancelOutboundDeliveryInput,
@@ -135,6 +136,10 @@ const getThread = (input: GetThreadInput) =>
 const setMessageRead = (input: SetMessageReadInput) =>
   MailboxMessageStore.pipe(
     Effect.flatMap((store) => store.setMessageRead(input))
+  );
+const setThreadRead = (input: SetThreadReadInput) =>
+  MailboxMessageStore.pipe(
+    Effect.flatMap((store) => store.setThreadRead(input))
   );
 const batchMutateMessages = (input: BatchMessageMutationsInput) =>
   MailboxMessageStore.pipe(
@@ -940,6 +945,89 @@ describe("Mailbox mail data SQLite", () => {
     );
   });
 
+  it("sets every active unread thread message and replays the exact receipt", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        const db = yield* MailboxDatabase;
+        yield* db.insert(message).values(
+          Array.from({ length: 102 }, (_, index) => ({
+            id: `thread-message-${String(index).padStart(3, "0")}`,
+            folderId: index % 2 === 0 ? "inbox" : "archive",
+            threadId: "large-thread",
+            direction: "inbound" as const,
+            subject: "Thread",
+            recipientsJson: "[]",
+            snippet: "",
+            activityAt: index,
+            read: index === 101 ? 1 : 0,
+            starred: index === 0 ? 1 : 0,
+            size: 0,
+            referencesJson: "[]",
+            toJson: "[]",
+            ccJson: "[]",
+            bccJson: "[]",
+            createdAt: index,
+            updatedAt: index,
+          }))
+        );
+        const input = Schema.decodeUnknownSync(SetThreadReadInput)({
+          mailboxId,
+          operationId: "large-thread-read-op",
+          threadId: "large-thread",
+        });
+        const first = yield* setThreadRead(input);
+        const replay = yield* setThreadRead(input);
+        const empty = yield* setThreadRead(
+          Schema.decodeUnknownSync(SetThreadReadInput)({
+            mailboxId,
+            operationId: "large-thread-read-empty-op",
+            threadId: "large-thread",
+          })
+        );
+        const missing = failure(
+          yield* Effect.result(
+            setThreadRead(
+              Schema.decodeUnknownSync(SetThreadReadInput)({
+                mailboxId,
+                operationId: "missing-thread-read-op",
+                threadId: "missing-thread",
+              })
+            )
+          )
+        );
+        const conflict = failure(
+          yield* Effect.result(
+            setThreadRead(
+              Schema.decodeUnknownSync(SetThreadReadInput)({
+                mailboxId,
+                operationId: input.operationId,
+                threadId: "different-thread",
+              })
+            )
+          )
+        );
+
+        expect(first.changed).toHaveLength(101);
+        expect(
+          first.changed.find(({ id }) => id === "thread-message-000")
+        ).toMatchObject({
+          id: "thread-message-000",
+          read: true,
+          starred: true,
+          version: 2,
+        });
+        expect(replay).toStrictEqual(first);
+        expect(empty.changed).toStrictEqual([]);
+        expect(missing).toMatchObject({
+          reason: "not-found",
+          resourceType: "thread",
+        });
+        expect(conflict).toMatchObject({ reason: "idempotency-conflict" });
+      }).pipe(Effect.provide(mailboxSqliteTestLive()))
+    );
+  });
+
   it("commits successful batch items once and returns version conflicts", async () => {
     const runtime = makeRuntime();
     await Effect.runPromise(
@@ -1563,6 +1651,7 @@ describe("Mailbox mail data SQLite", () => {
         const [outbound] = yield* db
           .select({
             inReplyTo: message.inReplyTo,
+            read: message.read,
             referencesJson: message.referencesJson,
             rfcMessageId: message.rfcMessageId,
             senderJson: message.senderJson,
@@ -1589,6 +1678,7 @@ describe("Mailbox mail data SQLite", () => {
 
         expect(outbound).toStrictEqual({
           inReplyTo: "<m1@example.com>",
+          read: 1,
           referencesJson: '["<m1@example.com>"]',
           rfcMessageId: null,
           senderJson: JSON.stringify(currentPrimarySender),
@@ -1668,6 +1758,7 @@ describe("Mailbox mail data SQLite", () => {
         const [snapshot] = yield* db
           .select({
             inReplyTo: message.inReplyTo,
+            read: message.read,
             referencesJson: message.referencesJson,
           })
           .from(message)
@@ -2147,6 +2238,7 @@ describe("Mailbox mail data SQLite", () => {
         const [messageBefore] = yield* db
           .select({
             inReplyTo: message.inReplyTo,
+            read: message.read,
             referencesJson: message.referencesJson,
             replyToJson: message.replyToJson,
             size: message.size,
@@ -2171,7 +2263,10 @@ describe("Mailbox mail data SQLite", () => {
           .where(eq(outboundDelivery.id, scheduled.delivery.id));
         yield* db
           .update(message)
-          .set({ replyToJson: '[{"address":"snapshot@example.com"}]' })
+          .set({
+            read: 0,
+            replyToJson: '[{"address":"snapshot@example.com"}]',
+          })
           .where(eq(message.id, scheduled.delivery.messageId));
         const resent = yield* resendOutbound(
           Schema.decodeUnknownSync(ResendOutboundInput)({
@@ -2192,7 +2287,7 @@ describe("Mailbox mail data SQLite", () => {
           .from(attachment)
           .where(eq(attachment.messageId, resent.delivery.messageId));
         const [resendMessage] = yield* db
-          .select({ replyToJson: message.replyToJson })
+          .select({ read: message.read, replyToJson: message.replyToJson })
           .from(message)
           .where(eq(message.id, resent.delivery.messageId));
 
@@ -2205,11 +2300,13 @@ describe("Mailbox mail data SQLite", () => {
         }).toMatchObject({
           messageBefore: {
             inReplyTo: null,
+            read: 1,
             referencesJson: "[]",
             replyToJson: null,
             size: 9,
           },
           resendMessage: {
+            read: 1,
             replyToJson: '[{"address":"snapshot@example.com"}]',
           },
           resendSnapshot: {

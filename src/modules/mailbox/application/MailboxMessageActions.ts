@@ -11,6 +11,7 @@ import {
   FolderId,
   MailboxId,
   MessageId,
+  ThreadId,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import { BatchMessageMutationsInput } from "#/modules/mailbox/domain/MailboxMessage";
@@ -18,6 +19,7 @@ import type {
   BatchMessageMutation,
   BatchMessageMutationsResult,
   MessageMutationResult,
+  SetThreadReadResult,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
@@ -139,6 +141,24 @@ export type MailboxMessageActionResult = Schema.Schema.Type<
   typeof MailboxMessageActionResult
 >;
 
+export const SetMailboxThreadReadCommand = Schema.Struct({
+  mailboxId: MailboxId,
+  operationId: OperationId,
+  threadId: ThreadId,
+});
+export type SetMailboxThreadReadCommand = Schema.Schema.Type<
+  typeof SetMailboxThreadReadCommand
+>;
+
+export const SetMailboxThreadReadResult = Schema.Struct({
+  changed: Schema.Array(MailboxMessageActionResult),
+  operationId: OperationId,
+  threadId: ThreadId,
+});
+export type SetMailboxThreadReadResult = Schema.Schema.Type<
+  typeof SetMailboxThreadReadResult
+>;
+
 export const MailboxMessageBatchActionResultItem = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("Succeeded"),
@@ -179,6 +199,13 @@ export class MailboxMessageActionError extends Data.TaggedError(
 }> {}
 
 export interface MailboxMessageActionsService {
+  readonly setThreadRead: (
+    command: SetMailboxThreadReadCommand
+  ) => Effect.Effect<
+    SetMailboxThreadReadResult,
+    MailboxAuthorizationError | MailboxMessageActionError,
+    CurrentPrincipal
+  >;
   readonly executeBatch: (
     command: MailboxMessageBatchActionCommand
   ) => Effect.Effect<
@@ -260,6 +287,36 @@ export class MailboxMessageActions extends Context.Service<
     const messages = yield* MailboxMessageRepository;
 
     return {
+      setThreadRead: (command) =>
+        Effect.gen(function* () {
+          yield* authorization.requireMailboxMessageModify({
+            resource: { _tag: "Mailbox", mailboxId: command.mailboxId },
+          });
+          const result: SetThreadReadResult = yield* messages
+            .setThreadRead(command)
+            .pipe(Effect.mapError(mapRepositoryError));
+          if (
+            result.operationId !== command.operationId ||
+            result.threadId !== command.threadId
+          ) {
+            return yield* actionError(
+              "storage",
+              new Error("Set thread read result identity invariant failed")
+            );
+          }
+          const changed = yield* Effect.all(
+            result.changed.map((projection) =>
+              Schema.decodeUnknownEffect(MailboxMessageActionResult)(
+                projection
+              ).pipe(Effect.mapError((cause) => actionError("storage", cause)))
+            )
+          );
+          return Schema.decodeUnknownSync(SetMailboxThreadReadResult)({
+            changed,
+            operationId: result.operationId,
+            threadId: result.threadId,
+          });
+        }),
       executeBatch: (command) =>
         // oxlint-disable-next-line eslint/complexity -- Batch execution coordinates target resolution, per-item authorization, and partial results.
         Effect.gen(function* () {

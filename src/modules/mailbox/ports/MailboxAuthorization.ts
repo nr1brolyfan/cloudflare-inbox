@@ -118,6 +118,9 @@ export interface MailboxAuthorizationService {
   readonly requireMailboxMessageRead: (input: {
     readonly resource: MailboxRef;
   }) => MailboxPolicy<TrustedMailboxLocation>;
+  readonly requireMailboxMessageModify: (input: {
+    readonly resource: MailboxRef;
+  }) => MailboxPolicy<TrustedMailboxLocation>;
   readonly requireMessage: (input: {
     readonly action: MessageAction;
     readonly resource: MessageRef;

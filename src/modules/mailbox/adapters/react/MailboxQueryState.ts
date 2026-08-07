@@ -33,6 +33,7 @@ export const mailboxMessageActionMutationKey = [
   "mailbox",
   "message-action",
 ] as const;
+export const mailboxThreadReadMutationKey = ["mailbox", "thread-read"] as const;
 
 const matchesVisibleFilters = (
   message: MessageListData["items"][number],
@@ -51,7 +52,8 @@ export const projectPendingMessageActions = (
   targets: {
     readonly archiveFolderId?: string;
     readonly trashFolderId?: string;
-  }
+  },
+  pendingThreadIds: ReadonlySet<string> = new Set()
 ): MessageListData => {
   const commandByMessage = new Map<string, MessageActionCommand>(
     commands.map((command) => [command.messageId, command])
@@ -60,21 +62,23 @@ export const projectPendingMessageActions = (
     ...data,
     items: data.items.flatMap((message) => {
       const command = commandByMessage.get(message.id);
-      if (command === undefined) {
-        return [message];
-      }
-      const projected =
-        command._tag === "SetRead"
-          ? { ...message, read: command.read }
-          : command._tag === "SetStarred"
-            ? { ...message, starred: command.starred }
-            : {
-                ...message,
-                folderId:
-                  command._tag === "Archive"
-                    ? (targets.archiveFolderId ?? message.folderId)
-                    : (targets.trashFolderId ?? message.folderId),
-              };
+      const actionProjected =
+        command === undefined
+          ? message
+          : command._tag === "SetRead"
+            ? { ...message, read: command.read }
+            : command._tag === "SetStarred"
+              ? { ...message, starred: command.starred }
+              : {
+                  ...message,
+                  folderId:
+                    command._tag === "Archive"
+                      ? (targets.archiveFolderId ?? message.folderId)
+                      : (targets.trashFolderId ?? message.folderId),
+                };
+      const projected = pendingThreadIds.has(message.threadId)
+        ? { ...actionProjected, read: true }
+        : actionProjected;
       return matchesVisibleFilters(projected, selection, filters)
         ? [projected]
         : [];
@@ -84,7 +88,8 @@ export const projectPendingMessageActions = (
 
 export const projectPendingThreadActions = (
   data: ThreadData,
-  commands: readonly MessageActionCommand[]
+  commands: readonly MessageActionCommand[],
+  pendingThreadIds: ReadonlySet<string> = new Set()
 ): ThreadData => {
   const readByMessage = new Map<string, boolean>(
     commands.flatMap((command) =>
@@ -93,22 +98,32 @@ export const projectPendingThreadActions = (
         : []
     )
   );
-  let { unreadCount } = data.thread;
+  const threadReadPending = pendingThreadIds.has(data.thread.id);
+  let unreadCount = threadReadPending ? 0 : data.thread.unreadCount;
+  let changed = unreadCount !== data.thread.unreadCount;
   const messages = data.messages.map((message) => {
+    if (threadReadPending) {
+      if (message.read) {
+        return message;
+      }
+      changed = true;
+      return { ...message, read: true };
+    }
     const read = readByMessage.get(message.id);
     if (read === undefined || read === message.read) {
       return message;
     }
+    changed = true;
     unreadCount += read ? -1 : 1;
     return { ...message, read };
   });
-  return unreadCount === data.thread.unreadCount
-    ? data
-    : {
+  return changed
+    ? {
         ...data,
         messages,
         thread: { ...data.thread, unreadCount },
-      };
+      }
+    : data;
 };
 
 const actionMatchesMessageQuery = (

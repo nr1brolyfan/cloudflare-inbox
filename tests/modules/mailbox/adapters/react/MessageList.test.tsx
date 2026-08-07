@@ -264,6 +264,63 @@ describe(MessageList, () => {
     ).toBeTruthy();
   });
 
+  it("hides read controls and strips stale read filters in Sent", () => {
+    const onQueryChange = vi.fn<(state: MailboxMessageQueryState) => void>();
+    render(
+      <MessageList
+        data={{ items: [messages.items[0]] }}
+        filters={{ read: "unread" }}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
+        onMessageAction={unusedMessageAction}
+        onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
+        onQueryChange={onQueryChange}
+        readActionsEnabled={false}
+        selection={{ folder: "sent" }}
+      />
+    );
+
+    expect({
+      readButton: screen.queryByRole("button", { name: "Mark read" }),
+      readFilter: screen.queryByRole("combobox", { name: "Read status" }),
+    }).toStrictEqual({ readButton: null, readFilter: null });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Select Second: Second subject",
+      })
+    );
+    expect(
+      screen.queryByRole("button", { name: "Mark selected read" })
+    ).toBeNull();
+
+    fireEvent.change(
+      screen.getByRole("searchbox", { name: "Search messages" }),
+      { target: { value: "sent invoice" } }
+    );
+    act(() => vi.advanceTimersByTime(350));
+    expect(onQueryChange).toHaveBeenLastCalledWith({
+      delivery: undefined,
+      hasAttachment: undefined,
+      query: "sent invoice",
+      read: undefined,
+      starred: undefined,
+    });
+
+    const messageRow = screen
+      .getByRole("link", { name: "Second: Second subject" })
+      .closest("article");
+    if (!(messageRow instanceof HTMLElement)) {
+      throw new Error("Expected the message link to be rendered inside a row");
+    }
+    fireEvent.contextMenu(messageRow);
+    expect(screen.queryByRole("menuitem", { name: "Mark read" })).toBeNull();
+    expect(
+      screen.getByRole("menuitem", { name: "Move to trash" })
+    ).toBeTruthy();
+  });
+
   it("opens row actions on right click and dispatches the chosen action", () => {
     const onMessageAction =
       vi.fn<(action: MessageRowAction, message: MessageListItemData) => void>();

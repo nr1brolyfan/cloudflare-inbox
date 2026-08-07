@@ -10,6 +10,7 @@ import {
   MailboxMessageActionCommand,
   MailboxMessageBatchActionCommand,
   MailboxMessageActions,
+  SetMailboxThreadReadCommand,
 } from "#/modules/mailbox/application/MailboxMessageActions";
 import { FolderId } from "#/modules/mailbox/domain/Mailbox";
 import { FolderList } from "#/modules/mailbox/domain/MailboxDirectory";
@@ -129,6 +130,7 @@ const repositoryWith = (
       searchMessages: unused,
       setMessageRead: unused,
       setMessageStarred: unused,
+      setThreadRead: unused,
       ...messageOverrides,
     }),
   };
@@ -152,6 +154,7 @@ const authorizationWith = (
       ),
     requireMailboxDraftSend: unusedAuthorization,
     requireMailboxMessageRead: unusedAuthorization,
+    requireMailboxMessageModify: unusedAuthorization,
     requireMessage: unusedAuthorization,
     requireRuleManage: unusedAuthorization,
     ...overrides,
@@ -213,7 +216,82 @@ const runBatchAction = (
     )
   );
 
+const runThreadRead = (
+  authorization: MailboxAuthorizationService,
+  repository: ReturnType<typeof repositoryWith>,
+  command: Schema.Schema.Type<typeof SetMailboxThreadReadCommand>
+) =>
+  Effect.runPromise(
+    MailboxMessageActions.pipe(
+      Effect.flatMap((actions) => actions.setThreadRead(command)),
+      Effect.provide(
+        MailboxMessageActions.layerNoDeps.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(MailboxAuthorization, authorization),
+              Layer.succeed(MailboxDirectoryRepository, repository.directory),
+              Layer.succeed(MailboxMessageRepository, repository.messages)
+            )
+          )
+        )
+      ),
+      Effect.provideService(
+        AuthPermission.CurrentPrincipal,
+        AuthPermission.CurrentPrincipal.of(
+          AuthPermission.PermissionSubject.user(UserId("user-a"))
+        )
+      )
+    )
+  );
+
 describe("mailbox message actions", () => {
+  it("authorizes thread read at mailbox message.modify scope", async () => {
+    const calls: string[] = [];
+    const command = Schema.decodeUnknownSync(SetMailboxThreadReadCommand)({
+      mailboxId: "primary",
+      operationId: "thread-read-op",
+      threadId: "thread-1",
+    });
+    const result = await runThreadRead(
+      authorizationWith({
+        requireMailboxMessageModify: ({ resource }) => {
+          calls.push(`authorize:${resource.mailboxId}`);
+          return Effect.succeed(resource);
+        },
+      }),
+      repositoryWith({
+        setThreadRead: (input) => {
+          calls.push("set-thread-read");
+          return Effect.succeed({
+            changed:
+              readMessage === undefined
+                ? []
+                : [
+                    {
+                      folderId: readMessage.folderId,
+                      id: readMessage.id,
+                      read: readMessage.read,
+                      starred: readMessage.starred,
+                      version: readMessage.version,
+                    },
+                  ],
+            operationId: input.operationId,
+            threadId: input.threadId,
+          });
+        },
+      }),
+      command
+    );
+
+    expect({ calls, result }).toMatchObject({
+      calls: ["authorize:primary", "set-thread-read"],
+      result: {
+        changed: [{ id: "message-1", read: true, version: 2 }],
+        operationId: "thread-read-op",
+        threadId: "thread-1",
+      },
+    });
+  });
   it("keeps read actions when an archive target is unauthorized", async () => {
     const command = Schema.decodeUnknownSync(MailboxMessageBatchActionCommand)({
       actions: [

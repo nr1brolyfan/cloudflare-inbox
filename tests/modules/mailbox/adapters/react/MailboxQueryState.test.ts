@@ -194,6 +194,47 @@ describe("mailbox optimistic query state", () => {
     });
   });
 
+  it("optimistically marks every loaded view of a pending thread read", () => {
+    const pendingThreadIds = new Set(["thread-shared"]);
+    const projectedList = projectPendingMessageActions(
+      messages,
+      [],
+      { folder: "inbox" },
+      {},
+      {},
+      pendingThreadIds
+    );
+    const projectedUnread = projectPendingMessageActions(
+      { ...messages, items: [messages.items[0]] },
+      [],
+      { folder: "inbox" },
+      { read: "unread" },
+      {},
+      pendingThreadIds
+    );
+    const projectedThread = projectPendingThreadActions(
+      thread,
+      [],
+      pendingThreadIds
+    );
+
+    expect({
+      listReads: projectedList.items.map((message) => message.read),
+      sourceListReads: messages.items.map((message) => message.read),
+      sourceThreadUnread: thread.thread.unreadCount,
+      threadReads: projectedThread.messages.map((message) => message.read),
+      threadUnread: projectedThread.thread.unreadCount,
+      unreadIds: projectedUnread.items.map((message) => message.id),
+    }).toStrictEqual({
+      listReads: [true, true],
+      sourceListReads: [false, true],
+      sourceThreadUnread: 1,
+      threadReads: [true],
+      threadUnread: 0,
+      unreadIds: [],
+    });
+  });
+
   it("reconciles every page and thread anchor while preserving cursors", () => {
     const queryClient = new QueryClient();
     const listKey = [

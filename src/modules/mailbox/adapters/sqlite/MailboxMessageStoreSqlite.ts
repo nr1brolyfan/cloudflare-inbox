@@ -32,6 +32,8 @@ import {
   RemoveMessageLabelInput,
   SetMessageReadInput,
   SetMessageStarredInput,
+  SetThreadReadInput,
+  SetThreadReadResult,
   ThreadDetailSchema,
   ThreadSummarySchema,
 } from "#/modules/mailbox/domain/MailboxMessage";
@@ -1156,6 +1158,98 @@ const mutateMessage = (
     );
   });
 
+const setThreadRead = (
+  mailboxId: MailboxId,
+  input: SetThreadReadInput,
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
+) =>
+  Effect.gen(function* () {
+    const db = yield* MailboxDatabase;
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const requestKey = JSON.stringify(
+          Schema.encodeSync(SetThreadReadInput)(input)
+        );
+        const previous = yield* operations.replay(
+          input.operationId,
+          "mutate-message",
+          "set-thread-read",
+          requestKey,
+          SetThreadReadResult
+        );
+        if (previous !== undefined) {
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
+        }
+
+        const [active] = yield* tx
+          .select({ id: message.id })
+          .from(message)
+          .where(
+            and(eq(message.threadId, input.threadId), isNull(message.deletedAt))
+          )
+          .limit(1);
+        if (active === undefined) {
+          return yield* messageDomainError(
+            "mutate-message",
+            "not-found",
+            "Thread was not found",
+            { resourceType: "thread", resourceId: input.threadId }
+          );
+        }
+
+        const now = runtime.now();
+        const rows = yield* tx
+          .update(message)
+          .set({
+            read: 1,
+            updatedAt: sql`max(${message.updatedAt}, ${now})`,
+            version: sql`${message.version} + 1`,
+          })
+          .where(
+            and(
+              eq(message.threadId, input.threadId),
+              isNull(message.deletedAt),
+              eq(message.read, 0)
+            )
+          )
+          .returning({
+            folderId: message.folderId,
+            id: message.id,
+            read: message.read,
+            starred: message.starred,
+            version: message.version,
+          });
+        const result = Schema.decodeUnknownSync(SetThreadReadResult)({
+          changed: rows.map((row) => ({
+            ...row,
+            read: row.read === 1,
+            starred: row.starred === 1,
+          })),
+          operationId: input.operationId,
+          threadId: input.threadId,
+        });
+        const encoded = JSON.stringify(
+          Schema.encodeSync(SetThreadReadResult)(result)
+        );
+        yield* operations.store(
+          input.operationId,
+          "set-thread-read",
+          requestKey,
+          input.threadId,
+          encoded,
+          now
+        );
+        return Schema.decodeUnknownSync(SetThreadReadResult)(
+          JSON.parse(encoded)
+        );
+      })
+    );
+  });
+
 const batchMutationFailureReason = (error: MailboxDomainError) => {
   if (error.reason === "not-found") {
     return "not-found" as const;
@@ -1528,6 +1622,8 @@ const makeMailboxMessageStore = (
           operations
         )
       ),
+    setThreadRead: (input: SetThreadReadInput) =>
+      provideDatabase(setThreadRead(mailboxId, input, runtime, operations)),
     moveMessage: (input: MoveMessageInput) =>
       provideDatabase(
         mutateMessage(mailboxId, { _tag: "Move", input }, runtime, operations)

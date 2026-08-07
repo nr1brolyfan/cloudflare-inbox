@@ -93,6 +93,11 @@ const expectedMailDataMetadata = {
     kind: "read",
     responseTag: "ThreadFound",
   },
+  SetThreadRead: {
+    operation: "mutate-message",
+    kind: "write",
+    responseTag: "ThreadReadSet",
+  },
   SetMessageRead: {
     operation: "mutate-message",
     kind: "write",

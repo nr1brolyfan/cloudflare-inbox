@@ -23,7 +23,7 @@ import {
   PenLine,
   RotateCcw,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import {
   getMailboxNavigation,
@@ -35,6 +35,7 @@ import {
   createMailboxReplyDraft,
   reserveMailboxDraftAttachment,
   sendMailboxDraft,
+  setMailboxThreadRead,
   undoMailboxSend,
   updateMailboxDraft,
 } from "#/apps/website/TanStackFunctions";
@@ -72,6 +73,7 @@ import type { DraftEditorSnapshot } from "#/modules/mailbox/adapters/react/Draft
 import { DraftList } from "#/modules/mailbox/adapters/react/DraftList";
 import {
   mailboxMessageActionMutationKey,
+  mailboxThreadReadMutationKey,
   projectPendingMessageActions,
   projectPendingThreadActions,
   reconcileMailboxMessageActionCaches,
@@ -111,7 +113,10 @@ import {
   DraftEditorDraft,
   UpdateMailboxDraftCommand,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
-import { MailboxMessageBatchActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import {
+  MailboxMessageBatchActionCommand,
+  SetMailboxThreadReadCommand,
+} from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageBatchActionItem } from "#/modules/mailbox/application/MailboxMessageActions";
 import {
   MailboxMessageView,
@@ -197,6 +202,9 @@ const useMailboxNavigate = () => {
 const decodeMailboxMessageView = Schema.decodeUnknownSync(MailboxMessageView);
 const decodeMailboxMessageBatchAction = Schema.decodeUnknownSync(
   MailboxMessageBatchActionCommand
+);
+const decodeSetMailboxThreadRead = Schema.decodeUnknownSync(
+  SetMailboxThreadReadCommand
 );
 
 const prefetchMailboxSelection = ({
@@ -646,6 +654,7 @@ function ConversationPane({
   messageId,
   onClose,
   pendingActions,
+  pendingThreadIds,
   selection,
   sessionId,
   threadId,
@@ -657,6 +666,7 @@ function ConversationPane({
   readonly pendingActions: readonly Schema.Schema.Type<
     typeof MailboxMessageBatchActionItem
   >[];
+  readonly pendingThreadIds: ReadonlySet<string>;
   readonly selection: MailboxViewSelection;
   readonly sessionId: string;
   readonly threadId?: string;
@@ -778,7 +788,11 @@ function ConversationPane({
 
   return (
     <ThreadView
-      data={projectPendingThreadActions(thread.data.thread, pendingActions)}
+      data={projectPendingThreadActions(
+        thread.data.thread,
+        pendingActions,
+        pendingThreadIds
+      )}
       filters={filters}
       mailboxId={mailboxId}
       onClose={onClose}
@@ -885,6 +899,7 @@ function MailboxWorkspace({
   filters,
   mailboxId,
   messageId,
+  readActionsEnabled,
   selection,
   sessionId,
   trashFolderId,
@@ -894,6 +909,7 @@ function MailboxWorkspace({
   readonly filters: MailboxMessageQueryState;
   readonly mailboxId: string;
   readonly messageId?: string;
+  readonly readActionsEnabled: boolean;
   readonly selection: MailboxViewSelection;
   readonly sessionId: string;
   readonly trashFolderId?: string;
@@ -902,6 +918,8 @@ function MailboxWorkspace({
   const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
   const pendingMessageLocks = useRef(new Set<string>());
+  const pendingThreadLocks = useRef(new Set<string>());
+  const openedThreadId = useRef<string | null>(null);
   const [actionFailures, setActionFailures] = useState<
     readonly {
       readonly command?: Schema.Schema.Type<
@@ -949,6 +967,35 @@ function MailboxWorkspace({
   const pendingMessageIds = new Set(
     pendingActions.map((action) => action.messageId)
   );
+  const threadReadMutationKey = [
+    ...mailboxThreadReadMutationKey,
+    sessionId,
+    mailboxId,
+  ] as const;
+  const pendingThreadReads = useMutationState<
+    Schema.Schema.Type<typeof SetMailboxThreadReadCommand> | undefined
+  >({
+    filters: { mutationKey: threadReadMutationKey, status: "pending" },
+    select: (mutation) => {
+      const decoded = Schema.decodeUnknownOption(SetMailboxThreadReadCommand)(
+        mutation.state.variables
+      );
+      return Option.getOrUndefined(decoded);
+    },
+  }).filter(
+    (
+      command
+    ): command is Schema.Schema.Type<typeof SetMailboxThreadReadCommand> =>
+      command !== undefined
+  );
+  const pendingThreadIds = new Set(
+    pendingThreadReads.map((command) => command.threadId)
+  );
+  const [threadReadFailure, setThreadReadFailure] = useState<{
+    readonly command: Schema.Schema.Type<typeof SetMailboxThreadReadCommand>;
+    readonly retryable: boolean;
+    readonly text: string;
+  }>();
   const clearActionFailures = (ids: ReadonlySet<string>) =>
     setActionFailures((current) =>
       current.filter((failure) => !ids.has(failure.id))
@@ -1049,6 +1096,77 @@ function MailboxWorkspace({
     },
     retry: false,
   });
+  const threadRead = useMutation({
+    mutationKey: threadReadMutationKey,
+    mutationFn: (
+      command: Schema.Schema.Type<typeof SetMailboxThreadReadCommand>
+    ) => setMailboxThreadRead({ data: command }),
+    onMutate: () => setThreadReadFailure(undefined),
+    onSuccess: async (result, command) => {
+      if (!result.ok && result.status === 401) {
+        await clearCachedAuthSession(queryClient);
+        return;
+      }
+      if (result.ok) {
+        for (const changed of result.result.changed) {
+          reconcileMailboxMessageActionCaches(queryClient, mailboxId, changed);
+        }
+      } else {
+        setThreadReadFailure({
+          command,
+          retryable: result.status === 500 || result.status === 502,
+          text:
+            messageActionErrorText(result) ??
+            "The conversation could not be marked as read.",
+        });
+      }
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "thread"] }),
+        queryClient.invalidateQueries({ queryKey: mailboxNavigationQueryKey }),
+      ]);
+    },
+    onError: async (_error, command) => {
+      setThreadReadFailure({
+        command,
+        retryable: true,
+        text: "The conversation could not be marked as read.",
+      });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "thread"] }),
+      ]);
+    },
+    onSettled: (_result, _error, command) => {
+      pendingThreadLocks.current.delete(command.threadId);
+    },
+    retry: false,
+  });
+  const submitThreadRead = (
+    nextThreadId: string,
+    command = decodeSetMailboxThreadRead({
+      mailboxId,
+      operationId: crypto.randomUUID(),
+      threadId: nextThreadId,
+    })
+  ) => {
+    if (pendingThreadLocks.current.has(nextThreadId)) {
+      return;
+    }
+    pendingThreadLocks.current.add(nextThreadId);
+    threadRead.mutate(command);
+  };
+  const submitOpenedThreadRead = useEffectEvent(submitThreadRead);
+  useEffect(() => {
+    if (threadId === undefined) {
+      openedThreadId.current = null;
+      return;
+    }
+    if (openedThreadId.current !== threadId) {
+      openedThreadId.current = threadId;
+      submitOpenedThreadRead(threadId);
+    }
+  }, [threadId]);
 
   const status =
     messages.error instanceof MailboxRequestError
@@ -1079,7 +1197,8 @@ function MailboxWorkspace({
     pendingActions,
     selection,
     filters,
-    { archiveFolderId, trashFolderId }
+    { archiveFolderId, trashFolderId },
+    pendingThreadIds
   );
   const submitMessageActionBatch = (
     command: Schema.Schema.Type<typeof MailboxMessageBatchActionCommand>
@@ -1131,17 +1250,34 @@ function MailboxWorkspace({
     <div className="grid h-full min-h-0 lg:grid-cols-[minmax(22rem,28rem)_minmax(0,1fr)]">
       <MessageList
         key={JSON.stringify([selection, filters])}
-        actionErrors={actionFailures.map((failure) => {
-          const retryCommand = failure.command;
-          return {
-            handleRetry:
-              failure.retryable && retryCommand !== undefined
-                ? () => submitMessageActionBatch(retryCommand)
-                : undefined,
-            messageId: failure.id,
-            text: failure.text,
-          };
-        })}
+        actionErrors={[
+          ...actionFailures.map((failure) => {
+            const retryCommand = failure.command;
+            return {
+              handleRetry:
+                failure.retryable && retryCommand !== undefined
+                  ? () => submitMessageActionBatch(retryCommand)
+                  : undefined,
+              messageId: failure.id,
+              text: failure.text,
+            };
+          }),
+          ...(threadReadFailure === undefined
+            ? []
+            : [
+                {
+                  handleRetry: threadReadFailure.retryable
+                    ? () =>
+                        submitThreadRead(
+                          threadReadFailure.command.threadId,
+                          threadReadFailure.command
+                        )
+                    : undefined,
+                  messageId: threadReadFailure.command.threadId,
+                  text: threadReadFailure.text,
+                },
+              ]),
+        ]}
         archiveFolderId={archiveFolderId}
         data={data}
         filters={filters}
@@ -1156,15 +1292,17 @@ function MailboxWorkspace({
         onLoadMore={() => void messages.fetchNextPage()}
         onMessageBatchAction={executeMessageBatchAction}
         onMessageAction={executeMessageAction}
-        onOpenMessage={(nextThreadId, nextMessageId) =>
+        onOpenMessage={(nextThreadId, nextMessageId) => {
+          openedThreadId.current = nextThreadId;
+          submitThreadRead(nextThreadId);
           void navigate({
             to: "/inbox",
             search: inboxSearchFor(selection, filters, {
               messageId: nextMessageId,
               threadId: nextThreadId,
             }),
-          })
-        }
+          });
+        }}
         onQueryChange={(state) =>
           void navigate({
             to: "/inbox",
@@ -1172,6 +1310,8 @@ function MailboxWorkspace({
           })
         }
         pendingMessageIds={pendingMessageIds}
+        pendingThreadIds={pendingThreadIds}
+        readActionsEnabled={readActionsEnabled}
         selectedThreadId={threadId}
         selection={selection}
         trashFolderId={trashFolderId}
@@ -1188,6 +1328,7 @@ function MailboxWorkspace({
           })
         }
         pendingActions={pendingActions}
+        pendingThreadIds={pendingThreadIds}
         selection={selection}
         sessionId={sessionId}
         threadId={threadId}
@@ -2103,6 +2244,19 @@ function AuthenticatedInbox({
         ? undefined
         : { folder: selectedFolder.id }
       : { label: selectedLabel.id };
+  const sentView = selectedFolder?.kind === "sent";
+  const clearSentReadFilter = useEffectEvent(() => {
+    void navigate({
+      replace: true,
+      search: decodeInboxSearch({ ...search, read: undefined }),
+      to: "/inbox",
+    });
+  });
+  useEffect(() => {
+    if (sentView && search.read !== undefined) {
+      clearSentReadFilter();
+    }
+  }, [search.read, sentView]);
   useEffect(() => {
     for (const folder of folders) {
       if (folder.kind !== "custom") {
@@ -2124,7 +2278,7 @@ function AuthenticatedInbox({
     delivery: search.delivery,
     hasAttachment: search.attachment === "true" || undefined,
     query: search.q,
-    read: search.read,
+    read: sentView ? undefined : search.read,
     starred: search.starred === "true" || undefined,
   };
   const archiveFolderId = folders.find(
@@ -2263,6 +2417,7 @@ function AuthenticatedInbox({
             filters={filters}
             mailboxId={mailbox.id}
             messageId={search.message}
+            readActionsEnabled={!sentView}
             selection={selection}
             sessionId={sessionId}
             threadId={search.thread}

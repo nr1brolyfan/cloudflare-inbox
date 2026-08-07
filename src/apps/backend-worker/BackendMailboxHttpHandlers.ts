@@ -592,6 +592,11 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
           })
           .pipe(mapHttpErrors)
       )
+      .handle("setThreadRead", ({ params, payload }) =>
+        messageActions
+          .setThreadRead({ ...params, ...payload })
+          .pipe(mapHttpErrors)
+      )
       .handle("bootstrapOwner", ({ payload }) =>
         organizationBootstrap.bootstrap(payload).pipe(mapHttpErrors)
       )

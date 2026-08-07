@@ -67,6 +67,7 @@ const repositoryWithMessage = (
     searchMessages: unused,
     setMessageRead: unused,
     setMessageStarred: unused,
+    setThreadRead: unused,
   });
 
 const authorization = MailboxAuthorization.of({
@@ -86,6 +87,7 @@ const authorization = MailboxAuthorization.of({
   requireMailbox: unusedAuthorization,
   requireMailboxDraftSend: unusedAuthorization,
   requireMailboxMessageRead: ({ resource }) => Effect.succeed(resource),
+  requireMailboxMessageModify: unused,
   requireMessage: ({ resource }) =>
     Effect.succeed({ ...resource, folderId: inboxFolderId }),
   requireRuleManage: unusedAuthorization,

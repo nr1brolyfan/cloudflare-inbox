@@ -283,6 +283,18 @@ export const MailboxMessageRepositoryDoLayer = Layer.effect(
       setMessageRead: (input) => mutation({ _tag: "SetMessageRead", input }),
       setMessageStarred: (input) =>
         mutation({ _tag: "SetMessageStarred", input }),
+      setThreadRead: (input) =>
+        client
+          .executeMailData({ _tag: "SetThreadRead", input })
+          .pipe(
+            Effect.flatMap((response) =>
+              response._tag === "DomainError"
+                ? domainFailure(response)
+                : response._tag === "ThreadReadSet"
+                  ? Effect.succeed(response.value)
+                  : mailDataProtocolError(response, true)
+            )
+          ),
     });
   })
 );
