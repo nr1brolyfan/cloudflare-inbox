@@ -20,6 +20,7 @@ import type { AsyncRuleJobId } from "#/modules/mailbox/domain/Mailbox";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type { ParsedInboundMessageV1 as ParsedInboundMessageV1Type } from "#/modules/mailbox/domain/MailboxInbound";
 import {
+  InboundProcessingSchema,
   InboundWorkflowParams,
   InboundWorkflowResultV1,
   ParsedInboundMessageV1,
@@ -192,10 +193,24 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
                 ? Effect.die(new InboundRetryableStepError(error))
                 : Effect.succeed({ _tag: "Rejected" as const }),
             onSuccess: (value) =>
-              Effect.succeed({ _tag: "Recorded" as const, value }),
+              Effect.succeed({
+                _tag: "Recorded" as const,
+                value: Schema.encodeSync(InboundProcessingSchema)(value),
+              }),
           })
         ),
         mailboxStateTaskConfig
+      ).pipe(
+        Effect.map((outcome) =>
+          outcome._tag === "Recorded"
+            ? {
+                _tag: outcome._tag,
+                value: Schema.decodeUnknownSync(InboundProcessingSchema)(
+                  outcome.value
+                ),
+              }
+            : outcome
+        )
       );
     let parsedForFailure: ParsedInboundMessageV1Type | undefined;
     const taskSuffix = params.formatVersion === 1 ? "v3" : "v4";
@@ -226,10 +241,24 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
                 ? Effect.die(new InboundRetryableStepError(error))
                 : Effect.succeed({ _tag: "Rejected" as const }),
             onSuccess: (value) =>
-              Effect.succeed({ _tag: "Recorded" as const, value }),
+              Effect.succeed({
+                _tag: "Recorded" as const,
+                value: Schema.encodeSync(InboundProcessingSchema)(value),
+              }),
           })
         ),
         mailboxStateTaskConfig
+      ).pipe(
+        Effect.map((outcome) =>
+          outcome._tag === "Recorded"
+            ? {
+                _tag: outcome._tag,
+                value: Schema.decodeUnknownSync(InboundProcessingSchema)(
+                  outcome.value
+                ),
+              }
+            : outcome
+        )
       );
 
     const processing = yield* Effect.exit(
@@ -266,20 +295,33 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
             return yield* parser.parse(raw);
           }).pipe(
             Effect.matchEffect({
-              onFailure: (
-                error
-              ): Effect.Effect<StepOutcome<ParsedInboundMessageV1Type>> =>
+              onFailure: (error) =>
                 error._tag === "MimeParseError"
                   ? Effect.succeed({
-                      _tag: "Failure",
+                      _tag: "Failure" as const,
                       failure: mimeFailure(error),
                     })
                   : blobFailure(error),
               onSuccess: (value) =>
-                Effect.succeed({ _tag: "Success" as const, value }),
+                Effect.succeed({
+                  _tag: "Success" as const,
+                  value: Schema.encodeSync(ParsedInboundMessageV1)(value),
+                }),
             })
           ),
           processingTaskConfig
+        ).pipe(
+          Effect.map(
+            (outcome): StepOutcome<ParsedInboundMessageV1Type> =>
+              outcome._tag === "Success"
+                ? {
+                    _tag: outcome._tag,
+                    value: Schema.decodeUnknownSync(ParsedInboundMessageV1)(
+                      outcome.value
+                    ),
+                  }
+                : outcome
+          )
         );
         if (parsed._tag === "Failure") {
           return { _tag: "Failed" as const, failure: parsed.failure };
@@ -432,11 +474,27 @@ export const inboundWorkflowProgram = Effect.succeed((input: unknown) =>
                 Effect.succeed(
                   value === null
                     ? ({ _tag: "Rejected" } as const)
-                    : ({ _tag: "Success", value } as const)
+                    : ({
+                        _tag: "Success",
+                        value: Schema.encodeSync(InboundProcessingSchema)(
+                          value
+                        ),
+                      } as const)
                 ),
             })
           ),
           processingTaskConfig
+        ).pipe(
+          Effect.map((outcome) =>
+            outcome._tag === "Success"
+              ? {
+                  _tag: outcome._tag,
+                  value: Schema.decodeUnknownSync(InboundProcessingSchema)(
+                    outcome.value
+                  ),
+                }
+              : outcome
+          )
         );
         if (committed._tag === "Failure") {
           return { _tag: "Failed" as const, failure: committed.failure };

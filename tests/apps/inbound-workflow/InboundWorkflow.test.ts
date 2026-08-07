@@ -108,7 +108,9 @@ const runStep = <T>(
     timeout: options.timeout,
   });
   // Alchemy provides the captured Workflow context before calling step.do.
-  return options.effect as Effect.Effect<T>;
+  return (options.effect as Effect.Effect<T>).pipe(
+    Effect.map((value) => structuredClone(value))
+  );
 };
 
 const runWorkflow = (
