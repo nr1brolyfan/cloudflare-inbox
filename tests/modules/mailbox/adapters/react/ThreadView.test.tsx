@@ -51,6 +51,10 @@ const thread = {
     id: "thread-1",
     latestActivityAt: 2000,
     messageCount: 2,
+    participants: [
+      { address: "sender@example.test", displayName: "Sender" },
+      { address: "owner@example.test", displayName: "Owner" },
+    ],
     subject: "Potentially hostile content",
     unreadCount: 1,
   },
@@ -205,6 +209,59 @@ describe(ThreadView, () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Hide quoted text" }));
     expect(screen.queryByText("Previous reply")).toBeNull();
+  });
+
+  it("keeps large participant lists compact and searchable", () => {
+    const participants = Array.from({ length: 102 }, (_, index) => ({
+      address: `participant-${index + 1}@example.test`,
+      displayName: `Participant ${index + 1}`,
+    }));
+    render(
+      <ThreadView
+        data={{
+          ...thread,
+          thread: { ...thread.thread, participants },
+        }}
+        filters={{}}
+        mailboxId="primary"
+        onClose={vi.fn<() => void>()}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    expect({
+      count: Boolean(
+        screen.getByRole("button", {
+          name: "Browse 102 conversation participants",
+        })
+      ),
+      directory: screen.queryByLabelText("Conversation participants"),
+      participant: screen.queryByText("Participant 1"),
+    }).toStrictEqual({ count: true, directory: null, participant: null });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Browse 102 conversation participants",
+      })
+    );
+    expect(
+      screen
+        .getByLabelText("Conversation participants")
+        .classList.contains("absolute")
+    ).toBeTruthy();
+    fireEvent.change(
+      screen.getByRole("searchbox", {
+        name: "Search conversation participants",
+      }),
+      { target: { value: "participant-102@" } }
+    );
+    expect({
+      match: Boolean(screen.getByText("Participant 102")),
+      nonMatch: screen.queryByText("Participant 1"),
+    }).toStrictEqual({ match: true, nonMatch: null });
+
+    fireEvent.pointerDown(document.body);
+    expect(screen.queryByLabelText("Conversation participants")).toBeNull();
   });
 
   it.each([

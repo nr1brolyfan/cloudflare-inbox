@@ -779,13 +779,23 @@ const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
             .from(message)
             .where(threadPredicate)
             .orderBy(asc(message.activityAt), asc(message.id));
-    const [stats] = yield* db
-      .select({
-        messageCount: count(message.id),
-        unreadCount: sql<number>`coalesce(sum(case when ${message.read} = 0 then 1 else 0 end), 0)`,
-      })
-      .from(message)
-      .where(threadPredicate);
+    const [statsRows, participantRows] = yield* Effect.all([
+      db
+        .select({
+          messageCount: count(message.id),
+          unreadCount: sql<number>`coalesce(sum(case when ${message.read} = 0 then 1 else 0 end), 0)`,
+        })
+        .from(message)
+        .where(threadPredicate),
+      db
+        .select({
+          recipientsJson: message.recipientsJson,
+          senderJson: message.senderJson,
+        })
+        .from(message)
+        .where(threadPredicate),
+    ]);
+    const [stats] = statsRows;
     const all = yield* Effect.all(
       rows.map((row) => readMessageDetailRow(db, row, mailboxId, "get-thread"))
     );
@@ -799,11 +809,14 @@ const getThread = (mailboxId: MailboxId, input: GetThreadInput) =>
     }
     const participants = [
       ...new Map(
-        all
-          .flatMap((item) => [
-            ...(item.sender === undefined ? [] : [item.sender]),
-            ...item.recipients,
-          ])
+        participantRows
+          .flatMap((item) => {
+            const sender = optionalAddress(item.senderJson);
+            return [
+              ...(sender === undefined ? [] : [sender]),
+              ...decodeJson(AddressList, item.recipientsJson),
+            ];
+          })
           .map((address) => [address.address, address])
       ).values(),
     ];

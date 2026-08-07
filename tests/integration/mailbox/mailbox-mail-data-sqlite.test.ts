@@ -798,7 +798,7 @@ describe("Mailbox mail data SQLite", () => {
             receivedAt: index,
             recipientsJson: '[{"address":"owner@example.com"}]',
             referencesJson: "[]",
-            senderJson: '{"address":"sender@example.com"}',
+            senderJson: `{"address":"sender-${index}@example.com"}`,
             size: 10,
             snippet: `Message ${index}`,
             starred: 0,
@@ -829,11 +829,17 @@ describe("Mailbox mail data SQLite", () => {
           last: complete.messages.at(-1)?.id,
           length: complete.messages.length,
           nextCursor: complete.nextCursor,
+          participantCount: complete.thread.participants.length,
+          includesOldestSender: complete.thread.participants.some(
+            (participant) => participant.address === "sender-0@example.com"
+          ),
         }).toStrictEqual({
           first: "message-01",
+          includesOldestSender: true,
           last: "message-50",
           length: 50,
           nextCursor: undefined,
+          participantCount: 52,
         });
         expect({
           length: paged.messages.length,

@@ -455,7 +455,11 @@ describe("mailbox message reading", () => {
           textBody: "Plain text body",
         },
       ],
-      thread: { id: "thread-1", messageCount: 2 },
+      thread: {
+        id: "thread-1",
+        messageCount: 2,
+        participants: [{ address: "sender@example.test" }],
+      },
     });
     expect(JSON.stringify(encoded)).not.toContain("tracker.test");
   });

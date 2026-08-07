@@ -189,6 +189,7 @@ export class MailboxThreadHeader extends Schema.Class<MailboxThreadHeader>(
   messageCount: Count,
   unreadCount: Count,
   latestActivityAt: UnixMillis,
+  participants: Schema.optional(Schema.Array(MailAddress)),
 }) {}
 
 export const MailboxThreadHeaderSchema = MailboxThreadHeader.check(
@@ -446,6 +447,18 @@ export class MailboxMessageReading extends Context.Service<
                   id: detail.thread.id,
                   latestActivityAt: detail.messages.at(-1)?.activityAt,
                   messageCount: detail.messages.length,
+                  participants: [
+                    ...new Map(
+                      detail.messages
+                        .flatMap((message) => [
+                          ...(message.sender === undefined
+                            ? []
+                            : [message.sender]),
+                          ...message.recipients,
+                        ])
+                        .map((address) => [address.address, address])
+                    ).values(),
+                  ],
                   subject: detail.messages.at(-1)?.subject,
                   unreadCount: detail.messages.filter(
                     (message) => !message.read
@@ -484,6 +497,7 @@ export class MailboxMessageReading extends Context.Service<
               id: projectedThread.id,
               latestActivityAt: projectedThread.latestActivityAt,
               messageCount: projectedThread.messageCount,
+              participants: projectedThread.participants,
               subject: projectedThread.subject,
               unreadCount: projectedThread.unreadCount,
             },

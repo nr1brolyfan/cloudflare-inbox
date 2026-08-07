@@ -6,12 +6,16 @@ import {
   MailOpen,
   Paperclip,
   Reply,
+  Search,
+  Users,
+  X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { MailboxThreadResult } from "#/modules/mailbox/application/MailboxMessageReading";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import type {
   MailboxMessageQueryState,
@@ -40,6 +44,11 @@ const addressText = (address: {
   address.displayName === undefined
     ? address.address
     : `${address.displayName} <${address.address}>`;
+
+const addressName = (address: {
+  readonly address: string;
+  readonly displayName?: string;
+}) => address.displayName ?? address.address;
 
 const messageAuthor = (message: {
   readonly direction: "inbound" | "outbound";
@@ -173,6 +182,143 @@ function QuotedPlainText({
   );
 }
 
+function ThreadParticipants({
+  messageCount,
+  participants,
+}: {
+  readonly messageCount: number;
+  readonly participants: readonly {
+    readonly address: string;
+    readonly displayName?: string;
+  }[];
+}) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const directoryRef = useRef<HTMLDivElement>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const visible =
+    normalizedQuery === ""
+      ? participants
+      : participants.filter((participant) =>
+          `${participant.displayName ?? ""} ${participant.address}`
+            .toLocaleLowerCase()
+            .includes(normalizedQuery)
+        );
+
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    const closeOutside = (event: PointerEvent) => {
+      if (
+        event.target instanceof Node &&
+        !directoryRef.current?.contains(event.target)
+      ) {
+        setOpen(false);
+      }
+    };
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setOpen(false);
+        triggerRef.current?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", closeOutside);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOutside);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [open]);
+
+  return (
+    <div ref={directoryRef} className="relative mt-1">
+      <div className="flex items-center gap-1.5 text-xs text-[var(--sea-ink-soft)]">
+        <Users aria-hidden="true" size={13} />
+        <span>
+          {messageCount} {messageCount === 1 ? "message" : "messages"}
+        </span>
+        <span aria-hidden="true">·</span>
+        <Button
+          ref={triggerRef}
+          type="button"
+          variant="ghost"
+          aria-expanded={open}
+          aria-label={`Browse ${participants.length} conversation participants`}
+          onClick={() => setOpen((current) => !current)}
+          className="h-auto rounded-sm p-0 text-xs font-bold text-[var(--lagoon-deep)] underline decoration-[var(--line)] underline-offset-2 hover:text-[var(--sea-ink)]"
+        >
+          {participants.length}{" "}
+          {participants.length === 1 ? "participant" : "participants"}
+        </Button>
+      </div>
+      {open ? (
+        <div
+          aria-label="Conversation participants"
+          className="absolute top-full left-0 z-30 mt-2 w-full max-w-md rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-2 shadow-[0_16px_36px_rgba(23,58,64,0.18)]"
+        >
+          <div className="flex items-center gap-2">
+            <label
+              htmlFor="participant-search"
+              className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-2.5 py-1.5 text-[var(--sea-ink-soft)] focus-within:border-[var(--lagoon-deep)]"
+            >
+              <Search aria-hidden="true" size={14} />
+              <span className="sr-only">Search conversation participants</span>
+              <Input
+                id="participant-search"
+                autoFocus
+                type="search"
+                value={query}
+                onChange={(event) => setQuery(event.currentTarget.value)}
+                placeholder="Search people"
+                className="h-auto min-w-0 flex-1 rounded-none border-0 bg-transparent p-0 text-xs text-[var(--sea-ink)] shadow-none focus-visible:ring-0 dark:bg-transparent"
+              />
+            </label>
+            <Button
+              type="button"
+              variant="ghost"
+              aria-label="Close participant directory"
+              onClick={() => setOpen(false)}
+              className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--control-bg)]"
+            >
+              <X aria-hidden="true" size={15} />
+            </Button>
+          </div>
+          <div className="mt-2 max-h-44 overflow-y-auto overscroll-contain rounded-lg">
+            {visible.length === 0 ? (
+              <p className="px-3 py-5 text-center text-xs text-[var(--sea-ink-soft)]">
+                No matching participants
+              </p>
+            ) : (
+              visible.map((participant) => (
+                <div
+                  key={participant.address}
+                  className="flex min-w-0 items-center gap-2 rounded-lg px-3 py-2 hover:bg-[var(--control-bg)]"
+                >
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--sand)] text-[0.62rem] font-extrabold text-[var(--palm)]">
+                    {addressName(participant).slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-bold text-[var(--sea-ink)]">
+                      {addressName(participant)}
+                    </span>
+                    {participant.displayName === undefined ? null : (
+                      <span className="block truncate text-[0.65rem] text-[var(--sea-ink-soft)]">
+                        {participant.address}
+                      </span>
+                    )}
+                  </span>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function MessageBody({
   authorLabel,
   hasHtmlBody,
@@ -285,6 +431,18 @@ export function ThreadView({
   readonly replyingMessageId?: string;
   readonly selection: MailboxViewSelection;
 }) {
+  const participants = data.thread.participants ?? [
+    ...new Map(
+      data.messages
+        .flatMap((message) => [
+          ...(message.sender === undefined ? [] : [message.sender]),
+          ...message.to,
+          ...message.cc,
+        ])
+        .map((address) => [address.address, address])
+    ).values(),
+  ];
+
   return (
     <section
       aria-label="Conversation"
@@ -315,9 +473,10 @@ export function ThreadView({
             <h2 className="display-title text-xl font-bold tracking-tight sm:text-2xl">
               {data.thread.subject || "(No subject)"}
             </h2>
-            <p className="mt-1 flex items-center gap-2 text-xs text-[var(--sea-ink-soft)]">
-              {data.thread.messageCount} messages
-            </p>
+            <ThreadParticipants
+              messageCount={data.thread.messageCount}
+              participants={participants}
+            />
           </div>
         </div>
       </header>
