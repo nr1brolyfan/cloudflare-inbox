@@ -6,6 +6,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import {
   createFileRoute,
   Link,
@@ -130,6 +131,9 @@ import { Button } from "@/components/ui/button";
 
 const InboxSearch = MailboxSearch;
 const decodeInboxSearch = decodeMailboxSearch;
+type MailboxNavigationData = Schema.Codec.Encoded<
+  typeof MailboxNavigationResult
+>;
 
 type MailboxNavigateOptions =
   | {
@@ -190,6 +194,42 @@ const decodeMailboxMessageView = Schema.decodeUnknownSync(MailboxMessageView);
 const decodeMailboxMessageAction = Schema.decodeUnknownSync(
   MailboxMessageActionCommand
 );
+
+const prefetchMailboxSelection = ({
+  folders,
+  mailboxId,
+  queryClient,
+  selection,
+  sessionId,
+}: {
+  readonly folders: MailboxNavigationData["folders"];
+  readonly mailboxId: string;
+  readonly queryClient: QueryClient;
+  readonly selection: MailboxViewSelection;
+  readonly sessionId: string;
+}) => {
+  const folder = folders.find((item) => item.id === selection.folder);
+  if (folder?.kind === "drafts") {
+    return queryClient.prefetchInfiniteQuery(
+      mailboxDraftListQueryOptions({ mailboxId, queryClient, sessionId })
+    );
+  }
+
+  const view = decodeMailboxMessageView(
+    selection.folder === undefined
+      ? { _tag: "Label", labelId: selection.label, mailboxId }
+      : { _tag: "Folder", folderId: selection.folder, mailboxId }
+  );
+  return queryClient.prefetchInfiniteQuery(
+    mailboxMessageListQueryOptions({
+      filters: {},
+      mailboxId,
+      queryClient,
+      sessionId,
+      view,
+    })
+  );
+};
 const decodeOpenMailboxThread = Schema.decodeUnknownSync(
   OpenMailboxThreadInput
 );
@@ -814,15 +854,7 @@ function DraftListWorkspace({
     mailboxDraftListQueryOptions({ mailboxId, queryClient, sessionId })
   );
 
-  if (drafts.isLoading) {
-    return (
-      <output className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
-        <LoaderCircle aria-label="Loading drafts" className="animate-spin" />
-      </output>
-    );
-  }
-
-  if (drafts.data === undefined) {
+  if (!drafts.isLoading && drafts.data === undefined) {
     const status =
       drafts.error instanceof MailboxRequestError ? drafts.error.status : 502;
     const failure = draftListFailure(status);
@@ -835,15 +867,17 @@ function DraftListWorkspace({
     );
   }
 
-  const lastPage = drafts.data.pages.at(-1);
+  const pages = drafts.data?.pages ?? [];
+  const lastPage = pages.at(-1);
   return (
     <DraftList
       data={{
-        items: drafts.data.pages.flatMap((page) => page.items),
+        items: pages.flatMap((page) => page.items),
         nextCursor: lastPage?.nextCursor,
       }}
       deliveryId={deliveryId}
       folderId={folderId}
+      isInitialLoading={drafts.isLoading}
       isLoadingMore={drafts.isFetchingNextPage}
       loadMoreFailed={drafts.isFetchNextPageError}
       onLoadMore={() => void drafts.fetchNextPage()}
@@ -1004,21 +1038,14 @@ function MailboxWorkspace({
     retry: false,
   });
 
-  if (messages.isLoading) {
-    return (
-      <output className="flex min-h-80 flex-1 items-center justify-center text-[var(--sea-ink-soft)]">
-        <LoaderCircle aria-label="Loading messages" className="animate-spin" />
-      </output>
-    );
-  }
-
   const status =
     messages.error instanceof MailboxRequestError
       ? messages.error.status
       : undefined;
   const blockingError =
-    messages.data === undefined || (messages.error !== null && status === 404);
-  if (messages.data === undefined || blockingError) {
+    (!messages.isLoading && messages.data === undefined) ||
+    (messages.error !== null && status === 404);
+  if (blockingError) {
     const errorStatus = status ?? 502;
     const failure = messageListFailure(errorStatus);
     return (
@@ -1030,7 +1057,7 @@ function MailboxWorkspace({
     );
   }
 
-  const { pages } = messages.data;
+  const pages = messages.data?.pages ?? [];
   const lastPage = pages.at(-1);
   const data = projectPendingMessageActions(
     {
@@ -1074,8 +1101,13 @@ function MailboxWorkspace({
         archiveFolderId={archiveFolderId}
         data={data}
         filters={filters}
+        isInitialLoading={messages.isLoading}
         isLoadingMore={messages.isFetchingNextPage}
-        isRefreshing={messages.isFetching && !messages.isFetchingNextPage}
+        isRefreshing={
+          messages.data !== undefined &&
+          messages.isFetching &&
+          !messages.isFetchingNextPage
+        }
         loadMoreFailed={messages.isFetchNextPageError}
         onLoadMore={() => void messages.fetchNextPage()}
         onMessageAction={executeMessageAction}
@@ -2026,6 +2058,19 @@ function AuthenticatedInbox({
         ? undefined
         : { folder: selectedFolder.id }
       : { label: selectedLabel.id };
+  useEffect(() => {
+    for (const folder of folders) {
+      if (folder.kind !== "custom") {
+        void prefetchMailboxSelection({
+          folders,
+          mailboxId: mailbox.id,
+          queryClient,
+          selection: { folder: folder.id },
+          sessionId,
+        });
+      }
+    }
+  }, [folders, mailbox.id, queryClient, sessionId]);
 
   if (selection === undefined) {
     return <MailboxUnavailable status={404} />;
@@ -2052,42 +2097,14 @@ function AuthenticatedInbox({
         delivery: outboundDeliveryId,
       }),
     });
-  const prefetchSelection = (nextSelection: MailboxViewSelection) => {
-    const folder = folders.find((item) => item.id === nextSelection.folder);
-    if (folder?.kind === "drafts") {
-      void queryClient.prefetchInfiniteQuery(
-        mailboxDraftListQueryOptions({
-          mailboxId: mailbox.id,
-          queryClient,
-          sessionId,
-        })
-      );
-      return;
-    }
-
-    const view = decodeMailboxMessageView(
-      nextSelection.folder === undefined
-        ? {
-            _tag: "Label",
-            labelId: nextSelection.label,
-            mailboxId: mailbox.id,
-          }
-        : {
-            _tag: "Folder",
-            folderId: nextSelection.folder,
-            mailboxId: mailbox.id,
-          }
-    );
-    void queryClient.prefetchInfiniteQuery(
-      mailboxMessageListQueryOptions({
-        filters: {},
-        mailboxId: mailbox.id,
-        queryClient,
-        sessionId,
-        view,
-      })
-    );
-  };
+  const prefetchSelection = (nextSelection: MailboxViewSelection) =>
+    void prefetchMailboxSelection({
+      folders,
+      mailboxId: mailbox.id,
+      queryClient,
+      selection: nextSelection,
+      sessionId,
+    });
   const closeEditor = () =>
     void navigate({
       to: "/inbox",

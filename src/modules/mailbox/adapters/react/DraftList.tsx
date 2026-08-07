@@ -28,6 +28,7 @@ export function DraftList({
   data,
   deliveryId,
   folderId,
+  isInitialLoading = false,
   isLoadingMore,
   loadMoreFailed,
   onLoadMore,
@@ -36,6 +37,7 @@ export function DraftList({
   readonly data: DraftListData;
   readonly deliveryId?: string;
   readonly folderId: string;
+  readonly isInitialLoading?: boolean;
   readonly isLoadingMore: boolean;
   readonly loadMoreFailed: boolean;
   readonly onLoadMore: () => void;
@@ -55,13 +57,41 @@ export function DraftList({
             Open a draft to continue writing or send it.
           </p>
         </div>
-        <span className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]">
-          {data.items.length}
+        <span
+          aria-label={
+            isInitialLoading
+              ? "Loading draft count"
+              : `${data.items.length} drafts`
+          }
+          className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]"
+        >
+          {isInitialLoading ? "--" : data.items.length}
         </span>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3 sm:p-5">
-        {data.items.length === 0 ? (
+        {isInitialLoading ? (
+          <output
+            aria-label="Loading drafts"
+            className="mx-auto block max-w-4xl space-y-2"
+          >
+            {[0, 1, 2, 3, 4].map((row) => (
+              <span
+                key={row}
+                className="block animate-pulse rounded-2xl border border-[var(--line)]/55 px-4 py-4 sm:px-5"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="size-9 shrink-0 rounded-xl bg-[var(--line)]/70" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block h-3 w-2/5 rounded-full bg-[var(--line)]" />
+                    <span className="mt-2 block h-3 w-3/5 rounded-full bg-[var(--line)]/80" />
+                    <span className="mt-2 block h-2.5 w-4/5 rounded-full bg-[var(--line)]/55" />
+                  </span>
+                </span>
+              </span>
+            ))}
+          </output>
+        ) : data.items.length === 0 ? (
           <div className="flex min-h-72 items-center justify-center px-6 text-center text-[var(--sea-ink-soft)]">
             <div>
               <FilePenLine className="mx-auto opacity-30" size={36} />

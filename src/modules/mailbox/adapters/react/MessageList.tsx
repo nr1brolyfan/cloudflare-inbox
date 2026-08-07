@@ -306,6 +306,7 @@ export function MessageList({
   archiveFolderId,
   data,
   filters,
+  isInitialLoading = false,
   isLoadingMore,
   isRefreshing = false,
   loadMoreFailed,
@@ -328,6 +329,7 @@ export function MessageList({
   readonly archiveFolderId?: string;
   readonly data: MessageListData;
   readonly filters: MailboxMessageQueryState;
+  readonly isInitialLoading?: boolean;
   readonly isLoadingMore: boolean;
   readonly isRefreshing?: boolean;
   readonly loadMoreFailed: boolean;
@@ -386,8 +388,15 @@ export function MessageList({
                 </>
               ) : null}
             </output>
-            <span className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]">
-              {data.items.length}
+            <span
+              aria-label={
+                isInitialLoading
+                  ? "Loading message count"
+                  : `${data.items.length} messages`
+              }
+              className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]"
+            >
+              {isInitialLoading ? "--" : data.items.length}
             </span>
           </div>
         </div>
@@ -420,7 +429,24 @@ export function MessageList({
         ref={scrollContainerRef}
         className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-2 sm:p-3"
       >
-        {data.items.length === 0 ? (
+        {isInitialLoading ? (
+          <output aria-label="Loading messages" className="block space-y-2 p-1">
+            {[0, 1, 2, 3, 4].map((row) => (
+              <span
+                key={row}
+                className="block animate-pulse rounded-2xl border border-[var(--line)]/55 px-4 py-4 sm:px-5"
+              >
+                <span className="flex items-center gap-3">
+                  <span className="size-2 rounded-full bg-[var(--line)]" />
+                  <span className="h-3 w-2/5 rounded-full bg-[var(--line)]" />
+                  <span className="ml-auto h-2.5 w-12 rounded-full bg-[var(--line)]/70" />
+                </span>
+                <span className="mt-3 ml-5 block h-3 w-3/5 rounded-full bg-[var(--line)]/85" />
+                <span className="mt-2 ml-5 block h-2.5 w-4/5 rounded-full bg-[var(--line)]/55" />
+              </span>
+            ))}
+          </output>
+        ) : data.items.length === 0 ? (
           <div className="flex min-h-72 items-center justify-center px-6 text-center text-[var(--sea-ink-soft)]">
             <div>
               <Inbox className="mx-auto opacity-30" size={34} />

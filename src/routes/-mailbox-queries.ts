@@ -22,7 +22,7 @@ const decodeMailboxMessageListInput = Schema.decodeUnknownSync(
   MailboxMessageListInput
 );
 
-const mailboxListStaleTime = 15_000;
+const mailboxListStaleTime = 2 * 60_000;
 const mailboxListGcTime = 60 * 60_000;
 
 export class MailboxRequestError extends Error {

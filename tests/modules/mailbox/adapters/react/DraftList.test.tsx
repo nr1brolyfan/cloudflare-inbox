@@ -68,4 +68,22 @@ describe(DraftList, () => {
 
     expect(screen.getByText("No saved drafts")).toBeTruthy();
   });
+
+  it("keeps the drafts workspace visible during the initial fetch", () => {
+    render(
+      <DraftList
+        data={{ items: [] }}
+        folderId="drafts"
+        isInitialLoading
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onOpenDraft={vi.fn<(draftId: string) => void>()}
+      />
+    );
+
+    expect(screen.getByText("Saved drafts")).toBeTruthy();
+    expect(screen.getByLabelText("Loading drafts")).toBeTruthy();
+    expect(screen.queryByText("No saved drafts")).toBeNull();
+  });
 });

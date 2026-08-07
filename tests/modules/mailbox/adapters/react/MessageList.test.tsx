@@ -224,6 +224,31 @@ describe(MessageList, () => {
     expect(screen.getByText("No matching messages")).toBeTruthy();
   });
 
+  it("keeps the message workspace visible during the initial fetch", () => {
+    render(
+      <MessageList
+        data={{ items: [] }}
+        filters={{}}
+        isInitialLoading
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onMessageAction={vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >()}
+        onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    expect(
+      screen.getByRole("searchbox", { name: "Search messages" })
+    ).toBeTruthy();
+    expect(screen.getByLabelText("Loading messages")).toBeTruthy();
+    expect(screen.queryByText("No messages here")).toBeNull();
+  });
+
   it("keeps loaded messages visible with retryable pagination and action errors", () => {
     const onLoadMore = vi.fn<() => void>();
     const onRetryAction = vi.fn<() => void>();
