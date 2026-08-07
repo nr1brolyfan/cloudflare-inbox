@@ -13,6 +13,10 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import type { DraftEditorFields } from "#/modules/mailbox/adapters/browser/DraftSessionStorage";
 import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type { DraftAttachmentReservation } from "#/modules/mailbox/domain/MailboxDraftAttachment";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 
 type EditorContent = Schema.Schema.Type<typeof DraftEditorContent>;
 export interface DraftEditorSnapshot {
@@ -249,8 +253,9 @@ export function DraftEditor({
             {statusText}
           </p>
         </div>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           aria-label="Close draft editor"
           disabled={editorLocked}
           onClick={() => {
@@ -262,7 +267,7 @@ export function DraftEditor({
           className="flex size-10 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] disabled:opacity-55"
         >
           <X size={18} />
-        </button>
+        </Button>
       </div>
 
       <form
@@ -276,70 +281,90 @@ export function DraftEditor({
         }}
       >
         <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_18px_50px_rgba(23,58,64,0.08)]">
-          <label className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center">
+          <label
+            htmlFor="draft-to"
+            className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center"
+          >
             <span className="text-xs font-extrabold text-[var(--sea-ink-soft)]">
               To
             </span>
-            <input
+            <Input
+              id="draft-to"
               aria-label="To recipients"
               autoFocus
               disabled={editorLocked}
               value={fields.to}
               onChange={(event) => updateField({ to: event.target.value })}
               placeholder="person@example.com, Team <team@example.com>"
-              className="mt-1 min-w-0 border-0 bg-transparent text-sm outline-none placeholder:text-[var(--sea-ink-soft)]/42 disabled:opacity-60 sm:mt-0"
+              className="mt-1 h-auto min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-sm transition-none outline-none placeholder:text-[var(--sea-ink-soft)]/42 focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:mt-0 dark:bg-transparent dark:disabled:bg-transparent"
             />
           </label>
-          <label className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center">
+          <label
+            htmlFor="draft-cc"
+            className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center"
+          >
             <span className="text-xs font-extrabold text-[var(--sea-ink-soft)]">
               Cc
             </span>
-            <input
+            <Input
+              id="draft-cc"
               aria-label="Cc recipients"
               disabled={editorLocked}
               value={fields.cc}
               onChange={(event) => updateField({ cc: event.target.value })}
-              className="mt-1 min-w-0 border-0 bg-transparent text-sm outline-none disabled:opacity-60 sm:mt-0"
+              className="mt-1 h-auto min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-sm transition-none outline-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:mt-0 dark:bg-transparent dark:disabled:bg-transparent"
             />
           </label>
-          <label className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center">
+          <label
+            htmlFor="draft-bcc"
+            className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center"
+          >
             <span className="text-xs font-extrabold text-[var(--sea-ink-soft)]">
               Bcc
             </span>
-            <input
+            <Input
+              id="draft-bcc"
               aria-label="Bcc recipients"
               disabled={editorLocked}
               value={fields.bcc}
               onChange={(event) => updateField({ bcc: event.target.value })}
-              className="mt-1 min-w-0 border-0 bg-transparent text-sm outline-none disabled:opacity-60 sm:mt-0"
+              className="mt-1 h-auto min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-sm transition-none outline-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:mt-0 dark:bg-transparent dark:disabled:bg-transparent"
             />
           </label>
-          <label className="grid px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center">
+          <label
+            htmlFor="draft-subject"
+            className="grid px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center"
+          >
             <span className="text-xs font-extrabold text-[var(--sea-ink-soft)]">
               Subject
             </span>
-            <input
+            <Input
+              id="draft-subject"
               aria-label="Subject"
               disabled={editorLocked}
               maxLength={998}
               value={fields.subject}
               onChange={(event) => updateField({ subject: event.target.value })}
               placeholder="What is this message about?"
-              className="mt-1 min-w-0 border-0 bg-transparent text-sm font-bold outline-none placeholder:font-normal placeholder:text-[var(--sea-ink-soft)]/42 disabled:opacity-60 sm:mt-0"
+              className="mt-1 h-auto min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-sm font-bold transition-none outline-none placeholder:font-normal placeholder:text-[var(--sea-ink-soft)]/42 focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:mt-0 dark:bg-transparent dark:disabled:bg-transparent"
             />
           </label>
         </div>
 
-        <label className="mt-4 flex min-h-52 flex-1 flex-col rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] p-4 shadow-[0_18px_50px_rgba(23,58,64,0.08)] sm:p-6">
+        <label
+          htmlFor="draft-message"
+          className="mt-4 flex min-h-52 flex-1 flex-col rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] p-4 shadow-[0_18px_50px_rgba(23,58,64,0.08)] sm:p-6"
+        >
           <span className="sr-only">Message</span>
-          <textarea
+          <Textarea
+            id="draft-message"
             aria-label="Message"
             disabled={editorLocked}
             maxLength={1_000_000}
             value={fields.textBody}
             onChange={(event) => updateField({ textBody: event.target.value })}
             placeholder="Write your message..."
-            className="min-h-44 flex-1 resize-none border-0 bg-transparent text-sm leading-7 outline-none placeholder:text-[var(--sea-ink-soft)]/42 disabled:opacity-60 sm:text-base"
+            className="min-h-44 flex-1 resize-none rounded-none border-0 bg-transparent p-0 text-sm leading-7 transition-none outline-none placeholder:text-[var(--sea-ink-soft)]/42 focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:text-base dark:bg-transparent dark:disabled:bg-transparent"
           />
         </label>
 
@@ -355,6 +380,7 @@ export function DraftEditor({
               </p>
             </div>
             <label
+              htmlFor="draft-attachments"
               className={`inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-3.5 py-2 text-xs font-extrabold ${
                 editorLocked
                   ? "cursor-not-allowed opacity-45"
@@ -362,7 +388,8 @@ export function DraftEditor({
               }`}
             >
               <Paperclip size={15} /> Add files
-              <input
+              <Input
+                id="draft-attachments"
                 type="file"
                 multiple
                 aria-label="Add draft attachments"
@@ -444,23 +471,25 @@ export function DraftEditor({
                     {upload.status === "failed" ? (
                       <span className="flex items-center gap-1">
                         {upload.retryable ? (
-                          <button
+                          <Button
                             type="button"
+                            variant="ghost"
                             aria-label={`Retry ${upload.fileName} upload`}
                             onClick={() => onRetryAttachmentUpload(upload.id)}
-                            className="rounded-lg px-2 py-1 text-[0.65rem] font-extrabold"
+                            className="h-auto rounded-lg px-2 py-1 text-[0.65rem] font-extrabold"
                           >
                             Retry
-                          </button>
+                          </Button>
                         ) : null}
-                        <button
+                        <Button
                           type="button"
+                          variant="ghost"
                           aria-label={`Dismiss ${upload.fileName} upload`}
                           onClick={() => onDismissAttachmentUpload(upload.id)}
                           className="flex size-7 items-center justify-center rounded-lg"
                         >
                           <X size={13} />
-                        </button>
+                        </Button>
                       </span>
                     ) : null}
                   </div>
@@ -481,29 +510,28 @@ export function DraftEditor({
         <div className="mt-4 flex shrink-0 flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div aria-live="polite" className="min-h-5">
             {visibleError === undefined ? null : (
-              <p
-                role="alert"
-                className="flex items-center gap-2 text-xs font-bold text-[var(--danger-fg)]"
-              >
+              <Alert className="flex w-auto items-center gap-2 rounded-none border-0 bg-transparent p-0 text-xs font-bold text-[var(--danger-fg)]">
                 <CircleAlert size={15} /> {visibleError}
-              </p>
+              </Alert>
             )}
           </div>
           <div className="flex items-center justify-end gap-2">
             {onRetry === undefined ? null : (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 disabled={isSaving || isSending}
                 onClick={onRetry}
-                className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2.5 text-xs font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
+                className="inline-flex h-auto items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2.5 text-xs font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
               >
                 <RotateCcw size={15} /> Retry
-              </button>
+              </Button>
             )}
-            <button
+            <Button
               type="submit"
+              variant="ghost"
               disabled={editorLocked || !hasRecipient}
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--palm)] px-5 py-2.5 text-xs font-extrabold text-[var(--bg-base)] shadow-[0_10px_26px_rgba(16,116,110,0.2)] disabled:opacity-45"
+              className="inline-flex h-auto items-center gap-2 rounded-xl bg-[var(--palm)] px-5 py-2.5 text-xs font-extrabold text-[var(--bg-base)] shadow-[0_10px_26px_rgba(16,116,110,0.2)] disabled:opacity-45"
             >
               {isSending ? (
                 <LoaderCircle className="animate-spin" size={15} />
@@ -511,7 +539,7 @@ export function DraftEditor({
                 <Send size={15} />
               )}
               {isSending ? "Sending" : "Send"}
-            </button>
+            </Button>
           </div>
         </div>
         {isSaving && !isSending ? (

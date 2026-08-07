@@ -3,6 +3,8 @@ import { ArrowLeft, Download, MailOpen, Paperclip, Reply } from "lucide-react";
 import { useState } from "react";
 
 import type { MailboxThreadResult } from "#/modules/mailbox/application/MailboxMessageReading";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 import type {
   MailboxMessageQueryState,
@@ -74,22 +76,24 @@ function MessageBody({
       {textBody !== undefined && hasHtmlBody ? (
         <fieldset className="mb-4 flex gap-2 border-0 p-0">
           <legend className="sr-only">Message body format</legend>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             aria-pressed={!showHtml}
             onClick={() => setShowHtml(false)}
-            className="rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-1.5 text-xs font-bold text-[var(--sea-ink)] aria-pressed:bg-[var(--sand)] aria-pressed:text-[var(--palm)]"
+            className="h-auto rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-1.5 text-xs font-bold text-[var(--sea-ink)] aria-pressed:bg-[var(--sand)] aria-pressed:text-[var(--palm)]"
           >
             Plain text
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
+            variant="ghost"
             aria-pressed={showHtml}
             onClick={() => setShowHtml(true)}
-            className="rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-1.5 text-xs font-bold text-[var(--sea-ink)] aria-pressed:bg-[var(--sand)] aria-pressed:text-[var(--palm)]"
+            className="h-auto rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-1.5 text-xs font-bold text-[var(--sea-ink)] aria-pressed:bg-[var(--sand)] aria-pressed:text-[var(--palm)]"
           >
             Sandboxed HTML
-          </button>
+          </Button>
         </fieldset>
       ) : null}
 
@@ -261,11 +265,12 @@ export function ThreadView({
                 ) : null}
                 {message.direction === "inbound" && message.replyEligible ? (
                   <div className="mt-5 flex items-center gap-3 border-t border-[var(--line)] pt-4">
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
                       disabled={replyingMessageId !== undefined}
                       onClick={() => onReply(message.id)}
-                      className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3.5 py-2 text-xs font-extrabold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex h-auto items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3.5 py-2 text-xs font-extrabold text-[var(--sea-ink)] disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <Reply aria-hidden="true" size={14} />
                       {replyingMessageId === message.id
@@ -274,14 +279,11 @@ export function ThreadView({
                             replyError.retryable
                           ? "Retry reply"
                           : "Reply"}
-                    </button>
+                    </Button>
                     {replyError?.messageId === message.id ? (
-                      <p
-                        role="alert"
-                        className="text-xs font-bold text-[var(--danger-fg)]"
-                      >
+                      <Alert className="block w-auto rounded-none border-0 bg-transparent p-0 text-xs font-bold text-[var(--danger-fg)]">
                         Reply draft could not be created.
-                      </p>
+                      </Alert>
                     ) : null}
                   </div>
                 ) : null}

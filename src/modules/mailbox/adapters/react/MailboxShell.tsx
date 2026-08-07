@@ -15,8 +15,17 @@ import {
   Tag,
   Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
+
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import {
+  Sheet,
+  SheetContent,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet";
 
 import type { MailboxViewSelection } from "./MailboxViewLinks";
 import { mailboxViewHref } from "./MailboxViewLinks";
@@ -113,14 +122,16 @@ function MailboxNavigation({
           </div>
         </div>
         {onClose ? (
-          <button
+          <Button
+            variant="ghost"
+            size="icon-lg"
             type="button"
             aria-label="Close mailbox navigation"
             onClick={onClose}
-            className="flex size-10 items-center justify-center rounded-xl text-white/65 hover:bg-white/10 hover:text-white lg:hidden"
+            className="size-10 rounded-xl text-white/65 hover:bg-white/10 hover:text-white lg:hidden"
           >
             <PanelLeftClose size={20} />
-          </button>
+          </Button>
         ) : null}
       </div>
 
@@ -290,27 +301,26 @@ function MailboxNavigation({
           <span className="min-w-0 flex-1 truncate text-xs font-bold text-white/72">
             {principalLabel}
           </span>
-          <button
+          <Button
+            variant="ghost"
+            size="icon-lg"
             type="button"
             aria-label="Sign out"
             disabled={isSigningOut}
             onClick={onSignOut}
-            className="flex size-9 shrink-0 items-center justify-center rounded-xl text-white/52 hover:bg-white/10 hover:text-white disabled:opacity-45"
+            className="size-9 shrink-0 rounded-xl text-white/52 hover:bg-white/10 hover:text-white disabled:opacity-45"
           >
             {isSigningOut ? (
               <LoaderCircle className="animate-spin" size={17} />
             ) : (
               <LogOut size={17} />
             )}
-          </button>
+          </Button>
         </div>
         {signOutError === undefined ? null : (
-          <p
-            role="alert"
-            className="mt-2 px-2 text-[0.68rem] font-bold text-red-200"
-          >
+          <Alert className="mt-2 block w-auto rounded-none border-0 bg-transparent px-2 py-0 text-[0.68rem] font-bold text-red-200">
             {signOutError}
-          </p>
+          </Alert>
         )}
       </div>
     </div>
@@ -337,114 +347,94 @@ export function MailboxShell({
 }: MailboxShellProps) {
   const [navigationOpen, setNavigationOpen] = useState(false);
 
-  useEffect(() => {
-    if (!navigationOpen) {
-      return;
-    }
-
-    const closeOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setNavigationOpen(false);
-      }
-    };
-
-    window.addEventListener("keydown", closeOnEscape);
-    return () => window.removeEventListener("keydown", closeOnEscape);
-  }, [navigationOpen]);
-
   return (
-    <main className="h-dvh overflow-hidden bg-[var(--surface-strong)]">
-      <div className="flex h-full min-h-0 overflow-hidden bg-[var(--surface-strong)]">
-        <aside className="hidden w-72 shrink-0 lg:block">
-          <MailboxNavigation
-            folders={folders}
-            isSigningOut={isSigningOut}
-            labels={labels}
-            mailboxAddress={mailboxAddress}
-            mailboxName={mailboxName}
-            onNavigate={onNavigate}
-            onPrefetch={onPrefetch}
-            onSignOut={onSignOut}
-            outboundDeliveryId={outboundDeliveryId}
-            principalLabel={principalLabel}
-            selectedFolderId={selectedFolderId}
-            selectedLabelId={selectedLabelId}
-            signOutError={signOutError}
-          />
-        </aside>
-
-        {navigationOpen ? (
-          <div className="fixed inset-0 z-50 lg:hidden">
-            <button
-              type="button"
-              aria-label="Dismiss mailbox navigation"
-              onClick={() => setNavigationOpen(false)}
-              className="absolute inset-0 bg-[var(--nav-bg)]/70 backdrop-blur-sm"
+    <Sheet open={navigationOpen} onOpenChange={setNavigationOpen}>
+      <main className="h-dvh overflow-hidden bg-[var(--surface-strong)]">
+        <div className="flex h-full min-h-0 overflow-hidden bg-[var(--surface-strong)]">
+          <aside className="hidden w-72 shrink-0 lg:block">
+            <MailboxNavigation
+              folders={folders}
+              isSigningOut={isSigningOut}
+              labels={labels}
+              mailboxAddress={mailboxAddress}
+              mailboxName={mailboxName}
+              onNavigate={onNavigate}
+              onPrefetch={onPrefetch}
+              onSignOut={onSignOut}
+              outboundDeliveryId={outboundDeliveryId}
+              principalLabel={principalLabel}
+              selectedFolderId={selectedFolderId}
+              selectedLabelId={selectedLabelId}
+              signOutError={signOutError}
             />
-            <dialog
-              open
-              aria-label="Mailbox navigation"
-              aria-modal="true"
-              className="relative m-0 h-full max-h-none w-[min(19rem,88vw)] max-w-none border-0 p-0 shadow-2xl"
-            >
-              <MailboxNavigation
-                folders={folders}
-                isSigningOut={isSigningOut}
-                labels={labels}
-                mailboxAddress={mailboxAddress}
-                mailboxName={mailboxName}
-                onClose={() => setNavigationOpen(false)}
-                onNavigate={onNavigate}
-                onPrefetch={onPrefetch}
-                onSignOut={onSignOut}
-                outboundDeliveryId={outboundDeliveryId}
-                principalLabel={principalLabel}
-                selectedFolderId={selectedFolderId}
-                selectedLabelId={selectedLabelId}
-                signOutError={signOutError}
-              />
-            </dialog>
-          </div>
-        ) : null}
+          </aside>
 
-        <section className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-20 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--header-bg)] px-4 sm:px-6 lg:px-8">
-            <div className="flex min-w-0 items-center gap-3">
-              <button
-                type="button"
-                aria-label="Open mailbox navigation"
-                aria-expanded={navigationOpen}
-                onClick={() => setNavigationOpen(true)}
-                className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] lg:hidden"
-              >
-                <Menu size={20} />
-              </button>
-              <div className="min-w-0">
-                <p className="text-[0.62rem] font-extrabold tracking-[0.16em] text-[var(--palm)] uppercase">
-                  {mailboxName}
-                </p>
-                <h1 className="display-title truncate text-2xl font-bold tracking-tight sm:text-[1.7rem]">
-                  {viewTitle}
-                </h1>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {headerAction}
-              <ThemeToggle />
-              <div className="hidden items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--control-bg)] py-1.5 pr-3 pl-1.5 sm:flex">
-                <span className="flex size-8 items-center justify-center rounded-full bg-[var(--sand)] text-[0.65rem] font-extrabold text-[var(--palm)]">
-                  {principalLabel.slice(0, 2).toUpperCase()}
-                </span>
-                <span className="hidden max-w-40 truncate text-xs font-bold text-[var(--sea-ink-soft)] sm:block">
-                  {principalLabel}
-                </span>
-              </div>
-            </div>
-          </header>
+          <SheetContent
+            side="left"
+            showCloseButton={false}
+            className="h-full w-[min(19rem,88vw)] max-w-none gap-0 border-0 p-0 shadow-2xl lg:hidden"
+          >
+            <SheetTitle className="sr-only">Mailbox navigation</SheetTitle>
+            <MailboxNavigation
+              folders={folders}
+              isSigningOut={isSigningOut}
+              labels={labels}
+              mailboxAddress={mailboxAddress}
+              mailboxName={mailboxName}
+              onClose={() => setNavigationOpen(false)}
+              onNavigate={onNavigate}
+              onPrefetch={onPrefetch}
+              onSignOut={onSignOut}
+              outboundDeliveryId={outboundDeliveryId}
+              principalLabel={principalLabel}
+              selectedFolderId={selectedFolderId}
+              selectedLabelId={selectedLabelId}
+              signOutError={signOutError}
+            />
+          </SheetContent>
 
-          <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
-        </section>
-      </div>
-    </main>
+          <section className="flex min-w-0 flex-1 flex-col">
+            <header className="flex h-20 shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--header-bg)] px-4 sm:px-6 lg:px-8">
+              <div className="flex min-w-0 items-center gap-3">
+                <SheetTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="icon-lg"
+                      aria-label="Open mailbox navigation"
+                      className="size-10 shrink-0 rounded-xl border-[var(--line)] bg-[var(--control-bg)] text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] lg:hidden"
+                    />
+                  }
+                >
+                  <Menu size={20} />
+                </SheetTrigger>
+                <div className="min-w-0">
+                  <p className="text-[0.62rem] font-extrabold tracking-[0.16em] text-[var(--palm)] uppercase">
+                    {mailboxName}
+                  </p>
+                  <h1 className="display-title truncate text-2xl font-bold tracking-tight sm:text-[1.7rem]">
+                    {viewTitle}
+                  </h1>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                {headerAction}
+                <ThemeToggle />
+                <div className="hidden items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--control-bg)] py-1.5 pr-3 pl-1.5 sm:flex">
+                  <span className="flex size-8 items-center justify-center rounded-full bg-[var(--sand)] text-[0.65rem] font-extrabold text-[var(--palm)]">
+                    {principalLabel.slice(0, 2).toUpperCase()}
+                  </span>
+                  <span className="hidden max-w-40 truncate text-xs font-bold text-[var(--sea-ink-soft)] sm:block">
+                    {principalLabel}
+                  </span>
+                </div>
+              </div>
+            </header>
+
+            <div className="min-h-0 flex-1 overflow-hidden">{children}</div>
+          </section>
+        </div>
+      </main>
+    </Sheet>
   );
 }

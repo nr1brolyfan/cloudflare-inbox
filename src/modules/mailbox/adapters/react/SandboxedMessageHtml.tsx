@@ -1,5 +1,8 @@
 import { useRef, useState } from "react";
 
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+
 const ignoreAccessFailure = (_status: 401 | 403) => null;
 
 export function SandboxedMessageHtml({
@@ -23,25 +26,23 @@ export function SandboxedMessageHtml({
   return (
     <div className="relative min-h-96">
       {failed ? (
-        <div
-          role="alert"
-          className="absolute inset-0 flex flex-col items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--foam)] px-5 text-center"
-        >
+        <Alert className="absolute inset-0 flex flex-col items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--foam)] px-5 text-center">
           <p className="text-sm font-bold text-[var(--sea-ink)]">
             Secure HTML preview could not be loaded.
           </p>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => {
               setAttempt((current) => current + 1);
               setFailed(false);
               setLoaded(false);
             }}
-            className="mt-3 rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-2 text-xs font-extrabold text-[var(--sea-ink)]"
+            className="mt-3 h-auto rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-3 py-2 text-xs font-extrabold text-[var(--sea-ink)]"
           >
             Try again
-          </button>
-        </div>
+          </Button>
+        </Alert>
       ) : loaded ? null : (
         <output className="absolute inset-0 flex items-center justify-center rounded-xl border border-[var(--line)] bg-[var(--foam)] text-sm font-bold text-[var(--sea-ink-soft)]">
           Loading secure HTML preview...

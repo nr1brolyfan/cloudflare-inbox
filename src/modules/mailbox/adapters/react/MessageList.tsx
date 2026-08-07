@@ -18,6 +18,9 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 
 import type { MailboxMessageListResult } from "#/modules/mailbox/application/MailboxMessageReading";
 import { hasSearchableMessageTerm } from "#/modules/mailbox/domain/Mailbox";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import type {
   MailboxMessageQueryState,
@@ -99,10 +102,14 @@ function MessageSearchControls({
         event.preventDefault();
       }}
     >
-      <label className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3 py-2 text-[var(--sea-ink-soft)] focus-within:border-[var(--lagoon-deep)] focus-within:bg-[var(--surface-strong)]">
+      <label
+        htmlFor="message-search"
+        className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3 py-2 text-[var(--sea-ink-soft)] focus-within:border-[var(--lagoon-deep)] focus-within:bg-[var(--surface-strong)]"
+      >
         <Search size={15} />
         <span className="sr-only">Search messages</span>
-        <input
+        <Input
+          id="message-search"
           type="search"
           maxLength={500}
           value={query}
@@ -113,17 +120,16 @@ function MessageSearchControls({
           aria-invalid={searchError}
           aria-describedby={searchError ? "message-search-error" : undefined}
           placeholder="Search this view"
-          className="min-w-0 flex-1 border-0 bg-transparent text-sm text-[var(--sea-ink)] outline-none placeholder:text-[var(--sea-ink-soft)]/55"
+          className="h-auto min-w-0 flex-1 rounded-none border-0 bg-transparent px-0 py-0 text-sm text-[var(--sea-ink)] transition-none outline-none placeholder:text-[var(--sea-ink-soft)]/55 focus-visible:ring-0 dark:bg-transparent"
         />
       </label>
       {searchError ? (
-        <p
+        <Alert
           id="message-search-error"
-          role="alert"
-          className="px-1 text-[0.68rem] font-bold text-[var(--danger-fg)]"
+          className="block w-auto rounded-none border-0 bg-transparent px-1 py-0 text-[0.68rem] font-bold text-[var(--danger-fg)]"
         >
           Enter at least one letter or number.
-        </p>
+        </Alert>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
         <select
@@ -139,8 +145,9 @@ function MessageSearchControls({
           <option value="unread">Unread</option>
           <option value="read">Read</option>
         </select>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           aria-pressed={starred}
           onClick={() => setStarred((current) => !current)}
           className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[0.7rem] font-bold ${
@@ -150,9 +157,10 @@ function MessageSearchControls({
           }`}
         >
           <Star size={13} fill={starred ? "currentColor" : "none"} /> Starred
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
           aria-pressed={hasAttachment}
           onClick={() => setHasAttachment((current) => !current)}
           className={`inline-flex h-8 items-center gap-1.5 rounded-lg border px-2.5 text-[0.7rem] font-bold ${
@@ -162,16 +170,17 @@ function MessageSearchControls({
           }`}
         >
           <Paperclip size={13} /> Files
-        </button>
+        </Button>
         {hasActiveMailboxFilters(filters) ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             aria-label="Clear search and filters"
             onClick={() => onQueryChange({ delivery: filters.delivery })}
             className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)]"
           >
             <X size={14} />
-          </button>
+          </Button>
         ) : null}
       </div>
     </form>
@@ -203,42 +212,46 @@ function MessageActionButtons({
           size={14}
         />
       ) : null}
-      <button
+      <Button
         type="button"
+        variant="ghost"
         disabled={pending}
         onClick={() => onAction("read", message)}
         aria-label={message.read ? "Mark unread" : "Mark read"}
         className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-40"
       >
         {message.read ? <Mail size={14} /> : <MailOpen size={14} />}
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        variant="ghost"
         disabled={pending}
         onClick={() => onAction("star", message)}
         aria-label={message.starred ? "Remove star" : "Add star"}
         className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--palm)] disabled:opacity-40"
       >
         <Star size={14} fill={message.starred ? "currentColor" : "none"} />
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        variant="ghost"
         disabled={pending || message.folderId === archiveFolderId}
         onClick={() => onAction("archive", message)}
         aria-label="Archive message"
         className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-30"
       >
         <Archive size={14} />
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        variant="ghost"
         disabled={pending || message.folderId === trashFolderId}
         onClick={() => onAction("trash", message)}
         aria-label="Move message to trash"
         className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger-fg)] disabled:opacity-30"
       >
         <Trash2 size={14} />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -365,15 +378,16 @@ export function MessageList({
           </p>
           <div className="flex shrink-0 items-center gap-2">
             {onRetryRefresh === undefined ? null : (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 aria-label="Refresh messages"
                 disabled={isRefreshing}
                 onClick={onRetryRefresh}
                 className="inline-flex size-7 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)] disabled:cursor-wait disabled:opacity-50"
               >
                 <RefreshCw aria-hidden="true" size={14} />
-              </button>
+              </Button>
             )}
             <output className="inline-flex size-3.5 shrink-0 items-center justify-center">
               {isRefreshing ? (
@@ -398,22 +412,22 @@ export function MessageList({
           onQueryChange={onQueryChange}
         />
         {displayedActionErrors.map((failure) => (
-          <div
+          <Alert
             key={failure.messageId}
-            role="alert"
             className="mt-3 flex items-center gap-2 rounded-lg border border-[var(--danger-border)] bg-[var(--danger-bg)] px-3 py-2 text-[0.68rem] font-bold text-[var(--danger-fg)]"
           >
             <span className="flex-1">{failure.text}</span>
             {failure.handleRetry === undefined ? null : (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 onClick={failure.handleRetry}
-                className="rounded-md bg-[var(--surface-strong)] px-2 py-1 text-[var(--danger-fg)]"
+                className="h-auto rounded-md bg-[var(--surface-strong)] px-2 py-1 text-[var(--danger-fg)]"
               >
                 Try again
-              </button>
+              </Button>
             )}
-          </div>
+          </Alert>
         ))}
       </div>
 
@@ -559,17 +573,18 @@ export function MessageList({
               More messages could not be loaded.
             </p>
           ) : null}
-          <button
+          <Button
             type="button"
+            variant="ghost"
             disabled={isLoadingMore}
             onClick={onLoadMore}
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2 text-[0.7rem] font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
+            className="inline-flex h-auto items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2 text-[0.7rem] font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
           >
             {isLoadingMore ? (
               <LoaderCircle className="animate-spin" size={14} />
             ) : null}
             {loadMoreFailed ? "Try again" : "Load more"}
-          </button>
+          </Button>
         </div>
       )}
     </section>

@@ -20,6 +20,9 @@ import {
   authSessionQueryKey,
   clearCachedAuthSession,
 } from "#/modules/account-security/adapters/browser/AuthClient";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const subscribeToPasskeySupport = () => () => null;
 const usePasskeySupport = () =>
@@ -200,26 +203,34 @@ function FirstOwnerPasswordPanel({
           onSubmit();
         }}
       >
-        <label className="block space-y-2 text-sm font-bold">
+        <label
+          htmlFor="owner-new-password"
+          className="block space-y-2 text-sm font-bold"
+        >
           <span>New password</span>
-          <input
+          <Input
+            id="owner-new-password"
             type="password"
             required
             autoComplete="new-password"
             value={password}
             onChange={(event) => onPasswordChange(event.target.value)}
-            className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
+            className="h-auto w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3 text-sm text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
           />
         </label>
-        <label className="block space-y-2 text-sm font-bold">
+        <label
+          htmlFor="owner-confirm-password"
+          className="block space-y-2 text-sm font-bold"
+        >
           <span>Confirm password</span>
-          <input
+          <Input
+            id="owner-confirm-password"
             type="password"
             required
             autoComplete="new-password"
             value={confirmation}
             onChange={(event) => onConfirmationChange(event.target.value)}
-            className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
+            className="h-auto w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3 text-sm text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
           />
         </label>
         {reauthenticationRequired ? (
@@ -231,18 +242,20 @@ function FirstOwnerPasswordPanel({
           <ErrorNotice>{authErrorMessage(enrollmentError)}</ErrorNotice>
         ) : null}
         {reauthenticationRequired ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={onReauthenticate}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-[var(--bg-base)] shadow-lg"
+            className="flex h-auto w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-base font-bold text-[var(--bg-base)] shadow-lg"
           >
             <LogOut size={17} /> Sign out and use a fresh link
-          </button>
+          </Button>
         ) : (
-          <button
+          <Button
             type="submit"
+            variant="ghost"
             disabled={isPending}
-            className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-[var(--bg-base)] shadow-lg disabled:opacity-50"
+            className="flex h-auto w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-base font-bold text-[var(--bg-base)] shadow-lg disabled:opacity-50"
           >
             {isPending ? (
               <LoaderCircle className="animate-spin" size={17} />
@@ -250,7 +263,7 @@ function FirstOwnerPasswordPanel({
               <ShieldCheck size={17} />
             )}
             Create password and confirm
-          </button>
+          </Button>
         )}
       </form>
     </div>
@@ -319,11 +332,12 @@ function StepUpPanel({
         <div className="mt-5 space-y-4">
           {passkeyAvailable && passkeySupported ? (
             <div className="space-y-3">
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 disabled={passkeyStepUp.isPending || isPending}
                 onClick={() => passkeyStepUp.mutate()}
-                className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-[var(--bg-base)] shadow-lg disabled:opacity-50"
+                className="flex h-auto w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-base font-bold text-[var(--bg-base)] shadow-lg disabled:opacity-50"
               >
                 {passkeyStepUp.isPending ? (
                   <LoaderCircle className="animate-spin" size={17} />
@@ -331,7 +345,7 @@ function StepUpPanel({
                   <KeyRound size={17} />
                 )}
                 Confirm with passkey
-              </button>
+              </Button>
               {passkeyStepUp.error ? (
                 <ErrorNotice>
                   {authErrorMessage(passkeyStepUp.error)}
@@ -347,24 +361,29 @@ function StepUpPanel({
                 onSubmit();
               }}
             >
-              <label className="block space-y-2 text-sm font-bold">
+              <label
+                htmlFor="step-up-password"
+                className="block space-y-2 text-sm font-bold"
+              >
                 <span>Password</span>
-                <input
+                <Input
+                  id="step-up-password"
                   type="password"
                   required
                   autoComplete="current-password"
                   value={password}
                   onChange={(event) => onPasswordChange(event.target.value)}
-                  className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
+                  className="h-auto w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3 text-sm text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
                 />
               </label>
               {passwordError ? (
                 <ErrorNotice>{authErrorMessage(passwordError)}</ErrorNotice>
               ) : null}
-              <button
+              <Button
                 type="submit"
+                variant="ghost"
                 disabled={isPending || passkeyStepUp.isPending}
-                className="flex w-full items-center justify-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 font-bold text-[var(--sea-ink)] shadow-sm disabled:opacity-50"
+                className="flex h-auto w-full items-center justify-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 text-base font-bold text-[var(--sea-ink)] shadow-sm disabled:opacity-50"
               >
                 {isPending ? (
                   <LoaderCircle className="animate-spin" size={17} />
@@ -372,7 +391,7 @@ function StepUpPanel({
                   <ShieldCheck size={17} />
                 )}
                 Confirm with password
-              </button>
+              </Button>
             </form>
           ) : null}
         </div>
@@ -510,24 +529,26 @@ export function SignedInOwnerBootstrap({
         <ErrorNotice>
           Your inbox is taking longer than expected to become ready.
         </ErrorNotice>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => {
             setProvisioning("preparing");
             void mailboxNavigation.refetch();
           }}
-          className="mt-5 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-[var(--bg-base)] shadow-lg"
+          className="mt-5 h-auto rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-base font-bold text-[var(--bg-base)] shadow-lg"
         >
           Check again
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
           onClick={onLogout}
           disabled={isLogoutPending}
-          className="mt-3 ml-3 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 font-bold text-[var(--sea-ink)] disabled:opacity-50"
+          className="mt-3 ml-3 h-auto rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 text-base font-bold text-[var(--sea-ink)] disabled:opacity-50"
         >
           Sign out
-        </button>
+        </Button>
       </div>
     );
   }
@@ -543,21 +564,23 @@ export function SignedInOwnerBootstrap({
           We could not check whether your primary inbox already exists. Try
           again before starting setup.
         </ErrorNotice>
-        <button
+        <Button
           type="button"
+          variant="ghost"
           onClick={() => void mailboxNavigation.refetch()}
-          className="mt-5 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-[var(--bg-base)] shadow-lg"
+          className="mt-5 h-auto rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-base font-bold text-[var(--bg-base)] shadow-lg"
         >
           Try again
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="ghost"
           onClick={onLogout}
           disabled={isLogoutPending}
-          className="mt-3 ml-3 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 font-bold text-[var(--sea-ink)] disabled:opacity-50"
+          className="mt-3 ml-3 h-auto rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 text-base font-bold text-[var(--sea-ink)] disabled:opacity-50"
         >
           Sign out
-        </button>
+        </Button>
       </div>
     );
   }
@@ -606,11 +629,12 @@ export function SignedInOwnerBootstrap({
         />
       ) : (
         <section className="mt-8">
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={() => void handleBootstrap()}
             disabled={ownerBootstrap.mailboxBootstrap.isPending}
-            className="flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 font-bold text-[var(--bg-base)] shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
+            className="flex h-auto items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-base font-bold text-[var(--bg-base)] shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
           >
             {ownerBootstrap.mailboxBootstrap.isPending ? (
               <LoaderCircle className="animate-spin" size={17} />
@@ -618,14 +642,15 @@ export function SignedInOwnerBootstrap({
               <Mail size={17} />
             )}
             Create primary inbox
-          </button>
+          </Button>
         </section>
       )}
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={onLogout}
         disabled={isLogoutPending}
-        className="mt-3 flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 font-bold text-[var(--sea-ink)] hover:bg-[var(--surface-strong)] disabled:opacity-50"
+        className="mt-3 flex h-auto items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 text-base font-bold text-[var(--sea-ink)] hover:bg-[var(--surface-strong)] disabled:opacity-50"
       >
         {isLogoutPending ? (
           <LoaderCircle className="animate-spin" size={17} />
@@ -633,16 +658,16 @@ export function SignedInOwnerBootstrap({
           <LogOut size={17} />
         )}{" "}
         Sign out
-      </button>
+      </Button>
     </div>
   );
 }
 
 export function Notice({ children }: { readonly children: React.ReactNode }) {
   return (
-    <p className="rounded-xl border border-[var(--success-border)] bg-[var(--success-bg)] px-4 py-3 text-sm text-[var(--success-fg)]">
-      {children}
-    </p>
+    <Alert className="rounded-xl border border-[var(--success-border)] bg-[var(--success-bg)] px-4 py-3 text-sm text-[var(--success-fg)]">
+      <AlertDescription className="text-inherit">{children}</AlertDescription>
+    </Alert>
   );
 }
 
@@ -652,8 +677,8 @@ export function ErrorNotice({
   readonly children: React.ReactNode;
 }) {
   return (
-    <p className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger-fg)]">
-      {children}
-    </p>
+    <Alert className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger-fg)]">
+      <AlertDescription className="text-inherit">{children}</AlertDescription>
+    </Alert>
   );
 }

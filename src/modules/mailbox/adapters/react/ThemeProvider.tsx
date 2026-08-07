@@ -7,6 +7,8 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 
+import { Button } from "@/components/ui/button";
+
 export type Theme = "dark" | "light" | "system";
 
 const themeStorageKey = "cloudflare-inbox-theme";
@@ -89,9 +91,10 @@ export function ThemeToggle() {
       className="flex items-center rounded-xl border border-[var(--line)] bg-[var(--control-bg)] p-1"
     >
       {themes.map(({ icon: Icon, label, value }) => (
-        <button
+        <Button
           key={value}
           type="button"
+          variant="ghost"
           aria-label={label}
           aria-pressed={theme === value}
           onClick={() => setTheme(value)}
@@ -102,7 +105,7 @@ export function ThemeToggle() {
           }`}
         >
           <Icon aria-hidden="true" size={13} />
-        </button>
+        </Button>
       ))}
     </fieldset>
   );

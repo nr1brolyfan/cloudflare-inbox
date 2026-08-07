@@ -21,6 +21,9 @@ import {
   emailIdentity,
   enrollRecoveryPasskey,
 } from "#/modules/account-security/adapters/browser/AuthClient";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 import { SignedInOwnerBootstrap } from "./-index-owner-bootstrap";
 
@@ -169,11 +172,12 @@ function RecoveryRemediationPanel({
           rotate recovery codes before relying on them.
         </ErrorNotice>
       ) : null}
-      <button
+      <Button
         type="button"
+        variant="ghost"
         disabled={!passkeySupported || enrollment.isPending}
         onClick={() => enrollment.mutate()}
-        className="mt-7 flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-[var(--bg-base)] shadow-lg disabled:opacity-50"
+        className="mt-7 flex h-auto w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 text-base font-bold text-[var(--bg-base)] shadow-lg disabled:opacity-50"
       >
         {enrollment.isPending ? (
           <LoaderCircle className="animate-spin" size={18} />
@@ -181,15 +185,16 @@ function RecoveryRemediationPanel({
           <KeyRound size={18} />
         )}
         Create recovery passkey
-      </button>
-      <button
+      </Button>
+      <Button
         type="button"
+        variant="ghost"
         disabled={isLogoutPending}
         onClick={onLogout}
-        className="mt-3 w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 font-bold text-[var(--sea-ink)] disabled:opacity-50"
+        className="mt-3 h-auto w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-5 py-3 text-base font-bold text-[var(--sea-ink)] disabled:opacity-50"
       >
         Sign out
-      </button>
+      </Button>
     </div>
   );
 }
@@ -224,13 +229,14 @@ function RecoveredCodesPanel({
           </code>
         ))}
       </div>
-      <button
+      <Button
         type="button"
+        variant="ghost"
         onClick={onSaved}
-        className="mt-6 w-full rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-[var(--bg-base)] shadow-lg"
+        className="mt-6 h-auto w-full rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 text-base font-bold text-[var(--bg-base)] shadow-lg"
       >
         I saved these codes
-      </button>
+      </Button>
     </div>
   );
 }
@@ -442,17 +448,19 @@ function Home() {
 
                 <div className="mt-7 grid grid-cols-2 rounded-xl bg-[var(--sand)]/75 p-1 sm:grid-cols-5">
                   {authModes.map((value) => (
-                    <button
+                    <Button
                       key={value}
                       type="button"
+                      variant="ghost"
+                      aria-pressed={mode === value}
                       onClick={() => {
                         setMode(value);
                         setNotice(undefined);
                       }}
-                      className={`rounded-lg px-2 py-2.5 text-xs font-bold capitalize ${mode === value ? "bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
+                      className={`h-auto rounded-lg px-2 py-2.5 text-xs font-bold capitalize ${mode === value ? "bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
                     >
                       {authModeLabel(value)}
-                    </button>
+                    </Button>
                   ))}
                 </div>
 
@@ -463,27 +471,35 @@ function Home() {
                       address or account identifier is sent first.
                     </p>
                   ) : (
-                    <label className="block space-y-2 text-sm font-bold">
+                    <label
+                      htmlFor="sign-in-email"
+                      className="block space-y-2 text-sm font-bold"
+                    >
                       <span>
                         {mode === "recovery"
                           ? "Verified recovery address"
                           : "Email address"}
                       </span>
-                      <input
+                      <Input
+                        id="sign-in-email"
                         type="email"
                         required
                         autoComplete="email"
                         value={email}
                         onChange={(event) => setEmail(event.target.value)}
-                        className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
+                        className="h-auto w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 text-sm text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
                       />
                     </label>
                   )}
 
                   {mode === "otp" && otpChallengeId ? (
-                    <label className="block space-y-2 text-sm font-bold">
+                    <label
+                      htmlFor="sign-in-otp"
+                      className="block space-y-2 text-sm font-bold"
+                    >
                       <span>Six-digit code</span>
-                      <input
+                      <Input
+                        id="sign-in-otp"
                         type="text"
                         required
                         inputMode="numeric"
@@ -491,21 +507,25 @@ function Home() {
                         pattern="[0-9]{6}"
                         value={otpCode}
                         onChange={(event) => setOtpCode(event.target.value)}
-                        className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 tracking-[0.35em] text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
+                        className="h-auto w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 text-sm tracking-[0.35em] text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
                       />
                     </label>
                   ) : null}
 
                   {mode === "password" ? (
-                    <label className="block space-y-2 text-sm font-bold">
+                    <label
+                      htmlFor="sign-in-password"
+                      className="block space-y-2 text-sm font-bold"
+                    >
                       <span>Password</span>
-                      <input
+                      <Input
+                        id="sign-in-password"
                         type="password"
                         required
                         autoComplete="current-password"
                         value={password}
                         onChange={(event) => setPassword(event.target.value)}
-                        className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
+                        className="h-auto w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 text-sm text-[var(--sea-ink)] outline-none focus:border-[var(--lagoon-deep)]"
                       />
                     </label>
                   ) : null}
@@ -515,17 +535,18 @@ function Home() {
                     <ErrorNotice>{authErrorMessage(error)}</ErrorNotice>
                   ) : null}
 
-                  <button
+                  <Button
                     type="submit"
+                    variant="ghost"
                     disabled={activeMutation.isPending}
-                    className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-[var(--bg-base)] shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
+                    className="flex h-auto w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 text-base font-bold text-[var(--bg-base)] shadow-lg hover:-translate-y-0.5 disabled:opacity-50"
                   >
                     <AuthSubmitContent
                       mode={mode}
                       otpStarted={otpChallengeId !== undefined}
                       pending={activeMutation.isPending}
                     />
-                  </button>
+                  </Button>
                 </form>
 
                 {mode === "password" ? (
@@ -533,14 +554,15 @@ function Home() {
                     <span className="text-[var(--sea-ink-soft)]">
                       New here? Use a link or email code.
                     </span>
-                    <button
+                    <Button
                       type="button"
+                      variant="ghost"
                       disabled={!email || passwordReset.isPending}
-                      className="text-[var(--sea-ink-soft)] disabled:opacity-40"
+                      className="h-auto p-0 font-normal text-[var(--sea-ink-soft)] hover:bg-transparent disabled:opacity-40"
                       onClick={() => passwordReset.mutate()}
                     >
                       Forgot password?
-                    </button>
+                    </Button>
                   </div>
                 ) : null}
               </>
@@ -554,16 +576,16 @@ function Home() {
 
 function Notice({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-xl border border-[var(--success-border)] bg-[var(--success-bg)] px-4 py-3 text-sm text-[var(--success-fg)]">
-      {children}
-    </p>
+    <Alert className="rounded-xl border border-[var(--success-border)] bg-[var(--success-bg)] px-4 py-3 text-sm text-[var(--success-fg)]">
+      <AlertDescription className="text-inherit">{children}</AlertDescription>
+    </Alert>
   );
 }
 
 function ErrorNotice({ children }: { children: React.ReactNode }) {
   return (
-    <p className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger-fg)]">
-      {children}
-    </p>
+    <Alert className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger-fg)]">
+      <AlertDescription className="text-inherit">{children}</AlertDescription>
+    </Alert>
   );
 }

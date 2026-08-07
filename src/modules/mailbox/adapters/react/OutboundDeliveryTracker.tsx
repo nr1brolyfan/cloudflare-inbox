@@ -17,6 +17,8 @@ import type {
   OutboundDeliveryStatus,
   OutboundFailureCode,
 } from "#/modules/mailbox/domain/MailboxOutbound";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 type UndoCommand = Schema.Schema.Type<typeof UndoMailboxSendCommand>;
 
@@ -391,49 +393,51 @@ export function OutboundDeliveryTracker({
           )}
           <div className="min-w-0 flex-1">
             <p className="text-sm font-extrabold">{copy.title}</p>
-            <p
+            <Alert
               role={alertStatus ? "alert" : undefined}
-              className="mt-0.5 text-xs leading-5 text-white/72"
+              className="mt-0.5 block w-auto rounded-none border-0 bg-transparent p-0 text-xs leading-5 text-white/72"
             >
               {copy.detail}
-            </p>
+            </Alert>
             {stoppedMessage === undefined ? null : (
-              <p role="alert" className="mt-2 text-xs font-bold text-amber-200">
+              <Alert className="mt-2 block w-auto rounded-none border-0 bg-transparent p-0 text-xs font-bold text-amber-200">
                 {stoppedMessage}
-              </p>
+              </Alert>
             )}
             {transientFailure ? (
-              <p role="alert" className="mt-2 text-xs font-bold text-amber-200">
+              <Alert className="mt-2 block w-auto rounded-none border-0 bg-transparent p-0 text-xs font-bold text-amber-200">
                 The latest status could not be loaded. The last known status is
                 still shown.
-              </p>
+              </Alert>
             ) : null}
             {actionFailure === undefined ? null : (
-              <p role="alert" className="mt-2 text-xs font-bold text-amber-200">
+              <Alert className="mt-2 block w-auto rounded-none border-0 bg-transparent p-0 text-xs font-bold text-amber-200">
                 {actionFailure}
-              </p>
+              </Alert>
             )}
             {undoState === "retry" ? (
-              <p role="alert" className="mt-2 text-xs font-bold text-amber-200">
+              <Alert className="mt-2 block w-auto rounded-none border-0 bg-transparent p-0 text-xs font-bold text-amber-200">
                 The cancellation result is unknown. Retry uses the exact same
                 request.
-              </p>
+              </Alert>
             ) : null}
           </div>
-          <button
+          <Button
             type="button"
+            variant="ghost"
             aria-label="Dismiss delivery status"
             onClick={onDismiss}
             className="flex min-h-11 min-w-11 shrink-0 items-center justify-center rounded-xl text-white/75 hover:bg-white/10 hover:text-white"
           >
             <X aria-hidden="true" size={17} />
-          </button>
+          </Button>
         </div>
         {canUndo || undoState === "retry" || canRefetch ? (
           <div className="mt-3 flex flex-wrap justify-end gap-2 border-t border-white/10 pt-3">
             {canRefetch ? (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 disabled={status.isFetching || undoState === "checking"}
                 onClick={() => void status.refetch()}
                 className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-white/16 px-4 text-xs font-extrabold text-white disabled:opacity-60"
@@ -448,11 +452,12 @@ export function OutboundDeliveryTracker({
                   <RotateCcw aria-hidden="true" size={15} />
                 )}
                 Check status
-              </button>
+              </Button>
             ) : null}
             {canUndo || undoState === "retry" ? (
-              <button
+              <Button
                 type="button"
+                variant="ghost"
                 disabled={undoState === "pending"}
                 onClick={() => void runUndo()}
                 className="inline-flex min-h-11 items-center gap-2 rounded-xl bg-[var(--nav-selection)] px-4 text-xs font-extrabold text-[var(--sea-ink)] disabled:opacity-60"
@@ -473,7 +478,7 @@ export function OutboundDeliveryTracker({
                   : undoState === "retry"
                     ? "Retry undo"
                     : "Undo"}
-              </button>
+              </Button>
             ) : null}
           </div>
         ) : null}

@@ -15,6 +15,7 @@ import {
   listDevEmails,
 } from "#/apps/website/TanStackFunctions";
 import type { DevEmailRecord } from "#/modules/account-security/adapters/http/DevEmailHttpApi";
+import { Button } from "@/components/ui/button";
 
 const kindLabel = (kind: DevEmailRecord["kind"]) =>
   kind.split(/(?=[A-Z])/u).join(" ");
@@ -88,21 +89,23 @@ function DevEmailInbox() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={() => startTransition(() => void router.invalidate())}
-              className="flex items-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3.5 py-2 text-sm font-bold hover:bg-white/14"
+              className="flex h-auto items-center gap-2 rounded-xl border border-white/15 bg-white/8 px-3.5 py-2 text-sm font-bold hover:bg-white/14"
             >
               <RefreshCw size={16} /> Refresh
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant="ghost"
               disabled={messages.length === 0 || clear.isPending}
               onClick={() => clear.mutate()}
-              className="flex items-center gap-2 rounded-xl border border-rose-200/20 bg-rose-300/10 px-3.5 py-2 text-sm font-bold text-rose-50 hover:bg-rose-300/20 disabled:opacity-40"
+              className="flex h-auto items-center gap-2 rounded-xl border border-rose-200/20 bg-rose-300/10 px-3.5 py-2 text-sm font-bold text-rose-50 hover:bg-rose-300/20 disabled:opacity-40"
             >
               <Trash2 size={16} /> Clear
-            </button>
+            </Button>
           </div>
         </header>
 
@@ -116,14 +119,15 @@ function DevEmailInbox() {
             </div>
             <div className="max-h-72 overflow-y-auto px-3 pb-3 lg:max-h-[calc(100vh-9.5rem)]">
               {messages.map((message) => (
-                <button
+                <Button
                   key={message.id}
                   type="button"
+                  variant="ghost"
                   onClick={() => {
                     setSelectedId(message.id);
                     setPreview("text");
                   }}
-                  className={`mb-2 w-full rounded-2xl border p-4 text-left transition ${selected?.id === message.id ? "border-[var(--lagoon)] bg-[var(--surface-strong)] shadow-sm" : "border-transparent bg-[var(--surface)] hover:border-[var(--line)] hover:bg-[var(--control-bg)]"}`}
+                  className={`mb-2 h-auto w-full flex-col items-stretch rounded-2xl border p-4 text-left whitespace-normal transition ${selected?.id === message.id ? "border-[var(--lagoon)] bg-[var(--surface-strong)] shadow-sm" : "border-transparent bg-[var(--surface)] hover:border-[var(--line)] hover:bg-[var(--control-bg)]"}`}
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="truncate text-xs font-extrabold tracking-wide text-[var(--palm)] uppercase">
@@ -139,7 +143,7 @@ function DevEmailInbox() {
                   <p className="mt-1 truncate text-xs text-[var(--sea-ink-soft)]">
                     To {message.recipient}
                   </p>
-                </button>
+                </Button>
               ))}
               {messages.length === 0 ? (
                 <div className="px-5 py-12 text-center text-[var(--sea-ink-soft)]">
@@ -211,14 +215,15 @@ function DevEmailInbox() {
                 {selected.html ? (
                   <div className="mb-4 flex gap-1 rounded-xl bg-[var(--sand)]/65 p-1">
                     {(["text", "html"] as const).map((value) => (
-                      <button
+                      <Button
                         key={value}
                         type="button"
+                        variant="ghost"
                         onClick={() => setPreview(value)}
-                        className={`rounded-lg px-4 py-2 text-xs font-extrabold uppercase ${preview === value ? "bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
+                        className={`h-auto rounded-lg px-4 py-2 text-xs font-extrabold uppercase ${preview === value ? "bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-sm" : "text-[var(--sea-ink-soft)]"}`}
                       >
                         {value}
-                      </button>
+                      </Button>
                     ))}
                   </div>
                 ) : null}

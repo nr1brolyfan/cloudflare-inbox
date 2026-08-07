@@ -125,6 +125,8 @@ import {
   mailboxMessageListQueryOptions,
   MailboxRequestError,
 } from "#/routes/-mailbox-queries";
+import { Alert } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 const InboxSearch = MailboxSearch;
 const decodeInboxSearch = decodeMailboxSearch;
@@ -489,8 +491,7 @@ function MailboxUnavailable({
 
   return (
     <main className="flex min-h-dvh items-center justify-center px-5 py-10">
-      <section
-        role="alert"
+      <Alert
         aria-live="polite"
         className="island-shell w-full max-w-lg rounded-[2rem] p-8 text-center sm:p-10"
       >
@@ -506,13 +507,14 @@ function MailboxUnavailable({
         </p>
         <div className="mt-7 flex flex-wrap justify-center gap-3">
           {!denied && onRetry ? (
-            <button
+            <Button
               type="button"
+              variant="ghost"
               onClick={onRetry}
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-[var(--bg-base)]"
+              className="inline-flex h-auto items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3 text-sm font-bold text-[var(--bg-base)]"
             >
               <RotateCcw size={17} /> Try again
-            </button>
+            </Button>
           ) : null}
           <Link
             to="/"
@@ -521,7 +523,7 @@ function MailboxUnavailable({
             <ArrowLeft size={17} /> Return home
           </Link>
         </div>
-      </section>
+      </Alert>
     </main>
   );
 }
@@ -565,10 +567,9 @@ function WorkspaceStatus({
   readonly title: string;
 }) {
   return (
-    <section
-      role="alert"
+    <Alert
       aria-live="polite"
-      className="flex min-h-80 flex-1 items-center justify-center bg-[var(--workspace-bg)] px-6 text-center text-[var(--sea-ink)]"
+      className="flex min-h-80 flex-1 items-center justify-center rounded-none border-0 bg-[var(--workspace-bg)] px-6 py-0 text-center text-[var(--sea-ink)]"
     >
       <div className="island-shell max-w-sm rounded-2xl px-7 py-6">
         <span className="mx-auto flex size-11 items-center justify-center rounded-xl bg-[var(--sand)] text-[var(--palm)]">
@@ -579,13 +580,14 @@ function WorkspaceStatus({
           {detail}
         </p>
         {onRetry ? (
-          <button
+          <Button
             type="button"
+            variant="ghost"
             onClick={onRetry}
-            className="mt-5 inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-4 py-2.5 text-xs font-extrabold text-[var(--bg-base)] hover:bg-[var(--palm)]"
+            className="mt-5 inline-flex h-auto items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-4 py-2.5 text-xs font-extrabold text-[var(--bg-base)] hover:bg-[var(--palm)]"
           >
             <RotateCcw size={14} /> Try again
-          </button>
+          </Button>
         ) : null}
         {backHref ? (
           <a
@@ -609,7 +611,7 @@ function WorkspaceStatus({
           </a>
         ) : null}
       </div>
-    </section>
+    </Alert>
   );
 }
 
@@ -2110,9 +2112,10 @@ function AuthenticatedInbox({
         outboundDeliveryId={outboundDeliveryId}
         headerAction={
           draftEditorOpen ? undefined : (
-            <button
+            <Button
               type="button"
               aria-label="Compose new draft"
+              variant="ghost"
               onClick={() =>
                 void navigate({
                   to: "/inbox",
@@ -2123,11 +2126,11 @@ function AuthenticatedInbox({
                   }),
                 })
               }
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-3 py-2.5 text-xs font-extrabold text-[var(--bg-base)] shadow-[0_9px_22px_rgba(23,58,64,0.16)] sm:px-4"
+              className="inline-flex h-auto items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-3 py-2.5 text-xs font-extrabold text-[var(--bg-base)] shadow-[0_9px_22px_rgba(23,58,64,0.16)] sm:px-4"
             >
               <PenLine size={15} />{" "}
               <span className="hidden sm:inline">Compose</span>
-            </button>
+            </Button>
           )
         }
         principalLabel={userId}

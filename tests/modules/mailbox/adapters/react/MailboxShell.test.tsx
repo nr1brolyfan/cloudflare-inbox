@@ -5,6 +5,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -154,7 +155,7 @@ describe(MailboxShell, () => {
     expect(navigate).toHaveBeenCalledExactlyOnceWith({ folder: "archive" });
   });
 
-  it("opens and closes the mobile navigation without leaving a hidden dialog", () => {
+  it("opens and closes the mobile navigation without leaving a hidden dialog", async () => {
     const navigate =
       vi.fn<(selection: { folder?: string; label?: string }) => void>();
     render(
@@ -186,6 +187,7 @@ describe(MailboxShell, () => {
       expanded: openNavigation.getAttribute("aria-expanded"),
     }).toStrictEqual({ dialog: null, expanded: "false" });
 
+    openNavigation.focus();
     fireEvent.click(openNavigation);
     expect({
       dialog: Boolean(
@@ -208,12 +210,14 @@ describe(MailboxShell, () => {
       navigateCalls: [[{ folder: "archive" }]],
     });
 
+    openNavigation.focus();
     fireEvent.click(openNavigation);
 
-    fireEvent.keyDown(window, { key: "Escape" });
+    fireEvent.keyDown(document, { key: "Escape" });
     expect(
       screen.queryByRole("dialog", { name: "Mailbox navigation" })
     ).toBeNull();
+    await waitFor(() => expect(document.activeElement).toBe(openNavigation));
   });
 
   it("keeps mailbox content visible during a failed sign-out", () => {

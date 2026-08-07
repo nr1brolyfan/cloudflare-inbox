@@ -261,6 +261,7 @@ describe("architecture policy", () => {
         ...apps,
         ...platform,
         "src/routes/index.tsx",
+        "src/components/ui/button.tsx",
         "src/auth/schema/index.ts",
         "src/router.tsx",
         "src/routeTree.gen.ts",

@@ -304,6 +304,7 @@ export const checkArchitectureSourceLayout = (
   for (const file of normalizedFiles) {
     const allowed =
       exactFrameworkFiles.has(file) ||
+      file.startsWith("src/components/ui/") ||
       file.startsWith("src/routes/") ||
       file.startsWith("src/auth/schema/") ||
       managedRoots.some((managedRoot) =>

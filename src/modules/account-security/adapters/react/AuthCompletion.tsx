@@ -10,6 +10,8 @@ import { startTransition, useEffect, useState } from "react";
 
 import { parseCompletionHash } from "#/modules/account-security/domain/CompletionUrl";
 import type { CompletionCredentials } from "#/modules/account-security/domain/CompletionUrl";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Button } from "@/components/ui/button";
 
 interface CompletionShellProps {
   readonly action: string;
@@ -58,26 +60,32 @@ export function CompletionShell({
           <div className="mt-8 space-y-5">
             {children}
             {error ? (
-              <p className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger-fg)]">
-                {error}
-              </p>
+              <Alert className="rounded-xl border border-[var(--danger-border)] bg-[var(--danger-bg)] px-4 py-3 text-sm text-[var(--danger-fg)]">
+                <AlertDescription className="text-inherit">
+                  {error}
+                </AlertDescription>
+              </Alert>
             ) : null}
             {success ? (
-              <p className="flex items-center gap-2 rounded-xl border border-[var(--success-border)] bg-[var(--success-bg)] px-4 py-3 text-sm text-[var(--success-fg)]">
-                <CheckCircle2 size={17} /> {success}
-              </p>
+              <Alert className="flex items-center gap-2 rounded-xl border border-[var(--success-border)] bg-[var(--success-bg)] px-4 py-3 text-sm text-[var(--success-fg)]">
+                <CheckCircle2 size={17} />
+                <AlertDescription className="text-inherit">
+                  {success}
+                </AlertDescription>
+              </Alert>
             ) : null}
-            <button
+            <Button
               type="button"
+              variant="ghost"
               disabled={!isReady || isPending || Boolean(success)}
               onClick={onSubmit}
-              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 font-bold text-[var(--bg-base)] shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
+              className="flex h-auto w-full items-center justify-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-3.5 text-base font-bold text-[var(--bg-base)] shadow-lg transition hover:-translate-y-0.5 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isPending ? (
                 <LoaderCircle className="animate-spin" size={18} />
               ) : null}
               {action}
-            </button>
+            </Button>
           </div>
         </section>
       </div>

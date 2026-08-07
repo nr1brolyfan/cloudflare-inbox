@@ -2,6 +2,7 @@ import type * as Schema from "effect/Schema";
 import { FilePenLine, LoaderCircle, Paperclip } from "lucide-react";
 
 import type { MailboxDraftListResult } from "#/modules/mailbox/application/MailboxDraftReading";
+import { Button } from "@/components/ui/button";
 
 import { mailboxDraftHref } from "./MailboxViewLinks";
 
@@ -139,17 +140,18 @@ export function DraftList({
               More drafts could not be loaded.
             </p>
           ) : null}
-          <button
+          <Button
             type="button"
+            variant="ghost"
             disabled={isLoadingMore}
             onClick={onLoadMore}
-            className="inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2 text-[0.7rem] font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
+            className="inline-flex h-auto items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-2 text-[0.7rem] font-extrabold text-[var(--sea-ink)] disabled:opacity-55"
           >
             {isLoadingMore ? (
               <LoaderCircle className="animate-spin" size={14} />
             ) : null}
             {loadMoreFailed ? "Try again" : "Load more"}
-          </button>
+          </Button>
         </div>
       )}
     </section>

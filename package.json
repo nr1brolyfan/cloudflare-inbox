@@ -40,6 +40,7 @@
   },
   "dependencies": {
     "@adraffy/ens-normalize": "1.11.1",
+    "@base-ui/react": "^1.7.0",
     "@effect-auth/core": "file:../effect-auth/effect-auth-core-local.tgz",
     "@effect/platform-bun": "4.0.0-beta.98",
     "@effect/sql-d1": "4.0.0-beta.98",
@@ -54,6 +55,8 @@
     "@tanstack/react-router-ssr-query": "latest",
     "@tanstack/react-start": "latest",
     "alchemy": "2.0.0-beta.62",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
     "drizzle-orm": "1.0.0-rc.4",
     "effect": "4.0.0-beta.98",
     "lucide-react": "^0.577.0",
@@ -62,6 +65,7 @@
     "punycode": "2.3.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "tailwind-merge": "^3.6.0",
     "tailwindcss": "^4.1.18",
     "tr46": "6.0.0",
     "tw-animate-css": "^1.3.6"

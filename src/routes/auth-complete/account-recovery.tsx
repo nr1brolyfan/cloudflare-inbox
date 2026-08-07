@@ -13,6 +13,7 @@ import {
   CompletionShell,
   useCompletionCredentials,
 } from "#/modules/account-security/adapters/react/AuthCompletion";
+import { Input } from "@/components/ui/input";
 
 export const Route = createFileRoute("/auth-complete/account-recovery")({
   component: AccountRecoveryCompletion,
@@ -81,15 +82,19 @@ function AccountRecoveryCompletion() {
       }
       onSubmit={() => complete.mutate()}
     >
-      <label className="block space-y-2 text-sm font-bold">
+      <label
+        htmlFor="recovery-code"
+        className="block space-y-2 text-sm font-bold"
+      >
         <span>Recovery code</span>
-        <input
+        <Input
+          id="recovery-code"
           type="text"
           required
           autoComplete="one-time-code"
           value={code}
           onChange={(event) => setCode(event.target.value)}
-          className="w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 font-mono text-[var(--sea-ink)] uppercase outline-none focus:border-[var(--lagoon-deep)]"
+          className="h-auto w-full rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-4 py-3.5 font-mono text-sm text-[var(--sea-ink)] uppercase outline-none focus:border-[var(--lagoon-deep)]"
         />
       </label>
     </CompletionShell>
