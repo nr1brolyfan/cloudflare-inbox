@@ -128,9 +128,10 @@ describe(MessageList, () => {
         target: { value: "  quarterly report  " },
       }
     );
-    fireEvent.change(screen.getByRole("combobox", { name: "Read status" }), {
-      target: { value: "unread" },
-    });
+    fireEvent.click(screen.getByRole("combobox", { name: "Read status" }));
+    const unreadOption = screen.getByRole("option", { name: "Unread" });
+    fireEvent.pointerDown(unreadOption);
+    fireEvent.click(unreadOption);
     fireEvent.click(screen.getByRole("button", { name: "Starred" }));
     fireEvent.click(screen.getByRole("button", { name: "Files" }));
     act(() => vi.advanceTimersByTime(350));

@@ -1,8 +1,11 @@
+import { Select } from "@base-ui/react/select";
 import type * as Schema from "effect/Schema";
 import {
   Archive,
   ArrowDownLeft,
   ArrowUpRight,
+  Check,
+  ChevronDown,
   Inbox,
   LoaderCircle,
   Mail,
@@ -31,6 +34,12 @@ type MessageListData = Schema.Codec.Encoded<typeof MailboxMessageListResult>;
 export type MessageListItemData = MessageListData["items"][number];
 export type MessageRowAction = "archive" | "read" | "star" | "trash";
 const noPendingMessageIds: ReadonlySet<string> = new Set();
+const readFilterItems = [
+  { label: "Any status", value: "any" },
+  { label: "Unread", value: "unread" },
+  { label: "Read", value: "read" },
+] as const;
+type ReadFilterValue = (typeof readFilterItems)[number]["value"];
 
 const messageDate = new Intl.DateTimeFormat("en-US", {
   day: "numeric",
@@ -57,7 +66,7 @@ function MessageSearchControls({
   readonly onQueryChange: (state: MailboxMessageQueryState) => void;
 }) {
   const [query, setQuery] = useState(filters.query ?? "");
-  const [read, setRead] = useState<"" | "read" | "unread">(filters.read ?? "");
+  const [read, setRead] = useState<ReadFilterValue>(filters.read ?? "any");
   const [starred, setStarred] = useState(filters.starred ?? false);
   const [hasAttachment, setHasAttachment] = useState(
     filters.hasAttachment ?? false
@@ -75,7 +84,7 @@ function MessageSearchControls({
       delivery: filters.delivery,
       hasAttachment: hasAttachment || undefined,
       query: trimmedQuery === "" ? undefined : trimmedQuery,
-      read: read === "" ? undefined : read,
+      read: read === "any" ? undefined : read,
       starred: starred || undefined,
     };
     if (
@@ -131,19 +140,45 @@ function MessageSearchControls({
         </Alert>
       ) : null}
       <div className="flex flex-wrap items-center gap-2">
-        <select
-          aria-label="Read status"
+        <Select.Root
+          items={readFilterItems}
           value={read}
-          onChange={(event) => {
-            const { value } = event.currentTarget;
-            setRead(value === "read" || value === "unread" ? value : "");
-          }}
-          className="h-8 rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-2 text-[0.7rem] font-bold text-[var(--sea-ink)]"
+          onValueChange={(value) => setRead(value ?? "any")}
         >
-          <option value="">Any status</option>
-          <option value="unread">Unread</option>
-          <option value="read">Read</option>
-        </select>
+          <Select.Trigger
+            aria-label="Read status"
+            className="group flex h-8 min-w-27 items-center justify-between gap-2 rounded-lg border border-[var(--line)] bg-[var(--control-bg)] px-2.5 text-[0.7rem] font-bold text-[var(--sea-ink-soft)] transition-colors outline-none hover:bg-[var(--surface-strong)] hover:text-[var(--sea-ink)] focus-visible:border-[var(--lagoon-deep)] focus-visible:ring-2 focus-visible:ring-[var(--lagoon)]/20 data-popup-open:border-[var(--lagoon)] data-popup-open:bg-[var(--surface-strong)] data-popup-open:text-[var(--sea-ink)]"
+          >
+            <Select.Value />
+            <Select.Icon className="text-[var(--sea-ink-soft)] transition-transform duration-150 group-data-popup-open:rotate-180">
+              <ChevronDown size={13} strokeWidth={2.5} />
+            </Select.Icon>
+          </Select.Trigger>
+          <Select.Portal>
+            <Select.Positioner
+              alignItemWithTrigger={false}
+              sideOffset={6}
+              className="z-50 outline-none"
+            >
+              <Select.Popup className="w-36 origin-[var(--transform-origin)] rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-1.5 text-[var(--sea-ink)] shadow-[0_14px_35px_rgba(0,0,0,0.22)] transition-[transform,opacity] duration-150 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0">
+                <Select.List>
+                  {readFilterItems.map((item) => (
+                    <Select.Item
+                      key={item.value}
+                      value={item.value}
+                      className="grid h-9 cursor-default grid-cols-[1rem_1fr] items-center gap-2 rounded-lg px-2 text-xs font-bold text-[var(--sea-ink-soft)] outline-none select-none data-highlighted:bg-[var(--sand)] data-highlighted:text-[var(--palm)] data-selected:text-[var(--sea-ink)]"
+                    >
+                      <Select.ItemIndicator className="text-[var(--lagoon-deep)]">
+                        <Check size={14} strokeWidth={2.5} />
+                      </Select.ItemIndicator>
+                      <Select.ItemText>{item.label}</Select.ItemText>
+                    </Select.Item>
+                  ))}
+                </Select.List>
+              </Select.Popup>
+            </Select.Positioner>
+          </Select.Portal>
+        </Select.Root>
         <Button
           type="button"
           variant="ghost"
