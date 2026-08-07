@@ -16,6 +16,16 @@ import type {
 } from "#/modules/mailbox/adapters/react/MessageList";
 import { MessageList } from "#/modules/mailbox/adapters/react/MessageList";
 
+const unusedMessageAction =
+  vi.fn<(action: MessageRowAction, message: MessageListItemData) => void>();
+const unusedMessageBatchAction =
+  vi.fn<
+    (
+      action: MessageRowAction,
+      selectedMessages: readonly MessageListItemData[]
+    ) => void
+  >();
+
 const messages = {
   items: [
     {
@@ -72,6 +82,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={onLoadMore}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
         >()}
@@ -113,6 +124,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
         >()}
@@ -157,6 +169,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={onMessageAction}
         onOpenMessage={onOpenMessage}
         onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
@@ -171,8 +184,13 @@ describe(MessageList, () => {
   });
 
   it("selects messages without opening them and applies explicit bulk states", () => {
-    const onMessageAction =
-      vi.fn<(action: MessageRowAction, message: MessageListItemData) => void>();
+    const onMessageBatchAction =
+      vi.fn<
+        (
+          action: MessageRowAction,
+          selectedMessages: readonly MessageListItemData[]
+        ) => void
+      >();
     const onOpenMessage =
       vi.fn<(threadId: string, messageId: string) => void>();
     render(
@@ -182,7 +200,8 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
-        onMessageAction={onMessageAction}
+        onMessageBatchAction={onMessageBatchAction}
+        onMessageAction={unusedMessageAction}
         onOpenMessage={onOpenMessage}
         onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
         selection={{ folder: "inbox" }}
@@ -202,17 +221,16 @@ describe(MessageList, () => {
     expect(onOpenMessage).not.toHaveBeenCalled();
 
     fireEvent.click(screen.getByRole("button", { name: "Mark selected read" }));
-    expect(onMessageAction.mock.calls).toStrictEqual([
-      ["read", messages.items[0]],
+    expect(onMessageBatchAction.mock.calls).toStrictEqual([
+      ["read", [messages.items[0]]],
     ]);
 
-    onMessageAction.mockClear();
+    onMessageBatchAction.mockClear();
     fireEvent.click(
       screen.getByRole("button", { name: "Add star to selected" })
     );
-    expect(onMessageAction.mock.calls).toStrictEqual([
-      ["star", messages.items[0]],
-      ["star", messages.items[1]],
+    expect(onMessageBatchAction.mock.calls).toStrictEqual([
+      ["star", [messages.items[0], messages.items[1]]],
     ]);
   });
 
@@ -224,6 +242,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
         >()}
@@ -257,6 +276,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={onMessageAction}
         onOpenMessage={onOpenMessage}
         onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
@@ -287,6 +307,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
         >()}
@@ -316,6 +337,7 @@ describe(MessageList, () => {
       isLoadingMore: false,
       loadMoreFailed: false,
       onLoadMore: vi.fn<() => void>(),
+      onMessageBatchAction: unusedMessageBatchAction,
       onMessageAction:
         vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
@@ -342,6 +364,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
         >()}
@@ -369,6 +392,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed
         onLoadMore={onLoadMore}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
         >()}
@@ -415,6 +439,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
         >()}
@@ -451,6 +476,7 @@ describe(MessageList, () => {
         isLoadingMore={false}
         loadMoreFailed={false}
         onLoadMore={vi.fn<() => void>()}
+        onMessageBatchAction={unusedMessageBatchAction}
         onMessageAction={vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void
         >()}
@@ -472,6 +498,7 @@ describe(MessageList, () => {
       isLoadingMore: false,
       loadMoreFailed: false,
       onLoadMore: vi.fn<() => void>(),
+      onMessageBatchAction: unusedMessageBatchAction,
       onMessageAction:
         vi.fn<
           (action: MessageRowAction, message: MessageListItemData) => void

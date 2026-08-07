@@ -19,8 +19,14 @@ import type { MailboxInboundAttachmentInput } from "#/modules/mailbox/applicatio
 import { isValidAttachmentMimeType } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import type { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
 import { isSafeInlineImageMimeType } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
-import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
-import { MailboxMessageActionResult } from "#/modules/mailbox/application/MailboxMessageActions";
+import type {
+  MailboxMessageActionCommand,
+  MailboxMessageBatchActionCommand,
+} from "#/modules/mailbox/application/MailboxMessageActions";
+import {
+  MailboxMessageActionResult,
+  MailboxMessageBatchActionResult,
+} from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import { MailboxMessageHtmlResult } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import type {
@@ -130,6 +136,15 @@ export type MailboxInboundAttachmentServerResult =
 export type MailboxMessageActionServerResult =
   | {
       readonly action: Schema.Codec.Encoded<typeof MailboxMessageActionResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxMessageBatchActionServerResult =
+  | {
+      readonly batch: Schema.Codec.Encoded<
+        typeof MailboxMessageBatchActionResult
+      >;
       readonly ok: true;
     }
   | MailboxServerErrorResult;
@@ -373,6 +388,10 @@ export interface MailboxBackendOperationsShape {
     readonly command: MailboxMessageActionCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxMessageActionServerResult>;
+  readonly actOnMessages: (input: {
+    readonly command: MailboxMessageBatchActionCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxMessageBatchActionServerResult>;
   readonly bootstrapOwner: (input: {
     readonly command: BootstrapOrganizationCommand;
     readonly incoming: Request;
@@ -694,6 +713,50 @@ export const MailboxBackendOperationsLayer = Layer.effect(
     };
 
     return MailboxBackendOperations.of({
+      actOnMessages: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "POST",
+          operation: "website.mailbox.message_action",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/messages/batch-actions`,
+          payload: {
+            actions: command.actions,
+            batchOperationId: command.batchOperationId,
+          },
+        }).pipe(
+          Effect.map((result): MailboxMessageBatchActionServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxMessageBatchActionResult)
+            )(result.body);
+            const expectedActions = new Map(
+              command.actions.map((action) => [action.messageId, action])
+            );
+            const validResult =
+              Exit.isSuccess(decoded) &&
+              decoded.value.batchOperationId === command.batchOperationId &&
+              decoded.value.results.length === command.actions.length &&
+              new Set(decoded.value.results.map((item) => item.messageId))
+                .size === command.actions.length &&
+              decoded.value.results.every((item) => {
+                const expected = expectedActions.get(item.messageId);
+                return (
+                  expected?.operationId === item.operationId &&
+                  (item._tag === "Failed" || item.action.id === item.messageId)
+                );
+              });
+            return validResult && Exit.isSuccess(decoded)
+              ? {
+                  batch: Schema.encodeSync(MailboxMessageBatchActionResult)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        ),
       actOnMessage: ({ command, incoming }) => {
         const payload =
           command._tag === "SetRead"

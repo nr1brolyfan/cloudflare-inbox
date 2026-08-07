@@ -68,6 +68,11 @@ const expectedDirectoryMetadata = {
 } as const satisfies Record<DirectoryRpcRequest["_tag"], DirectoryMetadata>;
 
 const expectedMailDataMetadata = {
+  BatchMutateMessages: {
+    operation: "mutate-message",
+    kind: "write",
+    responseTag: "MessagesBatchMutated",
+  },
   ListMessages: {
     operation: "list-messages",
     kind: "read",

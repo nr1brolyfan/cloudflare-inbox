@@ -5,6 +5,8 @@ import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import type {
   AddMessageLabelInput,
   AttachmentBlobLocation,
+  BatchMessageMutationsInput,
+  BatchMessageMutationsResult,
   GetAttachmentBlobInput,
   GetMessageInput,
   GetMessageResult,
@@ -28,6 +30,9 @@ export interface MailboxMessageRepositoryService {
   readonly addMessageLabel: (
     input: AddMessageLabelInput
   ) => Effect.Effect<MessageMutationResult, RepositoryError>;
+  readonly batchMutateMessages: (
+    input: BatchMessageMutationsInput
+  ) => Effect.Effect<BatchMessageMutationsResult, RepositoryError>;
   readonly getAttachmentBlob: (
     input: GetAttachmentBlobInput
   ) => Effect.Effect<AttachmentBlobLocation, RepositoryError>;

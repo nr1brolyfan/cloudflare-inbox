@@ -193,6 +193,18 @@ export const MailboxMessageRepositoryDoLayer = Layer.effect(
 
     return MailboxMessageRepository.of({
       addMessageLabel: (input) => mutation({ _tag: "AddMessageLabel", input }),
+      batchMutateMessages: (input) =>
+        client
+          .executeMailData({ _tag: "BatchMutateMessages", input })
+          .pipe(
+            Effect.flatMap((response) =>
+              response._tag === "DomainError"
+                ? domainFailure(response)
+                : response._tag === "MessagesBatchMutated"
+                  ? Effect.succeed(response.value)
+                  : mailDataProtocolError(response, true)
+            )
+          ),
       getAttachmentBlob: (input) =>
         client
           .executeMailData({ _tag: "GetAttachmentBlob", input })

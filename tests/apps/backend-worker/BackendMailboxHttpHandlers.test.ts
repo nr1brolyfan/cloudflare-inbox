@@ -391,6 +391,7 @@ const makeHandler = (
     readMessage: () => Effect.die("Unexpected message read"),
   }),
   messageActions: MailboxMessageActionsService = MailboxMessageActions.of({
+    executeBatch: () => Effect.die("Unexpected batch message action"),
     execute: () => Effect.succeed(mailboxMessageAction),
   }),
   messageHtml: MailboxMessageHtmlReadingService = MailboxMessageHtmlReading.of({
@@ -855,6 +856,7 @@ const makeCountingHandler = (session: ValidatedSession) => {
         readMessage: () => Effect.die("Unexpected message read"),
       }),
       MailboxMessageActions.of({
+        executeBatch: () => Effect.die("Unexpected batch message action"),
         execute: () =>
           counted(MailboxOperation.actOnMessage, mailboxMessageAction),
       }),
@@ -1465,6 +1467,7 @@ describe("protected mailbox API", () => {
       undefined,
       undefined,
       MailboxMessageActions.of({
+        executeBatch: () => Effect.die("Unexpected batch message action"),
         execute: (command) => {
           actionCommand = command;
           return Effect.succeed(mailboxMessageAction);
@@ -1502,6 +1505,73 @@ describe("protected mailbox API", () => {
     }
   });
 
+  it("executes mailbox message actions through one batch endpoint", async () => {
+    let batchCommand: unknown;
+    const { dispose, handler } = makeHandler(
+      makeAdministration(),
+      undefined,
+      undefined,
+      undefined,
+      MailboxMessageActions.of({
+        execute: () => Effect.die("Unexpected single message action"),
+        executeBatch: (command) => {
+          batchCommand = command;
+          return Effect.succeed({
+            batchOperationId: command.batchOperationId,
+            results: command.actions.map((action) => ({
+              _tag: "Succeeded" as const,
+              action: mailboxMessageAction,
+              messageId: action.messageId,
+              operationId: action.operationId,
+            })),
+          });
+        },
+      })
+    );
+
+    try {
+      const response = await handler(
+        mailboxRequest(
+          "/api/mailboxes/primary/messages/batch-actions",
+          "POST",
+          {
+            body: {
+              actions: [
+                {
+                  _tag: "SetRead",
+                  expectedVersion: 1,
+                  messageId: "message-1",
+                  operationId: "batch-item-1",
+                  read: true,
+                },
+              ],
+              batchOperationId: "batch-operation-1",
+            },
+          }
+        )
+      );
+
+      expect({
+        body: await response.json(),
+        command: batchCommand,
+        status: response.status,
+      }).toMatchObject({
+        body: {
+          batchOperationId: "batch-operation-1",
+          results: [{ _tag: "Succeeded", messageId: "message-1" }],
+        },
+        command: {
+          actions: [{ _tag: "SetRead", messageId: "message-1" }],
+          batchOperationId: "batch-operation-1",
+          mailboxId: "primary",
+        },
+        status: 200,
+      });
+    } finally {
+      await dispose();
+    }
+  });
+
   it("maps a missing action resource to not found", async () => {
     const { dispose, handler } = makeHandler(
       makeAdministration(),
@@ -1509,6 +1579,7 @@ describe("protected mailbox API", () => {
       undefined,
       undefined,
       MailboxMessageActions.of({
+        executeBatch: () => Effect.die("Unexpected batch message action"),
         execute: (command) =>
           Effect.fail(
             new MailResourceResolveError({

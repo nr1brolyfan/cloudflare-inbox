@@ -30,7 +30,7 @@ import {
   getMailboxOutboundDelivery,
   getMailboxDraft,
   getMailboxThread,
-  actOnMailboxMessage,
+  actOnMailboxMessages,
   createMailboxDraft,
   createMailboxReplyDraft,
   reserveMailboxDraftAttachment,
@@ -91,7 +91,10 @@ import type {
   MailboxViewSelection,
 } from "#/modules/mailbox/adapters/react/MailboxViewLinks";
 import { mailboxViewHref } from "#/modules/mailbox/adapters/react/MailboxViewLinks";
-import type { MessageRowAction } from "#/modules/mailbox/adapters/react/MessageList";
+import type {
+  MessageListItemData,
+  MessageRowAction,
+} from "#/modules/mailbox/adapters/react/MessageList";
 import { MessageList } from "#/modules/mailbox/adapters/react/MessageList";
 import type { OutboundDeliverySnapshot } from "#/modules/mailbox/adapters/react/OutboundDeliveryTracker";
 import {
@@ -108,7 +111,8 @@ import {
   DraftEditorDraft,
   UpdateMailboxDraftCommand,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
-import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import { MailboxMessageBatchActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import type { MailboxMessageBatchActionItem } from "#/modules/mailbox/application/MailboxMessageActions";
 import {
   MailboxMessageView,
   OpenMailboxThreadInput,
@@ -191,8 +195,8 @@ const useMailboxNavigate = () => {
       : navigate(options);
 };
 const decodeMailboxMessageView = Schema.decodeUnknownSync(MailboxMessageView);
-const decodeMailboxMessageAction = Schema.decodeUnknownSync(
-  MailboxMessageActionCommand
+const decodeMailboxMessageBatchAction = Schema.decodeUnknownSync(
+  MailboxMessageBatchActionCommand
 );
 
 const prefetchMailboxSelection = ({
@@ -233,8 +237,8 @@ const prefetchMailboxSelection = ({
 const decodeOpenMailboxThread = Schema.decodeUnknownSync(
   OpenMailboxThreadInput
 );
-const decodeMailboxMessageActionOption = Schema.decodeUnknownOption(
-  MailboxMessageActionCommand
+const decodeMailboxMessageBatchActionOption = Schema.decodeUnknownOption(
+  MailboxMessageBatchActionCommand
 );
 const decodeCreateMailboxDraft = Schema.decodeUnknownSync(
   CreateMailboxDraftCommand
@@ -280,47 +284,28 @@ const inboxSearchFor = (
     thread: open?.threadId,
   });
 
-const messageActionCommand = (
+const messageBatchActionCommand = (
   action: MessageRowAction,
   mailboxId: string,
-  message: {
-    readonly id: string;
-    readonly read: boolean;
-    readonly starred: boolean;
-    readonly version: number;
-  }
+  messages: readonly MessageListItemData[]
 ) => {
-  const common = {
-    expectedVersion: message.version,
+  const actions = messages.map((message) => {
+    const common = {
+      expectedVersion: message.version,
+      messageId: message.id,
+      operationId: crypto.randomUUID(),
+    };
+    return action === "read"
+      ? { ...common, _tag: "SetRead" as const, read: !message.read }
+      : action === "star"
+        ? { ...common, _tag: "SetStarred" as const, starred: !message.starred }
+        : { ...common, _tag: action === "archive" ? "Archive" : "Trash" };
+  });
+  return decodeMailboxMessageBatchAction({
+    actions,
+    batchOperationId: crypto.randomUUID(),
     mailboxId,
-    messageId: message.id,
-    operationId: crypto.randomUUID(),
-  };
-  switch (action) {
-    case "read": {
-      return decodeMailboxMessageAction({
-        ...common,
-        _tag: "SetRead",
-        read: !message.read,
-      });
-    }
-    case "star": {
-      return decodeMailboxMessageAction({
-        ...common,
-        _tag: "SetStarred",
-        starred: !message.starred,
-      });
-    }
-    case "archive": {
-      return decodeMailboxMessageAction({ ...common, _tag: "Archive" });
-    }
-    case "trash": {
-      return decodeMailboxMessageAction({ ...common, _tag: "Trash" });
-    }
-    default: {
-      return decodeMailboxMessageAction({ ...common, _tag: "Trash" });
-    }
-  }
+  });
 };
 
 const messageActionErrorText = (
@@ -670,7 +655,7 @@ function ConversationPane({
   readonly messageId?: string;
   readonly onClose: () => void;
   readonly pendingActions: readonly Schema.Schema.Type<
-    typeof MailboxMessageActionCommand
+    typeof MailboxMessageBatchActionItem
   >[];
   readonly selection: MailboxViewSelection;
   readonly sessionId: string;
@@ -919,7 +904,10 @@ function MailboxWorkspace({
   const pendingMessageLocks = useRef(new Set<string>());
   const [actionFailures, setActionFailures] = useState<
     readonly {
-      readonly command: Schema.Schema.Type<typeof MailboxMessageActionCommand>;
+      readonly command?: Schema.Schema.Type<
+        typeof MailboxMessageBatchActionCommand
+      >;
+      readonly id: string;
       readonly retryable: boolean;
       readonly text: string;
     }[]
@@ -943,56 +931,76 @@ function MailboxWorkspace({
     sessionId,
     mailboxId,
   ] as const;
-  const pendingActions = useMutationState<
-    Schema.Schema.Type<typeof MailboxMessageActionCommand> | undefined
+  const pendingBatches = useMutationState<
+    Schema.Schema.Type<typeof MailboxMessageBatchActionCommand> | undefined
   >({
     filters: { mutationKey: actionMutationKey, status: "pending" },
     select: (mutation) =>
       Option.getOrUndefined(
-        decodeMailboxMessageActionOption(mutation.state.variables)
+        decodeMailboxMessageBatchActionOption(mutation.state.variables)
       ),
   }).filter(
     (
       command
-    ): command is Schema.Schema.Type<typeof MailboxMessageActionCommand> =>
+    ): command is Schema.Schema.Type<typeof MailboxMessageBatchActionCommand> =>
       command !== undefined
   );
+  const pendingActions = pendingBatches.flatMap((command) => command.actions);
   const pendingMessageIds = new Set(
-    pendingActions.map((command) => command.messageId)
+    pendingActions.map((action) => action.messageId)
   );
-  const clearActionFailure = (failedMessageId: string) =>
+  const clearActionFailures = (ids: ReadonlySet<string>) =>
     setActionFailures((current) =>
-      current.filter((failure) => failure.command.messageId !== failedMessageId)
+      current.filter((failure) => !ids.has(failure.id))
     );
   const recordActionFailure = (
-    command: Schema.Schema.Type<typeof MailboxMessageActionCommand>,
+    id: string,
     text: string,
-    retryable: boolean
+    retryable: boolean,
+    command?: Schema.Schema.Type<typeof MailboxMessageBatchActionCommand>
   ) =>
     setActionFailures((current) => [
-      ...current.filter(
-        (failure) => failure.command.messageId !== command.messageId
-      ),
-      { command, retryable, text },
+      ...current.filter((failure) => failure.id !== id),
+      { command, id, retryable, text },
     ]);
   const messageAction = useMutation({
     mutationKey: actionMutationKey,
     mutationFn: (
-      command: Schema.Schema.Type<typeof MailboxMessageActionCommand>
-    ) => actOnMailboxMessage({ data: command }),
+      command: Schema.Schema.Type<typeof MailboxMessageBatchActionCommand>
+    ) => actOnMailboxMessages({ data: command }),
     onSuccess: (result, command) => {
+      const commandIds = new Set([
+        command.batchOperationId,
+        ...command.actions.map((action) => action.messageId),
+      ]);
       if (!result.ok && result.status === 401) {
-        clearActionFailure(command.messageId);
+        clearActionFailures(commandIds);
         void clearCachedAuthSession(queryClient);
         return;
       }
       if (result.ok) {
-        clearActionFailure(command.messageId);
-        reconcileMailboxMessageActionCaches(
-          queryClient,
-          command,
-          result.action
-        );
+        clearActionFailures(commandIds);
+        for (const item of result.batch.results) {
+          if (item._tag === "Succeeded") {
+            reconcileMailboxMessageActionCaches(
+              queryClient,
+              mailboxId,
+              item.action
+            );
+          } else {
+            recordActionFailure(
+              item.messageId,
+              item.reason === "conflict"
+                ? "The message changed before the action was applied."
+                : item.reason === "forbidden"
+                  ? "You no longer have permission to change this message."
+                  : item.reason === "not-found"
+                    ? "The message could not be found."
+                    : "The message action was invalid.",
+              false
+            );
+          }
+        }
         void Promise.all([
           queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
           queryClient.invalidateQueries({ queryKey: ["mailbox", "thread"] }),
@@ -1003,10 +1011,11 @@ function MailboxWorkspace({
         return;
       }
       recordActionFailure(
-        command,
+        command.batchOperationId,
         messageActionErrorText(result) ??
           "The message action could not be completed.",
-        result.status === 500 || result.status === 502
+        result.status === 500 || result.status === 502,
+        command
       );
       if (result.status === 404 || result.status === 409) {
         void Promise.all([
@@ -1026,14 +1035,17 @@ function MailboxWorkspace({
     },
     onError: (_error, command) => {
       recordActionFailure(
-        command,
+        command.batchOperationId,
         "The message action could not be completed.",
-        true
+        true,
+        command
       );
       void queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] });
     },
     onSettled: (_result, _error, command) => {
-      pendingMessageLocks.current.delete(command.messageId);
+      for (const action of command.actions) {
+        pendingMessageLocks.current.delete(action.messageId);
+      }
     },
     retry: false,
   });
@@ -1069,36 +1081,67 @@ function MailboxWorkspace({
     filters,
     { archiveFolderId, trashFolderId }
   );
-  const submitMessageAction = (
-    command: Schema.Schema.Type<typeof MailboxMessageActionCommand>
+  const submitMessageActionBatch = (
+    command: Schema.Schema.Type<typeof MailboxMessageBatchActionCommand>
   ) => {
     if (
-      pendingMessageLocks.current.has(command.messageId) ||
-      pendingMessageIds.has(command.messageId)
+      command.actions.some(
+        (action) =>
+          pendingMessageLocks.current.has(action.messageId) ||
+          pendingMessageIds.has(action.messageId)
+      )
     ) {
       return;
     }
     messageAction.reset();
-    clearActionFailure(command.messageId);
-    pendingMessageLocks.current.add(command.messageId);
+    clearActionFailures(
+      new Set([
+        command.batchOperationId,
+        ...command.actions.map((action) => action.messageId),
+      ])
+    );
+    for (const action of command.actions) {
+      pendingMessageLocks.current.add(action.messageId);
+    }
     messageAction.mutate(command);
   };
   const executeMessageAction = (
     action: MessageRowAction,
     message: (typeof data.items)[number]
-  ) => submitMessageAction(messageActionCommand(action, mailboxId, message));
+  ) =>
+    submitMessageActionBatch(
+      messageBatchActionCommand(action, mailboxId, [message])
+    );
+  const executeMessageBatchAction = (
+    action: MessageRowAction,
+    selectedMessages: readonly MessageListItemData[]
+  ) => {
+    for (let index = 0; index < selectedMessages.length; index += 100) {
+      submitMessageActionBatch(
+        messageBatchActionCommand(
+          action,
+          mailboxId,
+          selectedMessages.slice(index, index + 100)
+        )
+      );
+    }
+  };
 
   return (
     <div className="grid h-full min-h-0 lg:grid-cols-[minmax(22rem,28rem)_minmax(0,1fr)]">
       <MessageList
         key={JSON.stringify([selection, filters])}
-        actionErrors={actionFailures.map((failure) => ({
-          handleRetry: failure.retryable
-            ? () => submitMessageAction(failure.command)
-            : undefined,
-          messageId: failure.command.messageId,
-          text: failure.text,
-        }))}
+        actionErrors={actionFailures.map((failure) => {
+          const retryCommand = failure.command;
+          return {
+            handleRetry:
+              failure.retryable && retryCommand !== undefined
+                ? () => submitMessageActionBatch(retryCommand)
+                : undefined,
+            messageId: failure.id,
+            text: failure.text,
+          };
+        })}
         archiveFolderId={archiveFolderId}
         data={data}
         filters={filters}
@@ -1111,6 +1154,7 @@ function MailboxWorkspace({
         }
         loadMoreFailed={messages.isFetchNextPageError}
         onLoadMore={() => void messages.fetchNextPage()}
+        onMessageBatchAction={executeMessageBatchAction}
         onMessageAction={executeMessageAction}
         onOpenMessage={(nextThreadId, nextMessageId) =>
           void navigate({

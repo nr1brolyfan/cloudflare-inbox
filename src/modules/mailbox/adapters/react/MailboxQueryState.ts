@@ -5,7 +5,7 @@ import type {
 } from "@tanstack/react-query";
 import type * as Schema from "effect/Schema";
 
-import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import type { MailboxMessageBatchActionItem } from "#/modules/mailbox/application/MailboxMessageActions";
 import type {
   MailboxMessageListResult,
   MailboxThreadResult,
@@ -17,7 +17,7 @@ import type {
 } from "./MailboxViewLinks";
 
 type MessageActionCommand = Schema.Schema.Type<
-  typeof MailboxMessageActionCommand
+  typeof MailboxMessageBatchActionItem
 >;
 type MessageListData = Schema.Codec.Encoded<typeof MailboxMessageListResult>;
 type ThreadData = Schema.Codec.Encoded<typeof MailboxThreadResult>;
@@ -177,14 +177,14 @@ const reconcileThread = (
 /** Reconciles only existing cache entries; invalidation fills destination views. */
 export const reconcileMailboxMessageActionCaches = (
   queryClient: QueryClient,
-  command: MessageActionCommand,
+  mailboxId: string,
   result: MessageActionResult
 ) => {
   const messageQueries = queryClient.getQueriesData<
     InfiniteData<MessageListData>
   >({ queryKey: ["mailbox", "messages"] });
   for (const [queryKey, data] of messageQueries) {
-    if (data !== undefined && queryKey[3] === command.mailboxId) {
+    if (data !== undefined && queryKey[3] === mailboxId) {
       queryClient.setQueryData(
         queryKey,
         reconcileMessagePages(queryKey, data, result)
@@ -200,7 +200,7 @@ export const reconcileMailboxMessageActionCaches = (
     if (
       data?.ok === true &&
       data.thread !== undefined &&
-      queryKey[3] === command.mailboxId
+      queryKey[3] === mailboxId
     ) {
       queryClient.setQueryData(queryKey, {
         ...data,

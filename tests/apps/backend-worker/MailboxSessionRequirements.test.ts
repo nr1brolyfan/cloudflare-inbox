@@ -14,6 +14,7 @@ describe("mailbox session requirements matrix", () => {
     const matrixKeys = Object.keys(MailboxSessionRequirementsMatrix.operations);
     const expectedKeys = [
       "actOnMessage",
+      "actOnMessages",
       "bootstrapOwner",
       "createDraft",
       "createReplyDraft",

@@ -74,6 +74,7 @@ const unusedAuthorization = () =>
 
 const repository = MailboxMessageRepository.of({
   addMessageLabel: unused,
+  batchMutateMessages: unused,
   getAttachmentBlob: () => Effect.succeed(blobLocation),
   getInboundAttachmentBlob: unused,
   getMessage: () => Effect.succeed(message),

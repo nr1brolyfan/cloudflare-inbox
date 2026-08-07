@@ -233,14 +233,7 @@ describe("mailbox optimistic query state", () => {
         { ok: true, thread }
       );
     }
-    const setRead = command({
-      ...actionCommon,
-      _tag: "SetRead",
-      messageId: "message-b",
-      read: true,
-    });
-
-    reconcileMailboxMessageActionCaches(queryClient, setRead, {
+    reconcileMailboxMessageActionCaches(queryClient, "primary", {
       folderId: "inbox",
       id: "message-b",
       read: true,
@@ -300,13 +293,7 @@ describe("mailbox optimistic query state", () => {
       pageParams: [undefined],
       pages: [{ items: [] }],
     });
-    const archive = command({
-      ...actionCommon,
-      _tag: "Archive",
-      messageId: "message-b",
-    });
-
-    reconcileMailboxMessageActionCaches(queryClient, archive, {
+    reconcileMailboxMessageActionCaches(queryClient, "primary", {
       folderId: "all-mail",
       id: "message-b",
       read: false,

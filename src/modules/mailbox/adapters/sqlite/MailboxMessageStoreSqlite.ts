@@ -21,6 +21,7 @@ import {
   AddMessageLabelInput,
   AttachmentBlobLocation,
   AttachmentMetadata,
+  BatchMessageMutationsResult,
   InboundAttachmentBlobLocation,
   MoveMessageInput,
   MessageDetailSchema,
@@ -35,6 +36,8 @@ import {
   ThreadSummarySchema,
 } from "#/modules/mailbox/domain/MailboxMessage";
 import type {
+  BatchMessageMutationResultItem,
+  BatchMessageMutationsInput,
   GetMessageInput,
   GetAttachmentBlobInput,
   GetThreadInput,
@@ -1153,6 +1156,338 @@ const mutateMessage = (
     );
   });
 
+const batchMutationFailureReason = (error: MailboxDomainError) => {
+  if (error.reason === "not-found") {
+    return "not-found" as const;
+  }
+  if (
+    error.reason === "version-conflict" ||
+    error.reason === "idempotency-conflict"
+  ) {
+    return "conflict" as const;
+  }
+  return error.reason === "validation" ? ("invalid-input" as const) : undefined;
+};
+
+const batchMutateMessages = (
+  mailboxId: MailboxId,
+  input: BatchMessageMutationsInput,
+  runtime: MailboxRuntime,
+  operations: MailboxOperationStore
+) =>
+  Effect.gen(function* () {
+    const operationIds = input.mutations.map(
+      (mutation) => mutation.operationId
+    );
+    const messageIds = input.mutations.map((mutation) => mutation.messageId);
+    const intentsMatchMutations =
+      input.intents.length === input.mutations.length &&
+      input.intents.every((intent, index) => {
+        const mutation = input.mutations[index];
+        if (
+          mutation === undefined ||
+          mutation.messageId !== intent.messageId ||
+          mutation.operationId !== intent.operationId
+        ) {
+          return false;
+        }
+        return (
+          mutation._tag === "Rejected" ||
+          (intent._tag === "SetRead" &&
+            mutation._tag === "Read" &&
+            mutation.expectedVersion === intent.expectedVersion &&
+            mutation.read === intent.read) ||
+          (intent._tag === "SetStarred" &&
+            mutation._tag === "Starred" &&
+            mutation.expectedVersion === intent.expectedVersion &&
+            mutation.starred === intent.starred) ||
+          ((intent._tag === "Archive" || intent._tag === "Trash") &&
+            mutation._tag === "Move" &&
+            mutation.expectedVersion === intent.expectedVersion &&
+            mutation.folderKind ===
+              (intent._tag === "Archive" ? "archive" : "trash"))
+        );
+      });
+    if (
+      !intentsMatchMutations ||
+      new Set(operationIds).size !== operationIds.length ||
+      new Set(messageIds).size !== messageIds.length ||
+      operationIds.includes(input.batchOperationId)
+    ) {
+      return yield* messageDomainError(
+        "mutate-message",
+        "validation",
+        "Batch message mutations must have unique identifiers"
+      );
+    }
+
+    const db = yield* MailboxDatabase;
+    return yield* db.transaction((tx) =>
+      Effect.gen(function* () {
+        const requestKey = JSON.stringify({
+          batchOperationId: input.batchOperationId,
+          intents: input.intents,
+          mailboxId: input.mailboxId,
+        });
+        const previous = yield* operations.replay(
+          input.batchOperationId,
+          "mutate-message",
+          "batch-mutate-messages",
+          requestKey,
+          BatchMessageMutationsResult
+        );
+        if (previous !== undefined) {
+          if (Result.isFailure(previous)) {
+            return yield* previous.failure;
+          }
+          return previous.success;
+        }
+
+        const executeOne = (
+          batchMutation: Exclude<
+            (typeof input.mutations)[number],
+            { readonly _tag: "Rejected" }
+          >
+        ) =>
+          Effect.gen(function* () {
+            const expectedFolderKind =
+              batchMutation._tag === "Move"
+                ? batchMutation.folderKind
+                : undefined;
+            const mutation: MessageMutation =
+              batchMutation._tag === "Read"
+                ? {
+                    _tag: "Read",
+                    input: {
+                      expectedVersion: batchMutation.expectedVersion,
+                      mailboxId,
+                      messageId: batchMutation.messageId,
+                      operationId: batchMutation.operationId,
+                      read: batchMutation.read,
+                    },
+                  }
+                : batchMutation._tag === "Starred"
+                  ? {
+                      _tag: "Starred",
+                      input: {
+                        expectedVersion: batchMutation.expectedVersion,
+                        mailboxId,
+                        messageId: batchMutation.messageId,
+                        operationId: batchMutation.operationId,
+                        starred: batchMutation.starred,
+                      },
+                    }
+                  : {
+                      _tag: "Move",
+                      input: {
+                        expectedVersion: batchMutation.expectedVersion,
+                        folderId: batchMutation.folderId,
+                        mailboxId,
+                        messageId: batchMutation.messageId,
+                        operationId: batchMutation.operationId,
+                      },
+                    };
+            const { input: mutationInput } = mutation;
+            const operationKind = messageMutationOperationKind(mutation);
+            const itemRequestKey = messageMutationRequestKey(mutation);
+            const replay = yield* operations.replay(
+              mutationInput.operationId,
+              "mutate-message",
+              operationKind,
+              itemRequestKey,
+              MessageMutationResult
+            );
+            if (replay !== undefined) {
+              if (Result.isFailure(replay)) {
+                return yield* replay.failure;
+              }
+              return replay.success;
+            }
+
+            const [row] = yield* tx
+              .select()
+              .from(message)
+              .where(
+                and(
+                  eq(message.id, mutationInput.messageId),
+                  isNull(message.deletedAt)
+                )
+              )
+              .limit(1);
+            if (row === undefined) {
+              return yield* messageDomainError(
+                "mutate-message",
+                "not-found",
+                "Message was not found",
+                {
+                  resourceType: "message",
+                  resourceId: mutationInput.messageId,
+                }
+              );
+            }
+            if (row.version !== mutationInput.expectedVersion) {
+              return yield* messageDomainError(
+                "mutate-message",
+                "version-conflict",
+                "Message version does not match",
+                {
+                  resourceType: "message",
+                  resourceId: mutationInput.messageId,
+                  expectedVersion: mutationInput.expectedVersion,
+                  actualVersion: Schema.decodeUnknownSync(Version)(row.version),
+                }
+              );
+            }
+
+            const now = runtime.now();
+            if (mutation._tag === "Read") {
+              yield* tx
+                .update(message)
+                .set({
+                  read: mutation.input.read ? 1 : 0,
+                  updatedAt: sql`max(${message.updatedAt}, ${now})`,
+                })
+                .where(eq(message.id, mutationInput.messageId));
+            } else if (mutation._tag === "Starred") {
+              yield* tx
+                .update(message)
+                .set({
+                  starred: mutation.input.starred ? 1 : 0,
+                  updatedAt: sql`max(${message.updatedAt}, ${now})`,
+                })
+                .where(eq(message.id, mutationInput.messageId));
+            } else {
+              const [target] = yield* tx
+                .select({ id: folder.id, kind: folder.kind })
+                .from(folder)
+                .where(
+                  and(
+                    eq(folder.id, mutation.input.folderId),
+                    isNull(folder.deletedAt)
+                  )
+                )
+                .limit(1);
+              if (target === undefined || target.kind !== expectedFolderKind) {
+                return yield* messageDomainError(
+                  "mutate-message",
+                  "not-found",
+                  "Target folder was not found",
+                  {
+                    resourceType: "folder",
+                    resourceId: mutation.input.folderId,
+                  }
+                );
+              }
+              yield* tx
+                .update(message)
+                .set({
+                  folderId: mutation.input.folderId,
+                  updatedAt: sql`max(${message.updatedAt}, ${now})`,
+                })
+                .where(eq(message.id, mutationInput.messageId));
+            }
+
+            const [next] = yield* tx
+              .update(message)
+              .set({ version: sql`${message.version} + 1` })
+              .where(
+                and(
+                  eq(message.id, mutationInput.messageId),
+                  eq(message.version, mutationInput.expectedVersion)
+                )
+              )
+              .returning();
+            if (next === undefined) {
+              return yield* messageDomainError(
+                "mutate-message",
+                "version-conflict",
+                "Message version does not match",
+                {
+                  resourceType: "message",
+                  resourceId: mutationInput.messageId,
+                  expectedVersion: mutationInput.expectedVersion,
+                  actualVersion: Schema.decodeUnknownSync(Version)(row.version),
+                }
+              );
+            }
+            const detail = yield* readMessageDetailRow(
+              tx,
+              next,
+              mailboxId,
+              "mutate-message"
+            );
+            const result = readMessageSummaryRow(detail);
+            yield* operations.store(
+              mutationInput.operationId,
+              operationKind,
+              itemRequestKey,
+              mutationInput.messageId,
+              JSON.stringify(Schema.encodeSync(MessageMutationResult)(result)),
+              now
+            );
+            return result;
+          });
+
+        const results = yield* Effect.all(
+          input.mutations.map((mutation) =>
+            mutation._tag === "Rejected"
+              ? Effect.succeed<BatchMessageMutationResultItem>({
+                  _tag: "Failed",
+                  messageId: mutation.messageId,
+                  operationId: mutation.operationId,
+                  reason: mutation.reason,
+                })
+              : Effect.result(executeOne(mutation)).pipe(
+                  Effect.flatMap((outcome) => {
+                    if (Result.isSuccess(outcome)) {
+                      return Effect.succeed<BatchMessageMutationResultItem>({
+                        _tag: "Succeeded" as const,
+                        messageId: mutation.messageId,
+                        operationId: mutation.operationId,
+                        value: outcome.success,
+                      });
+                    }
+                    if (outcome.failure instanceof MailboxDomainError) {
+                      const reason = batchMutationFailureReason(
+                        outcome.failure
+                      );
+                      if (reason !== undefined) {
+                        return Effect.succeed<BatchMessageMutationResultItem>({
+                          _tag: "Failed" as const,
+                          messageId: mutation.messageId,
+                          operationId: mutation.operationId,
+                          reason,
+                        });
+                      }
+                    }
+                    return Effect.fail(outcome.failure);
+                  })
+                )
+          ),
+          { concurrency: 1 }
+        );
+        const result = Schema.decodeUnknownSync(BatchMessageMutationsResult)({
+          batchOperationId: input.batchOperationId,
+          results,
+        });
+        const encodedResult = JSON.stringify(
+          Schema.encodeSync(BatchMessageMutationsResult)(result)
+        );
+        yield* operations.store(
+          input.batchOperationId,
+          "batch-mutate-messages",
+          requestKey,
+          mailboxId,
+          encodedResult,
+          runtime.now()
+        );
+        return Schema.decodeUnknownSync(BatchMessageMutationsResult)(
+          JSON.parse(encodedResult)
+        );
+      })
+    );
+  });
+
 const makeMailboxMessageStore = (
   db: MailboxDatabase,
   runtime: MailboxRuntime,
@@ -1164,6 +1499,10 @@ const makeMailboxMessageStore = (
   ) => effect.pipe(Effect.provideService(MailboxDatabase, db));
 
   return {
+    batchMutateMessages: (input: BatchMessageMutationsInput) =>
+      provideDatabase(
+        batchMutateMessages(mailboxId, input, runtime, operations)
+      ),
     listMessages: (input: ListMessagesInput) =>
       provideDatabase(listMessages(mailboxId, input)),
     searchMessages: (input: SearchMessagesInput) =>

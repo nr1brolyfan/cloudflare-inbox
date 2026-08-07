@@ -29,6 +29,7 @@ export const mailDataResponseChangeScopes = (
 ): MailboxChangeScopes => {
   switch (response._tag) {
     case "MessageMutated":
+    case "MessagesBatchMutated":
     case "InboundCommitted": {
       return ["messages", "navigation", "threads"];
     }

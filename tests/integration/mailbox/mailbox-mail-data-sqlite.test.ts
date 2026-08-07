@@ -62,6 +62,8 @@ import {
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   AddMessageLabelInput,
+  BatchMessageMutationsInput,
+  BatchMessageMutationsResult,
   GetMessageInput,
   GetThreadInput,
   ListMessagesInput,
@@ -133,6 +135,10 @@ const getThread = (input: GetThreadInput) =>
 const setMessageRead = (input: SetMessageReadInput) =>
   MailboxMessageStore.pipe(
     Effect.flatMap((store) => store.setMessageRead(input))
+  );
+const batchMutateMessages = (input: BatchMessageMutationsInput) =>
+  MailboxMessageStore.pipe(
+    Effect.flatMap((store) => store.batchMutateMessages(input))
   );
 const moveMessage = (input: MoveMessageInput) =>
   MailboxMessageStore.pipe(Effect.flatMap((store) => store.moveMessage(input)));
@@ -929,6 +935,180 @@ describe("Mailbox mail data SQLite", () => {
           folder: "archive",
           conflict: { reason: "version-conflict", actualVersion: 4 },
           missingTarget: { reason: "not-found", resourceType: "folder" },
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("commits successful batch items once and returns version conflicts", async () => {
+    const runtime = makeRuntime();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        const input = Schema.decodeUnknownSync(BatchMessageMutationsInput)({
+          batchOperationId: "message-batch-op",
+          intents: [
+            {
+              _tag: "SetRead",
+              expectedVersion: 1,
+              messageId: "m1",
+              operationId: "message-batch-read-op",
+              read: true,
+            },
+            {
+              _tag: "SetStarred",
+              expectedVersion: 99,
+              messageId: "m2",
+              operationId: "message-batch-star-op",
+              starred: false,
+            },
+            {
+              _tag: "SetRead",
+              expectedVersion: 1,
+              messageId: "m3",
+              operationId: "message-batch-rejected-op",
+              read: true,
+            },
+          ],
+          mailboxId,
+          mutations: [
+            {
+              _tag: "Read",
+              expectedVersion: 1,
+              messageId: "m1",
+              operationId: "message-batch-read-op",
+              read: true,
+            },
+            {
+              _tag: "Starred",
+              expectedVersion: 99,
+              messageId: "m2",
+              operationId: "message-batch-star-op",
+              starred: false,
+            },
+            {
+              _tag: "Rejected",
+              messageId: "m3",
+              operationId: "message-batch-rejected-op",
+              reason: "forbidden",
+            },
+          ],
+        });
+
+        const result = yield* batchMutateMessages(input);
+        const replay = yield* batchMutateMessages(input);
+        const rows = yield* db
+          .select({
+            id: message.id,
+            read: message.read,
+            starred: message.starred,
+            version: message.version,
+          })
+          .from(message);
+        const receipts = yield* db
+          .select({ operationId: mailboxOperation.operationId })
+          .from(mailboxOperation);
+
+        expect(receipts).toStrictEqual(
+          expect.arrayContaining([
+            { operationId: "message-batch-op" },
+            { operationId: "message-batch-read-op" },
+          ])
+        );
+        expect(
+          Schema.encodeSync(BatchMessageMutationsResult)(replay)
+        ).toStrictEqual(Schema.encodeSync(BatchMessageMutationsResult)(result));
+        expect(result).toMatchObject({
+          batchOperationId: "message-batch-op",
+          results: [
+            {
+              _tag: "Succeeded",
+              messageId: "m1",
+              value: { read: true, version: 2 },
+            },
+            {
+              _tag: "Failed",
+              messageId: "m2",
+              reason: "conflict",
+            },
+            {
+              _tag: "Failed",
+              messageId: "m3",
+              reason: "forbidden",
+            },
+          ],
+        });
+        expect(rows).toStrictEqual(
+          expect.arrayContaining([
+            { id: "m1", read: 1, starred: 0, version: 2 },
+            { id: "m2", read: 1, starred: 1, version: 1 },
+          ])
+        );
+        expect(receipts).not.toContainEqual({
+          operationId: "message-batch-star-op",
+        });
+      }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
+    );
+  });
+
+  it("rolls back the whole batch when its durable receipt cannot be stored", async () => {
+    const runtime = makeRuntime();
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* setup;
+        yield* seedMessages;
+        const db = yield* MailboxDatabase;
+        yield* db.run(
+          sql.raw(`CREATE TRIGGER reject_message_batch_operation
+          BEFORE INSERT ON mailbox_operation
+          WHEN NEW.operation_kind = 'batch-mutate-messages'
+          BEGIN SELECT RAISE(ABORT, 'batch ledger unavailable'); END`)
+        );
+
+        const result = yield* Effect.result(
+          batchMutateMessages(
+            Schema.decodeUnknownSync(BatchMessageMutationsInput)({
+              batchOperationId: "rollback-batch-op",
+              intents: [
+                {
+                  _tag: "SetRead",
+                  expectedVersion: 1,
+                  messageId: "m1",
+                  operationId: "rollback-batch-item-op",
+                  read: true,
+                },
+              ],
+              mailboxId,
+              mutations: [
+                {
+                  _tag: "Read",
+                  expectedVersion: 1,
+                  messageId: "m1",
+                  operationId: "rollback-batch-item-op",
+                  read: true,
+                },
+              ],
+            })
+          )
+        );
+        const [row] = yield* db
+          .select({ read: message.read, version: message.version })
+          .from(message)
+          .where(eq(message.id, "m1"));
+        const receipts = yield* db
+          .select({ operationId: mailboxOperation.operationId })
+          .from(mailboxOperation);
+
+        expect({
+          failed: Result.isFailure(result),
+          receipts,
+          row,
+        }).toStrictEqual({
+          failed: true,
+          receipts: [],
+          row: { read: 0, version: 1 },
         });
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );

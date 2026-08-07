@@ -112,6 +112,7 @@ const runRead = (
 ) => {
   const repository = MailboxMessageRepository.of({
     addMessageLabel: unused,
+    batchMutateMessages: unused,
     getAttachmentBlob: unused,
     getInboundAttachmentBlob: () =>
       Effect.succeed(overrides.repositoryLocation ?? location),

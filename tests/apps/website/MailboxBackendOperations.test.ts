@@ -16,7 +16,10 @@ import {
 import { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxInboundAttachmentInput } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
-import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import {
+  MailboxMessageActionCommand,
+  MailboxMessageBatchActionCommand,
+} from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import {
   MailboxMessageListInput,
@@ -898,6 +901,59 @@ describe("Website mailbox Backend forwarding", () => {
       },
       method: "PATCH",
       path: "/api/mailboxes/team%2Fprimary/messages/message%2Fone",
+    });
+  });
+
+  it("forwards message actions as one batch request", async () => {
+    let forwarded: Request | undefined;
+    const incoming = new Request("https://inbox.test/_server", {
+      headers: { cookie: "__Host-session=session-a.secret" },
+    });
+    const command = Schema.decodeUnknownSync(MailboxMessageBatchActionCommand)({
+      actions: [
+        {
+          _tag: "SetRead",
+          expectedVersion: 1,
+          messageId: "message/one",
+          operationId: "batch-item-1",
+          read: true,
+        },
+      ],
+      batchOperationId: "batch-operation-1",
+      mailboxId: "team/primary",
+    });
+    const responseBatch = {
+      batchOperationId: command.batchOperationId,
+      results: [
+        {
+          _tag: "Succeeded" as const,
+          action: { ...messageAction, id: "message/one" },
+          messageId: "message/one",
+          operationId: "batch-item-1",
+        },
+      ],
+    };
+    const result = await runForward(
+      (request) => {
+        forwarded = request;
+        return Promise.resolve(Response.json(responseBatch));
+      },
+      (operations) => operations.actOnMessages({ command, incoming })
+    );
+
+    expect(result).toStrictEqual({ batch: responseBatch, ok: true });
+    expect({
+      body: await forwarded?.json(),
+      method: forwarded?.method,
+      path:
+        forwarded === undefined ? undefined : new URL(forwarded.url).pathname,
+    }).toStrictEqual({
+      body: {
+        actions: command.actions,
+        batchOperationId: "batch-operation-1",
+      },
+      method: "POST",
+      path: "/api/mailboxes/team%2Fprimary/messages/batch-actions",
     });
   });
 

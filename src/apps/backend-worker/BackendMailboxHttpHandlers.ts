@@ -578,6 +578,11 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
     const mailboxDo = yield* MailboxDoClient;
 
     return handlers
+      .handle("actOnMessages", ({ params, payload }) =>
+        messageActions
+          .executeBatch({ ...payload, mailboxId: params.mailboxId })
+          .pipe(mapHttpErrors)
+      )
       .handle("actOnMessage", ({ params, payload }) =>
         messageActions
           .execute({

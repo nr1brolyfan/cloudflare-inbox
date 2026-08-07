@@ -4,6 +4,7 @@ import * as Context from "effect/Context";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
 import {
@@ -12,7 +13,12 @@ import {
   MessageId,
 } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
-import type { MessageMutationResult } from "#/modules/mailbox/domain/MailboxMessage";
+import { BatchMessageMutationsInput } from "#/modules/mailbox/domain/MailboxMessage";
+import type {
+  BatchMessageMutation,
+  BatchMessageMutationsResult,
+  MessageMutationResult,
+} from "#/modules/mailbox/domain/MailboxMessage";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxAuthorizationError } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
@@ -76,6 +82,52 @@ export type MailboxMessageActionCommand = Schema.Schema.Type<
   typeof MailboxMessageActionCommand
 >;
 
+export const MailboxMessageBatchActionItem = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("SetRead"),
+    ...ActionFields,
+    messageId: MessageId,
+    read: Schema.Boolean,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("SetStarred"),
+    ...ActionFields,
+    messageId: MessageId,
+    starred: Schema.Boolean,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Archive"),
+    ...ActionFields,
+    messageId: MessageId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Trash"),
+    ...ActionFields,
+    messageId: MessageId,
+  }),
+]);
+export type MailboxMessageBatchActionItem = Schema.Schema.Type<
+  typeof MailboxMessageBatchActionItem
+>;
+
+export const MailboxMessageBatchActionPayload = Schema.Struct({
+  actions: Schema.Array(MailboxMessageBatchActionItem).pipe(
+    Schema.check(Schema.isLengthBetween(1, 100))
+  ),
+  batchOperationId: OperationId,
+});
+export type MailboxMessageBatchActionPayload = Schema.Schema.Type<
+  typeof MailboxMessageBatchActionPayload
+>;
+
+export const MailboxMessageBatchActionCommand = Schema.Struct({
+  ...MailboxMessageBatchActionPayload.fields,
+  mailboxId: MailboxId,
+});
+export type MailboxMessageBatchActionCommand = Schema.Schema.Type<
+  typeof MailboxMessageBatchActionCommand
+>;
+
 export const MailboxMessageActionResult = Schema.Struct({
   folderId: FolderId,
   id: MessageId,
@@ -87,6 +139,37 @@ export type MailboxMessageActionResult = Schema.Schema.Type<
   typeof MailboxMessageActionResult
 >;
 
+export const MailboxMessageBatchActionResultItem = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Succeeded"),
+    action: MailboxMessageActionResult,
+    messageId: MessageId,
+    operationId: OperationId,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Failed"),
+    messageId: MessageId,
+    operationId: OperationId,
+    reason: Schema.Literals([
+      "conflict",
+      "forbidden",
+      "invalid-input",
+      "not-found",
+    ]),
+  }),
+]);
+export type MailboxMessageBatchActionResultItem = Schema.Schema.Type<
+  typeof MailboxMessageBatchActionResultItem
+>;
+
+export const MailboxMessageBatchActionResult = Schema.Struct({
+  batchOperationId: OperationId,
+  results: Schema.Array(MailboxMessageBatchActionResultItem),
+});
+export type MailboxMessageBatchActionResult = Schema.Schema.Type<
+  typeof MailboxMessageBatchActionResult
+>;
+
 export class MailboxMessageActionError extends Data.TaggedError(
   "MailboxMessageActionError"
 )<{
@@ -96,6 +179,13 @@ export class MailboxMessageActionError extends Data.TaggedError(
 }> {}
 
 export interface MailboxMessageActionsService {
+  readonly executeBatch: (
+    command: MailboxMessageBatchActionCommand
+  ) => Effect.Effect<
+    MailboxMessageBatchActionResult,
+    MailboxAuthorizationError | MailboxMessageActionError,
+    CurrentPrincipal
+  >;
   readonly execute: (
     command: MailboxMessageActionCommand
   ) => Effect.Effect<
@@ -149,6 +239,16 @@ const projectResult = (result: MessageMutationResult) =>
     version: result.version,
   }).pipe(Effect.mapError((cause) => actionError("storage", cause)));
 
+const batchIdentityIsValid = (command: MailboxMessageBatchActionCommand) => {
+  const messageIds = command.actions.map((action) => action.messageId);
+  const operationIds = command.actions.map((action) => action.operationId);
+  return (
+    new Set(messageIds).size === messageIds.length &&
+    new Set(operationIds).size === operationIds.length &&
+    !operationIds.includes(command.batchOperationId)
+  );
+};
+
 /** Authorized message mutations with server-resolved archive and trash targets. */
 export class MailboxMessageActions extends Context.Service<
   MailboxMessageActions,
@@ -160,6 +260,233 @@ export class MailboxMessageActions extends Context.Service<
     const messages = yield* MailboxMessageRepository;
 
     return {
+      executeBatch: (command) =>
+        // oxlint-disable-next-line eslint/complexity -- Batch execution coordinates target resolution, per-item authorization, and partial results.
+        Effect.gen(function* () {
+          if (!batchIdentityIsValid(command)) {
+            return yield* actionError("invalid-input");
+          }
+
+          const moveKinds = new Set(
+            command.actions.flatMap((action) =>
+              action._tag === "Archive"
+                ? ["archive" as const]
+                : action._tag === "Trash"
+                  ? ["trash" as const]
+                  : []
+            )
+          );
+          const targetByKind = new Map<"archive" | "trash", FolderId>();
+          const targetFailureByKind = new Map<
+            "archive" | "trash",
+            "forbidden" | "not-found"
+          >();
+          if (moveKinds.size > 0) {
+            const folders = yield* directory
+              .listFolders({ mailboxId: command.mailboxId })
+              .pipe(Effect.mapError(mapRepositoryError));
+            for (const kind of moveKinds) {
+              const targets = folders.items.filter(
+                (folder) =>
+                  folder.mailboxId === command.mailboxId && folder.kind === kind
+              );
+              const [target] = targets;
+              if (target === undefined || targets.length !== 1) {
+                return yield* actionError(
+                  "storage",
+                  new Error(`Expected exactly one ${kind} folder`)
+                );
+              }
+              targetByKind.set(kind, target.id);
+              const targetAuthorization = yield* Effect.result(
+                authorization.requireFolder({
+                  action: "modify",
+                  resource: {
+                    _tag: "Folder",
+                    folderId: target.id,
+                    mailboxId: command.mailboxId,
+                  },
+                })
+              );
+              if (Result.isFailure(targetAuthorization)) {
+                const { failure } = targetAuthorization;
+                if (
+                  failure._tag === "MailResourceResolveError" &&
+                  failure.reason === "storage"
+                ) {
+                  return yield* actionError("storage", failure);
+                }
+                targetFailureByKind.set(
+                  kind,
+                  failure._tag === "MailResourceResolveError"
+                    ? "not-found"
+                    : "forbidden"
+                );
+              }
+            }
+          }
+
+          const mutations: BatchMessageMutation[] = [];
+          const currentRejections = new Map<
+            MessageId,
+            "forbidden" | "not-found"
+          >();
+          for (const item of command.actions) {
+            const authorizationResult = yield* Effect.result(
+              authorization.requireMessage({
+                action: "modify",
+                resource: {
+                  _tag: "Message",
+                  mailboxId: command.mailboxId,
+                  messageId: item.messageId,
+                },
+              })
+            );
+            if (Result.isFailure(authorizationResult)) {
+              const { failure } = authorizationResult;
+              if (
+                failure._tag === "MailResourceResolveError" &&
+                failure.reason === "storage"
+              ) {
+                return yield* actionError("storage", failure);
+              }
+              const reason =
+                failure._tag === "MailResourceResolveError"
+                  ? "not-found"
+                  : "forbidden";
+              currentRejections.set(item.messageId, reason);
+              mutations.push({
+                _tag: "Rejected",
+                messageId: item.messageId,
+                operationId: item.operationId,
+                reason,
+              });
+              continue;
+            }
+
+            if (item._tag === "Archive" || item._tag === "Trash") {
+              const kind = item._tag === "Archive" ? "archive" : "trash";
+              const targetFailure = targetFailureByKind.get(kind);
+              if (targetFailure !== undefined) {
+                currentRejections.set(item.messageId, targetFailure);
+                mutations.push({
+                  _tag: "Rejected",
+                  messageId: item.messageId,
+                  operationId: item.operationId,
+                  reason: targetFailure,
+                });
+                continue;
+              }
+            }
+
+            if (item._tag === "SetRead") {
+              mutations.push({
+                _tag: "Read",
+                expectedVersion: item.expectedVersion,
+                messageId: item.messageId,
+                operationId: item.operationId,
+                read: item.read,
+              });
+            } else if (item._tag === "SetStarred") {
+              mutations.push({
+                _tag: "Starred",
+                expectedVersion: item.expectedVersion,
+                messageId: item.messageId,
+                operationId: item.operationId,
+                starred: item.starred,
+              });
+            } else {
+              const kind = item._tag === "Archive" ? "archive" : "trash";
+              const folderId = targetByKind.get(kind);
+              if (folderId === undefined) {
+                return yield* actionError("storage");
+              }
+              mutations.push({
+                _tag: "Move",
+                expectedVersion: item.expectedVersion,
+                folderId,
+                folderKind: kind,
+                messageId: item.messageId,
+                operationId: item.operationId,
+              });
+            }
+          }
+
+          const repositoryResult: BatchMessageMutationsResult = yield* messages
+            .batchMutateMessages(
+              Schema.decodeUnknownSync(BatchMessageMutationsInput)({
+                batchOperationId: command.batchOperationId,
+                intents: command.actions,
+                mailboxId: command.mailboxId,
+                mutations,
+              })
+            )
+            .pipe(Effect.mapError(mapRepositoryError));
+          if (
+            repositoryResult.batchOperationId !== command.batchOperationId ||
+            repositoryResult.results.length !== command.actions.length
+          ) {
+            return yield* actionError(
+              "storage",
+              new Error("Batch message action result identity mismatch")
+            );
+          }
+          const repositoryByMessage = new Map(
+            repositoryResult.results.map((result) => [result.messageId, result])
+          );
+          if (repositoryByMessage.size !== command.actions.length) {
+            return yield* actionError(
+              "storage",
+              new Error("Batch message action results were not unique")
+            );
+          }
+          const results: MailboxMessageBatchActionResultItem[] = [];
+          for (const item of command.actions) {
+            const repositoryItem = repositoryByMessage.get(item.messageId);
+            if (
+              repositoryItem === undefined ||
+              repositoryItem.operationId !== item.operationId
+            ) {
+              return yield* actionError(
+                "storage",
+                new Error("Batch message action result was incomplete")
+              );
+            }
+            const currentRejection = currentRejections.get(item.messageId);
+            if (currentRejection !== undefined) {
+              results.push({
+                _tag: "Failed",
+                messageId: item.messageId,
+                operationId: item.operationId,
+                reason: currentRejection,
+              });
+              continue;
+            }
+            if (repositoryItem._tag === "Failed") {
+              results.push(repositoryItem);
+              continue;
+            }
+            if (
+              repositoryItem.value.id !== item.messageId ||
+              repositoryItem.value.mailboxId !== command.mailboxId
+            ) {
+              return yield* actionError(
+                "storage",
+                new Error("Batch message action item identity mismatch")
+              );
+            }
+            results.push({
+              _tag: "Succeeded",
+              action: yield* projectResult(repositoryItem.value),
+              messageId: item.messageId,
+              operationId: item.operationId,
+            });
+          }
+          return Schema.decodeUnknownSync(MailboxMessageBatchActionResult)({
+            batchOperationId: command.batchOperationId,
+            results,
+          });
+        }),
       execute: (command) =>
         Effect.gen(function* () {
           yield* authorization.requireMessage({

@@ -11,7 +11,10 @@ import type {
 import type { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
 import type { MailboxInboundAttachmentInput } from "#/modules/mailbox/application/MailboxInboundAttachmentReading";
 import type { MailboxInlineAttachmentInput } from "#/modules/mailbox/application/MailboxInlineAttachmentReading";
-import type { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import type {
+  MailboxMessageActionCommand,
+  MailboxMessageBatchActionCommand,
+} from "#/modules/mailbox/application/MailboxMessageActions";
 import type { MailboxMessageHtmlInput } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import type {
   MailboxMessageListInput,
@@ -59,6 +62,14 @@ export const setMailboxOperationReceiptNoStoreHeaders = () => {
 
 /** Promise facade used by TanStack adapters; all Effect execution stays here. */
 export const WebsiteApplication = {
+  actOnMailboxMessages: (command: MailboxMessageBatchActionCommand) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.actOnMessages({ command, incoming });
+      })
+    ),
   actOnMailboxMessage: (command: MailboxMessageActionCommand) =>
     WebsiteRuntime.runPromise(
       Effect.gen(function* () {

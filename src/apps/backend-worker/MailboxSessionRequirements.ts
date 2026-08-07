@@ -9,6 +9,7 @@ import type { VersionedSessionRequirementsMatrix } from "#/modules/account-secur
 
 export const MailboxOperation = {
   actOnMessage: "actOnMessage",
+  actOnMessages: "actOnMessages",
   bootstrapOwner: "bootstrapOwner",
   createDraft: "createDraft",
   createReplyDraft: "createReplyDraft",
@@ -44,6 +45,7 @@ export const MailboxSessionRequirementsMatrix = {
   matrixId: MAILBOX_SESSION_REQUIREMENTS_MATRIX_ID,
   operations: {
     [MailboxOperation.actOnMessage]: unrestrictedOnly,
+    [MailboxOperation.actOnMessages]: unrestrictedOnly,
     [MailboxOperation.bootstrapOwner]: unrestrictedOnly,
     [MailboxOperation.createDraft]: unrestrictedOnly,
     [MailboxOperation.createReplyDraft]: unrestrictedOnly,

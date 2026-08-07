@@ -42,7 +42,7 @@ const noPendingMessageIds: ReadonlySet<string> = new Set();
 const menuItemClass =
   "flex h-9 cursor-default items-center gap-2 rounded-lg px-2.5 text-xs font-bold text-[var(--sea-ink-soft)] outline-none select-none data-disabled:opacity-35 data-highlighted:bg-[var(--sand)] data-highlighted:text-[var(--sea-ink)]";
 const menuPopupClass =
-  "min-w-48 origin-[var(--transform-origin)] rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-1.5 text-[var(--sea-ink)] shadow-[0_14px_35px_rgba(0,0,0,0.22)] transition-[transform,opacity] duration-150 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0";
+  "min-w-48 origin-[var(--transform-origin)] rounded-xl border border-[var(--line)] bg-[var(--popover)] p-1.5 text-[var(--sea-ink)] shadow-[0_14px_35px_rgba(0,0,0,0.28)] transition-[transform,opacity] duration-150 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0";
 const readFilterItems = [
   { label: "Any status", value: "any" },
   { label: "Unread", value: "unread" },
@@ -437,6 +437,7 @@ export function MessageList({
   isRefreshing = false,
   loadMoreFailed,
   onLoadMore,
+  onMessageBatchAction,
   onMessageAction,
   onOpenMessage,
   onQueryChange,
@@ -460,6 +461,10 @@ export function MessageList({
   readonly isRefreshing?: boolean;
   readonly loadMoreFailed: boolean;
   readonly onLoadMore: () => void;
+  readonly onMessageBatchAction: (
+    action: MessageRowAction,
+    messages: readonly MessageListItemData[]
+  ) => void;
   readonly onMessageAction: (
     action: MessageRowAction,
     message: MessageListItemData
@@ -523,7 +528,7 @@ export function MessageList({
         : action === "star"
           ? selectedMessages.every((message) => message.starred)
           : false;
-    for (const message of selectedMessages) {
+    const actionableMessages = selectedMessages.filter((message) => {
       const pending = pendingMessageIds.has(message.id);
       const alreadyInFolder =
         (action === "archive" && message.folderId === archiveFolderId) ||
@@ -534,9 +539,10 @@ export function MessageList({
           : action === "star"
             ? message.starred === allInTargetState
             : true;
-      if (!pending && !alreadyInFolder && needsToggle) {
-        onMessageAction(action, message);
-      }
+      return !pending && !alreadyInFolder && needsToggle;
+    });
+    if (actionableMessages.length > 0) {
+      onMessageBatchAction(action, actionableMessages);
     }
   };
   const allSelectedRead =
@@ -556,7 +562,7 @@ export function MessageList({
             disabled={data.items.length === 0}
             indeterminate={someLoadedSelected}
             label={
-              selectedCount > 0
+              allLoadedSelected
                 ? "Clear message selection"
                 : "Select all loaded messages"
             }

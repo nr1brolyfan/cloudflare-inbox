@@ -110,6 +110,7 @@ const repositoryWith = (
 ) =>
   MailboxMessageRepository.of({
     addMessageLabel: unused,
+    batchMutateMessages: unused,
     getAttachmentBlob: unused,
     getInboundAttachmentBlob: unused,
     getMessage,

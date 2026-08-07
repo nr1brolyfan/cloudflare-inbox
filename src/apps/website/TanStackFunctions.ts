@@ -7,7 +7,10 @@ import {
   UpdateMailboxDraftCommand,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
 import { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
-import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
+import {
+  MailboxMessageActionCommand,
+  MailboxMessageBatchActionCommand,
+} from "#/modules/mailbox/application/MailboxMessageActions";
 import {
   MailboxMessageListInput,
   OpenMailboxThreadInput,
@@ -39,6 +42,9 @@ const openMailboxThreadInput = Schema.decodeUnknownSync(OpenMailboxThreadInput);
 const mailboxMessageActionInput = Schema.decodeUnknownSync(
   MailboxMessageActionCommand
 );
+const mailboxMessageBatchActionInput = Schema.decodeUnknownSync(
+  MailboxMessageBatchActionCommand
+);
 const createMailboxDraftInput = Schema.decodeUnknownSync(
   CreateMailboxDraftCommand
 );
@@ -62,6 +68,10 @@ const getMailboxOutboundDeliveryInput = Schema.decodeUnknownSync(
 export const actOnMailboxMessage = createServerFn({ method: "POST" })
   .validator(mailboxMessageActionInput)
   .handler(({ data }) => WebsiteApplication.actOnMailboxMessage(data));
+
+export const actOnMailboxMessages = createServerFn({ method: "POST" })
+  .validator(mailboxMessageBatchActionInput)
+  .handler(({ data }) => WebsiteApplication.actOnMailboxMessages(data));
 
 export const bootstrapMailboxOwner = createServerFn({ method: "POST" })
   .validator(bootstrapInput)

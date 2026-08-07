@@ -46,6 +46,8 @@ import {
 import {
   AddMessageLabelInput,
   AttachmentBlobLocation,
+  BatchMessageMutationsInput,
+  BatchMessageMutationsResult,
   GetAttachmentBlobInput,
   GetMessageInput,
   GetMessageResult,
@@ -239,6 +241,10 @@ export const MailDataRpcRequest = Schema.Union([
   }),
   Schema.Struct({ _tag: Schema.Literal("GetThread"), input: GetThreadInput }),
   Schema.Struct({
+    _tag: Schema.Literal("BatchMutateMessages"),
+    input: BatchMessageMutationsInput,
+  }),
+  Schema.Struct({
     _tag: Schema.Literal("SetMessageRead"),
     input: SetMessageReadInput,
   }),
@@ -348,6 +354,10 @@ export const MailDataRpcResponse = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("MessageMutated"),
     value: MessageMutationResult,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("MessagesBatchMutated"),
+    value: BatchMessageMutationsResult,
   }),
   Schema.Struct({ _tag: Schema.Literal("DraftCreated"), value: DraftResult }),
   Schema.Struct({
@@ -493,6 +503,11 @@ export const mailDataRequestMetadataByTag = {
     operation: "get-thread",
     kind: "read",
     responseTag: "ThreadFound",
+  },
+  BatchMutateMessages: {
+    operation: "mutate-message",
+    kind: "write",
+    responseTag: "MessagesBatchMutated",
   },
   SetMessageRead: {
     operation: "mutate-message",

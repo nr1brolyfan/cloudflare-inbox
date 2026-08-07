@@ -367,6 +367,78 @@ export const MoveMessageInput = Schema.Struct({
 });
 export type MoveMessageInput = Schema.Schema.Type<typeof MoveMessageInput>;
 
+const BatchMessageMutationFields = {
+  expectedVersion: Version,
+  messageId: MessageId,
+  operationId: OperationId,
+};
+
+export const BatchMessageMutationIntent = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("SetRead"),
+    ...BatchMessageMutationFields,
+    read: Schema.Boolean,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("SetStarred"),
+    ...BatchMessageMutationFields,
+    starred: Schema.Boolean,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Archive"),
+    ...BatchMessageMutationFields,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Trash"),
+    ...BatchMessageMutationFields,
+  }),
+]);
+export type BatchMessageMutationIntent = Schema.Schema.Type<
+  typeof BatchMessageMutationIntent
+>;
+
+export const BatchMessageMutation = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Read"),
+    ...BatchMessageMutationFields,
+    read: Schema.Boolean,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Starred"),
+    ...BatchMessageMutationFields,
+    starred: Schema.Boolean,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Move"),
+    ...BatchMessageMutationFields,
+    folderId: FolderId,
+    folderKind: Schema.Literals(["archive", "trash"]),
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Rejected"),
+    messageId: MessageId,
+    operationId: OperationId,
+    reason: Schema.Literals(["forbidden", "not-found"]),
+  }),
+]);
+export type BatchMessageMutation = Schema.Schema.Type<
+  typeof BatchMessageMutation
+>;
+
+export const BatchMessageMutationsInput = Schema.Struct({
+  batchOperationId: OperationId,
+  intents: Schema.Array(BatchMessageMutationIntent).pipe(
+    Schema.check(Schema.isLengthBetween(1, 100))
+  ),
+  mailboxId: MailboxId,
+  mutations: Schema.Array(BatchMessageMutation).pipe(
+    Schema.check(Schema.isLengthBetween(1, 100))
+  ),
+});
+export type BatchMessageMutationsInput = Schema.Schema.Type<
+  typeof BatchMessageMutationsInput
+>;
+
 export const AddMessageLabelInput = Schema.Struct({
   mailboxId: MailboxId,
   operationId: OperationId,
@@ -386,6 +458,37 @@ export type RemoveMessageLabelInput = Schema.Schema.Type<
 export const MessageMutationResult = MessageSummarySchema;
 export type MessageMutationResult = Schema.Schema.Type<
   typeof MessageMutationResult
+>;
+
+export const BatchMessageMutationResultItem = Schema.Union([
+  Schema.Struct({
+    _tag: Schema.Literal("Succeeded"),
+    messageId: MessageId,
+    operationId: OperationId,
+    value: MessageMutationResult,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("Failed"),
+    messageId: MessageId,
+    operationId: OperationId,
+    reason: Schema.Literals([
+      "conflict",
+      "forbidden",
+      "invalid-input",
+      "not-found",
+    ]),
+  }),
+]);
+export type BatchMessageMutationResultItem = Schema.Schema.Type<
+  typeof BatchMessageMutationResultItem
+>;
+
+export const BatchMessageMutationsResult = Schema.Struct({
+  batchOperationId: OperationId,
+  results: Schema.Array(BatchMessageMutationResultItem),
+});
+export type BatchMessageMutationsResult = Schema.Schema.Type<
+  typeof BatchMessageMutationsResult
 >;
 
 export const RecipientList = Schema.Array(MailAddress);

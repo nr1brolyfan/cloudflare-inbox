@@ -1,5 +1,6 @@
 import { UserId } from "@effect-auth/core/Identifiers";
 import * as AuthPermission from "@effect-auth/core/Permission";
+import * as AuthPolicy from "@effect-auth/core/Policy";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -7,12 +8,19 @@ import { describe, expect, it } from "vitest";
 
 import {
   MailboxMessageActionCommand,
+  MailboxMessageBatchActionCommand,
   MailboxMessageActions,
 } from "#/modules/mailbox/application/MailboxMessageActions";
 import { FolderId } from "#/modules/mailbox/domain/Mailbox";
 import { FolderList } from "#/modules/mailbox/domain/MailboxDirectory";
-import { MessagePage } from "#/modules/mailbox/domain/MailboxMessage";
-import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import {
+  BatchMessageMutationsResult,
+  MessagePage,
+} from "#/modules/mailbox/domain/MailboxMessage";
+import {
+  MailboxAuthorization,
+  MailResourceResolveError,
+} from "#/modules/mailbox/ports/MailboxAuthorization";
 import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxDirectoryRepository } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
 import type { MailboxDirectoryRepositoryService } from "#/modules/mailbox/ports/MailboxDirectoryRepository";
@@ -110,6 +118,7 @@ const repositoryWith = (
     }),
     messages: MailboxMessageRepository.of({
       addMessageLabel: unused,
+      batchMutateMessages: unused,
       getAttachmentBlob: unused,
       getInboundAttachmentBlob: unused,
       getMessage: unused,
@@ -137,7 +146,10 @@ const authorizationWith = (
     requireExport: unusedAuthorization,
     requireFolder: unusedAuthorization,
     requireFolderMessageRead: unusedAuthorization,
-    requireMailbox: unusedAuthorization,
+    requireMailbox: () =>
+      Effect.fail(
+        new AuthPolicy.AuthorizationError({ reason: "missing-permission" })
+      ),
     requireMailboxDraftSend: unusedAuthorization,
     requireMailboxMessageRead: unusedAuthorization,
     requireMessage: unusedAuthorization,
@@ -173,7 +185,187 @@ const runAction = (
     )
   );
 
+const runBatchAction = (
+  authorization: MailboxAuthorizationService,
+  repository: ReturnType<typeof repositoryWith>,
+  command: Schema.Schema.Type<typeof MailboxMessageBatchActionCommand>
+) =>
+  Effect.runPromise(
+    MailboxMessageActions.pipe(
+      Effect.flatMap((actions) => actions.executeBatch(command)),
+      Effect.provide(
+        MailboxMessageActions.layerNoDeps.pipe(
+          Layer.provide(
+            Layer.mergeAll(
+              Layer.succeed(MailboxAuthorization, authorization),
+              Layer.succeed(MailboxDirectoryRepository, repository.directory),
+              Layer.succeed(MailboxMessageRepository, repository.messages)
+            )
+          )
+        )
+      ),
+      Effect.provideService(
+        AuthPermission.CurrentPrincipal,
+        AuthPermission.CurrentPrincipal.of(
+          AuthPermission.PermissionSubject.user(UserId("user-a"))
+        )
+      )
+    )
+  );
+
 describe("mailbox message actions", () => {
+  it("keeps read actions when an archive target is unauthorized", async () => {
+    const command = Schema.decodeUnknownSync(MailboxMessageBatchActionCommand)({
+      actions: [
+        {
+          _tag: "SetRead",
+          expectedVersion: 1,
+          messageId: "message-1",
+          operationId: "mixed-read-op",
+          read: true,
+        },
+        {
+          _tag: "Archive",
+          expectedVersion: 1,
+          messageId: "message-2",
+          operationId: "mixed-archive-op",
+        },
+      ],
+      batchOperationId: "mixed-batch-op",
+      mailboxId: "primary",
+    });
+    const result = await runBatchAction(
+      authorizationWith({
+        requireFolder: ({ resource }) =>
+          Effect.fail(
+            new MailResourceResolveError({
+              message: "Folder unavailable",
+              reason: "not-found",
+              resource,
+            })
+          ),
+        requireMessage: ({ resource }) =>
+          Effect.succeed({ ...resource, folderId: inboxFolderId }),
+      }),
+      repositoryWith({
+        batchMutateMessages: (input) =>
+          Effect.succeed(
+            Schema.decodeUnknownSync(BatchMessageMutationsResult)({
+              batchOperationId: input.batchOperationId,
+              results: input.mutations.map((mutation) => ({
+                _tag: "Succeeded",
+                messageId: mutation.messageId,
+                operationId: mutation.operationId,
+                value: {
+                  ...(readMessage ?? message),
+                  id: mutation.messageId,
+                },
+              })),
+            })
+          ),
+        listFolders: () => Effect.succeed(folders),
+      }),
+      command
+    );
+
+    expect(result).toMatchObject({
+      results: [
+        { _tag: "Succeeded", messageId: "message-1" },
+        { _tag: "Failed", messageId: "message-2", reason: "not-found" },
+      ],
+    });
+  });
+
+  it("authorizes a batch and forwards one resolved repository mutation", async () => {
+    const calls: string[] = [];
+    let repositoryInput: unknown;
+    const command = Schema.decodeUnknownSync(MailboxMessageBatchActionCommand)({
+      actions: [
+        {
+          _tag: "SetRead",
+          expectedVersion: 1,
+          messageId: "message-1",
+          operationId: "batch-read-op",
+          read: true,
+        },
+        {
+          _tag: "Archive",
+          expectedVersion: 1,
+          messageId: "message-2",
+          operationId: "batch-archive-op",
+        },
+      ],
+      batchOperationId: "batch-op",
+      mailboxId: "primary",
+    });
+    const result = await runBatchAction(
+      authorizationWith({
+        requireFolder: ({ resource }) => {
+          calls.push("authorize-folder");
+          return Effect.succeed(resource);
+        },
+        requireMessage: ({ resource }) => {
+          calls.push(`authorize-message:${resource.messageId}`);
+          return Effect.succeed({ ...resource, folderId: inboxFolderId });
+        },
+      }),
+      repositoryWith({
+        batchMutateMessages: (input) => {
+          calls.push("batch-mutate");
+          repositoryInput = input;
+          return Effect.succeed(
+            Schema.decodeUnknownSync(BatchMessageMutationsResult)({
+              batchOperationId: input.batchOperationId,
+              results: input.mutations.map((mutation) => ({
+                _tag: "Succeeded" as const,
+                messageId: mutation.messageId,
+                operationId: mutation.operationId,
+                value: {
+                  ...(readMessage ?? message),
+                  folderId:
+                    mutation._tag === "Move"
+                      ? mutation.folderId
+                      : inboxFolderId,
+                  id: mutation.messageId,
+                  read: mutation._tag === "Read" ? mutation.read : false,
+                  version: 2,
+                },
+              })),
+            })
+          );
+        },
+        listFolders: () => {
+          calls.push("list-folders");
+          return Effect.succeed(folders);
+        },
+      }),
+      command
+    );
+
+    expect({ calls, repositoryInput, result }).toMatchObject({
+      calls: [
+        "list-folders",
+        "authorize-folder",
+        "authorize-message:message-1",
+        "authorize-message:message-2",
+        "batch-mutate",
+      ],
+      repositoryInput: {
+        batchOperationId: "batch-op",
+        mutations: [
+          { _tag: "Read", messageId: "message-1", read: true },
+          { _tag: "Move", folderId: "archive", messageId: "message-2" },
+        ],
+      },
+      result: {
+        results: [
+          { _tag: "Succeeded", messageId: "message-1" },
+          { _tag: "Succeeded", messageId: "message-2" },
+        ],
+      },
+    });
+  });
+
   it("authorizes before forwarding an exact read command", async () => {
     const calls: string[] = [];
     let repositoryInput: unknown;

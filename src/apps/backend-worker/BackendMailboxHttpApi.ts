@@ -28,6 +28,8 @@ import { MailboxDraftListResult } from "#/modules/mailbox/application/MailboxDra
 import {
   MailboxMessageActionPayload,
   MailboxMessageActionResult,
+  MailboxMessageBatchActionPayload,
+  MailboxMessageBatchActionResult,
 } from "#/modules/mailbox/application/MailboxMessageActions";
 import { MailboxMessageHtmlResult } from "#/modules/mailbox/application/MailboxMessageHtmlReading";
 import {
@@ -216,6 +218,17 @@ export const ActOnMailboxMessageEndpoint = HttpApiEndpoint.patch(
     params: MailboxMessageParams,
     payload: MailboxMessageActionPayload,
     success: MailboxMessageActionResult,
+  }
+);
+
+export const ActOnMailboxMessagesEndpoint = HttpApiEndpoint.post(
+  MailboxOperation.actOnMessages,
+  "/api/mailboxes/:mailboxId/messages/batch-actions",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    payload: MailboxMessageBatchActionPayload,
+    success: MailboxMessageBatchActionResult,
   }
 );
 
@@ -442,6 +455,7 @@ export const ReplayInboundEndpoint = HttpApiEndpoint.post(
 export class MailboxGroup extends HttpApiGroup.make("mailboxes")
   .add(
     ActOnMailboxMessageEndpoint,
+    ActOnMailboxMessagesEndpoint,
     BootstrapOwnerEndpoint,
     CreateMailboxDraftEndpoint,
     CreateMailboxReplyDraftEndpoint,
