@@ -77,10 +77,14 @@ describe(ThreadView, () => {
     ]).toStrictEqual([true, true]);
     expect({
       activeContent: container.querySelector("script, img"),
+      containedScroll: screen
+        .getByRole("region", { name: "Conversation" })
+        .classList.contains("flex-col"),
       outbound: container.querySelector('[data-direction="outbound"]')
         ?.textContent,
     }).toStrictEqual({
       activeContent: null,
+      containedScroll: true,
       outbound: expect.stringContaining("You"),
     });
     expect(
@@ -153,7 +157,6 @@ describe(ThreadView, () => {
   it("collapses and styles nested plain-text quotes", () => {
     const quotedBody = [
       "This is the new reply.",
-      "",
       "On Friday, Sender <sender@example.test> wrote:",
       "",
       "> Previous reply",

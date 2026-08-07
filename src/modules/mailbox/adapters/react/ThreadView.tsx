@@ -76,6 +76,24 @@ const quoteLine = (line: string): QuotedTextLine => {
       };
 };
 
+const replyAttributionStart = (lines: readonly string[], end: number) => {
+  for (let start = end; start >= 0 && lines[start]?.trim() !== ""; start -= 1) {
+    const startsReplyHeader = /^\s*(?:On\b|W dniu\b)/iu.test(
+      lines[start] ?? ""
+    );
+    const attribution = lines
+      .slice(start, end + 1)
+      .join(" ")
+      .trim();
+    if (
+      startsReplyHeader &&
+      /(?:wrote|napisał|napisała):\s*$/iu.test(attribution)
+    ) {
+      return start;
+    }
+  }
+};
+
 const splitPlainTextQuote = (text: string) => {
   const lines = text.split("\n");
   let quoteTailEnd = lines.length - 1;
@@ -100,15 +118,8 @@ const splitPlainTextQuote = (text: string) => {
   while (attributionEnd >= 0 && lines[attributionEnd]?.trim() === "") {
     attributionEnd -= 1;
   }
-  let attributionStart = attributionEnd;
-  while (attributionStart > 0 && lines[attributionStart - 1]?.trim() !== "") {
-    attributionStart -= 1;
-  }
-  const attribution = lines
-    .slice(attributionStart, attributionEnd + 1)
-    .join(" ")
-    .trim();
-  if (/(?:wrote|napisał|napisała):\s*$/iu.test(attribution)) {
+  const attributionStart = replyAttributionStart(lines, attributionEnd);
+  if (attributionStart !== undefined) {
     quoteStart = attributionStart;
   }
 
@@ -277,7 +288,7 @@ export function ThreadView({
   return (
     <section
       aria-label="Conversation"
-      className="min-h-0 flex-1 bg-[var(--workspace-bg)]"
+      className="flex min-h-0 flex-1 flex-col bg-[var(--workspace-bg)]"
     >
       <header className="border-b border-[var(--line)] bg-[var(--control-bg)] px-4 py-4 sm:px-7 sm:py-5">
         <div className="flex items-start gap-3">
@@ -311,7 +322,7 @@ export function ThreadView({
         </div>
       </header>
 
-      <div className="h-[calc(100dvh-8.75rem)] overflow-y-auto p-3 sm:p-5 lg:h-[calc(100dvh-9rem)] lg:p-7">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3 sm:p-5 lg:p-7">
         <div className="mx-auto max-w-3xl space-y-4">
           {data.messages.map((message) => {
             const outbound = message.direction === "outbound";

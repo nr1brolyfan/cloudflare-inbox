@@ -114,8 +114,16 @@ describe(MailboxShell, () => {
       heading: Boolean(
         screen.getByRole("heading", { level: 1, name: "Inbox" })
       ),
+      viewportLocked: document
+        .querySelector("main")
+        ?.classList.contains("fixed"),
       navigation: Boolean(screen.getByRole("navigation", { name: "Mailbox" })),
-    }).toStrictEqual({ content: true, heading: true, navigation: true });
+    }).toStrictEqual({
+      content: true,
+      heading: true,
+      navigation: true,
+      viewportLocked: true,
+    });
     expect(
       screen.getByRole("link", { name: /Inbox/u }).getAttribute("aria-current")
     ).toBe("page");

@@ -353,7 +353,7 @@ export function MailboxShell({
 
   return (
     <Sheet open={navigationOpen} onOpenChange={setNavigationOpen}>
-      <main className="h-dvh overflow-hidden bg-[var(--surface-strong)]">
+      <main className="fixed inset-0 overflow-hidden bg-[var(--surface-strong)]">
         <div className="flex h-full min-h-0 overflow-hidden bg-[var(--surface-strong)]">
           <aside className="hidden w-72 shrink-0 lg:block">
             <MailboxNavigation
