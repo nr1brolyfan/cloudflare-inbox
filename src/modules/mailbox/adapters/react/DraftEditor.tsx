@@ -5,16 +5,20 @@ import {
   LoaderCircle,
   Paperclip,
   RotateCcw,
-  Save,
   Send,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 
+import type { DraftEditorFields } from "#/modules/mailbox/adapters/browser/DraftSessionStorage";
 import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
 import type { DraftAttachmentReservation } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 type EditorContent = Schema.Schema.Type<typeof DraftEditorContent>;
+export interface DraftEditorSnapshot {
+  readonly content: EditorContent;
+  readonly fields: DraftEditorFields;
+}
 
 export const draftSendErrorText = (status: number, backendMessage?: string) => {
   if (status === 400) {
@@ -38,17 +42,23 @@ interface DraftEditorProps {
   readonly attachmentUploads: readonly DraftAttachmentUploadView[];
   readonly error?: string;
   readonly initial: EditorContent;
+  readonly initialFields?: DraftEditorFields;
   readonly isNew: boolean;
+  readonly isSendUncertain: boolean;
   readonly isSaving: boolean;
   readonly isSending: boolean;
-  readonly onAttachFiles: (files: readonly File[]) => void;
-  readonly onClose: () => void;
+  readonly onAttachFiles: (
+    files: readonly File[],
+    snapshot: DraftEditorSnapshot
+  ) => void;
+  readonly onAutosave: (snapshot: DraftEditorSnapshot) => void;
+  readonly onChange: (fields: DraftEditorFields) => void;
+  readonly onClose: (snapshot: DraftEditorSnapshot) => void;
   readonly onRetry?: () => void;
   readonly onDismissAttachmentUpload: (id: string) => void;
   readonly onRetryAttachmentUpload: (id: string) => void;
-  readonly onSave: (content: EditorContent) => void;
-  readonly onSend: () => void;
-  readonly saved: boolean;
+  readonly onSend: (snapshot: DraftEditorSnapshot) => void;
+  readonly saveStatus: "error" | "idle" | "saved" | "saving" | "unsaved";
 }
 
 export interface DraftAttachmentUploadView {
@@ -128,63 +138,107 @@ const parseAddresses = (value: string) => {
     .map(parseAddress);
 };
 
+export const draftEditorFieldsFromContent = (
+  content: EditorContent
+): DraftEditorFields => ({
+  bcc: formatAddresses(content.bcc),
+  cc: formatAddresses(content.cc),
+  subject: content.subject,
+  textBody: content.textBody ?? "",
+  to: formatAddresses(content.to),
+});
+
+const snapshotFromFields = (
+  fields: DraftEditorFields
+): DraftEditorSnapshot => ({
+  content: Schema.decodeUnknownSync(DraftEditorContent)({
+    bcc: parseAddresses(fields.bcc),
+    cc: parseAddresses(fields.cc),
+    subject: fields.subject,
+    textBody: fields.textBody === "" ? undefined : fields.textBody,
+    to: parseAddresses(fields.to),
+  }),
+  fields,
+});
+
 // oxlint-disable-next-line eslint/complexity -- Editor validation, lock state, and accessible upload controls share one form boundary.
 export function DraftEditor({
   attachments,
   attachmentUploads,
   error,
   initial,
+  initialFields,
   isNew,
+  isSendUncertain,
   isSaving,
   isSending,
   onAttachFiles,
+  onAutosave,
+  onChange,
   onClose,
   onRetry,
   onDismissAttachmentUpload,
   onRetryAttachmentUpload,
-  onSave,
   onSend,
-  saved,
+  saveStatus,
 }: DraftEditorProps) {
-  const [to, setTo] = useState(() => formatAddresses(initial.to));
-  const [cc, setCc] = useState(() => formatAddresses(initial.cc));
-  const [bcc, setBcc] = useState(() => formatAddresses(initial.bcc));
-  const [subject, setSubject] = useState<string>(initial.subject);
-  const [textBody, setTextBody] = useState(initial.textBody ?? "");
+  const [fields, setFields] = useState(
+    () => initialFields ?? draftEditorFieldsFromContent(initial)
+  );
+  const hasChanged = useRef(initialFields !== undefined);
   const [validationError, setValidationError] = useState<string>();
   const editorLocked =
-    isSaving ||
-    isSending ||
-    onRetry !== undefined ||
-    attachmentUploads.length > 0;
-  const dirty =
-    to !== formatAddresses(initial.to) ||
-    cc !== formatAddresses(initial.cc) ||
-    bcc !== formatAddresses(initial.bcc) ||
-    subject !== initial.subject ||
-    textBody !== (initial.textBody ?? "");
-  const hasRecipient =
-    initial.to.length + initial.cc.length + initial.bcc.length > 0;
-  const canSend = !isNew && !dirty && !editorLocked && hasRecipient;
-
-  const submit = () => {
+    isSending || isSendUncertain || attachmentUploads.length > 0;
+  const updateField = (change: Partial<DraftEditorFields>) => {
+    const next = { ...fields, ...change };
+    hasChanged.current = true;
+    setFields(next);
+    setValidationError(undefined);
+    onChange(next);
+  };
+  const readSnapshot = () => {
     try {
-      const content = Schema.decodeUnknownSync(DraftEditorContent)({
-        bcc: parseAddresses(bcc),
-        cc: parseAddresses(cc),
-        subject,
-        textBody: textBody === "" ? undefined : textBody,
-        to: parseAddresses(to),
-      });
+      const snapshot = snapshotFromFields(fields);
       setValidationError(undefined);
-      onSave(content);
+      return snapshot;
     } catch {
       setValidationError(
         "Check the recipient addresses and keep the subject under 998 characters."
       );
+      return null;
     }
   };
+  const scheduleAutosave = useEffectEvent(
+    (changedFields: DraftEditorFields) => {
+      let snapshot: DraftEditorSnapshot;
+      try {
+        snapshot = snapshotFromFields(changedFields);
+      } catch {
+        return;
+      }
+      if (!hasChanged.current) {
+        return;
+      }
+      const timeout = window.setTimeout(() => onAutosave(snapshot), 700);
+      return () => window.clearTimeout(timeout);
+    }
+  );
+  useEffect(() => scheduleAutosave(fields), [fields]);
   const visibleError = validationError ?? error;
+  const statusText =
+    saveStatus === "saving"
+      ? "Saving..."
+      : saveStatus === "saved"
+        ? "Saved"
+        : saveStatus === "error"
+          ? "Save failed"
+          : saveStatus === "unsaved"
+            ? "Unsaved changes"
+            : "Draft saves automatically";
+  const hasRecipient =
+    fields.to.trim() !== "" ||
+    fields.cc.trim() !== "" ||
+    fields.bcc.trim() !== "";
 
   return (
     <section className="flex h-full min-h-0 flex-col bg-[linear-gradient(145deg,rgba(243,250,245,0.92),rgba(255,255,255,0.72))]">
@@ -192,16 +246,19 @@ export function DraftEditor({
         <div>
           <p className="island-kicker">{isNew ? "New message" : "Draft"}</p>
           <p className="mt-1 text-xs text-[var(--sea-ink-soft)]">
-            {saved && !dirty
-              ? "Saved at the edge"
-              : "Changes are saved only when you choose Save"}
+            {statusText}
           </p>
         </div>
         <button
           type="button"
           aria-label="Close draft editor"
           disabled={editorLocked}
-          onClick={onClose}
+          onClick={() => {
+            const snapshot = readSnapshot();
+            if (snapshot !== null) {
+              onClose(snapshot);
+            }
+          }}
           className="flex size-10 items-center justify-center rounded-xl border border-[var(--line)] bg-white/70 text-[var(--sea-ink-soft)] hover:bg-white disabled:opacity-55"
         >
           <X size={18} />
@@ -212,7 +269,10 @@ export function DraftEditor({
         className="mx-auto flex min-h-0 w-full max-w-5xl flex-1 flex-col overflow-y-auto px-4 py-4 sm:px-7 sm:py-6"
         onSubmit={(event) => {
           event.preventDefault();
-          submit();
+          const snapshot = readSnapshot();
+          if (snapshot !== null) {
+            onSend(snapshot);
+          }
         }}
       >
         <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white/84 shadow-[0_18px_50px_rgba(23,58,64,0.08)]">
@@ -224,8 +284,8 @@ export function DraftEditor({
               aria-label="To recipients"
               autoFocus
               disabled={editorLocked}
-              value={to}
-              onChange={(event) => setTo(event.target.value)}
+              value={fields.to}
+              onChange={(event) => updateField({ to: event.target.value })}
               placeholder="person@example.com, Team <team@example.com>"
               className="mt-1 min-w-0 border-0 bg-transparent text-sm outline-none placeholder:text-[var(--sea-ink-soft)]/42 disabled:opacity-60 sm:mt-0"
             />
@@ -237,8 +297,8 @@ export function DraftEditor({
             <input
               aria-label="Cc recipients"
               disabled={editorLocked}
-              value={cc}
-              onChange={(event) => setCc(event.target.value)}
+              value={fields.cc}
+              onChange={(event) => updateField({ cc: event.target.value })}
               className="mt-1 min-w-0 border-0 bg-transparent text-sm outline-none disabled:opacity-60 sm:mt-0"
             />
           </label>
@@ -249,8 +309,8 @@ export function DraftEditor({
             <input
               aria-label="Bcc recipients"
               disabled={editorLocked}
-              value={bcc}
-              onChange={(event) => setBcc(event.target.value)}
+              value={fields.bcc}
+              onChange={(event) => updateField({ bcc: event.target.value })}
               className="mt-1 min-w-0 border-0 bg-transparent text-sm outline-none disabled:opacity-60 sm:mt-0"
             />
           </label>
@@ -262,8 +322,8 @@ export function DraftEditor({
               aria-label="Subject"
               disabled={editorLocked}
               maxLength={998}
-              value={subject}
-              onChange={(event) => setSubject(event.target.value)}
+              value={fields.subject}
+              onChange={(event) => updateField({ subject: event.target.value })}
               placeholder="What is this message about?"
               className="mt-1 min-w-0 border-0 bg-transparent text-sm font-bold outline-none placeholder:font-normal placeholder:text-[var(--sea-ink-soft)]/42 disabled:opacity-60 sm:mt-0"
             />
@@ -276,8 +336,8 @@ export function DraftEditor({
             aria-label="Message"
             disabled={editorLocked}
             maxLength={1_000_000}
-            value={textBody}
-            onChange={(event) => setTextBody(event.target.value)}
+            value={fields.textBody}
+            onChange={(event) => updateField({ textBody: event.target.value })}
             placeholder="Write your message..."
             className="min-h-44 flex-1 resize-none border-0 bg-transparent text-sm leading-7 outline-none placeholder:text-[var(--sea-ink-soft)]/42 disabled:opacity-60 sm:text-base"
           />
@@ -296,7 +356,7 @@ export function DraftEditor({
             </div>
             <label
               className={`inline-flex items-center gap-2 rounded-xl border border-[var(--line)] bg-white px-3.5 py-2 text-xs font-extrabold ${
-                isNew || dirty || editorLocked
+                editorLocked
                   ? "cursor-not-allowed opacity-45"
                   : "cursor-pointer hover:bg-[var(--foam)]"
               }`}
@@ -307,22 +367,23 @@ export function DraftEditor({
                 multiple
                 aria-label="Add draft attachments"
                 className="sr-only"
-                disabled={isNew || dirty || editorLocked}
+                disabled={editorLocked}
                 onChange={(event) => {
                   const files = [...(event.target.files ?? [])];
                   event.target.value = "";
                   if (files.length > 0) {
-                    onAttachFiles(files);
+                    const snapshot = readSnapshot();
+                    if (snapshot !== null) {
+                      onAttachFiles(files, snapshot);
+                    }
                   }
                 }}
               />
             </label>
           </div>
-          {isNew || dirty ? (
+          {isNew || saveStatus !== "saved" ? (
             <p className="mt-3 text-[0.68rem] font-bold text-[var(--sea-ink-soft)]">
-              {isNew
-                ? "Save this draft before attaching files."
-                : "Save text changes before attaching files."}
+              Files will upload after the latest changes are saved.
             </p>
           ) : null}
           {attachments.length === 0 && attachmentUploads.length === 0 ? null : (
@@ -441,20 +502,7 @@ export function DraftEditor({
             )}
             <button
               type="submit"
-              disabled={editorLocked}
-              className="inline-flex items-center gap-2 rounded-xl bg-[var(--sea-ink)] px-5 py-2.5 text-xs font-extrabold text-white shadow-[0_10px_26px_rgba(23,58,64,0.18)] disabled:opacity-55"
-            >
-              {isSaving ? (
-                <LoaderCircle className="animate-spin" size={15} />
-              ) : (
-                <Save size={15} />
-              )}
-              {isSaving ? "Saving" : "Save draft"}
-            </button>
-            <button
-              type="button"
-              disabled={!canSend}
-              onClick={onSend}
+              disabled={editorLocked || !hasRecipient}
               className="inline-flex items-center gap-2 rounded-xl bg-[var(--lagoon-deep)] px-5 py-2.5 text-xs font-extrabold text-white shadow-[0_10px_26px_rgba(16,116,110,0.2)] disabled:opacity-45"
             >
               {isSending ? (
@@ -466,15 +514,11 @@ export function DraftEditor({
             </button>
           </div>
         </div>
-        {canSend ? null : (
+        {isSaving && !isSending ? (
           <p className="mt-2 shrink-0 text-right text-[0.68rem] font-bold text-[var(--sea-ink-soft)]">
-            {isNew || dirty
-              ? "Save before sending."
-              : hasRecipient
-                ? "Sending is unavailable while another draft action is pending."
-                : "Add at least one recipient, then save before sending."}
+            You can keep editing while this draft is saved.
           </p>
-        )}
+        ) : null}
       </form>
     </section>
   );

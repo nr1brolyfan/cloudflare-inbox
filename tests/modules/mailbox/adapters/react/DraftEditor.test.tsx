@@ -4,334 +4,240 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import * as Schema from "effect/Schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { DraftEditorFields } from "#/modules/mailbox/adapters/browser/DraftSessionStorage";
 import {
   DraftEditor,
   draftSendErrorText,
 } from "#/modules/mailbox/adapters/react/DraftEditor";
+import type { DraftEditorSnapshot } from "#/modules/mailbox/adapters/react/DraftEditor";
 import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
-import { DraftAttachmentReservationSchema } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 
 const initial = Schema.decodeUnknownSync(DraftEditorContent)({
   bcc: [],
   cc: [{ address: "copy@example.test" }],
   subject: "Initial subject",
-  textBody: "Unsaved local body",
-  to: [{ address: "person@example.test", displayName: "Person, Primary" }],
+  textBody: "Initial body",
+  to: [{ address: "person@example.test", displayName: "Person" }],
 });
-const storedAttachment = Schema.decodeUnknownSync(
-  DraftAttachmentReservationSchema
-)({
-  contentSha256: "a".repeat(64),
-  createdAt: 1000,
-  draftId: "draft-1",
-  expiresAt: 901_000,
-  fileName: "brief.pdf",
-  id: "attachment-1",
-  mailboxId: "primary",
-  mimeType: "application/pdf",
-  size: 2048,
-  status: "stored",
-  storedAt: 2000,
-});
+
+const renderEditor = (
+  overrides: Partial<React.ComponentProps<typeof DraftEditor>> = {}
+) => {
+  const props: React.ComponentProps<typeof DraftEditor> = {
+    attachments: [],
+    attachmentUploads: [],
+    initial,
+    isNew: false,
+    isSendUncertain: false,
+    isSaving: false,
+    isSending: false,
+    onAttachFiles:
+      vi.fn<(files: readonly File[], snapshot: DraftEditorSnapshot) => void>(),
+    onAutosave: vi.fn<(snapshot: DraftEditorSnapshot) => void>(),
+    onChange: vi.fn<(fields: DraftEditorFields) => void>(),
+    onClose: vi.fn<(snapshot: DraftEditorSnapshot) => void>(),
+    onDismissAttachmentUpload: vi.fn<(id: string) => void>(),
+    onRetryAttachmentUpload: vi.fn<(id: string) => void>(),
+    onSend: vi.fn<(snapshot: DraftEditorSnapshot) => void>(),
+    saveStatus: "saved",
+    ...overrides,
+  };
+  render(<DraftEditor {...props} />);
+  return props;
+};
 
 describe(DraftEditor, () => {
-  afterEach(cleanup);
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
 
-  it("parses recipients and submits plain-text editor content", () => {
-    const onSave = vi.fn<(content: typeof initial) => void>();
-    render(
-      <DraftEditor
-        attachments={[]}
-        attachmentUploads={[]}
-        initial={initial}
-        isNew={false}
-        isSaving={false}
-        isSending={false}
-        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={onSave}
-        onSend={vi.fn<() => void>()}
-        saved={false}
-      />
-    );
+  it("debounces valid changes and removes the manual save UI", () => {
+    vi.useFakeTimers();
+    const onAutosave = vi.fn<(snapshot: DraftEditorSnapshot) => void>();
+    renderEditor({ onAutosave });
 
-    expect(
-      (
-        screen.getByRole("textbox", {
-          name: "To recipients",
-        }) as HTMLInputElement
-      ).value
-    ).toBe('"Person, Primary" <person@example.test>');
-    fireEvent.change(screen.getByRole("textbox", { name: "To recipients" }), {
-      target: { value: "Next <next@example.test>, second@example.test" },
-    });
+    expect(screen.queryByRole("button", { name: "Save draft" })).toBeNull();
     fireEvent.change(screen.getByRole("textbox", { name: "Subject" }), {
-      target: { value: "Updated subject" },
+      target: { value: "First" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-
-    expect(onSave).toHaveBeenCalledWith({
-      bcc: [],
-      cc: [{ address: "copy@example.test" }],
-      subject: "Updated subject",
-      textBody: "Unsaved local body",
-      to: [
-        { address: "next@example.test", displayName: "Next" },
-        { address: "second@example.test" },
-      ],
+    vi.advanceTimersByTime(500);
+    fireEvent.change(screen.getByRole("textbox", { name: "Subject" }), {
+      target: { value: "Latest" },
+    });
+    vi.advanceTimersByTime(699);
+    expect(onAutosave).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(onAutosave).toHaveBeenCalledOnce();
+    expect(onAutosave.mock.calls[0]?.[0]).toMatchObject({
+      content: { subject: "Latest" },
+      fields: { subject: "Latest" },
     });
   });
 
-  it("keeps local fields visible and offers exact retry after a save error", () => {
-    const onRetry = vi.fn<() => void>();
-    render(
-      <DraftEditor
-        attachments={[]}
-        attachmentUploads={[]}
-        error="The draft could not be saved. Your local content is still here."
-        initial={initial}
-        isNew
-        isSaving={false}
-        isSending={false}
-        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetry={onRetry}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={vi.fn<(content: typeof initial) => void>()}
-        onSend={vi.fn<() => void>()}
-        saved={false}
-      />
-    );
+  it("recovers raw partial fields and keeps invalid edits out of autosave", () => {
+    vi.useFakeTimers();
+    const onAutosave = vi.fn<(snapshot: DraftEditorSnapshot) => void>();
+    renderEditor({
+      initialFields: {
+        bcc: "",
+        cc: "copy@example.test",
+        subject: "Recovered partial subject",
+        textBody: "Recovered body",
+        to: "not-an-address",
+      },
+      onAutosave,
+    });
 
     expect(
       (screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement)
         .value
-    ).toBe("Unsaved local body");
-    expect(screen.getByRole("alert").textContent).toContain(
-      "local content is still here"
-    );
-    expect(
-      screen
-        .getByRole("button", { name: "Save draft" })
-        .hasAttribute("disabled")
-    ).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
-    expect(onRetry).toHaveBeenCalledOnce();
-  });
-
-  it("rejects invalid addresses without dispatching a save", () => {
-    const onSave = vi.fn<(content: typeof initial) => void>();
-    render(
-      <DraftEditor
-        attachments={[]}
-        attachmentUploads={[]}
-        initial={initial}
-        isNew
-        isSaving={false}
-        isSending={false}
-        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={onSave}
-        onSend={vi.fn<() => void>()}
-        saved={false}
-      />
-    );
-
-    fireEvent.change(screen.getByRole("textbox", { name: "To recipients" }), {
-      target: { value: "not-an-address" },
-    });
-    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
-
-    expect(onSave).not.toHaveBeenCalled();
+    ).toBe("Recovered body");
+    vi.advanceTimersByTime(700);
+    expect(onAutosave).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
     expect(screen.getByRole("alert").textContent).toContain(
       "Check the recipient addresses"
     );
   });
 
-  it("shows stored files and selects uploads only for a clean saved draft", () => {
-    const onAttachFiles = vi.fn<(files: readonly File[]) => void>();
-    render(
-      <DraftEditor
-        attachments={[storedAttachment]}
-        attachmentUploads={[]}
-        initial={initial}
-        isNew={false}
-        isSaving={false}
-        isSending={false}
-        onAttachFiles={onAttachFiles}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={vi.fn<(content: typeof initial) => void>()}
-        onSend={vi.fn<() => void>()}
-        saved
-      />
-    );
-    const file = new File([new Uint8Array([1, 2, 3])], "next.pdf", {
-      type: "application/pdf",
+  it("sends a new dirty draft using the latest parsed fields", () => {
+    const onSend = vi.fn<(snapshot: DraftEditorSnapshot) => void>();
+    renderEditor({ isNew: true, onSend, saveStatus: "unsaved" });
+    fireEvent.change(screen.getByRole("textbox", { name: "To recipients" }), {
+      target: { value: "Next <next@example.test>" },
     });
-    fireEvent.change(
-      screen.getByLabelText("Add draft attachments", { selector: "input" }),
-      { target: { files: [file] } }
-    );
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Latest unsaved body" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send" }));
 
-    expect(screen.getByText("brief.pdf")).toBeDefined();
-    expect(screen.getByText("2.0 KB · Uploaded")).toBeDefined();
-    expect(onAttachFiles).toHaveBeenCalledWith([file]);
+    expect(onSend).toHaveBeenCalledWith(
+      expect.objectContaining({
+        content: expect.objectContaining({
+          textBody: "Latest unsaved body",
+          to: [{ address: "next@example.test", displayName: "Next" }],
+        }),
+      })
+    );
   });
 
-  it("sends only a clean persisted draft with valid recipients", () => {
-    const onSend = vi.fn<() => void>();
-    render(
-      <DraftEditor
-        attachments={[]}
-        attachmentUploads={[]}
-        initial={initial}
-        isNew={false}
-        isSaving={false}
-        isSending={false}
-        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={vi.fn<(content: typeof initial) => void>()}
-        onSend={onSend}
-        saved
-      />
-    );
-
-    const send = screen.getByRole("button", { name: "Send" });
-    expect(send.hasAttribute("disabled")).toBeFalsy();
-    fireEvent.click(send);
-    expect(onSend).toHaveBeenCalledOnce();
-
-    fireEvent.change(screen.getByRole("textbox", { name: "Subject" }), {
-      target: { value: "Dirty subject" },
-    });
-    expect(send.hasAttribute("disabled")).toBeTruthy();
-    expect(screen.getByText("Save before sending.")).toBeTruthy();
-  });
-
-  it("requires new drafts to be saved before sending", () => {
-    render(
-      <DraftEditor
-        attachments={[]}
-        attachmentUploads={[]}
-        initial={initial}
-        isNew
-        isSaving={false}
-        isSending={false}
-        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={vi.fn<(content: typeof initial) => void>()}
-        onSend={vi.fn<() => void>()}
-        saved={false}
-      />
-    );
-
+  it("stays editable during background saving and reports save status", () => {
+    renderEditor({ isSaving: true, saveStatus: "saving" });
+    const subject = screen.getByRole("textbox", { name: "Subject" });
+    expect(subject.hasAttribute("disabled")).toBeFalsy();
+    expect(screen.getByText("Saving...")).toBeDefined();
     expect(
-      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
-    ).toBeTruthy();
-    expect(screen.getByText("Save before sending.")).toBeTruthy();
+      screen.getByText("You can keep editing while this draft is saved.")
+    ).toBeDefined();
   });
 
-  it("does not send persisted content without a recipient", () => {
-    const withoutRecipients = Schema.decodeUnknownSync(DraftEditorContent)({
-      ...initial,
+  it("keeps local content editable after a save error and exposes exact retry", () => {
+    const onRetry = vi.fn<() => void>();
+    renderEditor({
+      error: "The draft could not be saved. Your local content is still here.",
+      onRetry,
+      saveStatus: "error",
+    });
+    const message = screen.getByRole("textbox", { name: "Message" });
+
+    fireEvent.change(message, { target: { value: "Still safely local" } });
+    expect((message as HTMLTextAreaElement).value).toBe("Still safely local");
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledOnce();
+  });
+
+  it("queues selected files with the latest dirty snapshot", () => {
+    const onAttachFiles =
+      vi.fn<(files: readonly File[], snapshot: DraftEditorSnapshot) => void>();
+    renderEditor({ onAttachFiles, saveStatus: "unsaved" });
+    fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+      target: { value: "Body before attachment" },
+    });
+    const file = new File(["attachment"], "notes.txt", {
+      type: "text/plain",
+    });
+
+    fireEvent.change(screen.getByLabelText("Add draft attachments"), {
+      target: { files: [file] },
+    });
+
+    expect(onAttachFiles).toHaveBeenCalledWith(
+      [file],
+      expect.objectContaining({
+        content: expect.objectContaining({
+          textBody: "Body before attachment",
+        }),
+      })
+    );
+  });
+
+  it("disables send without a recipient and while an attachment is pending", () => {
+    const onSend = vi.fn<(snapshot: DraftEditorSnapshot) => void>();
+    const withoutRecipient = Schema.decodeUnknownSync(DraftEditorContent)({
       bcc: [],
       cc: [],
+      subject: "No recipient",
       to: [],
     });
-    render(
-      <DraftEditor
-        attachments={[]}
-        attachmentUploads={[]}
-        initial={withoutRecipients}
-        isNew={false}
-        isSaving={false}
-        isSending={false}
-        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={vi.fn<(content: typeof initial) => void>()}
-        onSend={vi.fn<() => void>()}
-        saved
-      />
-    );
-
+    renderEditor({ initial: withoutRecipient, onSend });
     expect(
-      screen.getByRole("button", { name: "Send" }).hasAttribute("disabled")
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled
     ).toBeTruthy();
-    expect(
-      screen.getByText("Add at least one recipient, then save before sending.")
-    ).toBeTruthy();
-  });
 
-  it("disables send while a send or attachment action is pending", () => {
-    render(
-      <DraftEditor
-        attachments={[]}
-        attachmentUploads={[]}
-        initial={initial}
-        isNew={false}
-        isSaving={false}
-        isSending
-        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={vi.fn<(content: typeof initial) => void>()}
-        onSend={vi.fn<() => void>()}
-        saved
-      />
-    );
-
+    cleanup();
+    onSend.mockClear();
+    renderEditor({
+      attachmentUploads: [
+        {
+          fileName: "notes.txt",
+          id: "upload-1",
+          progress: 20,
+          retryable: true,
+          size: 10,
+          status: "uploading",
+        },
+      ],
+      onSend,
+    });
     expect(
-      screen.getByRole("button", { name: "Sending" }).hasAttribute("disabled")
-    ).toBeTruthy();
-    expect(
-      screen.getByText(
-        "Sending is unavailable while another draft action is pending."
-      )
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled
     ).toBeTruthy();
   });
 
-  it("renders the specific non-retryable oversized-message send guidance", () => {
-    const error = draftSendErrorText(
-      400,
-      "Message is too large for the email provider"
-    );
-    render(
-      <DraftEditor
-        attachments={[]}
-        attachmentUploads={[]}
-        error={error}
-        initial={initial}
-        isNew={false}
-        isSaving={false}
-        isSending={false}
-        onAttachFiles={vi.fn<(files: readonly File[]) => void>()}
-        onClose={vi.fn<() => void>()}
-        onDismissAttachmentUpload={vi.fn<(id: string) => void>()}
-        onRetryAttachmentUpload={vi.fn<(id: string) => void>()}
-        onSave={vi.fn<(content: typeof initial) => void>()}
-        onSend={vi.fn<() => void>()}
-        saved
-      />
-    );
+  it("locks the click-time snapshot while an uncertain send can be retried", () => {
+    renderEditor({
+      error: "The send result could not be confirmed. Retry safely.",
+      isSendUncertain: true,
+      onRetry: vi.fn<() => void>(),
+    });
 
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Message",
+        }) as HTMLTextAreaElement
+      ).disabled
+    ).toBeTruthy();
+    expect(
+      (screen.getByRole("button", { name: "Send" }) as HTMLButtonElement)
+        .disabled
+    ).toBeTruthy();
+  });
+
+  it("renders specific oversized-message send guidance", () => {
+    renderEditor({
+      error: draftSendErrorText(
+        400,
+        "Message is too large for the email provider"
+      ),
+    });
     expect(
       screen.getByText(
         "This message is too large for the email provider. Remove attachments or shorten the content."
       )
-    ).toBeTruthy();
+    ).toBeDefined();
   });
 });

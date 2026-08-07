@@ -22,7 +22,7 @@ import {
   PenLine,
   RotateCcw,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import {
   getMailboxNavigation,
@@ -46,6 +46,16 @@ import {
   mailboxReadDenialQueryKey,
 } from "#/modules/account-security/adapters/browser/AuthClient";
 import {
+  clearDraftEditorFields,
+  clearPendingDraftCreate,
+  draftEditorFieldsEqual,
+  persistDraftEditorFields,
+  persistPendingDraftCreate,
+  readDraftEditorFields,
+  readPendingDraftCreate,
+} from "#/modules/mailbox/adapters/browser/DraftSessionStorage";
+import type { DraftEditorFields } from "#/modules/mailbox/adapters/browser/DraftSessionStorage";
+import {
   clearPendingReplyCommand,
   persistPendingReplyCommand,
   readPendingReplyCommand,
@@ -54,8 +64,10 @@ import {
 } from "#/modules/mailbox/adapters/browser/ReplyDraftOperationStorage";
 import {
   DraftEditor,
+  draftEditorFieldsFromContent,
   draftSendErrorText,
 } from "#/modules/mailbox/adapters/react/DraftEditor";
+import type { DraftEditorSnapshot } from "#/modules/mailbox/adapters/react/DraftEditor";
 import { DraftList } from "#/modules/mailbox/adapters/react/DraftList";
 import {
   mailboxMessageActionMutationKey,
@@ -1105,6 +1117,12 @@ type DraftSaveCommand =
   | Schema.Schema.Type<typeof CreateMailboxDraftCommand>
   | Schema.Schema.Type<typeof UpdateMailboxDraftCommand>;
 type DraftSendCommand = Schema.Schema.Type<typeof SendMailboxDraftCommand>;
+interface DraftSaveFailure {
+  readonly command: DraftSaveCommand;
+  readonly message: string;
+  readonly retryable: boolean;
+  readonly snapshot: DraftEditorSnapshot;
+}
 
 interface PendingDraftAttachment {
   readonly file: File;
@@ -1115,6 +1133,7 @@ interface PendingDraftAttachment {
   readonly reservationId?: string;
   readonly status: "reserving" | "uploading" | "failed";
   readonly error?: string;
+  readonly snapshot: DraftEditorSnapshot;
 }
 
 const uploadReservedAttachment = (
@@ -1163,6 +1182,14 @@ const uploadReservedAttachment = (
   );
 
 const attachmentUploadFailure = (error: unknown) => {
+  if (error instanceof Error && error.message === "upload:draft-conflict") {
+    return {
+      message:
+        "This draft changed elsewhere while the file uploaded. Reopen it before editing further.",
+      retryable: false,
+      status: 409,
+    };
+  }
   const status =
     error instanceof Error && /^(?:reserve|upload):\d+$/u.test(error.message)
       ? Number(error.message.split(":")[1])
@@ -1236,12 +1263,35 @@ function DraftWorkspace({
   readonly sessionId: string;
 }) {
   const queryClient = useQueryClient();
-  const [saved, setSaved] = useState(false);
-  const [failure, setFailure] = useState<{
-    readonly command: DraftSaveCommand;
-    readonly message: string;
-    readonly retryable: boolean;
-  }>();
+  const composeSession = draftId ?? "compose";
+  const [recoveredCreate] = useState(() =>
+    typeof window === "undefined" || draftId !== undefined
+      ? undefined
+      : readPendingDraftCreate(window.sessionStorage, mailboxId)
+  );
+  const [recoveredFields] = useState(() =>
+    typeof window === "undefined"
+      ? undefined
+      : (readDraftEditorFields(
+          window.sessionStorage,
+          mailboxId,
+          composeSession
+        ) ??
+        (recoveredCreate === undefined
+          ? undefined
+          : draftEditorFieldsFromContent(recoveredCreate.content)))
+  );
+  const pendingCreate = useRef(recoveredCreate ?? null);
+  const [saveStatus, setSaveStatus] = useState<
+    "error" | "idle" | "saved" | "saving" | "unsaved"
+  >(
+    recoveredFields === undefined
+      ? draftId === undefined
+        ? "idle"
+        : "saved"
+      : "unsaved"
+  );
+  const [failure, setFailure] = useState<DraftSaveFailure>();
   const [sendFailure, setSendFailure] = useState<{
     readonly command: DraftSendCommand;
     readonly message: string;
@@ -1250,6 +1300,20 @@ function DraftWorkspace({
   const [attachmentUploads, setAttachmentUploads] = useState<
     readonly PendingDraftAttachment[]
   >([]);
+  const [isSending, setIsSending] = useState(false);
+  const [displayDraft, setDisplayDraft] =
+    useState<Schema.Schema.Type<typeof DraftEditorDraft>>();
+  const serverDraft = useRef<Schema.Schema.Type<
+    typeof DraftEditorDraft
+  > | null>(null);
+  const latestFields = useRef<DraftEditorFields | null>(null);
+  const pendingSave = useRef<DraftEditorSnapshot | null>(null);
+  const saveInFlight = useRef<Promise<boolean> | null>(null);
+  const failureRef = useRef<DraftSaveFailure | null>(null);
+  const sendIntent = useRef(false);
+  const dirty = useRef(recoveredFields !== undefined);
+  const sessionWriteTimer = useRef<number | null>(null);
+  const composeSessionRef = useRef(composeSession);
   const draftQueryKey = [
     "mailbox",
     "draft",
@@ -1276,98 +1340,362 @@ function DraftWorkspace({
     retry: false,
     staleTime: Number.POSITIVE_INFINITY,
   });
-  const save = useMutation({
-    mutationFn: (command: DraftSaveCommand) =>
-      "draftId" in command
-        ? updateMailboxDraft({
-            data: Schema.encodeSync(UpdateMailboxDraftCommand)(command),
-          })
-        : createMailboxDraft({
-            data: Schema.encodeSync(CreateMailboxDraftCommand)(command),
-          }),
-    onError: (_error, command) => {
-      setSaved(false);
-      setFailure({
+  const storeDraftResult = (
+    result: { readonly ok: true; readonly draft: unknown },
+    id: string
+  ) =>
+    queryClient.setQueryData(
+      ["mailbox", "draft", sessionId, mailboxId, id],
+      result
+    );
+  const clearRecoveredFields = () => {
+    if (typeof window !== "undefined") {
+      if (sessionWriteTimer.current !== null) {
+        window.clearTimeout(sessionWriteTimer.current);
+        sessionWriteTimer.current = null;
+      }
+      clearDraftEditorFields(
+        window.sessionStorage,
+        mailboxId,
+        composeSessionRef.current
+      );
+    }
+  };
+  const scheduleRecoveredFields = (fields: DraftEditorFields) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (sessionWriteTimer.current !== null) {
+      window.clearTimeout(sessionWriteTimer.current);
+    }
+    sessionWriteTimer.current = window.setTimeout(() => {
+      persistDraftEditorFields(
+        window.sessionStorage,
+        mailboxId,
+        composeSessionRef.current,
+        fields
+      );
+      sessionWriteTimer.current = null;
+    }, 150);
+  };
+  useEffect(
+    () => () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      if (sessionWriteTimer.current !== null) {
+        window.clearTimeout(sessionWriteTimer.current);
+      }
+      if (dirty.current && latestFields.current !== null) {
+        persistDraftEditorFields(
+          window.sessionStorage,
+          mailboxId,
+          composeSessionRef.current,
+          latestFields.current
+        );
+      }
+    },
+    [mailboxId]
+  );
+  const recordFailure = (
+    command: DraftSaveCommand,
+    snapshot: DraftEditorSnapshot,
+    message: string,
+    retryable: boolean
+  ) => {
+    const next = { command, message, retryable, snapshot };
+    failureRef.current = next;
+    setFailure(next);
+    setSaveStatus("error");
+    return false;
+  };
+  // oxlint-disable-next-line eslint/complexity -- Save distinguishes exact retry, definitive failure, and create-session migration.
+  const performSave = async (
+    snapshot: DraftEditorSnapshot,
+    retryCommand?: DraftSaveCommand
+  ) => {
+    const persisted = serverDraft.current;
+    const common = {
+      content: snapshot.content,
+      mailboxId,
+      operationId: crypto.randomUUID(),
+    };
+    const command =
+      retryCommand ??
+      (persisted === null
+        ? decodeCreateMailboxDraft(common)
+        : decodeUpdateMailboxDraft({
+            ...common,
+            draftId: persisted.id,
+            expectedVersion: persisted.version,
+          }));
+    if (!("draftId" in command) && typeof window !== "undefined") {
+      pendingCreate.current = command;
+      persistPendingDraftCreate(window.sessionStorage, command);
+    }
+    setSaveStatus("saving");
+    let result;
+    try {
+      result =
+        "draftId" in command
+          ? await updateMailboxDraft({
+              data: Schema.encodeSync(UpdateMailboxDraftCommand)(command),
+            })
+          : await createMailboxDraft({
+              data: Schema.encodeSync(CreateMailboxDraftCommand)(command),
+            });
+    } catch {
+      return recordFailure(
         command,
-        message:
-          "The draft could not be saved. Your local content is still here.",
-        retryable: true,
-      });
-    },
-    onSuccess: (result, command) => {
-      if (!result.ok) {
-        setSaved(false);
-        setFailure({
-          command,
-          message: draftSaveErrorText(result.status),
-          retryable: result.status === 500 || result.status === 502,
-        });
-        if (result.status === 401) {
-          void clearCachedAuthSession(queryClient);
+        snapshot,
+        "The draft could not be saved. Your local content is still here.",
+        true
+      );
+    }
+    if (!result.ok) {
+      if (result.status === 401) {
+        void clearCachedAuthSession(queryClient);
+      }
+      if (
+        !("draftId" in command) &&
+        result.status !== 500 &&
+        result.status !== 502 &&
+        typeof window !== "undefined"
+      ) {
+        pendingCreate.current = null;
+        clearPendingDraftCreate(window.sessionStorage, mailboxId);
+      }
+      return recordFailure(
+        command,
+        snapshot,
+        draftSaveErrorText(result.status),
+        result.status === 500 || result.status === 502
+      );
+    }
+    const savedDraft = decodeDraftEditorDraft(result.draft);
+    serverDraft.current = savedDraft;
+    setDisplayDraft(savedDraft);
+    failureRef.current = null;
+    setFailure(undefined);
+    storeDraftResult(result, savedDraft.id);
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["mailbox", "navigation"] }),
+      queryClient.invalidateQueries({ queryKey: ["mailbox", "drafts"] }),
+    ]);
+    if (
+      latestFields.current !== null &&
+      draftEditorFieldsEqual(latestFields.current, snapshot.fields)
+    ) {
+      dirty.current = false;
+      clearRecoveredFields();
+      setSaveStatus("saved");
+    } else {
+      dirty.current = true;
+      setSaveStatus("unsaved");
+    }
+    if (!("draftId" in command)) {
+      pendingCreate.current = null;
+      if (typeof window !== "undefined") {
+        clearPendingDraftCreate(window.sessionStorage, mailboxId);
+        if (
+          latestFields.current !== null &&
+          !draftEditorFieldsEqual(latestFields.current, snapshot.fields)
+        ) {
+          if (sessionWriteTimer.current !== null) {
+            window.clearTimeout(sessionWriteTimer.current);
+            sessionWriteTimer.current = null;
+          }
+          clearDraftEditorFields(window.sessionStorage, mailboxId, "compose");
+          persistDraftEditorFields(
+            window.sessionStorage,
+            mailboxId,
+            savedDraft.id,
+            latestFields.current
+          );
         }
-        return;
       }
-      setFailure(undefined);
-      setSaved(true);
-      void Promise.all([
-        queryClient.invalidateQueries({
-          queryKey: ["mailbox", "navigation"],
-        }),
-        queryClient.invalidateQueries({ queryKey: ["mailbox", "drafts"] }),
-      ]);
-      if (!("draftId" in command)) {
-        onCreated(result.draft.id);
-        return;
+      composeSessionRef.current = savedDraft.id;
+      onCreated(savedDraft.id);
+    }
+    return true;
+  };
+  const drainSaves = () => {
+    if (saveInFlight.current !== null) {
+      return saveInFlight.current;
+    }
+    const run = async () => {
+      while (pendingSave.current !== null && failureRef.current === null) {
+        const uncertainCreate = pendingCreate.current;
+        if (serverDraft.current === null && uncertainCreate !== null) {
+          const recoveredSnapshot = {
+            content: uncertainCreate.content,
+            fields: draftEditorFieldsFromContent(uncertainCreate.content),
+          };
+          // Resolve an uncertain create before updating to newer coalesced fields.
+          // oxlint-disable-next-line no-await-in-loop
+          if (!(await performSave(recoveredSnapshot, uncertainCreate))) {
+            return false;
+          }
+          continue;
+        }
+        const snapshot = pendingSave.current;
+        pendingSave.current = null;
+        // Saves are intentionally serialized so every CAS uses the version returned above.
+        // oxlint-disable-next-line no-await-in-loop
+        if (!(await performSave(snapshot))) {
+          return false;
+        }
       }
-      queryClient.setQueryData(draftQueryKey, result);
-    },
-    retry: false,
-  });
-  const send = useMutation({
-    mutationFn: (command: DraftSendCommand) =>
-      sendMailboxDraft({ data: command }),
-    onError: (_error, command) => {
+      return failureRef.current === null;
+    };
+    const operation = (async () => {
+      try {
+        return await run();
+      } finally {
+        saveInFlight.current = null;
+      }
+    })();
+    saveInFlight.current = operation;
+    return operation;
+  };
+  const queueSave = (snapshot: DraftEditorSnapshot) => {
+    latestFields.current = snapshot.fields;
+    const persistedFields =
+      serverDraft.current === null
+        ? draftEditorFieldsFromContent(emptyDraftContent)
+        : draftEditorFieldsFromContent(serverDraft.current.content);
+    if (
+      saveInFlight.current === null &&
+      draftEditorFieldsEqual(snapshot.fields, persistedFields)
+    ) {
+      pendingSave.current = null;
+      dirty.current = false;
+      clearRecoveredFields();
+      setSaveStatus(serverDraft.current === null ? "idle" : "saved");
+      return;
+    }
+    pendingSave.current = snapshot;
+    if (failureRef.current === null) {
+      void drainSaves();
+    }
+  };
+  const retrySave = async () => {
+    const failed = failureRef.current;
+    if (failed === null || !failed.retryable) {
+      return false;
+    }
+    failureRef.current = null;
+    setFailure(undefined);
+    const operation = performSave(failed.snapshot, failed.command);
+    saveInFlight.current = operation;
+    let retried: boolean;
+    try {
+      retried = await operation;
+    } finally {
+      saveInFlight.current = null;
+    }
+    return retried ? drainSaves() : false;
+  };
+  const flushSave = async (snapshot: DraftEditorSnapshot) => {
+    latestFields.current = snapshot.fields;
+    const persisted = serverDraft.current;
+    if (
+      persisted !== null &&
+      saveInFlight.current === null &&
+      pendingSave.current === null &&
+      failureRef.current === null &&
+      draftEditorFieldsEqual(
+        snapshot.fields,
+        draftEditorFieldsFromContent(persisted.content)
+      )
+    ) {
+      dirty.current = false;
+      clearRecoveredFields();
+      setSaveStatus("saved");
+      return persisted;
+    }
+    pendingSave.current = snapshot;
+    if (failureRef.current?.retryable === true && !(await retrySave())) {
+      return null;
+    }
+    if (failureRef.current !== null || !(await drainSaves())) {
+      return null;
+    }
+    return serverDraft.current;
+  };
+  const performSend = async (command: DraftSendCommand) => {
+    setIsSending(true);
+    let result;
+    try {
+      result = await sendMailboxDraft({ data: command });
+    } catch {
       setSendFailure({
         command,
         message: "The send result could not be confirmed. Retry safely.",
         retryable: true,
       });
-    },
-    onSuccess: (result, command) => {
-      if (!result.ok) {
-        if (result.status === 401) {
-          setSendFailure(undefined);
-          void clearCachedAuthSession(queryClient);
-          return;
-        }
-        setSendFailure({
-          command,
-          message: draftSendErrorText(result.status, result.error.message),
-          retryable: result.status >= 500,
-        });
-        return;
-      }
-      setSendFailure(undefined);
-      void Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["mailbox", "drafts"] }),
-        queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
-        queryClient.invalidateQueries({ queryKey: mailboxNavigationQueryKey }),
-      ]);
-      onSent(result.send);
-    },
-    retry: false,
-  });
-  const runAttachmentUpload = async (pending: PendingDraftAttachment) => {
-    if (draftId === undefined) {
+      setIsSending(false);
+      sendIntent.current = false;
       return;
     }
+    if (!result.ok) {
+      if (result.status === 401) {
+        void clearCachedAuthSession(queryClient);
+      }
+      setSendFailure({
+        command,
+        message: draftSendErrorText(result.status, result.error.message),
+        retryable: result.status >= 500,
+      });
+      setIsSending(false);
+      sendIntent.current = false;
+      return;
+    }
+    dirty.current = false;
+    clearRecoveredFields();
+    setSendFailure(undefined);
+    void Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["mailbox", "drafts"] }),
+      queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
+      queryClient.invalidateQueries({ queryKey: mailboxNavigationQueryKey }),
+    ]);
+    onSent(result.send);
+  };
+  const submitSend = async (snapshot: DraftEditorSnapshot) => {
+    if (sendIntent.current) {
+      return;
+    }
+    sendIntent.current = true;
+    setSendFailure(undefined);
+    setIsSending(true);
+    const persisted = await flushSave(snapshot);
+    if (persisted === null) {
+      setIsSending(false);
+      sendIntent.current = false;
+      return;
+    }
+    await performSend(
+      decodeSendMailboxDraft({
+        draftId: persisted.id,
+        expectedVersion: persisted.version,
+        mailboxId,
+        operationId: crypto.randomUUID(),
+      })
+    );
+  };
+  const runAttachmentUpload = async (pending: PendingDraftAttachment) => {
+    const persisted = serverDraft.current;
+    if (persisted === null) {
+      return;
+    }
+    const persistedDraftId = persisted.id;
     const { file, id, operationId } = pending;
     try {
       let { reservationId } = pending;
       if (reservationId === undefined) {
         const reservation = await reserveMailboxDraftAttachment({
           data: decodeReserveDraftAttachment({
-            draftId,
+            draftId: persistedDraftId,
             fileName: file.name,
             mailboxId,
             mimeType: file.type || "application/octet-stream",
@@ -1408,7 +1736,7 @@ function DraftWorkspace({
       await uploadReservedAttachment(
         {
           attachmentId: reservationId,
-          draftId,
+          draftId: persistedDraftId,
           file,
           mailboxId,
         },
@@ -1419,10 +1747,28 @@ function DraftWorkspace({
             )
           )
       );
+      const refreshed = await getMailboxDraft({
+        data: { draftId: persistedDraftId, mailboxId },
+      });
+      if (!refreshed.ok) {
+        throw new Error(`upload:${refreshed.status}`);
+      }
+      const afterUpload = decodeDraftEditorDraft(refreshed.draft);
+      if (
+        latestFields.current !== null &&
+        !draftEditorFieldsEqual(
+          latestFields.current,
+          draftEditorFieldsFromContent(afterUpload.content)
+        )
+      ) {
+        throw new Error("upload:draft-conflict");
+      }
+      serverDraft.current = afterUpload;
+      setDisplayDraft(afterUpload);
+      storeDraftResult(refreshed, persistedDraftId);
       setAttachmentUploads((currentUploads) =>
         currentUploads.filter((upload) => upload.id !== id)
       );
-      await draft.refetch();
       void Promise.all([
         queryClient.invalidateQueries({
           queryKey: ["mailbox", "navigation"],
@@ -1452,7 +1798,10 @@ function DraftWorkspace({
       );
     }
   };
-  const attachFiles = (files: readonly File[]) => {
+  const attachFiles = async (
+    files: readonly File[],
+    snapshot: DraftEditorSnapshot
+  ) => {
     const pending = files.map(
       (file): PendingDraftAttachment => ({
         file,
@@ -1460,6 +1809,7 @@ function DraftWorkspace({
         operationId: crypto.randomUUID(),
         progress: 0,
         retryable: true,
+        snapshot,
         status: "reserving",
       })
     );
@@ -1477,6 +1827,22 @@ function DraftWorkspace({
         status: "failed" as const,
       })),
     ]);
+    if ((await flushSave(snapshot)) === null) {
+      setAttachmentUploads((uploads) =>
+        uploads.map((upload) =>
+          accepted.includes(upload)
+            ? {
+                ...upload,
+                error:
+                  "Save the draft successfully before retrying this upload.",
+                retryable: true,
+                status: "failed",
+              }
+            : upload
+        )
+      );
+      return;
+    }
     const uploadSequentially = async () => {
       for (const upload of accepted) {
         // Uploads stay sequential to bound Worker buffering and preserve quota ordering.
@@ -1484,17 +1850,36 @@ function DraftWorkspace({
         await runAttachmentUpload(upload);
       }
     };
-    void uploadSequentially();
+    await uploadSequentially();
   };
+  const current = draft.data?.ok
+    ? decodeDraftEditorDraft(draft.data.draft)
+    : undefined;
+  useEffect(() => {
+    if (
+      current !== undefined &&
+      (serverDraft.current === null ||
+        current.version > serverDraft.current.version)
+    ) {
+      serverDraft.current = current;
+      setDisplayDraft(current);
+      latestFields.current ??=
+        recoveredFields ?? draftEditorFieldsFromContent(current.content);
+    }
+  }, [current, recoveredFields]);
 
-  if (draftId !== undefined && draft.isLoading) {
+  if (draftId !== undefined && draft.isLoading && displayDraft === undefined) {
     return (
       <output className="flex h-full min-h-80 items-center justify-center text-[var(--sea-ink-soft)]">
         <LoaderCircle aria-label="Loading draft" className="animate-spin" />
       </output>
     );
   }
-  if (draftId !== undefined && (draft.error || !draft.data?.ok)) {
+  if (
+    draftId !== undefined &&
+    displayDraft === undefined &&
+    (draft.error || !draft.data?.ok)
+  ) {
     const status = draft.data?.ok === false ? draft.data.status : 502;
     return (
       <WorkspaceStatus
@@ -1517,47 +1902,21 @@ function DraftWorkspace({
     );
   }
 
-  const current = draft.data?.ok
-    ? decodeDraftEditorDraft(draft.data.draft)
-    : undefined;
-  const submit = (content: Schema.Schema.Type<typeof DraftEditorContent>) => {
-    setSaved(false);
-    setFailure(undefined);
-    setSendFailure(undefined);
-    const common = {
-      content,
-      mailboxId,
-      operationId: crypto.randomUUID(),
-    };
-    const command =
-      current === undefined
-        ? decodeCreateMailboxDraft(common)
-        : decodeUpdateMailboxDraft({
-            ...common,
-            draftId: current.id,
-            expectedVersion: current.version,
-          });
-    save.mutate(command);
-  };
-  const submitSend = () => {
-    if (current === undefined) {
+  const initialContent =
+    displayDraft?.content ?? current?.content ?? emptyDraftContent;
+  const close = async (snapshot: DraftEditorSnapshot) => {
+    if (!dirty.current) {
+      onClose();
       return;
     }
-    setSendFailure(undefined);
-    send.mutate(
-      decodeSendMailboxDraft({
-        draftId: current.id,
-        expectedVersion: current.version,
-        mailboxId,
-        operationId: crypto.randomUUID(),
-      })
-    );
+    if ((await flushSave(snapshot)) !== null) {
+      onClose();
+    }
   };
 
   return (
     <DraftEditor
-      key={current === undefined ? "new" : `${current.id}:${current.version}`}
-      attachments={current?.attachments ?? []}
+      attachments={displayDraft?.attachments ?? current?.attachments ?? []}
       attachmentUploads={attachmentUploads.map((upload) => ({
         error: upload.error,
         fileName: upload.file.name,
@@ -1568,17 +1927,42 @@ function DraftWorkspace({
         status: upload.status,
       }))}
       error={sendFailure?.message ?? failure?.message}
-      initial={current?.content ?? emptyDraftContent}
-      isNew={current === undefined}
-      isSaving={save.isPending}
-      isSending={send.isPending}
+      initial={initialContent}
+      initialFields={recoveredFields}
+      isNew={displayDraft === undefined && current === undefined}
+      isSendUncertain={sendFailure?.retryable === true}
+      isSaving={saveStatus === "saving"}
+      isSending={isSending}
       onAttachFiles={attachFiles}
-      onClose={onClose}
+      onAutosave={queueSave}
+      onChange={(fields) => {
+        latestFields.current = fields;
+        const persistedFields =
+          serverDraft.current === null
+            ? draftEditorFieldsFromContent(emptyDraftContent)
+            : draftEditorFieldsFromContent(serverDraft.current.content);
+        dirty.current =
+          saveInFlight.current !== null ||
+          !draftEditorFieldsEqual(fields, persistedFields);
+        if (dirty.current) {
+          setSaveStatus("unsaved");
+          scheduleRecoveredFields(fields);
+        } else {
+          clearRecoveredFields();
+          setSaveStatus(serverDraft.current === null ? "idle" : "saved");
+        }
+      }}
+      onClose={(snapshot) => void close(snapshot)}
       onRetry={
         sendFailure?.retryable === true
-          ? () => send.mutate(sendFailure.command)
+          ? () => {
+              if (!sendIntent.current) {
+                sendIntent.current = true;
+                void performSend(sendFailure.command);
+              }
+            }
           : failure?.retryable === true
-            ? () => save.mutate(failure.command)
+            ? () => void retrySave()
             : undefined
       }
       onDismissAttachmentUpload={(id) =>
@@ -1589,12 +1973,16 @@ function DraftWorkspace({
       onRetryAttachmentUpload={(id) => {
         const upload = attachmentUploads.find((item) => item.id === id);
         if (upload !== undefined) {
-          void runAttachmentUpload(upload);
+          void (async () => {
+            const persisted = await flushSave(upload.snapshot);
+            if (persisted !== null) {
+              await runAttachmentUpload(upload);
+            }
+          })();
         }
       }}
-      onSave={submit}
-      onSend={submitSend}
-      saved={saved}
+      onSend={(snapshot) => void submitSend(snapshot)}
+      saveStatus={saveStatus}
     />
   );
 }
@@ -1619,6 +2007,7 @@ function AuthenticatedInbox({
 }) {
   const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
+  const [createdComposeDraftId, setCreatedComposeDraftId] = useState<string>();
   const { folders, labels, mailbox } = data;
   const { selectedFolder, selectedLabel } = resolveNavigationSelection(
     folders,
@@ -1747,12 +2136,18 @@ function AuthenticatedInbox({
       >
         {draftEditorOpen ? (
           <DraftWorkspace
-            key={search.draft ?? "compose"}
+            key={`${mailbox.id}:${
+              search.draft !== undefined &&
+              search.draft === createdComposeDraftId
+                ? "compose"
+                : (search.draft ?? "compose")
+            }`}
             draftId={search.draft}
             filters={filters}
             mailboxId={mailbox.id}
             onClose={closeEditor}
-            onCreated={(draftId) =>
+            onCreated={(draftId) => {
+              setCreatedComposeDraftId(draftId);
               void navigate({
                 to: "/inbox",
                 search: decodeInboxSearch({
@@ -1760,8 +2155,8 @@ function AuthenticatedInbox({
                   delivery: search.delivery,
                   draft: draftId,
                 }),
-              })
-            }
+              });
+            }}
             onSent={(outbound) => {
               queryClient.setQueryData(
                 outboundDeliveryQueryKey(
