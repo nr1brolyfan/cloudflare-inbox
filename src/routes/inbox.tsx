@@ -1,5 +1,4 @@
 import {
-  infiniteQueryOptions,
   skipToken,
   useInfiniteQuery,
   useMutation,
@@ -7,8 +6,12 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { QueryClient } from "@tanstack/react-query";
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Link,
+  redirect,
+  useNavigate,
+} from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
 import {
@@ -26,8 +29,6 @@ import {
   getMailboxOutboundDelivery,
   getMailboxDraft,
   getMailboxThread,
-  listMailboxDrafts,
-  listMailboxMessages,
   actOnMailboxMessage,
   createMailboxDraft,
   createMailboxReplyDraft,
@@ -62,6 +63,14 @@ import {
   projectPendingThreadActions,
   reconcileMailboxMessageActionCaches,
 } from "#/modules/mailbox/adapters/react/MailboxQueryState";
+import {
+  decodeMailboxSearch,
+  isSystemFolderId,
+  MailboxSearch,
+  mailboxRouteSearch,
+  systemFolderPath,
+} from "#/modules/mailbox/adapters/react/MailboxRouting";
+import type { SystemFolderId } from "#/modules/mailbox/adapters/react/MailboxRouting";
 import { MailboxShell } from "#/modules/mailbox/adapters/react/MailboxShell";
 import type {
   MailboxMessageQueryState,
@@ -85,67 +94,84 @@ import {
   DraftEditorDraft,
   UpdateMailboxDraftCommand,
 } from "#/modules/mailbox/application/MailboxDraftEditing";
-import { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraftReading";
 import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 import {
-  MailboxMessageListInput,
   MailboxMessageView,
   OpenMailboxThreadInput,
 } from "#/modules/mailbox/application/MailboxMessageReading";
 import { SendMailboxDraftCommand } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import {
-  FolderId,
-  DraftId,
-  LabelId,
-  MessageId,
-  OutboundDeliveryId,
-  SearchQuery,
-  ThreadId,
-} from "#/modules/mailbox/domain/Mailbox";
-import {
   DraftAttachmentUploadResult,
   draftAttachmentMaxBytes,
   ReserveDraftAttachmentCommand,
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
+import {
+  mailboxDraftListQueryOptions,
+  mailboxMessageListQueryOptions,
+  MailboxRequestError,
+} from "#/routes/-mailbox-queries";
 
-const InboxSearch = Schema.Struct({
-  attachment: Schema.optional(Schema.Literal("true")),
-  compose: Schema.optional(Schema.Literal("true")),
-  draft: Schema.optional(DraftId),
-  delivery: Schema.optional(OutboundDeliveryId),
-  folder: Schema.optional(FolderId),
-  label: Schema.optional(LabelId),
-  message: Schema.optional(MessageId),
-  q: Schema.optional(SearchQuery),
-  read: Schema.optional(Schema.Literals(["read", "unread"])),
-  starred: Schema.optional(Schema.Literal("true")),
-  thread: Schema.optional(ThreadId),
-}).check(
-  Schema.makeFilter((search) => {
-    if (search.folder !== undefined && search.label !== undefined) {
-      return "folder and label cannot be selected together";
+const InboxSearch = MailboxSearch;
+const decodeInboxSearch = decodeMailboxSearch;
+
+type MailboxNavigateOptions =
+  | {
+      readonly replace?: boolean;
+      readonly search: Schema.Schema.Type<typeof InboxSearch>;
+      readonly to: "/inbox";
     }
-    if (search.compose !== undefined && search.draft !== undefined) {
-      return "compose and draft cannot be selected together";
-    }
-    if (
-      (search.compose !== undefined || search.draft !== undefined) &&
-      (search.thread !== undefined || search.message !== undefined)
-    ) {
-      return "draft editor and conversation cannot be selected together";
-    }
-    return (search.thread === undefined) === (search.message === undefined)
-      ? undefined
-      : "thread and message must be selected together";
-  })
-);
-const decodeInboxSearch = Schema.decodeUnknownSync(InboxSearch);
+  | { readonly replace?: boolean; readonly to: "/" };
+
+const navigateToMailbox = (
+  navigate: ReturnType<typeof useNavigate>,
+  search: Schema.Schema.Type<typeof InboxSearch>,
+  replace = false
+) => {
+  const routeSearch = mailboxRouteSearch(search);
+  if (search.draft !== undefined) {
+    return navigate({
+      params: { draftId: search.draft },
+      replace,
+      search: routeSearch,
+      to: "/mail/drafts/$draftId",
+    });
+  }
+  if (search.compose === "true") {
+    return navigate({ replace, search: routeSearch, to: "/mail/compose" });
+  }
+  if (search.label !== undefined) {
+    return navigate({
+      params: { labelId: search.label },
+      replace,
+      search: routeSearch,
+      to: "/mail/labels/$labelId",
+    });
+  }
+  const folderId = search.folder ?? "inbox";
+  return isSystemFolderId(folderId)
+    ? navigate({
+        replace,
+        search: routeSearch,
+        to: systemFolderPath(folderId as SystemFolderId),
+      })
+    : navigate({
+        params: { folderId },
+        replace,
+        search: routeSearch,
+        to: "/mail/folders/$folderId",
+      });
+};
+
+const useMailboxNavigate = () => {
+  const navigate = useNavigate();
+  return (options: MailboxNavigateOptions) =>
+    options.to === "/inbox"
+      ? navigateToMailbox(navigate, options.search, options.replace)
+      : navigate(options);
+};
 const decodeMailboxMessageView = Schema.decodeUnknownSync(MailboxMessageView);
-const decodeMailboxMessageListInput = Schema.decodeUnknownSync(
-  MailboxMessageListInput
-);
 const decodeMailboxMessageAction = Schema.decodeUnknownSync(
   MailboxMessageActionCommand
 );
@@ -163,9 +189,6 @@ const decodeCreateMailboxReplyDraft = Schema.decodeUnknownSync(
 );
 const decodeDraftEditorContent = Schema.decodeUnknownSync(DraftEditorContent);
 const decodeDraftEditorDraft = Schema.decodeUnknownSync(DraftEditorDraft);
-const decodeMailboxDraftListInput = Schema.decodeUnknownSync(
-  MailboxDraftListInput
-);
 const decodeUpdateMailboxDraft = Schema.decodeUnknownSync(
   UpdateMailboxDraftCommand
 );
@@ -179,105 +202,12 @@ const decodeDraftAttachmentUploadResult = Schema.decodeUnknownSync(
   DraftAttachmentUploadResult
 );
 const mailboxNavigationQueryKey = ["mailbox", "navigation"] as const;
-const mailboxListStaleTime = 30_000;
 const emptyDraftContent = decodeDraftEditorContent({
   bcc: [],
   cc: [],
   subject: "",
   to: [],
 });
-
-class MailboxRequestError extends Error {
-  readonly status: number;
-
-  constructor(status: number) {
-    super("Mailbox request failed");
-    this.name = "MailboxRequestError";
-    this.status = status;
-  }
-}
-
-const mailboxDraftListQueryOptions = ({
-  mailboxId,
-  queryClient,
-  sessionId,
-}: {
-  readonly mailboxId: string;
-  readonly queryClient: QueryClient;
-  readonly sessionId: string;
-}) =>
-  infiniteQueryOptions({
-    queryFn: async ({ pageParam }) => {
-      const result = await listMailboxDrafts({
-        data: decodeMailboxDraftListInput({
-          mailboxId,
-          page: { cursor: pageParam, limit: 25 },
-        }),
-      });
-      if (!result.ok) {
-        if (result.status === 401) {
-          await clearCachedAuthSession(queryClient);
-        }
-        throw new MailboxRequestError(result.status);
-      }
-      return result.drafts;
-    },
-    queryKey: ["mailbox", "drafts", sessionId, mailboxId],
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    retry: false,
-    staleTime: mailboxListStaleTime,
-  });
-
-const mailboxMessageListQueryOptions = ({
-  filters,
-  mailboxId,
-  queryClient,
-  sessionId,
-  view,
-}: {
-  readonly filters: MailboxMessageQueryState;
-  readonly mailboxId: string;
-  readonly queryClient: QueryClient;
-  readonly sessionId: string;
-  readonly view: Schema.Schema.Type<typeof MailboxMessageView>;
-}) =>
-  infiniteQueryOptions({
-    queryFn: async ({ pageParam }) => {
-      const result = await listMailboxMessages({
-        data: decodeMailboxMessageListInput({
-          ...view,
-          cursor: pageParam,
-          hasAttachment: filters.hasAttachment,
-          query: filters.query,
-          read:
-            filters.read === undefined ? undefined : filters.read === "read",
-          starred: filters.starred,
-        }),
-      });
-      await handleMailboxReadDenial(queryClient, result);
-      if (!result.ok) {
-        throw new MailboxRequestError(result.status);
-      }
-      return result.messages;
-    },
-    queryKey: [
-      "mailbox",
-      "messages",
-      sessionId,
-      mailboxId,
-      view._tag,
-      view._tag === "Folder" ? view.folderId : view.labelId,
-      filters.query,
-      filters.read,
-      filters.starred,
-      filters.hasAttachment,
-    ],
-    initialPageParam: undefined as string | undefined,
-    getNextPageParam: (lastPage) => lastPage.nextCursor,
-    retry: false,
-    staleTime: mailboxListStaleTime,
-  });
 
 const inboxSearchFor = (
   selection: MailboxViewSelection,
@@ -474,6 +404,45 @@ const resolveNavigationSelection = (
 };
 
 export const Route = createFileRoute("/inbox")({
+  beforeLoad: ({ search }) => {
+    const routeSearch = mailboxRouteSearch(search);
+    if (search.draft !== undefined) {
+      throw redirect({
+        params: { draftId: search.draft },
+        replace: true,
+        search: routeSearch,
+        to: "/mail/drafts/$draftId",
+      });
+    }
+    if (search.compose === "true") {
+      throw redirect({
+        replace: true,
+        search: routeSearch,
+        to: "/mail/compose",
+      });
+    }
+    if (search.label !== undefined) {
+      throw redirect({
+        params: { labelId: search.label },
+        replace: true,
+        search: routeSearch,
+        to: "/mail/labels/$labelId",
+      });
+    }
+    const folderId = search.folder ?? "inbox";
+    throw isSystemFolderId(folderId)
+      ? redirect({
+          replace: true,
+          search: routeSearch,
+          to: systemFolderPath(folderId as SystemFolderId),
+        })
+      : redirect({
+          params: { folderId },
+          replace: true,
+          search: routeSearch,
+          to: "/mail/folders/$folderId",
+        });
+  },
   component: InboxRoute,
   validateSearch: decodeInboxSearch,
 });
@@ -653,7 +622,7 @@ function ConversationPane({
   readonly sessionId: string;
   readonly threadId?: string;
 }) {
-  const navigate = useNavigate();
+  const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
   const [replyFailure, setReplyFailure] = useState<{
     readonly command: Schema.Schema.Type<typeof CreateMailboxReplyDraftCommand>;
@@ -815,7 +784,7 @@ function DraftListWorkspace({
   readonly mailboxId: string;
   readonly sessionId: string;
 }) {
-  const navigate = useNavigate();
+  const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
   const drafts = useInfiniteQuery(
     mailboxDraftListQueryOptions({ mailboxId, queryClient, sessionId })
@@ -887,7 +856,7 @@ function MailboxWorkspace({
   readonly trashFolderId?: string;
   readonly threadId?: string;
 }) {
-  const navigate = useNavigate();
+  const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
   const pendingMessageLocks = useRef(new Set<string>());
   const [actionFailures, setActionFailures] = useState<
@@ -966,7 +935,13 @@ function MailboxWorkspace({
           command,
           result.action
         );
-        void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+        void Promise.all([
+          queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
+          queryClient.invalidateQueries({ queryKey: ["mailbox", "thread"] }),
+          queryClient.invalidateQueries({
+            queryKey: mailboxNavigationQueryKey,
+          }),
+        ]);
         return;
       }
       recordActionFailure(
@@ -977,8 +952,8 @@ function MailboxWorkspace({
       );
       if (result.status === 404 || result.status === 409) {
         void Promise.all([
-          queryClient.resetQueries({ queryKey: ["mailbox", "messages"] }),
-          queryClient.resetQueries({ queryKey: ["mailbox", "thread"] }),
+          queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
+          queryClient.invalidateQueries({ queryKey: ["mailbox", "thread"] }),
           queryClient.invalidateQueries({
             queryKey: ["mailbox", "navigation"],
           }),
@@ -986,7 +961,9 @@ function MailboxWorkspace({
         return;
       }
       if (result.status !== 403) {
-        void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+        void queryClient.invalidateQueries({
+          queryKey: ["mailbox", "messages"],
+        });
       }
     },
     onError: (_error, command) => {
@@ -995,7 +972,7 @@ function MailboxWorkspace({
         "The message action could not be completed.",
         true
       );
-      void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+      void queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] });
     },
     onSettled: (_result, _error, command) => {
       pendingMessageLocks.current.delete(command.messageId);
@@ -1372,7 +1349,11 @@ function DraftWorkspace({
         return;
       }
       setSendFailure(undefined);
-      void queryClient.invalidateQueries({ queryKey: ["mailbox"] });
+      void Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "drafts"] }),
+        queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
+        queryClient.invalidateQueries({ queryKey: mailboxNavigationQueryKey }),
+      ]);
       onSent(result.send);
     },
     retry: false,
@@ -1637,7 +1618,7 @@ function AuthenticatedInbox({
   readonly sessionId: string;
   readonly userId: string;
 }) {
-  const navigate = useNavigate();
+  const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
   const { folders, labels, mailbox } = data;
   const { selectedFolder, selectedLabel } = resolveNavigationSelection(
@@ -1841,7 +1822,7 @@ function AuthenticatedInbox({
             })
           }
           onMailboxChanged={() => {
-            void queryClient.resetQueries({
+            void queryClient.invalidateQueries({
               queryKey: ["mailbox", "messages"],
             });
             void queryClient.invalidateQueries({
@@ -1857,10 +1838,19 @@ function AuthenticatedInbox({
   );
 }
 
-// oxlint-disable-next-line eslint/complexity -- The route exhaustively selects session, authorization, navigation, and mailbox states.
 function InboxRoute() {
-  const navigate = useNavigate();
-  const search = Route.useSearch();
+  return <MailboxApplication search={Route.useSearch()} />;
+}
+
+// The same authenticated mailbox stays mounted under /mail while child paths
+// select a collection, draft, or compose workspace.
+// oxlint-disable-next-line eslint/complexity -- The route exhaustively selects session, authorization, navigation, and mailbox states.
+export function MailboxApplication({
+  search,
+}: {
+  readonly search: Schema.Schema.Type<typeof InboxSearch>;
+}) {
+  const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
   const mailboxDenial = useQuery<{ readonly status: 403 }>({
     queryFn: skipToken,

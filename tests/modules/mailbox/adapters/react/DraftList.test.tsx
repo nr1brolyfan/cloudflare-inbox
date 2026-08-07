@@ -46,7 +46,7 @@ describe(DraftList, () => {
       snippet: Boolean(screen.getByText("Local draft body")),
     }).toStrictEqual({
       attachment: true,
-      href: "/inbox?draft=draft%2Fone&folder=drafts&delivery=delivery%2Fone",
+      href: "/mail/drafts/draft%2Fone?delivery=delivery%2Fone",
       snippet: true,
     });
 

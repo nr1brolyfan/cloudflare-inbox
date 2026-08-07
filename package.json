@@ -5,9 +5,11 @@
   "imports": {
     "#/modules/account-security/adapters/react/*": "./src/modules/account-security/adapters/react/*.tsx",
     "#/modules/mailbox/adapters/react/MailboxQueryState": "./src/modules/mailbox/adapters/react/MailboxQueryState.ts",
+    "#/modules/mailbox/adapters/react/MailboxRouting": "./src/modules/mailbox/adapters/react/MailboxRouting.ts",
     "#/modules/mailbox/adapters/react/MailboxViewLinks": "./src/modules/mailbox/adapters/react/MailboxViewLinks.ts",
     "#/modules/mailbox/adapters/react/*": "./src/modules/mailbox/adapters/react/*.tsx",
     "#/routes/-index-owner-bootstrap": "./src/routes/-index-owner-bootstrap.tsx",
+    "#/routes/-mailbox-queries": "./src/routes/-mailbox-queries.ts",
     "#/*": "./src/*.ts"
   },
   "scripts": {

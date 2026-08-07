@@ -418,7 +418,12 @@ function Home() {
                 userId={session.data.userId}
                 sessionId={session.data.sessionId}
                 isLogoutPending={logout.isPending}
-                onMailboxFound={() => navigate({ replace: true, to: "/inbox" })}
+                onMailboxFound={() =>
+                  navigate({
+                    replace: true,
+                    to: "/mail/inbox",
+                  })
+                }
                 onLogout={() => logout.mutate()}
               />
             ) : (

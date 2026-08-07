@@ -107,9 +107,9 @@ describe(MailboxShell, () => {
         .getAllByRole("link", { name: /Drafts/u })[0]
         ?.getAttribute("title"),
     }).toStrictEqual({
-      archiveHref: "/inbox?folder=archive&delivery=delivery-1",
+      archiveHref: "/mail/archive?delivery=delivery-1",
       badge: true,
-      labelHref: "/inbox?label=label-work&delivery=delivery-1",
+      labelHref: "/mail/labels/label-work?delivery=delivery-1",
       title: "3 drafts",
     });
 

@@ -9,9 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as MailRouteImport } from './routes/mail'
 import { Route as InboxRouteImport } from './routes/inbox'
 import { Route as DevEmailInboxRouteImport } from './routes/dev-email-inbox'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MailIndexRouteImport } from './routes/mail.index'
+import { Route as MailTrashRouteImport } from './routes/mail.trash'
+import { Route as MailSpamRouteImport } from './routes/mail.spam'
+import { Route as MailSentRouteImport } from './routes/mail.sent'
+import { Route as MailScheduledRouteImport } from './routes/mail.scheduled'
+import { Route as MailInboxRouteImport } from './routes/mail.inbox'
+import { Route as MailDraftsRouteImport } from './routes/mail.drafts'
+import { Route as MailComposeRouteImport } from './routes/mail.compose'
+import { Route as MailArchiveRouteImport } from './routes/mail.archive'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
 import { Route as AuthCompletePasswordResetRouteImport } from './routes/auth-complete/password-reset'
 import { Route as AuthCompleteMagicLinkRouteImport } from './routes/auth-complete/magic-link'
@@ -19,11 +29,19 @@ import { Route as AuthCompleteExternalRecoveryIdentityRouteImport } from './rout
 import { Route as AuthCompleteEmailVerificationRouteImport } from './routes/auth-complete/email-verification'
 import { Route as AuthCompleteAccountRecoveryRouteImport } from './routes/auth-complete/account-recovery'
 import { Route as ApiHealthRouteImport } from './routes/api/health'
+import { Route as MailLabelsLabelIdRouteImport } from './routes/mail.labels.$labelId'
+import { Route as MailFoldersFolderIdRouteImport } from './routes/mail.folders.$folderId'
+import { Route as MailDraftsDraftIdRouteImport } from './routes/mail.drafts.$draftId'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/html'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
 import { Route as ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRouteImport } from './routes/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
 
+const MailRoute = MailRouteImport.update({
+  id: '/mail',
+  path: '/mail',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InboxRoute = InboxRouteImport.update({
   id: '/inbox',
   path: '/inbox',
@@ -38,6 +56,51 @@ const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
+} as any)
+const MailIndexRoute = MailIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailTrashRoute = MailTrashRouteImport.update({
+  id: '/trash',
+  path: '/trash',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailSpamRoute = MailSpamRouteImport.update({
+  id: '/spam',
+  path: '/spam',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailSentRoute = MailSentRouteImport.update({
+  id: '/sent',
+  path: '/sent',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailScheduledRoute = MailScheduledRouteImport.update({
+  id: '/scheduled',
+  path: '/scheduled',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailInboxRoute = MailInboxRouteImport.update({
+  id: '/inbox',
+  path: '/inbox',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailDraftsRoute = MailDraftsRouteImport.update({
+  id: '/drafts',
+  path: '/drafts',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailComposeRoute = MailComposeRouteImport.update({
+  id: '/compose',
+  path: '/compose',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailArchiveRoute = MailArchiveRouteImport.update({
+  id: '/archive',
+  path: '/archive',
+  getParentRoute: () => MailRoute,
 } as any)
 const AuthSplatRoute = AuthSplatRouteImport.update({
   id: '/auth/$',
@@ -78,6 +141,21 @@ const ApiHealthRoute = ApiHealthRouteImport.update({
   path: '/api/health',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MailLabelsLabelIdRoute = MailLabelsLabelIdRouteImport.update({
+  id: '/labels/$labelId',
+  path: '/labels/$labelId',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailFoldersFolderIdRoute = MailFoldersFolderIdRouteImport.update({
+  id: '/folders/$folderId',
+  path: '/folders/$folderId',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailDraftsDraftIdRoute = MailDraftsDraftIdRouteImport.update({
+  id: '/$draftId',
+  path: '/$draftId',
+  getParentRoute: () => MailDraftsRoute,
+} as any)
 const ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute =
   ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport.update({
     id: '/api/mailboxes/$mailboxId/messages/$messageId/html',
@@ -113,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/dev-email-inbox': typeof DevEmailInboxRoute
   '/inbox': typeof InboxRoute
+  '/mail': typeof MailRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/auth-complete/account-recovery': typeof AuthCompleteAccountRecoveryRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
@@ -120,6 +199,18 @@ export interface FileRoutesByFullPath {
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
+  '/mail/archive': typeof MailArchiveRoute
+  '/mail/compose': typeof MailComposeRoute
+  '/mail/drafts': typeof MailDraftsRouteWithChildren
+  '/mail/inbox': typeof MailInboxRoute
+  '/mail/scheduled': typeof MailScheduledRoute
+  '/mail/sent': typeof MailSentRoute
+  '/mail/spam': typeof MailSpamRoute
+  '/mail/trash': typeof MailTrashRoute
+  '/mail/': typeof MailIndexRoute
+  '/mail/drafts/$draftId': typeof MailDraftsDraftIdRoute
+  '/mail/folders/$folderId': typeof MailFoldersFolderIdRoute
+  '/mail/labels/$labelId': typeof MailLabelsLabelIdRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
@@ -136,6 +227,18 @@ export interface FileRoutesByTo {
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
+  '/mail/archive': typeof MailArchiveRoute
+  '/mail/compose': typeof MailComposeRoute
+  '/mail/drafts': typeof MailDraftsRouteWithChildren
+  '/mail/inbox': typeof MailInboxRoute
+  '/mail/scheduled': typeof MailScheduledRoute
+  '/mail/sent': typeof MailSentRoute
+  '/mail/spam': typeof MailSpamRoute
+  '/mail/trash': typeof MailTrashRoute
+  '/mail': typeof MailIndexRoute
+  '/mail/drafts/$draftId': typeof MailDraftsDraftIdRoute
+  '/mail/folders/$folderId': typeof MailFoldersFolderIdRoute
+  '/mail/labels/$labelId': typeof MailLabelsLabelIdRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
@@ -146,6 +249,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/dev-email-inbox': typeof DevEmailInboxRoute
   '/inbox': typeof InboxRoute
+  '/mail': typeof MailRouteWithChildren
   '/api/health': typeof ApiHealthRoute
   '/auth-complete/account-recovery': typeof AuthCompleteAccountRecoveryRoute
   '/auth-complete/email-verification': typeof AuthCompleteEmailVerificationRoute
@@ -153,6 +257,18 @@ export interface FileRoutesById {
   '/auth-complete/magic-link': typeof AuthCompleteMagicLinkRoute
   '/auth-complete/password-reset': typeof AuthCompletePasswordResetRoute
   '/auth/$': typeof AuthSplatRoute
+  '/mail/archive': typeof MailArchiveRoute
+  '/mail/compose': typeof MailComposeRoute
+  '/mail/drafts': typeof MailDraftsRouteWithChildren
+  '/mail/inbox': typeof MailInboxRoute
+  '/mail/scheduled': typeof MailScheduledRoute
+  '/mail/sent': typeof MailSentRoute
+  '/mail/spam': typeof MailSpamRoute
+  '/mail/trash': typeof MailTrashRoute
+  '/mail/': typeof MailIndexRoute
+  '/mail/drafts/$draftId': typeof MailDraftsDraftIdRoute
+  '/mail/folders/$folderId': typeof MailFoldersFolderIdRoute
+  '/mail/labels/$labelId': typeof MailLabelsLabelIdRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
@@ -164,6 +280,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dev-email-inbox'
     | '/inbox'
+    | '/mail'
     | '/api/health'
     | '/auth-complete/account-recovery'
     | '/auth-complete/email-verification'
@@ -171,6 +288,18 @@ export interface FileRouteTypes {
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
+    | '/mail/archive'
+    | '/mail/compose'
+    | '/mail/drafts'
+    | '/mail/inbox'
+    | '/mail/scheduled'
+    | '/mail/sent'
+    | '/mail/spam'
+    | '/mail/trash'
+    | '/mail/'
+    | '/mail/drafts/$draftId'
+    | '/mail/folders/$folderId'
+    | '/mail/labels/$labelId'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
@@ -187,6 +316,18 @@ export interface FileRouteTypes {
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
+    | '/mail/archive'
+    | '/mail/compose'
+    | '/mail/drafts'
+    | '/mail/inbox'
+    | '/mail/scheduled'
+    | '/mail/sent'
+    | '/mail/spam'
+    | '/mail/trash'
+    | '/mail'
+    | '/mail/drafts/$draftId'
+    | '/mail/folders/$folderId'
+    | '/mail/labels/$labelId'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
@@ -196,6 +337,7 @@ export interface FileRouteTypes {
     | '/'
     | '/dev-email-inbox'
     | '/inbox'
+    | '/mail'
     | '/api/health'
     | '/auth-complete/account-recovery'
     | '/auth-complete/email-verification'
@@ -203,6 +345,18 @@ export interface FileRouteTypes {
     | '/auth-complete/magic-link'
     | '/auth-complete/password-reset'
     | '/auth/$'
+    | '/mail/archive'
+    | '/mail/compose'
+    | '/mail/drafts'
+    | '/mail/inbox'
+    | '/mail/scheduled'
+    | '/mail/sent'
+    | '/mail/spam'
+    | '/mail/trash'
+    | '/mail/'
+    | '/mail/drafts/$draftId'
+    | '/mail/folders/$folderId'
+    | '/mail/labels/$labelId'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
@@ -213,6 +367,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   DevEmailInboxRoute: typeof DevEmailInboxRoute
   InboxRoute: typeof InboxRoute
+  MailRoute: typeof MailRouteWithChildren
   ApiHealthRoute: typeof ApiHealthRoute
   AuthCompleteAccountRecoveryRoute: typeof AuthCompleteAccountRecoveryRoute
   AuthCompleteEmailVerificationRoute: typeof AuthCompleteEmailVerificationRoute
@@ -228,6 +383,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/mail': {
+      id: '/mail'
+      path: '/mail'
+      fullPath: '/mail'
+      preLoaderRoute: typeof MailRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/inbox': {
       id: '/inbox'
       path: '/inbox'
@@ -248,6 +410,69 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/mail/': {
+      id: '/mail/'
+      path: '/'
+      fullPath: '/mail/'
+      preLoaderRoute: typeof MailIndexRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/trash': {
+      id: '/mail/trash'
+      path: '/trash'
+      fullPath: '/mail/trash'
+      preLoaderRoute: typeof MailTrashRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/spam': {
+      id: '/mail/spam'
+      path: '/spam'
+      fullPath: '/mail/spam'
+      preLoaderRoute: typeof MailSpamRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/sent': {
+      id: '/mail/sent'
+      path: '/sent'
+      fullPath: '/mail/sent'
+      preLoaderRoute: typeof MailSentRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/scheduled': {
+      id: '/mail/scheduled'
+      path: '/scheduled'
+      fullPath: '/mail/scheduled'
+      preLoaderRoute: typeof MailScheduledRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/inbox': {
+      id: '/mail/inbox'
+      path: '/inbox'
+      fullPath: '/mail/inbox'
+      preLoaderRoute: typeof MailInboxRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/drafts': {
+      id: '/mail/drafts'
+      path: '/drafts'
+      fullPath: '/mail/drafts'
+      preLoaderRoute: typeof MailDraftsRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/compose': {
+      id: '/mail/compose'
+      path: '/compose'
+      fullPath: '/mail/compose'
+      preLoaderRoute: typeof MailComposeRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/archive': {
+      id: '/mail/archive'
+      path: '/archive'
+      fullPath: '/mail/archive'
+      preLoaderRoute: typeof MailArchiveRouteImport
+      parentRoute: typeof MailRoute
     }
     '/auth/$': {
       id: '/auth/$'
@@ -298,6 +523,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiHealthRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/mail/labels/$labelId': {
+      id: '/mail/labels/$labelId'
+      path: '/labels/$labelId'
+      fullPath: '/mail/labels/$labelId'
+      preLoaderRoute: typeof MailLabelsLabelIdRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/folders/$folderId': {
+      id: '/mail/folders/$folderId'
+      path: '/folders/$folderId'
+      fullPath: '/mail/folders/$folderId'
+      preLoaderRoute: typeof MailFoldersFolderIdRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/drafts/$draftId': {
+      id: '/mail/drafts/$draftId'
+      path: '/$draftId'
+      fullPath: '/mail/drafts/$draftId'
+      preLoaderRoute: typeof MailDraftsDraftIdRouteImport
+      parentRoute: typeof MailDraftsRoute
+    }
     '/api/mailboxes/$mailboxId/messages/$messageId/html': {
       id: '/api/mailboxes/$mailboxId/messages/$messageId/html'
       path: '/api/mailboxes/$mailboxId/messages/$messageId/html'
@@ -329,10 +575,53 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface MailDraftsRouteChildren {
+  MailDraftsDraftIdRoute: typeof MailDraftsDraftIdRoute
+}
+
+const MailDraftsRouteChildren: MailDraftsRouteChildren = {
+  MailDraftsDraftIdRoute: MailDraftsDraftIdRoute,
+}
+
+const MailDraftsRouteWithChildren = MailDraftsRoute._addFileChildren(
+  MailDraftsRouteChildren,
+)
+
+interface MailRouteChildren {
+  MailArchiveRoute: typeof MailArchiveRoute
+  MailComposeRoute: typeof MailComposeRoute
+  MailDraftsRoute: typeof MailDraftsRouteWithChildren
+  MailInboxRoute: typeof MailInboxRoute
+  MailScheduledRoute: typeof MailScheduledRoute
+  MailSentRoute: typeof MailSentRoute
+  MailSpamRoute: typeof MailSpamRoute
+  MailTrashRoute: typeof MailTrashRoute
+  MailIndexRoute: typeof MailIndexRoute
+  MailFoldersFolderIdRoute: typeof MailFoldersFolderIdRoute
+  MailLabelsLabelIdRoute: typeof MailLabelsLabelIdRoute
+}
+
+const MailRouteChildren: MailRouteChildren = {
+  MailArchiveRoute: MailArchiveRoute,
+  MailComposeRoute: MailComposeRoute,
+  MailDraftsRoute: MailDraftsRouteWithChildren,
+  MailInboxRoute: MailInboxRoute,
+  MailScheduledRoute: MailScheduledRoute,
+  MailSentRoute: MailSentRoute,
+  MailSpamRoute: MailSpamRoute,
+  MailTrashRoute: MailTrashRoute,
+  MailIndexRoute: MailIndexRoute,
+  MailFoldersFolderIdRoute: MailFoldersFolderIdRoute,
+  MailLabelsLabelIdRoute: MailLabelsLabelIdRoute,
+}
+
+const MailRouteWithChildren = MailRoute._addFileChildren(MailRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   DevEmailInboxRoute: DevEmailInboxRoute,
   InboxRoute: InboxRoute,
+  MailRoute: MailRouteWithChildren,
   ApiHealthRoute: ApiHealthRoute,
   AuthCompleteAccountRecoveryRoute: AuthCompleteAccountRecoveryRoute,
   AuthCompleteEmailVerificationRoute: AuthCompleteEmailVerificationRoute,

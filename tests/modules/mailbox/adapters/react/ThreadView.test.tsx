@@ -101,7 +101,7 @@ describe(ThreadView, () => {
       screen
         .getByRole("link", { name: "Close conversation" })
         .getAttribute("href")
-    ).toBe("/inbox?label=work&read=unread&delivery=delivery-1");
+    ).toBe("/mail/labels/work?read=unread&delivery=delivery-1");
   });
 
   it("closes a conversation without a document navigation", () => {

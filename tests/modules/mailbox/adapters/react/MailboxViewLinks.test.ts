@@ -16,7 +16,7 @@ describe(mailboxViewHref, () => {
         starred: true,
       })
     ).toBe(
-      "/inbox?folder=inbox&thread=thread-1&message=message-1&q=invoice&read=unread&starred=true&attachment=true&delivery=delivery-1"
+      "/mail/inbox?message=message-1&thread=thread-1&q=invoice&read=unread&starred=true&attachment=true&delivery=delivery-1"
     );
   });
 });
@@ -24,7 +24,7 @@ describe(mailboxViewHref, () => {
 describe(mailboxDraftHref, () => {
   it("opens a draft in its folder and preserves delivery tracking", () => {
     expect(mailboxDraftHref("drafts", "draft/one", "delivery/one")).toBe(
-      "/inbox?draft=draft%2Fone&folder=drafts&delivery=delivery%2Fone"
+      "/mail/drafts/draft%2Fone?delivery=delivery%2Fone"
     );
   });
 });

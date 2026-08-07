@@ -1,3 +1,8 @@
+import {
+  decodeMailboxSearch,
+  mailboxHref,
+} from "#/modules/mailbox/adapters/react/MailboxRouting";
+
 export interface MailboxViewSelection {
   readonly folder?: string;
   readonly label?: string;
@@ -11,55 +16,38 @@ export interface MailboxMessageQueryState {
   readonly starred?: boolean;
 }
 
-/** Builds one encoded inbox URL while preserving its folder or label context. */
+/** Builds one canonical mailbox URL while preserving its folder or label context. */
 export const mailboxViewHref = (
   selection: MailboxViewSelection,
   threadId?: string,
   messageId?: string,
   state: MailboxMessageQueryState = {}
-) => {
-  const query = new URLSearchParams();
-  if (selection.folder !== undefined) {
-    query.set("folder", selection.folder);
-  }
-  if (selection.label !== undefined) {
-    query.set("label", selection.label);
-  }
-  if (threadId !== undefined) {
-    query.set("thread", threadId);
-  }
-  if (messageId !== undefined) {
-    query.set("message", messageId);
-  }
-  if (state.query !== undefined) {
-    query.set("q", state.query);
-  }
-  if (state.read !== undefined) {
-    query.set("read", state.read);
-  }
-  if (state.starred) {
-    query.set("starred", "true");
-  }
-  if (state.hasAttachment) {
-    query.set("attachment", "true");
-  }
-  if (state.delivery !== undefined) {
-    query.set("delivery", state.delivery);
-  }
-  return `/inbox?${query.toString()}`;
-};
+) =>
+  mailboxHref(
+    decodeMailboxSearch({
+      ...selection,
+      attachment: state.hasAttachment ? "true" : undefined,
+      delivery: state.delivery,
+      message: messageId,
+      q: state.query,
+      read: state.read,
+      starred: state.starred ? "true" : undefined,
+      thread: threadId,
+    })
+  );
 
 export const mailboxDraftHref = (
   folderId: string,
   draftId: string,
   deliveryId?: string
-) => {
-  const query = new URLSearchParams({ draft: draftId, folder: folderId });
-  if (deliveryId !== undefined) {
-    query.set("delivery", deliveryId);
-  }
-  return `/inbox?${query.toString()}`;
-};
+) =>
+  mailboxHref(
+    decodeMailboxSearch({
+      draft: draftId,
+      delivery: deliveryId,
+      folder: folderId,
+    })
+  );
 
 export const mailboxMessageHtmlHref = (
   mailboxId: string,

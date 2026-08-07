@@ -76,8 +76,8 @@ describe(MessageList, () => {
       "First: First subject",
     ]);
     expect(links.map((link) => link.getAttribute("href"))).toStrictEqual([
-      "/inbox?folder=inbox&thread=thread-shared&message=message-b&q=invoice&starred=true&delivery=delivery-1",
-      "/inbox?folder=inbox&thread=thread-shared&message=message-a&q=invoice&starred=true&delivery=delivery-1",
+      "/mail/inbox?message=message-b&thread=thread-shared&q=invoice&starred=true&delivery=delivery-1",
+      "/mail/inbox?message=message-a&thread=thread-shared&q=invoice&starred=true&delivery=delivery-1",
     ]);
     expect(links).toHaveLength(2);
     fireEvent.click(
@@ -325,6 +325,7 @@ describe(MessageList, () => {
   });
 
   it("keeps the count anchored while refresh state changes", () => {
+    const onRefresh = vi.fn<() => void>();
     const props = {
       data: messages,
       filters: {},
@@ -337,17 +338,25 @@ describe(MessageList, () => {
         >(),
       onOpenMessage: vi.fn<(threadId: string, messageId: string) => void>(),
       onQueryChange: vi.fn<(state: MailboxMessageQueryState) => void>(),
+      onRetryRefresh: onRefresh,
       selection: { folder: "inbox" } as const,
     };
     const view = render(<MessageList {...props} />);
     const refreshSlot = screen.getByRole("status");
     const count = refreshSlot.nextElementSibling;
 
-    expect(refreshSlot.className).toContain("size-3.5");
     expect(count?.textContent).toBe("2");
+    fireEvent.click(screen.getByRole("button", { name: "Refresh messages" }));
+    expect(onRefresh).toHaveBeenCalledOnce();
     view.rerender(<MessageList {...props} isRefreshing />);
-    expect(screen.getByRole("status")).toBe(refreshSlot);
     expect(screen.getByText("Refreshing messages")).toBeTruthy();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Refresh messages",
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBeTruthy();
     expect(refreshSlot.nextElementSibling).toBe(count);
   });
 });

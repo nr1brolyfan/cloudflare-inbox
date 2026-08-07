@@ -8,6 +8,7 @@ import {
   Mail,
   MailOpen,
   Paperclip,
+  RefreshCw,
   Search,
   Star,
   Trash2,
@@ -303,6 +304,17 @@ export function MessageList({
             Messages
           </p>
           <div className="flex shrink-0 items-center gap-2">
+            {onRetryRefresh === undefined ? null : (
+              <button
+                type="button"
+                aria-label="Refresh messages"
+                disabled={isRefreshing}
+                onClick={onRetryRefresh}
+                className="inline-flex size-7 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-white/70 hover:text-[var(--sea-ink)] disabled:cursor-wait disabled:opacity-50"
+              >
+                <RefreshCw aria-hidden="true" size={14} />
+              </button>
+            )}
             <output className="inline-flex size-3.5 shrink-0 items-center justify-center">
               {isRefreshing ? (
                 <>
