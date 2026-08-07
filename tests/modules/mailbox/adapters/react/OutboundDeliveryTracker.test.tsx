@@ -150,7 +150,7 @@ describe(OutboundDeliveryTracker, () => {
     );
 
     expect(onMailboxChanged).toHaveBeenCalledOnce();
-    act(() => vi.advanceTimersByTime(8000));
+    act(() => vi.advanceTimersByTime(3000));
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 

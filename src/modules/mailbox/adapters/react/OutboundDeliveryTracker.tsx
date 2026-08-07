@@ -65,7 +65,7 @@ class OutboundStatusRequestError extends Error {
 }
 
 const decodeUndoCommand = Schema.decodeUnknownSync(UndoMailboxSendCommand);
-const acceptedAutoDismissMillis = 8000;
+const acceptedAutoDismissMillis = 3000;
 
 export const outboundDeliveryQueryKey = (
   sessionId: string,
