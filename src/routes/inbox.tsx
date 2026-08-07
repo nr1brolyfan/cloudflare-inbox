@@ -1089,8 +1089,9 @@ function MailboxWorkspace({
   ) => submitMessageAction(messageActionCommand(action, mailboxId, message));
 
   return (
-    <div className="grid h-full min-h-0 lg:grid-cols-[minmax(19rem,24rem)_minmax(0,1fr)]">
+    <div className="grid h-full min-h-0 lg:grid-cols-[minmax(22rem,28rem)_minmax(0,1fr)]">
       <MessageList
+        key={JSON.stringify([selection, filters])}
         actionErrors={actionFailures.map((failure) => ({
           handleRetry: failure.retryable
             ? () => submitMessageAction(failure.command)

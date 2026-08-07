@@ -1,3 +1,6 @@
+import { Checkbox } from "@base-ui/react/checkbox";
+import { ContextMenu } from "@base-ui/react/context-menu";
+import { Menu } from "@base-ui/react/menu";
 import { Select } from "@base-ui/react/select";
 import type * as Schema from "effect/Schema";
 import {
@@ -10,6 +13,8 @@ import {
   LoaderCircle,
   Mail,
   MailOpen,
+  Minus,
+  MoreHorizontal,
   Paperclip,
   Search,
   Star,
@@ -34,6 +39,10 @@ type MessageListData = Schema.Codec.Encoded<typeof MailboxMessageListResult>;
 export type MessageListItemData = MessageListData["items"][number];
 export type MessageRowAction = "archive" | "read" | "star" | "trash";
 const noPendingMessageIds: ReadonlySet<string> = new Set();
+const menuItemClass =
+  "flex h-9 cursor-default items-center gap-2 rounded-lg px-2.5 text-xs font-bold text-[var(--sea-ink-soft)] outline-none select-none data-disabled:opacity-35 data-highlighted:bg-[var(--sand)] data-highlighted:text-[var(--sea-ink)]";
+const menuPopupClass =
+  "min-w-48 origin-[var(--transform-origin)] rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] p-1.5 text-[var(--sea-ink)] shadow-[0_14px_35px_rgba(0,0,0,0.22)] transition-[transform,opacity] duration-150 outline-none data-ending-style:scale-95 data-ending-style:opacity-0 data-starting-style:scale-95 data-starting-style:opacity-0";
 const readFilterItems = [
   { label: "Any status", value: "any" },
   { label: "Unread", value: "unread" },
@@ -221,10 +230,113 @@ function MessageSearchControls({
   );
 }
 
-function MessageActionButtons({
+function MessageCheckbox({
+  checked,
+  disabled = false,
+  indeterminate = false,
+  label,
+  onCheckedChange,
+}: {
+  readonly checked: boolean;
+  readonly disabled?: boolean;
+  readonly indeterminate?: boolean;
+  readonly label: string;
+  readonly onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <Checkbox.Root
+      aria-label={label}
+      checked={checked}
+      disabled={disabled}
+      indeterminate={indeterminate}
+      onCheckedChange={onCheckedChange}
+      className="group/checkbox flex size-8 shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-[var(--lagoon)]/35 data-disabled:cursor-default data-disabled:opacity-35"
+    >
+      <Checkbox.Indicator
+        keepMounted
+        className="flex size-4 items-center justify-center rounded-[0.3rem] border border-[var(--line)] bg-[var(--control-bg)] text-transparent transition-colors group-data-checked/checkbox:border-[var(--lagoon-deep)] group-data-checked/checkbox:bg-[var(--lagoon-deep)] group-data-checked/checkbox:text-[var(--surface)] group-data-indeterminate/checkbox:border-[var(--lagoon-deep)] group-data-indeterminate/checkbox:bg-[var(--lagoon-deep)] group-data-indeterminate/checkbox:text-[var(--surface)]"
+      >
+        {indeterminate ? (
+          <Minus aria-hidden="true" size={11} strokeWidth={3} />
+        ) : (
+          <Check aria-hidden="true" size={11} strokeWidth={3} />
+        )}
+      </Checkbox.Indicator>
+    </Checkbox.Root>
+  );
+}
+
+function MessageMenuItems({
   archiveFolderId,
   message,
   onAction,
+  onOpen,
+  pending,
+  trashFolderId,
+  type,
+}: {
+  readonly archiveFolderId?: string;
+  readonly message: MessageListItemData;
+  readonly onAction: (
+    action: MessageRowAction,
+    message: MessageListItemData
+  ) => void;
+  readonly onOpen: () => void;
+  readonly pending: boolean;
+  readonly trashFolderId?: string;
+  readonly type: "context" | "menu";
+}) {
+  const Item = type === "context" ? ContextMenu.Item : Menu.Item;
+  const Separator = type === "context" ? ContextMenu.Separator : Menu.Separator;
+  return (
+    <>
+      <Item className={menuItemClass} onClick={onOpen}>
+        <MailOpen size={14} />
+        Open message
+      </Item>
+      <Separator className="my-1 h-px bg-[var(--line)]" />
+      <Item
+        className={menuItemClass}
+        disabled={pending}
+        onClick={() => onAction("read", message)}
+      >
+        {message.read ? <Mail size={14} /> : <MailOpen size={14} />}
+        {message.read ? "Mark unread" : "Mark read"}
+      </Item>
+      <Item
+        className={menuItemClass}
+        disabled={pending}
+        onClick={() => onAction("star", message)}
+      >
+        <Star size={14} fill={message.starred ? "currentColor" : "none"} />
+        {message.starred ? "Remove star" : "Add star"}
+      </Item>
+      <Separator className="my-1 h-px bg-[var(--line)]" />
+      <Item
+        className={menuItemClass}
+        disabled={pending || message.folderId === archiveFolderId}
+        onClick={() => onAction("archive", message)}
+      >
+        <Archive size={14} />
+        Archive
+      </Item>
+      <Item
+        className={`${menuItemClass} data-highlighted:bg-[var(--danger-bg)] data-highlighted:text-[var(--danger-fg)]`}
+        disabled={pending || message.folderId === trashFolderId}
+        onClick={() => onAction("trash", message)}
+      >
+        <Trash2 size={14} />
+        Move to trash
+      </Item>
+    </>
+  );
+}
+
+function MessageOverflowMenu({
+  archiveFolderId,
+  message,
+  onAction,
+  onOpen,
   pending,
   trashFolderId,
 }: {
@@ -234,59 +346,38 @@ function MessageActionButtons({
     action: MessageRowAction,
     message: MessageListItemData
   ) => void;
+  readonly onOpen: () => void;
   readonly pending: boolean;
   readonly trashFolderId?: string;
 }) {
   return (
-    <div className="flex items-center justify-end gap-1 border-t border-[var(--line)]/70 px-3 py-1.5">
-      {pending ? (
-        <LoaderCircle
-          aria-label="Updating message"
-          className="mr-auto animate-spin text-[var(--sea-ink-soft)]"
-          size={14}
-        />
-      ) : null}
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={pending}
-        onClick={() => onAction("read", message)}
-        aria-label={message.read ? "Mark unread" : "Mark read"}
-        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-40"
+    <Menu.Root>
+      <Menu.Trigger
+        aria-label="Message actions"
+        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] outline-none hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] focus-visible:ring-2 focus-visible:ring-[var(--lagoon)]/35 data-popup-open:bg-[var(--foam)] data-popup-open:text-[var(--sea-ink)]"
       >
-        {message.read ? <Mail size={14} /> : <MailOpen size={14} />}
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={pending}
-        onClick={() => onAction("star", message)}
-        aria-label={message.starred ? "Remove star" : "Add star"}
-        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--palm)] disabled:opacity-40"
-      >
-        <Star size={14} fill={message.starred ? "currentColor" : "none"} />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={pending || message.folderId === archiveFolderId}
-        onClick={() => onAction("archive", message)}
-        aria-label="Archive message"
-        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-30"
-      >
-        <Archive size={14} />
-      </Button>
-      <Button
-        type="button"
-        variant="ghost"
-        disabled={pending || message.folderId === trashFolderId}
-        onClick={() => onAction("trash", message)}
-        aria-label="Move message to trash"
-        className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger-fg)] disabled:opacity-30"
-      >
-        <Trash2 size={14} />
-      </Button>
-    </div>
+        <MoreHorizontal size={15} />
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Positioner
+          align="end"
+          sideOffset={6}
+          className="z-50 outline-none"
+        >
+          <Menu.Popup className={menuPopupClass}>
+            <MessageMenuItems
+              archiveFolderId={archiveFolderId}
+              message={message}
+              onAction={onAction}
+              onOpen={onOpen}
+              pending={pending}
+              trashFolderId={trashFolderId}
+              type="menu"
+            />
+          </Menu.Popup>
+        </Menu.Positioner>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }
 
@@ -381,6 +472,9 @@ export function MessageList({
   readonly selection: MailboxViewSelection;
   readonly trashFolderId?: string;
 }) {
+  const [selectedMessageIds, setSelectedMessageIds] = useState<Set<string>>(
+    () => new Set()
+  );
   const hasActiveFilters = hasActiveMailboxFilters(filters);
   const { loadMoreRef, scrollContainerRef } = useInfiniteMessageScroll({
     hasNextPage: data.nextCursor !== undefined,
@@ -399,6 +493,56 @@ export function MessageList({
             text: actionError,
           },
         ]);
+  const selectedMessages = data.items.filter((message) =>
+    selectedMessageIds.has(message.id)
+  );
+  const selectedCount = selectedMessages.length;
+  const allLoadedSelected =
+    data.items.length > 0 && selectedCount === data.items.length;
+  const someLoadedSelected = selectedCount > 0 && !allLoadedSelected;
+
+  const toggleMessageSelection = (messageId: string, checked: boolean) => {
+    setSelectedMessageIds((current) => {
+      const next = new Set(current);
+      if (checked) {
+        next.add(messageId);
+      } else {
+        next.delete(messageId);
+      }
+      return next;
+    });
+  };
+  const toggleAllLoaded = (checked: boolean) =>
+    setSelectedMessageIds(
+      checked ? new Set(data.items.map((message) => message.id)) : new Set()
+    );
+  const executeBulkAction = (action: MessageRowAction) => {
+    const allInTargetState =
+      action === "read"
+        ? selectedMessages.every((message) => message.read)
+        : action === "star"
+          ? selectedMessages.every((message) => message.starred)
+          : false;
+    for (const message of selectedMessages) {
+      const pending = pendingMessageIds.has(message.id);
+      const alreadyInFolder =
+        (action === "archive" && message.folderId === archiveFolderId) ||
+        (action === "trash" && message.folderId === trashFolderId);
+      const needsToggle =
+        action === "read"
+          ? message.read === allInTargetState
+          : action === "star"
+            ? message.starred === allInTargetState
+            : true;
+      if (!pending && !alreadyInFolder && needsToggle) {
+        onMessageAction(action, message);
+      }
+    }
+  };
+  const allSelectedRead =
+    selectedCount > 0 && selectedMessages.every((message) => message.read);
+  const allSelectedStarred =
+    selectedCount > 0 && selectedMessages.every((message) => message.starred);
 
   return (
     <section
@@ -406,34 +550,134 @@ export function MessageList({
       className={`min-h-0 border-[var(--line)] bg-[var(--workspace-bg)] lg:border-r ${selectedThreadId === undefined ? "flex" : "hidden lg:flex"} flex-col`}
     >
       <div className="shrink-0 border-b border-[var(--line)] p-3 sm:p-4">
-        <div className="flex items-center justify-between px-1">
-          <p className="text-xs font-extrabold tracking-[0.12em] text-[var(--sea-ink-soft)] uppercase">
-            Messages
-          </p>
-          <div className="flex shrink-0 items-center gap-2">
-            <output className="inline-flex size-3.5 shrink-0 items-center justify-center">
-              {isRefreshing ? (
-                <>
-                  <LoaderCircle
-                    aria-hidden="true"
-                    className="animate-spin text-[var(--sea-ink-soft)]"
+        <div className="flex min-h-8 items-center gap-1">
+          <MessageCheckbox
+            checked={allLoadedSelected}
+            disabled={data.items.length === 0}
+            indeterminate={someLoadedSelected}
+            label={
+              selectedCount > 0
+                ? "Clear message selection"
+                : "Select all loaded messages"
+            }
+            onCheckedChange={toggleAllLoaded}
+          />
+          {selectedCount > 0 ? (
+            <>
+              <p className="mr-auto truncate text-xs font-extrabold text-[var(--sea-ink)]">
+                {selectedCount} selected
+              </p>
+              <div
+                aria-label="Bulk message actions"
+                className="flex shrink-0 items-center gap-0.5"
+                role="toolbar"
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => executeBulkAction("read")}
+                  aria-label={
+                    allSelectedRead
+                      ? "Mark selected unread"
+                      : "Mark selected read"
+                  }
+                  title={
+                    allSelectedRead
+                      ? "Mark selected unread"
+                      : "Mark selected read"
+                  }
+                  className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)]"
+                >
+                  {allSelectedRead ? (
+                    <Mail size={14} />
+                  ) : (
+                    <MailOpen size={14} />
+                  )}
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => executeBulkAction("star")}
+                  aria-label={
+                    allSelectedStarred
+                      ? "Remove star from selected"
+                      : "Add star to selected"
+                  }
+                  title={
+                    allSelectedStarred
+                      ? "Remove star from selected"
+                      : "Add star to selected"
+                  }
+                  className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--palm)]"
+                >
+                  <Star
                     size={14}
+                    fill={allSelectedStarred ? "currentColor" : "none"}
                   />
-                  <span className="sr-only">Refreshing messages</span>
-                </>
-              ) : null}
-            </output>
-            <span
-              aria-label={
-                isInitialLoading
-                  ? "Loading message count"
-                  : `${data.items.length} messages`
-              }
-              className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]"
-            >
-              {isInitialLoading ? "--" : data.items.length}
-            </span>
-          </div>
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => executeBulkAction("archive")}
+                  aria-label="Archive selected"
+                  title="Archive selected"
+                  className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)]"
+                >
+                  <Archive size={14} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => executeBulkAction("trash")}
+                  aria-label="Move selected to trash"
+                  title="Move selected to trash"
+                  className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger-fg)]"
+                >
+                  <Trash2 size={14} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => setSelectedMessageIds(new Set())}
+                  aria-label="Clear message selection"
+                  title="Clear selection"
+                  className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)]"
+                >
+                  <X size={14} />
+                </Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <p className="text-xs font-extrabold tracking-[0.12em] text-[var(--sea-ink-soft)] uppercase">
+                Messages
+              </p>
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                <output className="inline-flex size-3.5 shrink-0 items-center justify-center">
+                  {isRefreshing ? (
+                    <>
+                      <LoaderCircle
+                        aria-hidden="true"
+                        className="animate-spin text-[var(--sea-ink-soft)]"
+                        size={14}
+                      />
+                      <span className="sr-only">Refreshing messages</span>
+                    </>
+                  ) : null}
+                </output>
+                <span
+                  aria-label={
+                    isInitialLoading
+                      ? "Loading message count"
+                      : `${data.items.length} messages`
+                  }
+                  className="rounded-full bg-[var(--sand)] px-2.5 py-1 text-[0.65rem] font-extrabold text-[var(--palm)]"
+                >
+                  {isInitialLoading ? "--" : data.items.length}
+                </span>
+              </div>
+            </>
+          )}
         </div>
         <MessageSearchControls
           key={`${filters.query ?? ""}:${filters.read ?? ""}:${filters.starred === true}:${filters.hasAttachment === true}`}
@@ -497,8 +741,11 @@ export function MessageList({
           </div>
         ) : (
           <div className="space-y-1">
+            {/* oxlint-disable-next-line eslint/complexity -- A row renders independent message states and controls. */}
             {data.items.map((message) => {
               const selected = message.threadId === selectedThreadId;
+              const checked = selectedMessageIds.has(message.id);
+              const pending = pendingMessageIds.has(message.id);
               const correspondent =
                 message.direction === "inbound"
                   ? message.sender === undefined
@@ -507,101 +754,219 @@ export function MessageList({
                   : `To ${message.recipients[0] === undefined ? "undisclosed recipients" : addressName(message.recipients[0])}`;
 
               return (
-                <article
-                  key={message.id}
-                  className={`mail-list-item overflow-hidden rounded-2xl border ${
-                    selected
-                      ? "border-[var(--lagoon)] bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-[0_9px_24px_rgba(23,58,64,0.09)] hover:text-[var(--sea-ink)]"
-                      : "border-transparent text-[var(--sea-ink)] hover:border-[var(--line)] hover:bg-[var(--control-bg)] hover:text-[var(--sea-ink)]"
-                  }`}
-                >
-                  <a
-                    href={mailboxViewHref(
-                      selection,
-                      message.threadId,
-                      message.id,
-                      filters
-                    )}
-                    aria-label={`${correspondent}: ${message.subject || "No subject"}`}
-                    aria-current={selected ? "page" : undefined}
-                    onClick={(event) => {
-                      if (
-                        event.button === 0 &&
-                        !event.altKey &&
-                        !event.ctrlKey &&
-                        !event.metaKey &&
-                        !event.shiftKey
-                      ) {
-                        event.preventDefault();
-                        onOpenMessage(message.threadId, message.id);
-                      }
-                    }}
-                    className="block px-4 py-3.5 text-inherit no-underline hover:text-inherit sm:px-5"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`size-2 shrink-0 rounded-full ${message.read ? "bg-transparent" : "bg-[var(--lagoon-deep)]"}`}
+                <ContextMenu.Root key={message.id}>
+                  <ContextMenu.Trigger
+                    render={
+                      <article
+                        className={`group mail-list-item rounded-2xl border ${
+                          selected || checked
+                            ? "border-[var(--lagoon)] bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-[0_9px_24px_rgba(23,58,64,0.09)] hover:text-[var(--sea-ink)]"
+                            : "border-transparent text-[var(--sea-ink)] hover:border-[var(--line)] hover:bg-[var(--control-bg)] hover:text-[var(--sea-ink)]"
+                        }`}
                       />
-                      <span
-                        className={`min-w-0 flex-1 truncate text-sm ${message.read ? "font-bold" : "font-extrabold"}`}
+                    }
+                  >
+                    <div className="flex min-w-0 items-start gap-0.5 px-2 py-2 sm:px-3">
+                      <MessageCheckbox
+                        checked={checked}
+                        disabled={pending}
+                        label={`Select ${correspondent}: ${message.subject || "No subject"}`}
+                        onCheckedChange={(nextChecked) =>
+                          toggleMessageSelection(message.id, nextChecked)
+                        }
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        disabled={pending}
+                        onClick={() => onMessageAction("star", message)}
+                        aria-label={
+                          message.starred ? "Remove star" : "Add star"
+                        }
+                        title={message.starred ? "Remove star" : "Add star"}
+                        className="flex size-8 shrink-0 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--palm)] disabled:opacity-35"
                       >
-                        {correspondent}
-                      </span>
-                      <span className="shrink-0 text-[0.65rem] font-bold text-[var(--sea-ink-soft)]">
-                        {messageDate.format(new Date(message.activityAt))}
-                      </span>
-                    </div>
-                    <div className="mt-2 pl-4">
-                      <div className="flex items-center gap-2">
-                        {message.direction === "inbound" ? (
-                          <ArrowDownLeft
-                            aria-label="Received"
-                            size={13}
-                            className="shrink-0 text-[var(--palm)]"
-                          />
-                        ) : (
-                          <ArrowUpRight
-                            aria-label="Sent"
-                            size={13}
-                            className="shrink-0 text-[var(--lagoon-deep)]"
-                          />
+                        <Star
+                          size={14}
+                          fill={message.starred ? "currentColor" : "none"}
+                        />
+                      </Button>
+                      <a
+                        href={mailboxViewHref(
+                          selection,
+                          message.threadId,
+                          message.id,
+                          filters
                         )}
-                        <span className="flex min-w-0 items-baseline gap-1">
+                        aria-label={`${correspondent}: ${message.subject || "No subject"}`}
+                        aria-current={selected ? "page" : undefined}
+                        onClick={(event) => {
+                          if (
+                            event.button === 0 &&
+                            !event.altKey &&
+                            !event.ctrlKey &&
+                            !event.metaKey &&
+                            !event.shiftKey
+                          ) {
+                            event.preventDefault();
+                            onOpenMessage(message.threadId, message.id);
+                          }
+                        }}
+                        className="min-w-0 flex-1 py-1 text-inherit no-underline outline-none hover:text-inherit focus-visible:text-[var(--lagoon-deep)]"
+                      >
+                        <div className="flex items-center gap-2">
                           <span
-                            className={`truncate text-sm ${message.read ? "font-semibold" : "font-extrabold"}`}
-                          >
-                            {message.subject || "(No subject)"}
-                          </span>
-                          {(message.threadMessageCount ?? 1) > 1 ? (
-                            <span
-                              aria-label={`${message.threadMessageCount ?? 1} messages in conversation`}
-                              className="shrink-0 text-sm font-extrabold text-[var(--sea-ink-soft)]"
-                            >
-                              ({message.threadMessageCount ?? 1})
-                            </span>
-                          ) : null}
-                        </span>
-                        {message.hasAttachments ? (
-                          <Paperclip
-                            aria-label="Has attachments"
-                            className="ml-auto shrink-0 text-[var(--sea-ink-soft)]"
-                            size={14}
+                            className={`size-2 shrink-0 rounded-full ${message.read ? "bg-transparent" : "bg-[var(--lagoon-deep)]"}`}
                           />
-                        ) : null}
+                          <span
+                            className={`min-w-0 flex-1 truncate text-sm ${message.read ? "font-bold" : "font-extrabold"}`}
+                          >
+                            {correspondent}
+                          </span>
+                          <span className="shrink-0 text-[0.65rem] font-bold text-[var(--sea-ink-soft)] sm:hidden">
+                            {messageDate.format(new Date(message.activityAt))}
+                          </span>
+                        </div>
+                        <div className="mt-1 flex items-center gap-2 pl-4">
+                          {message.direction === "inbound" ? (
+                            <ArrowDownLeft
+                              aria-label="Received"
+                              size={13}
+                              className="shrink-0 text-[var(--palm)]"
+                            />
+                          ) : (
+                            <ArrowUpRight
+                              aria-label="Sent"
+                              size={13}
+                              className="shrink-0 text-[var(--lagoon-deep)]"
+                            />
+                          )}
+                          <span className="flex min-w-0 items-baseline gap-1">
+                            <span
+                              className={`truncate text-sm ${message.read ? "font-semibold" : "font-extrabold"}`}
+                            >
+                              {message.subject || "(No subject)"}
+                            </span>
+                            {(message.threadMessageCount ?? 1) > 1 ? (
+                              <span
+                                aria-label={`${message.threadMessageCount ?? 1} messages in conversation`}
+                                className="shrink-0 text-sm font-extrabold text-[var(--sea-ink-soft)]"
+                              >
+                                ({message.threadMessageCount ?? 1})
+                              </span>
+                            ) : null}
+                          </span>
+                          {message.hasAttachments ? (
+                            <Paperclip
+                              aria-label="Has attachments"
+                              className="ml-auto shrink-0 text-[var(--sea-ink-soft)]"
+                              size={14}
+                            />
+                          ) : null}
+                        </div>
+                        <p className="mt-0.5 truncate pl-4 text-xs leading-5 text-[var(--sea-ink-soft)]">
+                          {message.snippet || "No text preview"}
+                        </p>
+                      </a>
+                      {pending ? (
+                        <LoaderCircle
+                          aria-label="Updating message"
+                          className="m-2 shrink-0 animate-spin text-[var(--sea-ink-soft)]"
+                          size={14}
+                        />
+                      ) : null}
+                      <div className="hidden h-8 shrink-0 items-center sm:flex">
+                        <span className="px-1 text-[0.65rem] font-bold text-[var(--sea-ink-soft)] group-focus-within:hidden group-hover:hidden">
+                          {messageDate.format(new Date(message.activityAt))}
+                        </span>
+                        <div className="hidden items-center gap-0.5 group-focus-within:flex group-hover:flex">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={pending}
+                            onClick={() => onMessageAction("read", message)}
+                            aria-label={
+                              message.read ? "Mark unread" : "Mark read"
+                            }
+                            title={message.read ? "Mark unread" : "Mark read"}
+                            className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-35"
+                          >
+                            {message.read ? (
+                              <Mail size={14} />
+                            ) : (
+                              <MailOpen size={14} />
+                            )}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={
+                              pending || message.folderId === archiveFolderId
+                            }
+                            onClick={() => onMessageAction("archive", message)}
+                            aria-label="Archive message"
+                            title="Archive message"
+                            className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--foam)] hover:text-[var(--sea-ink)] disabled:opacity-35"
+                          >
+                            <Archive size={14} />
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            disabled={
+                              pending || message.folderId === trashFolderId
+                            }
+                            onClick={() => onMessageAction("trash", message)}
+                            aria-label="Move message to trash"
+                            title="Move message to trash"
+                            className="flex size-8 items-center justify-center rounded-lg text-[var(--sea-ink-soft)] hover:bg-[var(--danger-bg)] hover:text-[var(--danger-fg)] disabled:opacity-35"
+                          >
+                            <Trash2 size={14} />
+                          </Button>
+                          <MessageOverflowMenu
+                            archiveFolderId={archiveFolderId}
+                            message={message}
+                            onAction={onMessageAction}
+                            onOpen={() =>
+                              onOpenMessage(message.threadId, message.id)
+                            }
+                            pending={pending}
+                            trashFolderId={trashFolderId}
+                          />
+                        </div>
                       </div>
-                      <p className="mt-1 truncate text-xs leading-5 text-[var(--sea-ink-soft)]">
-                        {message.snippet || "No text preview"}
-                      </p>
+                      <div className="sm:hidden">
+                        <MessageOverflowMenu
+                          archiveFolderId={archiveFolderId}
+                          message={message}
+                          onAction={onMessageAction}
+                          onOpen={() =>
+                            onOpenMessage(message.threadId, message.id)
+                          }
+                          pending={pending}
+                          trashFolderId={trashFolderId}
+                        />
+                      </div>
                     </div>
-                  </a>
-                  <MessageActionButtons
-                    archiveFolderId={archiveFolderId}
-                    message={message}
-                    onAction={onMessageAction}
-                    pending={pendingMessageIds.has(message.id)}
-                    trashFolderId={trashFolderId}
-                  />
-                </article>
+                  </ContextMenu.Trigger>
+                  <ContextMenu.Portal>
+                    <ContextMenu.Positioner className="z-50 outline-none">
+                      <ContextMenu.Popup className={menuPopupClass}>
+                        <MessageMenuItems
+                          archiveFolderId={archiveFolderId}
+                          message={message}
+                          onAction={onMessageAction}
+                          onOpen={() =>
+                            onOpenMessage(message.threadId, message.id)
+                          }
+                          pending={pending}
+                          trashFolderId={trashFolderId}
+                          type="context"
+                        />
+                      </ContextMenu.Popup>
+                    </ContextMenu.Positioner>
+                  </ContextMenu.Portal>
+                </ContextMenu.Root>
               );
             })}
           </div>

@@ -170,6 +170,114 @@ describe(MessageList, () => {
     expect(onOpenMessage).not.toHaveBeenCalled();
   });
 
+  it("selects messages without opening them and applies explicit bulk states", () => {
+    const onMessageAction =
+      vi.fn<(action: MessageRowAction, message: MessageListItemData) => void>();
+    const onOpenMessage =
+      vi.fn<(threadId: string, messageId: string) => void>();
+    render(
+      <MessageList
+        data={messages}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onMessageAction={onMessageAction}
+        onOpenMessage={onOpenMessage}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: "Select Second: Second subject",
+      })
+    );
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select First: First subject" })
+    );
+
+    expect(screen.getByText("2 selected")).toBeTruthy();
+    expect(onOpenMessage).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Mark selected read" }));
+    expect(onMessageAction.mock.calls).toStrictEqual([
+      ["read", messages.items[0]],
+    ]);
+
+    onMessageAction.mockClear();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Add star to selected" })
+    );
+    expect(onMessageAction.mock.calls).toStrictEqual([
+      ["star", messages.items[0]],
+      ["star", messages.items[1]],
+    ]);
+  });
+
+  it("selects all loaded messages from the header", () => {
+    render(
+      <MessageList
+        data={messages}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onMessageAction={vi.fn<
+          (action: MessageRowAction, message: MessageListItemData) => void
+        >()}
+        onOpenMessage={vi.fn<(threadId: string, messageId: string) => void>()}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Select all loaded messages" })
+    );
+
+    expect(screen.getByText("2 selected")).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("checkbox")
+        .every((checkbox) => Object.hasOwn(checkbox.dataset, "checked"))
+    ).toBeTruthy();
+  });
+
+  it("opens row actions on right click and dispatches the chosen action", () => {
+    const onMessageAction =
+      vi.fn<(action: MessageRowAction, message: MessageListItemData) => void>();
+    const onOpenMessage =
+      vi.fn<(threadId: string, messageId: string) => void>();
+    render(
+      <MessageList
+        data={{ items: [messages.items[0]] }}
+        filters={{}}
+        isLoadingMore={false}
+        loadMoreFailed={false}
+        onLoadMore={vi.fn<() => void>()}
+        onMessageAction={onMessageAction}
+        onOpenMessage={onOpenMessage}
+        onQueryChange={vi.fn<(state: MailboxMessageQueryState) => void>()}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    const messageLink = screen.getByRole("link", {
+      name: "Second: Second subject",
+    });
+    const messageRow = messageLink.closest("article");
+    if (!(messageRow instanceof HTMLElement)) {
+      throw new Error("Expected the message link to be rendered inside a row");
+    }
+    fireEvent.contextMenu(messageRow);
+    fireEvent.click(screen.getByRole("menuitem", { name: "Move to trash" }));
+
+    expect(onMessageAction).toHaveBeenCalledWith("trash", messages.items[0]);
+    expect(onOpenMessage).not.toHaveBeenCalled();
+  });
+
   it("rejects searches without an FTS term before navigation", () => {
     const onQueryChange = vi.fn<(state: MailboxMessageQueryState) => void>();
     render(
