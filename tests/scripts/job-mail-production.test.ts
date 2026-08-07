@@ -45,6 +45,7 @@ import {
   ensureProductionAlchemyProfile,
   productionAlchemyArgs,
   productionAlchemyChildEnv,
+  productionGitHead,
 } from "../../scripts/run-production-alchemy";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -298,6 +299,8 @@ describe("job mail production resource structure", () => {
     expect(graph).toContain("const workspaceRoot = import.meta.dirname");
     expect(graph).toContain("rootDir: workspaceRoot");
     expect(graph).toContain('"src/**/*"');
+    expect(graph).toContain("WEBSITE_RELEASE_SHA");
+    expect(graph).toContain("Production Website release SHA is invalid");
     expect(graph).toContain('"vite.config.ts"');
     expect(runner).toContain(
       'const workspaceRoot = fileURLToPath(new URL("../", import.meta.url))'
@@ -616,6 +619,10 @@ describe("production command and environment safety", () => {
     expect(child.RANDOM_APPLICATION_SECRET).toBeUndefined();
     expect(PRODUCTION_OPERATIONAL_ENV_KEYS).not.toContain("ALCHEMY_DEV");
     expect(PRODUCTION_OPERATIONAL_ENV_KEYS).not.toContain("ALCHEMY_PROFILE");
+    expect(PRODUCTION_OPERATIONAL_ENV_KEYS).not.toContain(
+      "ALCHEMY_RELEASE_SHA"
+    );
+    expect(productionGitHead()).toMatch(/^[a-f0-9]{40}$/u);
     expect(productionAlchemyArgs("plan")).toStrictEqual([
       "deploy",
       "--stage",

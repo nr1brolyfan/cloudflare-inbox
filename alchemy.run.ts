@@ -15,6 +15,9 @@ import {
 } from "./src/platform/cloudflare/JobMailProductionTopology.ts";
 
 const workspaceRoot = import.meta.dirname;
+const releaseSha = process.env.ALCHEMY_RELEASE_SHA;
+const productionReleaseShaIsValid =
+  releaseSha !== undefined && /^[a-f0-9]{40}$/u.test(releaseSha);
 
 const websiteBaseProps = {
   rootDir: workspaceRoot,
@@ -61,6 +64,7 @@ export class Website extends Cloudflare.Website.Vite<Website>()("Website", {
   env: {
     BACKEND: Backend,
     DEV_EMAIL_INBOX_ENABLED: ALCHEMY_DEV,
+    WEBSITE_RELEASE_SHA: releaseSha ?? "development",
   },
 }) {}
 
@@ -72,6 +76,7 @@ export class ProductionWebsite extends Cloudflare.Website.Vite<ProductionWebsite
     env: {
       BACKEND: Backend,
       DEV_EMAIL_INBOX_ENABLED: ALCHEMY_DEV,
+      WEBSITE_RELEASE_SHA: releaseSha ?? "invalid-production-release",
     },
   }
 ) {}
@@ -93,6 +98,11 @@ export default Alchemy.Stack(
     const stack = yield* Alchemy.Stack;
     const isDevelopment = yield* ALCHEMY_DEV;
     const isProduction = isJobMailProductionStage(stack.stage);
+    if (isProduction && !productionReleaseShaIsValid) {
+      return yield* Effect.die(
+        new Error("Production Website release SHA is invalid")
+      );
+    }
     const productionConfig = isProduction
       ? yield* jobMailProductionConfig
       : undefined;

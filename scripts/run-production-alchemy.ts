@@ -134,6 +134,18 @@ export const productionAlchemyChildEnv = (
   return child;
 };
 
+export const productionGitHead = (): string => {
+  const result = spawnSync("git", ["rev-parse", "HEAD"], {
+    cwd: workspaceRoot,
+    encoding: "utf-8",
+  });
+  const releaseSha = result.stdout.trim();
+  if (result.status !== 0 || !/^[a-f0-9]{40}$/u.test(releaseSha)) {
+    throw new Error("production release SHA is invalid");
+  }
+  return releaseSha;
+};
+
 export const productionAlchemyArgs = (mode: "deploy" | "plan"): string[] => [
   "deploy",
   "--stage",
@@ -190,9 +202,11 @@ export const runProductionAlchemy = (
   }
 
   const invocation = alchemyCliInvocation(productionAlchemyArgs(mode));
+  const childEnv = productionAlchemyChildEnv(production, process.env);
+  childEnv.ALCHEMY_RELEASE_SHA = productionGitHead();
   const result = spawnSync(invocation.command, invocation.args, {
     cwd: workspaceRoot,
-    env: productionAlchemyChildEnv(production, process.env),
+    env: childEnv,
     stdio: "inherit",
   });
   return result.status ?? 1;
