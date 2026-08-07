@@ -11,9 +11,11 @@ import {
 import { CurrentActor, CurrentSession } from "@effect-auth/core/Sessions";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import { MailboxDoClient } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import type { MailboxDraftAttachmentError } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftEditingError } from "#/modules/mailbox/application/MailboxDraftEditing";
@@ -41,10 +43,12 @@ import { MailboxOutboundSending } from "#/modules/mailbox/application/MailboxOut
 import type { MailboxReplyDraftCreationError } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import { MailboxReplyDraftCreation } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import type { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { mailboxRealtimeLeaseMillis } from "#/modules/mailbox/domain/MailboxRealtime";
 import type {
   MailboxAuthorizationError,
   MailResourceResolveError,
 } from "#/modules/mailbox/ports/MailboxAuthorization";
+import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
 import {
   CurrentMailboxOperationProvenance,
   ExplicitUserAction,
@@ -570,6 +574,8 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
     const outboundSending = yield* MailboxOutboundSending;
     const replayAuthorization = yield* MailboxInboundReplayAuthorization;
     const inboundReplay = yield* MailboxInboundReplay;
+    const authorization = yield* MailboxAuthorization;
+    const mailboxDo = yield* MailboxDoClient;
 
     return handlers
       .handle("actOnMessage", ({ params, payload }) =>
@@ -790,6 +796,16 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
             mailboxId: params.mailboxId,
             operationId: payload.operationId,
           })
+          .pipe(
+            Effect.tap(() =>
+              mailboxDo
+                .publishChanges({
+                  mailboxId: params.mailboxId,
+                  scopes: ["navigation"],
+                })
+                .pipe(Effect.catchCause(() => Effect.void))
+            )
+          )
           .pipe(mapHttpErrors)
       )
       .handle("reserveDraftAttachment", ({ params, payload }) =>
@@ -836,6 +852,23 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
                 provenance
               )
             );
+        }).pipe(mapHttpErrors)
+      )
+      .handle("subscribeChanges", ({ params }) =>
+        Effect.gen(function* () {
+          yield* authorization.requireMailboxMessageRead({
+            resource: { _tag: "Mailbox", mailboxId: params.mailboxId },
+          });
+          const session = yield* CurrentSession;
+          const request = yield* HttpServerRequest.HttpServerRequest;
+          return yield* mailboxDo.subscribeChanges({
+            leaseExpiresAt: Math.min(
+              Number(session.expiresAt),
+              Date.now() + mailboxRealtimeLeaseMillis
+            ),
+            mailboxId: params.mailboxId,
+            request,
+          });
         }).pipe(mapHttpErrors)
       )
       .handle("undoSend", ({ params, payload }) =>

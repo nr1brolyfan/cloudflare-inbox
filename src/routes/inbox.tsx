@@ -75,6 +75,7 @@ import {
   projectPendingThreadActions,
   reconcileMailboxMessageActionCaches,
 } from "#/modules/mailbox/adapters/react/MailboxQueryState";
+import { MailboxRealtime } from "#/modules/mailbox/adapters/react/MailboxRealtime";
 import {
   decodeMailboxSearch,
   isSystemFolderId,
@@ -2090,6 +2091,11 @@ function AuthenticatedInbox({
 
   return (
     <>
+      <MailboxRealtime
+        mailboxId={mailbox.id}
+        sessionId={sessionId}
+        userId={userId}
+      />
       <MailboxShell
         folders={folders}
         labels={labels}

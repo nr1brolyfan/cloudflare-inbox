@@ -31,6 +31,7 @@ describe("mailbox session requirements matrix", () => {
       "replayInbound",
       "reserveDraftAttachment",
       "sendDraft",
+      "subscribeChanges",
       "undoSend",
       "updateDraft",
       "uploadDraftAttachment",

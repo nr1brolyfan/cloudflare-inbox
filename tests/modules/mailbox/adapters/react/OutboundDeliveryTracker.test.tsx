@@ -14,7 +14,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   OutboundDeliveryTracker,
-  outboundDeliveryPollInterval,
   outboundDeliveryQueryKey,
 } from "#/modules/mailbox/adapters/react/OutboundDeliveryTracker";
 import type {
@@ -354,35 +353,7 @@ describe(OutboundDeliveryTracker, () => {
   });
 });
 
-describe(outboundDeliveryPollInterval, () => {
-  const withStatus = (
-    status: OutboundDeliveryView["status"],
-    overrides: Partial<OutboundDeliveryView> = {}
-  ) => snapshot({ ...scheduled, status, ...overrides });
-
-  it("polls only non-quiescent delivery states at adaptive intervals", () => {
-    expect([
-      outboundDeliveryPollInterval(snapshot({ ...scheduled, sendAt: 61_000 })),
-      outboundDeliveryPollInterval(snapshot({ ...scheduled, sendAt: 21_000 })),
-      outboundDeliveryPollInterval(snapshot()),
-      outboundDeliveryPollInterval(
-        withStatus("scheduled", { attemptCount: 1 })
-      ),
-      outboundDeliveryPollInterval(withStatus("sending")),
-    ]).toStrictEqual([5000, 2500, 1000, 1500, 1500]);
-  });
-
-  it.each([
-    "accepted",
-    "failed",
-    "indeterminate",
-    "cancelled",
-    "delivered",
-    "bounced",
-  ] as const)("stops polling %s deliveries", (status) => {
-    expect(outboundDeliveryPollInterval(withStatus(status))).toBeFalsy();
-  });
-
+describe(outboundDeliveryQueryKey, () => {
   it("isolates query data by session identity", () => {
     expect(
       outboundDeliveryQueryKey("session-a", "mailbox", "delivery")

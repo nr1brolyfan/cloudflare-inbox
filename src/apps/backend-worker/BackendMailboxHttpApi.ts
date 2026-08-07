@@ -198,6 +198,16 @@ export const ListMailboxMessagesEndpoint = HttpApiEndpoint.get(
   }
 );
 
+export const SubscribeMailboxChangesEndpoint = HttpApiEndpoint.get(
+  MailboxOperation.subscribeChanges,
+  "/api/mailboxes/:mailboxId/events",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    success: Schema.Void.pipe(HttpApiSchema.status(101)),
+  }
+);
+
 export const ActOnMailboxMessageEndpoint = HttpApiEndpoint.patch(
   MailboxOperation.actOnMessage,
   "/api/mailboxes/:mailboxId/messages/:messageId",
@@ -449,6 +459,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     ReserveDraftAttachmentEndpoint,
     ReplayInboundEndpoint,
     SendMailboxDraftEndpoint,
+    SubscribeMailboxChangesEndpoint,
     UndoMailboxSendEndpoint,
     UpdateMailboxDraftEndpoint,
     UploadDraftAttachmentEndpoint

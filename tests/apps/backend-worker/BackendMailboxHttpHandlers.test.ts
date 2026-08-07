@@ -30,6 +30,7 @@ import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import { HttpApi, HttpApiBuilder } from "effect/unstable/httpapi";
 import { describe, expect, it } from "vitest";
 
@@ -44,6 +45,7 @@ import {
   RequestSessionAuthenticatorEffectAuthLayer,
   SessionAuthenticationMiddlewareLayer,
 } from "#/modules/account-security/adapters/http/RequestSessionAuthentication";
+import { MailboxDoClient } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { MailboxDraftAttachments } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import type { MailboxDraftAttachmentsService } from "#/modules/mailbox/application/MailboxDraftAttachments";
 import {
@@ -105,7 +107,11 @@ import {
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import { InboundProcessingSchema } from "#/modules/mailbox/domain/MailboxInbound";
 import { OutboundDeliverySchema } from "#/modules/mailbox/domain/MailboxOutbound";
-import { MailResourceResolveError } from "#/modules/mailbox/ports/MailboxAuthorization";
+import {
+  MailboxAuthorization,
+  MailResourceResolveError,
+} from "#/modules/mailbox/ports/MailboxAuthorization";
+import type { MailboxAuthorizationService } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { CurrentMailboxOperationProvenance } from "#/modules/mailbox/ports/MailboxOperationProvenance";
 import type { MailboxAdministrationService } from "#/modules/organization/application/MailboxAdministration";
 import {
@@ -498,6 +504,23 @@ const makeHandler = (
         Layer.succeed(MailboxOutboundSending, outboundSending),
         Layer.succeed(MailboxOutboundDeliveryReading, outboundDeliveryReading),
         Layer.succeed(MailboxInboundReplay, inboundReplay),
+        Layer.succeed(
+          MailboxAuthorization,
+          MailboxAuthorization.of({
+            requireMailboxMessageRead: () => Effect.void,
+          } as unknown as MailboxAuthorizationService)
+        ),
+        Layer.succeed(
+          MailboxDoClient,
+          MailboxDoClient.of({
+            executeDirectory: () => Effect.die("Unexpected directory call"),
+            executeMailData: () => Effect.die("Unexpected mail-data call"),
+            publishChanges: () => Effect.void,
+            resolveMailResource: () => Effect.die("Unexpected resource call"),
+            subscribeChanges: () =>
+              Effect.succeed(HttpServerResponse.empty({ status: 101 })),
+          })
+        ),
         Layer.succeed(
           MailboxInboundReplayAuthorization,
           MailboxInboundReplayAuthorization.of({ require: () => Effect.void })

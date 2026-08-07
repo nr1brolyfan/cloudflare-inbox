@@ -4,9 +4,13 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
+import { MailboxChangedEvent } from "#/modules/mailbox/domain/MailboxRealtime";
+import type { MailboxChangeScopes } from "#/modules/mailbox/domain/MailboxRealtime";
 import {
   MailboxResourceLookup,
   MailboxResourceLookupResult,
@@ -44,6 +48,12 @@ export interface MailboxDoStub {
   readonly resolveMailResource: (
     input: unknown
   ) => Effect.Effect<unknown, unknown, RuntimeContext>;
+  readonly fetch?: (
+    request: HttpServerRequest.HttpServerRequest
+  ) => Effect.Effect<HttpServerResponse.HttpServerResponse, unknown>;
+  readonly publishChanges?: (
+    input: Schema.Codec.Encoded<typeof MailboxChangedEvent>
+  ) => Effect.Effect<void, unknown, RuntimeContext>;
 }
 
 export interface MailboxDoNamespaceService {
@@ -68,6 +78,18 @@ export interface MailboxDoClientService {
   readonly resolveMailResource: (
     request: MailboxResourceLookupType
   ) => Effect.Effect<MailboxResourceLookupResultType, MailboxRepositoryError>;
+  readonly subscribeChanges: (input: {
+    readonly leaseExpiresAt: number;
+    readonly mailboxId: MailboxId;
+    readonly request: HttpServerRequest.HttpServerRequest;
+  }) => Effect.Effect<
+    HttpServerResponse.HttpServerResponse,
+    MailboxDomainError | MailboxRepositoryError
+  >;
+  readonly publishChanges: (input: {
+    readonly mailboxId: MailboxId;
+    readonly scopes: MailboxChangeScopes;
+  }) => Effect.Effect<void, MailboxDomainError | MailboxRepositoryError>;
 }
 
 /** Registry-gated, schema-validating transport to mailbox Durable Objects. */
@@ -106,6 +128,75 @@ export const MailboxDoClientLayer = Layer.effect(
             repositoryError("Mailbox registry lookup failed", cause, operation)
           )
         )
+      );
+
+    const subscribeChanges: MailboxDoClientService["subscribeChanges"] = (
+      input
+    ) =>
+      mailboxExists(input.mailboxId, "read").pipe(
+        Effect.flatMap((exists) =>
+          exists
+            ? Effect.suspend(() => {
+                const { fetch } = namespace.getByName(input.mailboxId);
+                return fetch === undefined
+                  ? Effect.die("MailboxDO fetch transport is unavailable")
+                  : fetch(
+                      input.request.modify({
+                        headers: {
+                          ...input.request.headers,
+                          "x-mailbox-lease-expires-at": String(
+                            input.leaseExpiresAt
+                          ),
+                        },
+                        url: "/events",
+                      })
+                    );
+              })
+            : Effect.fail(
+                new MailboxDomainError({
+                  operation: "list-messages",
+                  reason: "not-found",
+                  message: "Mailbox was not found",
+                  resourceType: "mailbox",
+                  resourceId: input.mailboxId,
+                })
+              )
+        ),
+        Effect.mapError((cause) =>
+          cause instanceof MailboxDomainError
+            ? cause
+            : repositoryError("Mailbox realtime subscription failed", cause)
+        ),
+        Effect.catchDefect((cause) =>
+          Effect.fail(
+            repositoryError("Mailbox realtime subscription failed", cause)
+          )
+        )
+      );
+
+    const publishChanges: MailboxDoClientService["publishChanges"] = (input) =>
+      Schema.encodeEffect(MailboxChangedEvent)({
+        _tag: "MailboxChanged",
+        formatVersion: 1,
+        scopes: input.scopes,
+      }).pipe(
+        Effect.mapError((cause) =>
+          repositoryError("Invalid mailbox change publication", cause, "write")
+        ),
+        Effect.flatMap((event) =>
+          invokeRpc(
+            input.mailboxId,
+            "mutate-message",
+            "write",
+            "unknown",
+            "Mailbox change publication failed",
+            (stub) =>
+              stub.publishChanges === undefined
+                ? Effect.die("MailboxDO change publisher is unavailable")
+                : stub.publishChanges(event)
+          )
+        ),
+        Effect.asVoid
       );
 
     const invokeRpc = (
@@ -327,6 +418,8 @@ export const MailboxDoClientLayer = Layer.effect(
       executeDirectory,
       executeMailData,
       resolveMailResource,
+      publishChanges,
+      subscribeChanges,
     });
   })
 );

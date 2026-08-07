@@ -1,5 +1,6 @@
 import * as Layer from "effect/Layer";
 
+import { MailboxChangePublisherDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxChangePublisherDo";
 import { MailboxDoHandlerLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
 import { MailboxIdentityDoLayer } from "#/modules/mailbox/adapters/durable-object/MailboxIdentityDo";
 import { OutboundEmailProviderCloudflareLayer } from "#/modules/mailbox/adapters/email/OutboundEmailProviderCloudflare";
@@ -59,6 +60,7 @@ const MailboxDoHandlerApplicationLayer = MailboxDoHandlerLayer.pipe(
 /** One closed, activation-scoped graph for the mailbox Durable Object. */
 export const MailboxDoApplicationLayer = Layer.mergeAll(
   MailboxDoPersistenceLayer,
+  MailboxChangePublisherDoLayer,
   MailboxDoOutboundAdaptersLayer,
   MailboxDoOutboundDispatcherApplicationLayer,
   MailboxDoOutboundAlarmApplicationLayer,

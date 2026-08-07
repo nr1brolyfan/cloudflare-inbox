@@ -74,36 +74,6 @@ export const outboundDeliveryQueryKey = (
 ) =>
   ["mailbox", "outbound-delivery", sessionId, mailboxId, deliveryId] as const;
 
-export const outboundDeliveryPollInterval = (
-  outbound: OutboundDeliverySnapshot | undefined,
-  error?: unknown
-): number | false => {
-  if (
-    error instanceof OutboundStatusRequestError &&
-    (error.status < 500 || error.status >= 600)
-  ) {
-    return false;
-  }
-  if (outbound === undefined) {
-    return error === undefined ? false : 5000;
-  }
-  const { delivery } = outbound;
-  if (delivery.status === "sending") {
-    return 1500;
-  }
-  if (delivery.status !== "scheduled") {
-    return false;
-  }
-  const untilSend = delivery.sendAt - outbound.serverNow;
-  if (delivery.attemptCount > 0) {
-    return untilSend > 60_000 ? 10_000 : untilSend > 10_000 ? 5000 : 1500;
-  }
-  if (untilSend > 30_000) {
-    return 5000;
-  }
-  return untilSend > 10_000 ? 2500 : 1000;
-};
-
 const failureDetail = {
   invalid_message:
     "The message could not be prepared because its content is invalid.",
@@ -253,10 +223,6 @@ export function OutboundDeliveryTracker({
       throw new OutboundStatusRequestError(result.status);
     },
     queryKey,
-    refetchInterval: (query) =>
-      accessFailure === undefined
-        ? outboundDeliveryPollInterval(query.state.data, query.state.error)
-        : false,
     retry: false,
   });
   const delivery = status.data?.delivery;

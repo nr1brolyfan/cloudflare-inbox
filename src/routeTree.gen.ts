@@ -32,6 +32,7 @@ import { Route as ApiHealthRouteImport } from './routes/api/health'
 import { Route as MailLabelsLabelIdRouteImport } from './routes/mail.labels.$labelId'
 import { Route as MailFoldersFolderIdRouteImport } from './routes/mail.folders.$folderId'
 import { Route as MailDraftsDraftIdRouteImport } from './routes/mail.drafts.$draftId'
+import { Route as ApiMailboxesMailboxIdEventsRouteImport } from './routes/api/mailboxes/$mailboxId/events'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/html'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdInlineRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/inline'
 import { Route as ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRouteImport } from './routes/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
@@ -156,6 +157,12 @@ const MailDraftsDraftIdRoute = MailDraftsDraftIdRouteImport.update({
   path: '/$draftId',
   getParentRoute: () => MailDraftsRoute,
 } as any)
+const ApiMailboxesMailboxIdEventsRoute =
+  ApiMailboxesMailboxIdEventsRouteImport.update({
+    id: '/api/mailboxes/$mailboxId/events',
+    path: '/api/mailboxes/$mailboxId/events',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 const ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute =
   ApiMailboxesMailboxIdMessagesMessageIdHtmlRouteImport.update({
     id: '/api/mailboxes/$mailboxId/messages/$messageId/html',
@@ -211,6 +218,7 @@ export interface FileRoutesByFullPath {
   '/mail/drafts/$draftId': typeof MailDraftsDraftIdRoute
   '/mail/folders/$folderId': typeof MailFoldersFolderIdRoute
   '/mail/labels/$labelId': typeof MailLabelsLabelIdRoute
+  '/api/mailboxes/$mailboxId/events': typeof ApiMailboxesMailboxIdEventsRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
@@ -239,6 +247,7 @@ export interface FileRoutesByTo {
   '/mail/drafts/$draftId': typeof MailDraftsDraftIdRoute
   '/mail/folders/$folderId': typeof MailFoldersFolderIdRoute
   '/mail/labels/$labelId': typeof MailLabelsLabelIdRoute
+  '/api/mailboxes/$mailboxId/events': typeof ApiMailboxesMailboxIdEventsRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
@@ -269,6 +278,7 @@ export interface FileRoutesById {
   '/mail/drafts/$draftId': typeof MailDraftsDraftIdRoute
   '/mail/folders/$folderId': typeof MailFoldersFolderIdRoute
   '/mail/labels/$labelId': typeof MailLabelsLabelIdRoute
+  '/api/mailboxes/$mailboxId/events': typeof ApiMailboxesMailboxIdEventsRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/html': typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content': typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download': typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
@@ -300,6 +310,7 @@ export interface FileRouteTypes {
     | '/mail/drafts/$draftId'
     | '/mail/folders/$folderId'
     | '/mail/labels/$labelId'
+    | '/api/mailboxes/$mailboxId/events'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
@@ -328,6 +339,7 @@ export interface FileRouteTypes {
     | '/mail/drafts/$draftId'
     | '/mail/folders/$folderId'
     | '/mail/labels/$labelId'
+    | '/api/mailboxes/$mailboxId/events'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
@@ -357,6 +369,7 @@ export interface FileRouteTypes {
     | '/mail/drafts/$draftId'
     | '/mail/folders/$folderId'
     | '/mail/labels/$labelId'
+    | '/api/mailboxes/$mailboxId/events'
     | '/api/mailboxes/$mailboxId/messages/$messageId/html'
     | '/api/mailboxes/$mailboxId/drafts/$draftId/attachments/$attachmentId/content'
     | '/api/mailboxes/$mailboxId/messages/$messageId/attachments/$attachmentId/download'
@@ -375,6 +388,7 @@ export interface RootRouteChildren {
   AuthCompleteMagicLinkRoute: typeof AuthCompleteMagicLinkRoute
   AuthCompletePasswordResetRoute: typeof AuthCompletePasswordResetRoute
   AuthSplatRoute: typeof AuthSplatRoute
+  ApiMailboxesMailboxIdEventsRoute: typeof ApiMailboxesMailboxIdEventsRoute
   ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute
   ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute: typeof ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute
   ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute: typeof ApiMailboxesMailboxIdMessagesMessageIdAttachmentsAttachmentIdDownloadRoute
@@ -544,6 +558,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MailDraftsDraftIdRouteImport
       parentRoute: typeof MailDraftsRoute
     }
+    '/api/mailboxes/$mailboxId/events': {
+      id: '/api/mailboxes/$mailboxId/events'
+      path: '/api/mailboxes/$mailboxId/events'
+      fullPath: '/api/mailboxes/$mailboxId/events'
+      preLoaderRoute: typeof ApiMailboxesMailboxIdEventsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/mailboxes/$mailboxId/messages/$messageId/html': {
       id: '/api/mailboxes/$mailboxId/messages/$messageId/html'
       path: '/api/mailboxes/$mailboxId/messages/$messageId/html'
@@ -630,6 +651,7 @@ const rootRouteChildren: RootRouteChildren = {
   AuthCompleteMagicLinkRoute: AuthCompleteMagicLinkRoute,
   AuthCompletePasswordResetRoute: AuthCompletePasswordResetRoute,
   AuthSplatRoute: AuthSplatRoute,
+  ApiMailboxesMailboxIdEventsRoute: ApiMailboxesMailboxIdEventsRoute,
   ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute:
     ApiMailboxesMailboxIdMessagesMessageIdHtmlRoute,
   ApiMailboxesMailboxIdDraftsDraftIdAttachmentsAttachmentIdContentRoute:
