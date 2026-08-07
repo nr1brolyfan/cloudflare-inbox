@@ -3,12 +3,14 @@ import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import { describe, expect, it } from "vitest";
 
 import {
   MailboxDoClient,
   MailboxDoClientLayer,
   MailboxDoNamespace,
+  mailboxDoSubscriptionRequest,
 } from "#/modules/mailbox/adapters/durable-object/MailboxDoClient";
 import { DirectoryRpcRequest } from "#/modules/mailbox/ports/MailboxDoProtocol";
 import { MailboxRegistry } from "#/modules/mailbox/ports/MailboxRegistry";
@@ -56,6 +58,38 @@ const run = (
   );
 
 describe("Mailbox DO client transport", () => {
+  it("rebuilds a subscription request with the internal lease header", async () => {
+    const original = HttpServerRequest.fromWeb(
+      new Request("https://backend.test/api/mailboxes/mailbox-a/events", {
+        headers: {
+          cookie: "session=secret",
+          host: "backend.test",
+          origin: "https://inbox.test",
+          upgrade: "websocket",
+          "x-forwarded-proto": "https",
+        },
+      })
+    );
+
+    const forwarded = await Effect.runPromise(
+      HttpServerRequest.toWeb(mailboxDoSubscriptionRequest(original, 123_456))
+    );
+
+    expect({
+      cookie: forwarded.headers.get("cookie"),
+      lease: forwarded.headers.get("x-mailbox-lease-expires-at"),
+      origin: forwarded.headers.get("origin"),
+      pathname: new URL(forwarded.url).pathname,
+      upgrade: forwarded.headers.get("upgrade"),
+    }).toStrictEqual({
+      cookie: "session=secret",
+      lease: "123456",
+      origin: "https://inbox.test",
+      pathname: "/events",
+      upgrade: "websocket",
+    });
+  });
+
   it("checks the registry before addressing a Durable Object", async () => {
     let addressed = false;
     const error = await Effect.runPromise(

@@ -4,7 +4,7 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 
 import type { MailboxId } from "#/modules/mailbox/domain/Mailbox";
@@ -98,6 +98,22 @@ export class MailboxDoClient extends Context.Service<
   MailboxDoClientService
 >()("cloudflare-inbox/MailboxDoClient") {}
 
+export const mailboxDoSubscriptionRequest = (
+  request: HttpServerRequest.HttpServerRequest,
+  leaseExpiresAt: number
+) =>
+  HttpServerRequest.fromClientRequest(
+    HttpServerRequest.toClientRequest(
+      request.modify({
+        headers: {
+          ...request.headers,
+          "x-mailbox-lease-expires-at": String(leaseExpiresAt),
+        },
+        url: "/events",
+      })
+    )
+  );
+
 const repositoryError = (
   message: string,
   cause: unknown,
@@ -141,15 +157,10 @@ export const MailboxDoClientLayer = Layer.effect(
                 return fetch === undefined
                   ? Effect.die("MailboxDO fetch transport is unavailable")
                   : fetch(
-                      input.request.modify({
-                        headers: {
-                          ...input.request.headers,
-                          "x-mailbox-lease-expires-at": String(
-                            input.leaseExpiresAt
-                          ),
-                        },
-                        url: "/events",
-                      })
+                      mailboxDoSubscriptionRequest(
+                        input.request,
+                        input.leaseExpiresAt
+                      )
                     );
               })
             : Effect.fail(
