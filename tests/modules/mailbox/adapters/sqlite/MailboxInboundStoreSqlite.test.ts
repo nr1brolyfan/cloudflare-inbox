@@ -14,6 +14,7 @@ import { MailboxRuntime } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteR
 import {
   asyncRuleJob,
   attachment,
+  contact,
   filterRule,
   folder,
   inboundProcessing,
@@ -317,12 +318,23 @@ describe("MailboxDO SQLite inbound commit", () => {
               query: "part",
             })
           );
+          const db = yield* MailboxDatabase;
+          const [senderAggregate] = yield* db
+            .select()
+            .from(contact)
+            .where(eq(contact.normalizedAddress, "sender@example.test"));
+          const [replyAggregate] = yield* db
+            .select()
+            .from(contact)
+            .where(eq(contact.normalizedAddress, "reply@example.test"));
           return {
             participant,
             participantAfterEnable,
             participantBeforeEnable,
             reply,
+            replyAggregate,
             sender,
+            senderAggregate,
           };
         }).pipe(Effect.provide(testLive(runtime.service)))
       )
@@ -335,11 +347,26 @@ describe("MailboxDO SQLite inbound commit", () => {
       address: "reply@example.test",
       displayName: "Reply Address",
     });
-    expect(result.participant.contacts).toStrictEqual([]);
-    expect(result.participantAfterEnable.contacts).toMatchObject([
-      { address: "participant@example.test" },
-    ]);
-    expect(result.participantBeforeEnable.contacts).toStrictEqual([]);
+    expect({
+      replyAggregate: result.replyAggregate,
+      senderAggregate: result.senderAggregate,
+    }).toMatchObject({
+      replyAggregate: { receivedCount: 0 },
+      senderAggregate: {
+        firstReceivedAt: 2000,
+        lastReceivedAt: 2000,
+        receivedCount: 1,
+      },
+    });
+    expect({
+      afterEnable: result.participantAfterEnable.contacts,
+      beforeEnable: result.participantBeforeEnable.contacts,
+      hidden: result.participant.contacts,
+    }).toMatchObject({
+      afterEnable: [{ address: "participant@example.test" }],
+      beforeEnable: [],
+      hidden: [],
+    });
   });
 
   it("replays a failed ingest with an attempt fence and stable Workflow ID", async () => {

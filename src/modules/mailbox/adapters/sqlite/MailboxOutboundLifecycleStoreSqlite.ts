@@ -17,6 +17,9 @@ import {
   outboundSendingStaleTimeoutMillis,
 } from "#/modules/mailbox/ports/MailboxOutboundLifecycleStore";
 
+import { upsertContactInteractions } from "./MailboxContactProjectionSqlite";
+import { AddressList, decodeJson, optionalAddress } from "./MailboxSqliteJson";
+
 export const MailboxOutboundLifecycleStoreSqliteLayer = Layer.effect(
   MailboxOutboundLifecycleStore,
   Effect.gen(function* () {
@@ -290,14 +293,29 @@ export const MailboxOutboundLifecycleStoreSqliteLayer = Layer.effect(
                       isNull(message.deletedAt)
                     )
                   )
-                  .returning({ id: message.id });
-                if (moved.length !== 1) {
+                  .returning({
+                    recipientsJson: message.recipientsJson,
+                    senderJson: message.senderJson,
+                  });
+                const [settledMessage] = moved;
+                if (settledMessage === undefined || moved.length !== 1) {
                   return yield* Effect.die(
                     new Error(
                       "Accepted outbound message could not move to Sent"
                     )
                   );
                 }
+                const sender = optionalAddress(settledMessage.senderJson);
+                yield* upsertContactInteractions(tx, {
+                  addresses: decodeJson(
+                    AddressList,
+                    settledMessage.recipientsJson
+                  ),
+                  at: settledAt,
+                  direction: "sent",
+                  excludeAddresses:
+                    sender === undefined ? [] : [sender.address],
+                });
               }
               return true;
             })

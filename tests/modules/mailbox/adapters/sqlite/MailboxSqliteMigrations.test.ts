@@ -73,6 +73,7 @@ describe("MailboxDO migrations", () => {
         { version: 16, applied_at: expect.any(String) },
         { version: 17, applied_at: expect.any(String) },
         { version: 18, applied_at: expect.any(String) },
+        { version: 19, applied_at: expect.any(String) },
       ]);
       expect(
         database
@@ -127,7 +128,7 @@ describe("MailboxDO migrations", () => {
         DROP TRIGGER contact_search_au;
         DROP TABLE contact_search;
         DROP TABLE contact;
-        DELETE FROM mailbox_schema_migration WHERE version IN (15, 16, 17, 18);
+        DELETE FROM mailbox_schema_migration WHERE version IN (15, 16, 17, 18, 19);
         INSERT INTO folder (id, name, kind, created_at, updated_at)
         VALUES ('scheduled', 'Scheduled', 'scheduled', 0, 0),
                ('sent', 'Sent', 'sent', 0, 0);
@@ -145,7 +146,7 @@ describe("MailboxDO migrations", () => {
            1, 1000, 2000);
       `);
 
-      expect(applyMailboxMigrations(makeStorage(database))).toBe(18);
+      expect(applyMailboxMigrations(makeStorage(database))).toBe(19);
       expect({
         ...database
           .prepare(
@@ -179,7 +180,7 @@ describe("MailboxDO migrations", () => {
         DROP TRIGGER contact_search_au;
         DROP TABLE contact_search;
         DROP TABLE contact;
-        DELETE FROM mailbox_schema_migration WHERE version IN (17, 18);
+        DELETE FROM mailbox_schema_migration WHERE version IN (17, 18, 19);
         INSERT INTO folder (id, name, kind, created_at, updated_at)
         VALUES ('sent', 'Sent', 'sent', 0, 0),
                ('inbox', 'Inbox', 'inbox', 0, 0);
@@ -189,7 +190,7 @@ describe("MailboxDO migrations", () => {
                ('inbound', 'inbox', 'inbound', 0, 0, 0, 0);
       `);
 
-      expect(applyMailboxMigrations(makeStorage(database))).toBe(18);
+      expect(applyMailboxMigrations(makeStorage(database))).toBe(19);
       expect(
         database
           .prepare("SELECT id, read, version FROM message ORDER BY id")
@@ -397,7 +398,7 @@ describe("MailboxDO migrations", () => {
         DROP TRIGGER contact_search_au;
         DROP TABLE contact_search;
         DROP TABLE contact;
-        DELETE FROM mailbox_schema_migration WHERE version IN (13, 14, 15, 16, 17, 18);
+        DELETE FROM mailbox_schema_migration WHERE version IN (13, 14, 15, 16, 17, 18, 19);
         INSERT INTO folder (id, name, kind, created_at, updated_at)
           VALUES ('inbox', 'Inbox', 'inbox', 0, 0);
         INSERT INTO message (id, folder_id, subject, received_at)
@@ -407,7 +408,7 @@ describe("MailboxDO migrations", () => {
         .prepare("SELECT * FROM message WHERE id = 'legacy-message'")
         .get();
 
-      expect(applyMailboxMigrations(storage)).toBe(18);
+      expect(applyMailboxMigrations(storage)).toBe(19);
       const after = database
         .prepare("SELECT * FROM message WHERE id = 'legacy-message'")
         .get();

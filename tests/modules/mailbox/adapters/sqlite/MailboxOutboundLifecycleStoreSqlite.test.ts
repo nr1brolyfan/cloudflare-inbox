@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import { MailboxOutboundLifecycleStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxOutboundLifecycleStoreSqlite";
 import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
 import {
+  contact,
   folder,
   message,
   outboundDelivery,
@@ -122,6 +123,18 @@ describe("outbound lifecycle SQLite store", () => {
       Effect.gen(function* () {
         yield* setup;
         yield* seedDelivery("delivery-1", 1000);
+        const db = yield* MailboxDatabase;
+        yield* db
+          .update(message)
+          .set({
+            recipientsJson: JSON.stringify([
+              { address: "friend@EXAMPLE.test", displayName: "Friend" },
+              { address: "friend@example.test" },
+              { address: "me@example.test" },
+            ]),
+            senderJson: JSON.stringify({ address: "me@example.test" }),
+          })
+          .where(eq(message.id, "message-delivery-1"));
         const store = yield* MailboxOutboundLifecycleStore;
         const claim = yield* store.claimDue;
         if (claim === null) {
@@ -151,7 +164,6 @@ describe("outbound lifecycle SQLite store", () => {
           })
         ).toBeFalsy();
 
-        const db = yield* MailboxDatabase;
         const [row] = yield* db
           .select()
           .from(outboundDelivery)
@@ -167,12 +179,23 @@ describe("outbound lifecycle SQLite store", () => {
           .select()
           .from(message)
           .where(eq(message.id, "message-delivery-1"));
-        expect(settledMessage).toMatchObject({
-          acceptedAt: 1000,
-          folderId: "sent",
-          scheduledAt: 1000,
-          updatedAt: 1000,
-          version: 2,
+        const contactRows = yield* db.select().from(contact);
+        expect({ contactRows, settledMessage }).toMatchObject({
+          contactRows: [
+            {
+              firstSentAt: 1000,
+              lastSentAt: 1000,
+              normalizedAddress: "friend@example.test",
+              sentCount: 1,
+            },
+          ],
+          settledMessage: {
+            acceptedAt: 1000,
+            folderId: "sent",
+            scheduledAt: 1000,
+            updatedAt: 1000,
+            version: 2,
+          },
         });
       }).pipe(Effect.provide(lifecycleLive(() => 1000)))
     );

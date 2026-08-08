@@ -863,6 +863,12 @@ export const contact = sqliteTable(
     lastOutboundAt: integer("last_outbound_at"),
     inboundCount: integer("inbound_count").notNull().default(0),
     outboundCount: integer("outbound_count").notNull().default(0),
+    firstReceivedAt: integer("first_received_at"),
+    lastReceivedAt: integer("last_received_at"),
+    receivedCount: integer("received_count").notNull().default(0),
+    firstSentAt: integer("first_sent_at"),
+    lastSentAt: integer("last_sent_at"),
+    sentCount: integer("sent_count").notNull().default(0),
     hiddenAt: integer("hidden_at"),
   },
   (t) => [
@@ -900,6 +906,24 @@ export const contact = sqliteTable(
     ),
     check("contact_inbound_count_check", sql`${t.inboundCount} >= 0`),
     check("contact_outbound_count_check", sql`${t.outboundCount} >= 0`),
+    check(
+      "contact_first_received_at_check",
+      sql`${t.firstReceivedAt} is null or ${t.firstReceivedAt} >= 0`
+    ),
+    check(
+      "contact_last_received_at_check",
+      sql`${t.lastReceivedAt} is null or ${t.lastReceivedAt} >= 0`
+    ),
+    check("contact_received_count_check", sql`${t.receivedCount} >= 0`),
+    check(
+      "contact_first_sent_at_check",
+      sql`${t.firstSentAt} is null or ${t.firstSentAt} >= 0`
+    ),
+    check(
+      "contact_last_sent_at_check",
+      sql`${t.lastSentAt} is null or ${t.lastSentAt} >= 0`
+    ),
+    check("contact_sent_count_check", sql`${t.sentCount} >= 0`),
     check(
       "contact_hidden_at_check",
       sql`${t.hiddenAt} is null or ${t.hiddenAt} >= 0`

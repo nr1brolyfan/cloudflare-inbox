@@ -621,16 +621,26 @@ const commitInboundMessage = (
           updatedAt: now,
         });
         if (finalFolderId !== "spam" && finalFolderId !== "trash") {
+          if (input.message.sender !== undefined) {
+            yield* upsertContactObservations(tx, {
+              addresses: [input.message.sender],
+              at: input.receivedAt,
+              direction: "inbound",
+              excludeAddresses: [input.envelope.envelopeTo],
+              recordReceivedMessage: true,
+              trust: "safe",
+            });
+          }
           yield* upsertContactObservations(tx, {
-            addresses: [
-              ...(input.message.sender === undefined
-                ? []
-                : [input.message.sender]),
-              ...(input.message.replyTo ?? []),
-            ],
+            addresses: input.message.replyTo ?? [],
             at: input.receivedAt,
             direction: "inbound",
-            excludeAddresses: [input.envelope.envelopeTo],
+            excludeAddresses: [
+              input.envelope.envelopeTo,
+              ...(input.message.sender === undefined
+                ? []
+                : [input.message.sender.address]),
+            ],
             trust: "safe",
           });
           yield* upsertContactObservations(tx, {

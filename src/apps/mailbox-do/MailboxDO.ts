@@ -138,7 +138,12 @@ const mailboxDoImplementation = Effect.gen(function* () {
     alarm: () =>
       outboundAlarmDispatch.handle.pipe(
         Effect.ensuring(
-          changePublisher.publish(["messages", "navigation", "outbound"])
+          changePublisher.publish([
+            "contacts",
+            "messages",
+            "navigation",
+            "outbound",
+          ])
         )
       ),
     sqliteReady: () =>

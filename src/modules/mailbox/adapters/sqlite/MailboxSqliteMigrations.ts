@@ -915,6 +915,95 @@ const migrations = [
       GROUP BY normalized_address`,
     ],
   },
+  {
+    version: 19,
+    statements: [
+      `ALTER TABLE contact ADD COLUMN first_received_at INTEGER CHECK (first_received_at IS NULL OR first_received_at >= 0)`,
+      `ALTER TABLE contact ADD COLUMN last_received_at INTEGER CHECK (last_received_at IS NULL OR last_received_at >= 0)`,
+      `ALTER TABLE contact ADD COLUMN received_count INTEGER NOT NULL DEFAULT 0 CHECK (received_count >= 0)`,
+      `ALTER TABLE contact ADD COLUMN first_sent_at INTEGER CHECK (first_sent_at IS NULL OR first_sent_at >= 0)`,
+      `ALTER TABLE contact ADD COLUMN last_sent_at INTEGER CHECK (last_sent_at IS NULL OR last_sent_at >= 0)`,
+      `ALTER TABLE contact ADD COLUMN sent_count INTEGER NOT NULL DEFAULT 0 CHECK (sent_count >= 0)`,
+      `DROP TRIGGER contact_search_au`,
+      `WITH received AS (
+        SELECT
+          substr(address, 1, instr(address, '@')) || lower(substr(address, instr(address, '@') + 1)) AS normalized_address,
+          min(activity_at) AS first_at,
+          max(activity_at) AS last_at,
+          count(*) AS message_count
+        FROM (
+          SELECT
+            json_extract(sender_json, '$.address') AS address,
+            activity_at
+          FROM message
+          WHERE direction = 'inbound'
+            AND deleted_at IS NULL
+            AND folder_id NOT IN ('spam', 'trash')
+            AND sender_json IS NOT NULL
+            AND json_type(sender_json) = 'object'
+        )
+        WHERE typeof(address) = 'text'
+          AND length(address) BETWEEN 3 AND 320
+          AND instr(address, '@') > 1
+        GROUP BY normalized_address
+      )
+      UPDATE contact
+      SET first_received_at = (SELECT first_at FROM received WHERE received.normalized_address = contact.normalized_address),
+          last_received_at = (SELECT last_at FROM received WHERE received.normalized_address = contact.normalized_address),
+          received_count = coalesce((SELECT message_count FROM received WHERE received.normalized_address = contact.normalized_address), 0)`,
+      `WITH accepted_raw AS (
+        SELECT
+          message.id AS message_id,
+          json_extract(recipient.value, '$.address') AS address,
+          json_extract(message.sender_json, '$.address') AS sender_address,
+          outbound_delivery.accepted_at AS accepted_at
+        FROM message
+        JOIN outbound_delivery
+          ON outbound_delivery.id = message.outbound_delivery_id
+         AND outbound_delivery.message_id = message.id,
+        json_each(message.recipients_json) AS recipient
+        WHERE message.direction = 'outbound'
+          AND message.deleted_at IS NULL
+          AND outbound_delivery.deleted_at IS NULL
+          AND outbound_delivery.status IN ('accepted', 'delivered', 'bounced')
+          AND outbound_delivery.accepted_at IS NOT NULL
+          AND json_type(message.recipients_json) = 'array'
+      ), accepted_recipient AS (
+        SELECT DISTINCT
+          message_id,
+          substr(address, 1, instr(address, '@'))
+            || lower(substr(address, instr(address, '@') + 1)) AS normalized_address,
+          accepted_at
+        FROM accepted_raw
+        WHERE typeof(address) = 'text'
+          AND length(address) BETWEEN 3 AND 320
+          AND instr(address, '@') > 1
+          AND (
+            typeof(sender_address) != 'text'
+            OR substr(address, 1, instr(address, '@')) || lower(substr(address, instr(address, '@') + 1))
+              != substr(sender_address, 1, instr(sender_address, '@')) || lower(substr(sender_address, instr(sender_address, '@') + 1))
+          )
+      ), sent AS (
+        SELECT
+          normalized_address,
+          min(accepted_at) AS first_at,
+          max(accepted_at) AS last_at,
+          count(*) AS message_count
+        FROM accepted_recipient
+        GROUP BY normalized_address
+      )
+      UPDATE contact
+      SET first_sent_at = (SELECT first_at FROM sent WHERE sent.normalized_address = contact.normalized_address),
+          last_sent_at = (SELECT last_at FROM sent WHERE sent.normalized_address = contact.normalized_address),
+          sent_count = coalesce((SELECT message_count FROM sent WHERE sent.normalized_address = contact.normalized_address), 0)`,
+      `CREATE TRIGGER contact_search_au AFTER UPDATE OF address, display_name ON contact BEGIN
+        INSERT INTO contact_search(contact_search, rowid, address, display_name)
+        VALUES ('delete', old.rowid, old.address, coalesce(old.display_name, ''));
+        INSERT INTO contact_search(rowid, address, display_name)
+        VALUES (new.rowid, new.address, coalesce(new.display_name, ''));
+      END`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;
