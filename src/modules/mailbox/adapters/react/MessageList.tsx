@@ -841,9 +841,9 @@ export function MessageList({
                         className="min-w-0 flex-1 py-1 text-inherit no-underline outline-none hover:text-inherit focus-visible:text-[var(--lagoon-deep)]"
                       >
                         <div className="flex items-center gap-2">
-                          <span
-                            className={`size-2 shrink-0 rounded-full ${message.read ? "bg-transparent" : "bg-[var(--lagoon-deep)]"}`}
-                          />
+                          {message.read ? null : (
+                            <span className="size-2 shrink-0 rounded-full bg-[var(--lagoon-deep)]" />
+                          )}
                           <span
                             className={`min-w-0 flex-1 truncate text-sm ${message.read ? "font-bold" : "font-extrabold"}`}
                           >
@@ -853,7 +853,7 @@ export function MessageList({
                             {messageDate.format(new Date(message.activityAt))}
                           </span>
                         </div>
-                        <div className="mt-1 flex items-center gap-2 pl-4">
+                        <div className="mt-1 flex items-center gap-2">
                           {message.direction === "inbound" ? (
                             <ArrowDownLeft
                               aria-label="Received"
@@ -890,7 +890,7 @@ export function MessageList({
                             />
                           ) : null}
                         </div>
-                        <p className="mt-0.5 truncate pl-4 text-xs leading-5 text-[var(--sea-ink-soft)]">
+                        <p className="mt-0.5 truncate text-xs leading-5 text-[var(--sea-ink-soft)]">
                           {message.snippet || "No text preview"}
                         </p>
                       </a>
