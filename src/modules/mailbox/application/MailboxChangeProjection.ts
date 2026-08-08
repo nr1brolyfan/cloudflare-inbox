@@ -29,9 +29,11 @@ export const mailDataResponseChangeScopes = (
 ): MailboxChangeScopes => {
   switch (response._tag) {
     case "MessageMutated":
-    case "MessagesBatchMutated":
-    case "InboundCommitted": {
+    case "MessagesBatchMutated": {
       return ["messages", "navigation", "threads"];
+    }
+    case "InboundCommitted": {
+      return ["contacts", "messages", "navigation", "threads"];
     }
     case "DraftCreated":
     case "DraftUpdated":
@@ -41,11 +43,13 @@ export const mailDataResponseChangeScopes = (
       return ["drafts", "navigation"];
     }
     case "OutboundScheduled": {
-      return ["drafts", "messages", "navigation", "outbound"];
+      return ["contacts", "drafts", "messages", "navigation", "outbound"];
     }
-    case "OutboundCancelled":
-    case "OutboundResent": {
+    case "OutboundCancelled": {
       return ["messages", "navigation", "outbound"];
+    }
+    case "OutboundResent": {
+      return ["contacts", "messages", "navigation", "outbound"];
     }
     default: {
       return noChanges;

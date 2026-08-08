@@ -1,5 +1,6 @@
 import * as Layer from "effect/Layer";
 
+import { MailboxContactStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxContactStoreSqlite";
 import { MailboxDirectoryStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
 import { MailboxDraftAttachmentStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDraftAttachmentStoreSqlite";
 import { MailboxDraftStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDraftStoreSqlite";
@@ -19,6 +20,7 @@ export const MailboxSqliteInfrastructureLayer = Layer.mergeAll(
 const MailboxSqliteStoresLayer = Layer.mergeAll(
   MailboxResourceIndexSqliteLayer,
   MailboxDirectoryStoreSqliteLayer,
+  MailboxContactStoreSqliteLayer,
   MailboxMessageStoreSqliteLayer,
   MailboxInboundStoreSqliteLayer,
   MailboxDraftStoreSqliteLayer,

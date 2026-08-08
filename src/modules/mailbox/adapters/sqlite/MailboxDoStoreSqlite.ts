@@ -3,6 +3,7 @@ import * as Layer from "effect/Layer";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 
+import { MailboxContactStore } from "#/modules/mailbox/adapters/sqlite/MailboxContactStoreSqlite";
 import { MailboxDirectoryStore } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
 import { MailboxDraftAttachmentStore } from "#/modules/mailbox/adapters/sqlite/MailboxDraftAttachmentStoreSqlite";
 import { MailboxDraftStore } from "#/modules/mailbox/adapters/sqlite/MailboxDraftStoreSqlite";
@@ -73,6 +74,7 @@ const encodeMailDataResult = <A, E extends { readonly _tag: string }>(
 const executeMailDataRequest = (
   request: MailDataRpcRequestType,
   stores: MailboxMessageStore &
+    MailboxContactStore &
     MailboxDraftStore &
     MailboxDraftAttachmentStore &
     MailboxOutboundStore &
@@ -91,6 +93,13 @@ const executeMailDataRequest = (
         request,
         stores.searchMessages(request.input),
         (value) => ({ _tag: "MessagesSearched", value })
+      );
+    }
+    case "SearchContacts": {
+      return encodeMailDataResult(
+        request,
+        stores.searchContacts(request.input),
+        (value) => ({ _tag: "ContactsSearched", value })
       );
     }
     case "GetMessage": {
@@ -406,6 +415,7 @@ export const MailboxDoStoreSqliteLayer = Layer.effect(
     const directoryStore = yield* MailboxDirectoryStore;
     const resourceIndex = yield* MailboxResourceIndex;
     const messageStore = yield* MailboxMessageStore;
+    const contactStore = yield* MailboxContactStore;
     const draftStore = yield* MailboxDraftStore;
     const draftAttachmentStore = yield* MailboxDraftAttachmentStore;
     const outboundStore = yield* MailboxOutboundStore;
@@ -413,6 +423,7 @@ export const MailboxDoStoreSqliteLayer = Layer.effect(
     const outboundAlarm = yield* MailboxOutboundAlarmScheduler;
     const mailDataStores = {
       ...messageStore,
+      ...contactStore,
       ...draftStore,
       ...draftAttachmentStore,
       ...outboundStore,

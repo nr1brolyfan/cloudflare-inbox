@@ -83,6 +83,38 @@ const labels = [
 describe(MailboxShell, () => {
   afterEach(cleanup);
 
+  it("navigates to settings and marks it as the current page", () => {
+    const onSettingsNavigate = vi.fn<() => void>();
+    render(
+      <MailboxShell
+        folders={folders}
+        labels={labels}
+        mailboxAddress="inbox@example.test"
+        mailboxName="Primary"
+        onNavigate={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
+        onPrefetch={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
+        onSettingsNavigate={onSettingsNavigate}
+        onSignOut={vi.fn<() => void>()}
+        principalLabel="user-a"
+        isSigningOut={false}
+        settingsSelected
+        viewTitle="Settings"
+      >
+        <div>Settings workspace</div>
+      </MailboxShell>
+    );
+
+    const settings = screen.getByRole("link", { name: "Settings" });
+    expect(settings.getAttribute("href")).toBe("/mail/settings");
+    expect(settings.getAttribute("aria-current")).toBe("page");
+    fireEvent.click(settings);
+    expect(onSettingsNavigate).toHaveBeenCalledOnce();
+  });
+
   it("renders the mailbox chrome and workspace content", () => {
     const signOut = vi.fn<() => void>();
 
@@ -101,8 +133,10 @@ describe(MailboxShell, () => {
           (selection: { folder?: string; label?: string }) => void
         >()}
         onSignOut={signOut}
+        onSettingsNavigate={vi.fn<() => void>()}
         outboundDeliveryId="delivery-1"
         selectedFolderId="inbox"
+        settingsSelected={false}
         viewTitle="Inbox"
       >
         <p>Workspace content</p>
@@ -168,7 +202,9 @@ describe(MailboxShell, () => {
         onNavigate={navigate}
         onPrefetch={prefetch}
         onSignOut={vi.fn<() => void>()}
+        onSettingsNavigate={vi.fn<() => void>()}
         selectedFolderId="inbox"
+        settingsSelected={false}
         viewTitle="Inbox"
       >
         <p>Workspace content</p>
@@ -205,7 +241,9 @@ describe(MailboxShell, () => {
           (selection: { folder?: string; label?: string }) => void
         >()}
         onSignOut={vi.fn<() => void>()}
+        onSettingsNavigate={vi.fn<() => void>()}
         selectedFolderId="inbox"
+        settingsSelected={false}
         viewTitle="Inbox"
       >
         <p>Workspace content</p>
@@ -271,7 +309,9 @@ describe(MailboxShell, () => {
           (selection: { folder?: string; label?: string }) => void
         >()}
         onSignOut={signOut}
+        onSettingsNavigate={vi.fn<() => void>()}
         selectedFolderId="inbox"
+        settingsSelected={false}
         signOutError="Sign out failed. Try again."
         viewTitle="Inbox"
       >

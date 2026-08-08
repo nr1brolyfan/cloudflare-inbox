@@ -1291,3 +1291,64 @@ export const appUserOrganizationPreference = sqliteTable(
       .where(sql`default_mailbox_id is not null`),
   ]
 );
+
+export const appUserMailboxContactPreference = sqliteTable(
+  "app_user_mailbox_contact_preference",
+  {
+    organizationId: text("organization_id").notNull(),
+    mailboxId: text("mailbox_id").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => authUser.id, {
+        onDelete: "restrict",
+        onUpdate: "restrict",
+      }),
+    visibility: text("visibility", {
+      enum: ["safe", "all-participants"],
+    })
+      .notNull()
+      .default("safe"),
+    allParticipantsEnabledAt: integer("all_participants_enabled_at"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    primaryKey({
+      name: "app_user_mailbox_contact_preference_pkey",
+      columns: [t.mailboxId, t.userId],
+    }),
+    foreignKey({
+      columns: [t.organizationId, t.mailboxId],
+      foreignColumns: [appMailbox.organizationId, appMailbox.id],
+      name: "app_user_mailbox_contact_preference_mailbox_fk",
+    })
+      .onUpdate("restrict")
+      .onDelete("restrict"),
+    check(
+      "app_user_mailbox_contact_preference_visibility_check",
+      sql`${t.visibility} in ('safe', 'all-participants')`
+    ),
+    check(
+      "app_user_mailbox_contact_preference_enabled_check",
+      sql`(${t.visibility} = 'safe' and ${t.allParticipantsEnabledAt} is null)
+        or (${t.visibility} = 'all-participants' and ${t.allParticipantsEnabledAt} >= 0)`
+    ),
+    check(
+      "app_user_mailbox_contact_preference_created_check",
+      sql`${t.createdAt} >= 0`
+    ),
+    check(
+      "app_user_mailbox_contact_preference_updated_check",
+      sql`${t.updatedAt} >= ${t.createdAt}`
+    ),
+    check(
+      "app_user_mailbox_contact_preference_version_check",
+      sql`${t.version} >= 1`
+    ),
+    index("app_user_mailbox_contact_preference_user_idx").on(
+      t.userId,
+      t.mailboxId
+    ),
+  ]
+);

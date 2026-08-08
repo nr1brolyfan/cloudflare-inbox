@@ -27,7 +27,7 @@ describe("mailbox change projection", () => {
     ]).toStrictEqual([
       ["messages", "navigation", "threads"],
       ["drafts", "navigation"],
-      ["drafts", "messages", "navigation", "outbound"],
+      ["contacts", "drafts", "messages", "navigation", "outbound"],
       ["messages", "navigation", "threads"],
     ]);
   });

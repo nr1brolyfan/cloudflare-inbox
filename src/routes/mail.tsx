@@ -17,8 +17,15 @@ function MailLayoutRoute() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  const settingsMode = pathname === "/mail/settings";
 
   return (
-    <MailboxApplication search={mailboxSearchForPath(pathname, routeSearch)} />
+    <MailboxApplication
+      search={mailboxSearchForPath(
+        settingsMode ? "/mail/inbox" : pathname,
+        routeSearch
+      )}
+      settingsMode={settingsMode}
+    />
   );
 }

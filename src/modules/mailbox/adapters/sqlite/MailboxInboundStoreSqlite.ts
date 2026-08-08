@@ -42,6 +42,7 @@ import { MailboxIdentity } from "#/modules/mailbox/ports/MailboxIdentity";
 import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 
+import { upsertContactObservations } from "./MailboxContactProjectionSqlite";
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";
 import {
@@ -619,6 +620,27 @@ const commitInboundMessage = (
           createdAt: now,
           updatedAt: now,
         });
+        if (finalFolderId !== "spam" && finalFolderId !== "trash") {
+          yield* upsertContactObservations(tx, {
+            addresses: [
+              ...(input.message.sender === undefined
+                ? []
+                : [input.message.sender]),
+              ...(input.message.replyTo ?? []),
+            ],
+            at: input.receivedAt,
+            direction: "inbound",
+            excludeAddresses: [input.envelope.envelopeTo],
+            trust: "safe",
+          });
+          yield* upsertContactObservations(tx, {
+            addresses: [...input.message.to, ...input.message.cc],
+            at: input.receivedAt,
+            direction: "inbound",
+            excludeAddresses: [input.envelope.envelopeTo],
+            trust: "participant",
+          });
+        }
 
         const result = Schema.decodeUnknownSync(InboundProcessingSchema)({
           id: input.inboundIngestId,

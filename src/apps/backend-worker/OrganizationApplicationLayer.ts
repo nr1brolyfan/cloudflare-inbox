@@ -1,6 +1,7 @@
 import * as Layer from "effect/Layer";
 
 import { MailboxNavigationD1Layer } from "#/modules/organization/adapters/d1/MailboxNavigationD1";
+import { UserMailboxContactPreferencesD1Layer } from "#/modules/organization/adapters/d1/UserMailboxContactPreferencesD1";
 
 import {
   MailboxAdministrationD1Layer,
@@ -22,7 +23,8 @@ const OrganizationServicesLayer = Layer.merge(
 );
 
 /** Organization use cases backed by the existing control-plane D1 registry. */
-export const OrganizationLayer = Layer.merge(
+export const OrganizationLayer = Layer.mergeAll(
   OrganizationServicesLayer,
-  MailboxNavigationD1Layer
+  MailboxNavigationD1Layer,
+  UserMailboxContactPreferencesD1Layer
 );

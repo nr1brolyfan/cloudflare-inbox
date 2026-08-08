@@ -49,6 +49,7 @@ import type {
   MailResourceResolveError,
 } from "#/modules/mailbox/ports/MailboxAuthorization";
 import { MailboxAuthorization } from "#/modules/mailbox/ports/MailboxAuthorization";
+import { decodeMailboxDomainError } from "#/modules/mailbox/ports/MailboxDoProtocol";
 import {
   CurrentMailboxOperationProvenance,
   ExplicitUserAction,
@@ -64,6 +65,8 @@ import type { MailboxNavigationError } from "#/modules/organization/application/
 import { MailboxNavigation } from "#/modules/organization/application/MailboxNavigation";
 import type { OrganizationBootstrapError } from "#/modules/organization/application/OrganizationBootstrap";
 import { OrganizationBootstrap } from "#/modules/organization/application/OrganizationBootstrap";
+import type { UserMailboxContactPreferenceError } from "#/modules/organization/application/UserMailboxContactPreferences";
+import { UserMailboxContactPreferences } from "#/modules/organization/application/UserMailboxContactPreferences";
 import { attachmentContentDisposition } from "#/shared/ContentDisposition";
 
 import { MailboxHttpApi } from "./BackendMailboxHttpApi";
@@ -183,6 +186,7 @@ type MailboxHandlerError =
   | MailboxDraftAttachmentError
   | MailboxOutboundDeliveryReadingError
   | MailboxOutboundSendingError
+  | UserMailboxContactPreferenceError
   | MailboxDomainError
   | MailboxRepositoryError
   | WorkflowStartError;
@@ -215,6 +219,30 @@ const mapNavigationError = (
         })
       )
     : Effect.fail(internalError());
+
+const mapContactPreferenceError = (
+  error: UserMailboxContactPreferenceError
+): Effect.Effect<
+  never,
+  AuthConflictError | AuthInternalError | AuthNotFoundError
+> => {
+  if (error.reason === "conflict") {
+    return Effect.fail(
+      new AuthConflictError({
+        code: "conflict",
+        message: "Contact preferences changed",
+      })
+    );
+  }
+  return error.reason === "not-found"
+    ? Effect.fail(
+        new AuthNotFoundError({
+          code: "not_found",
+          message: "Mailbox not found",
+        })
+      )
+    : Effect.fail(internalError());
+};
 
 const mapMessageReadingError = (
   error: MailboxMessageReadingError
@@ -519,6 +547,10 @@ const mapHttpErrors = <A, R>(
     Effect.catchTag("MailboxAdministrationError", mapAdministrationError),
     Effect.catchTag("OrganizationBootstrapError", mapAdministrationError),
     Effect.catchTag("MailboxNavigationError", mapNavigationError),
+    Effect.catchTag(
+      "UserMailboxContactPreferenceError",
+      mapContactPreferenceError
+    ),
     Effect.catchTag("MailboxMessageReadingError", mapMessageReadingError),
     Effect.catchTag("MailboxMessageActionError", mapMessageActionError),
     Effect.catchTag("MailboxMessageHtmlError", mapMessageHtmlError),
@@ -561,6 +593,7 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
     const administration = yield* MailboxAdministration;
     const organizationBootstrap = yield* OrganizationBootstrap;
     const navigation = yield* MailboxNavigation;
+    const contactPreferences = yield* UserMailboxContactPreferences;
     const messageReading = yield* MailboxMessageReading;
     const messageActions = yield* MailboxMessageActions;
     const messageHtml = yield* MailboxMessageHtmlReading;
@@ -610,6 +643,9 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
       )
       .handle("getDraft", ({ params }) =>
         draftEditing.get(params).pipe(mapHttpErrors)
+      )
+      .handle("getContactPreferences", ({ params }) =>
+        contactPreferences.get(params).pipe(mapHttpErrors)
       )
       .handle("listDrafts", ({ params, query }) =>
         draftReading
@@ -773,6 +809,30 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
           return yield* messageReading.listView(view);
         }).pipe(mapHttpErrors)
       )
+      .handle("searchContacts", ({ params, query }) =>
+        Effect.gen(function* () {
+          const preference = yield* contactPreferences.get(params);
+          const response = yield* mailboxDo.executeMailData({
+            _tag: "SearchContacts",
+            input: {
+              mailboxId: params.mailboxId,
+              query: query.q,
+              limit: query.limit ?? 12,
+              allParticipantsEnabledAt:
+                preference.allParticipantsEnabledAt ?? undefined,
+            },
+          });
+          if (response._tag === "DomainError") {
+            return yield* decodeMailboxDomainError(response);
+          }
+          if (response._tag !== "ContactsSearched") {
+            return yield* Effect.die(
+              new Error("Contact search RPC response invariant failed")
+            );
+          }
+          return response.value;
+        }).pipe(mapHttpErrors)
+      )
       .handle("getThread", ({ params, query }) =>
         Effect.gen(function* () {
           const view =
@@ -833,6 +893,9 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
       )
       .handle("updateDraft", ({ params, payload }) =>
         draftEditing.update({ ...params, ...payload }).pipe(mapHttpErrors)
+      )
+      .handle("updateContactPreferences", ({ params, payload }) =>
+        contactPreferences.update({ ...params, ...payload }).pipe(mapHttpErrors)
       )
       .handle("sendDraft", ({ params, payload }) =>
         Effect.gen(function* () {

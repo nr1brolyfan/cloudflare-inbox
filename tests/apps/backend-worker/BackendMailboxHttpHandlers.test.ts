@@ -130,6 +130,11 @@ import {
   OrganizationBootstrap,
   OrganizationBootstrapError,
 } from "#/modules/organization/application/OrganizationBootstrap";
+import type { UserMailboxContactPreferencesService } from "#/modules/organization/application/UserMailboxContactPreferences";
+import {
+  MailboxContactPreference,
+  UserMailboxContactPreferences,
+} from "#/modules/organization/application/UserMailboxContactPreferences";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { HttpApiPlatformLayer } from "#/platform/cloudflare/HttpApiPlatform";
 import {
@@ -142,6 +147,12 @@ const publicOrigin = "https://inbox.test";
 const MailboxTestApi = HttpApi.make("AuthApi").add(MailboxGroup);
 const userId = UserId("user-a");
 const sessionId = SessionId("session-a");
+const contactPreference = Schema.decodeUnknownSync(MailboxContactPreference)({
+  allParticipantsEnabledAt: null,
+  mailboxId: "mailbox-a",
+  version: 0,
+  visibility: "safe",
+});
 const sessionToken = SessionToken(`${sessionId}.secret`);
 const validatedSession = {
   actor: { sessionId, userId },
@@ -447,6 +458,12 @@ const makeHandler = (
     {
       create: () => Effect.succeed(mailboxDraft),
     }
+  ),
+  contactPreferences: UserMailboxContactPreferencesService = UserMailboxContactPreferences.of(
+    {
+      get: () => Effect.succeed(contactPreference),
+      update: () => Effect.succeed(contactPreference),
+    }
   )
 ) => {
   const requestAuthLive = Layer.mergeAll(
@@ -494,6 +511,7 @@ const makeHandler = (
             })
         ),
         Layer.succeed(MailboxNavigation, navigation),
+        Layer.succeed(UserMailboxContactPreferences, contactPreferences),
         Layer.succeed(MailboxMessageReading, messageReading),
         Layer.succeed(MailboxMessageActions, messageActions),
         Layer.succeed(MailboxMessageHtmlReading, messageHtml),
@@ -1901,6 +1919,35 @@ describe("protected mailbox API", () => {
           primaryAddress: "inbox@example.com",
         },
       });
+    } finally {
+      await dispose();
+    }
+  });
+
+  it("reads and updates the current user's contact preferences", async () => {
+    const { dispose, handler } = makeHandler(makeAdministration());
+
+    try {
+      const read = await handler(
+        mailboxRequest("/api/mailboxes/mailbox-a/preferences/contacts", "GET")
+      );
+      const update = await handler(
+        mailboxRequest(
+          "/api/mailboxes/mailbox-a/preferences/contacts",
+          "PATCH",
+          {
+            body: { expectedVersion: 0, visibility: "all-participants" },
+          }
+        )
+      );
+
+      expect(read.status).toBe(200);
+      await expect(read.json()).resolves.toMatchObject({
+        mailboxId: "mailbox-a",
+        version: 0,
+        visibility: "safe",
+      });
+      expect(update.status).toBe(200);
     } finally {
       await dispose();
     }

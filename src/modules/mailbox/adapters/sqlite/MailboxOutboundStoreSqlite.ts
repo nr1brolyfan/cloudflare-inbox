@@ -49,6 +49,7 @@ import { MailAddress } from "#/shared/MailAddress";
 import { OperationId } from "#/shared/Operation";
 import { Version } from "#/shared/Temporal";
 
+import { upsertContactObservations } from "./MailboxContactProjectionSqlite";
 import { MailboxOperationStore } from "./MailboxOperationStoreSqlite";
 import { MailboxDatabase } from "./MailboxSqliteDatabase";
 import {
@@ -531,6 +532,13 @@ const scheduleOutbound = (
           createdAt: now,
           updatedAt: now,
         });
+        yield* upsertContactObservations(tx, {
+          addresses: recipients,
+          at: sendAt,
+          direction: "outbound",
+          excludeAddresses: [input.sender.address],
+          trust: "safe",
+        });
         for (const source of attachments) {
           if (source === undefined || source.contentSha256 === null) {
             return yield* Effect.die(
@@ -915,6 +923,20 @@ const resendOutbound = (
           scheduledAt: now,
           createdAt: now,
           updatedAt: now,
+        });
+        yield* upsertContactObservations(tx, {
+          addresses: [
+            ...sourceMetadata.to,
+            ...sourceMetadata.cc,
+            ...decodeJson(AddressList, sourceMessage.bccJson),
+          ],
+          at: now,
+          direction: "outbound",
+          excludeAddresses:
+            sourceMetadata.sender === undefined
+              ? []
+              : [sourceMetadata.sender.address],
+          trust: "safe",
         });
         for (const sourceAttachment of sourceAttachments) {
           yield* tx.insert(attachment).values({

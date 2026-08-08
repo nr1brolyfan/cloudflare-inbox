@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import * as Schema from "effect/Schema";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -11,6 +17,7 @@ import {
 } from "#/modules/mailbox/adapters/react/DraftEditor";
 import type { DraftEditorSnapshot } from "#/modules/mailbox/adapters/react/DraftEditor";
 import { DraftEditorContent } from "#/modules/mailbox/application/MailboxDraftEditing";
+import { MailAddress } from "#/shared/MailAddress";
 
 const initial = Schema.decodeUnknownSync(DraftEditorContent)({
   bcc: [],
@@ -104,7 +111,7 @@ describe(DraftEditor, () => {
   it("sends a new dirty draft using the latest parsed fields", () => {
     const onSend = vi.fn<(snapshot: DraftEditorSnapshot) => void>();
     renderEditor({ isNew: true, onSend, saveStatus: "unsaved" });
-    fireEvent.change(screen.getByRole("textbox", { name: "To recipients" }), {
+    fireEvent.change(screen.getByRole("combobox", { name: "To recipients" }), {
       target: { value: "Next <next@example.test>" },
     });
     fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
@@ -120,6 +127,31 @@ describe(DraftEditor, () => {
         }),
       })
     );
+  });
+
+  it("loads recipient suggestions and selects them without submitting", async () => {
+    vi.useFakeTimers();
+    const onSend = vi.fn<(snapshot: DraftEditorSnapshot) => void>();
+    const alice = Schema.decodeUnknownSync(MailAddress)({
+      address: "alice@example.test",
+      displayName: "Alice",
+    });
+    const loadRecipientSuggestions = vi.fn<
+      (query: string) => Promise<readonly (typeof initial.to)[number][]>
+    >(() => Promise.resolve([alice]));
+    renderEditor({ loadRecipientSuggestions, onSend });
+    const input = screen.getByRole("combobox", { name: "To recipients" });
+
+    fireEvent.change(input, { target: { value: "al" } });
+    await act(() => vi.advanceTimersByTimeAsync(120));
+
+    expect(loadRecipientSuggestions).toHaveBeenCalledWith("al");
+    expect(screen.getByRole("option", { name: /Alice/u })).toBeDefined();
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect((input as HTMLInputElement).value).toBe(
+      "Alice <alice@example.test>, "
+    );
+    expect(onSend).not.toHaveBeenCalled();
   });
 
   it("stays editable during background saving and reports save status", () => {

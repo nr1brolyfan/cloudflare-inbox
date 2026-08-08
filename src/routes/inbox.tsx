@@ -37,6 +37,7 @@ import {
   sendMailboxDraft,
   setMailboxThreadRead,
   undoMailboxSend,
+  updateMailboxContactPreferences,
   updateMailboxDraft,
 } from "#/apps/website/TanStackFunctions";
 import {
@@ -132,6 +133,12 @@ import {
 } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import type { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 import {
+  MailboxContactPreference,
+  UpdateMailboxContactPreferenceCommand,
+} from "#/modules/organization/application/UserMailboxContactPreferences";
+import {
+  mailboxContactPreferenceQueryOptions,
+  mailboxContactSearchQueryOptions,
   mailboxDraftListQueryOptions,
   mailboxMessageListQueryOptions,
   MailboxRequestError,
@@ -151,7 +158,8 @@ type MailboxNavigateOptions =
       readonly search: Schema.Schema.Type<typeof InboxSearch>;
       readonly to: "/inbox";
     }
-  | { readonly replace?: boolean; readonly to: "/" };
+  | { readonly replace?: boolean; readonly to: "/" }
+  | { readonly replace?: boolean; readonly to: "/mail/settings" };
 
 const navigateToMailbox = (
   navigate: ReturnType<typeof useNavigate>,
@@ -206,6 +214,12 @@ const decodeMailboxMessageBatchAction = Schema.decodeUnknownSync(
 );
 const decodeSetMailboxThreadRead = Schema.decodeUnknownSync(
   SetMailboxThreadReadCommand
+);
+const decodeContactPreferenceUpdate = Schema.decodeUnknownSync(
+  UpdateMailboxContactPreferenceCommand
+);
+const decodeContactPreference = Schema.decodeUnknownSync(
+  MailboxContactPreference
 );
 
 const prefetchMailboxSelection = ({
@@ -2161,6 +2175,16 @@ function DraftWorkspace({
       isSendUncertain={sendFailure?.retryable === true}
       isSaving={saveStatus === "saving"}
       isSending={isSending}
+      loadRecipientSuggestions={(query) =>
+        queryClient.fetchQuery(
+          mailboxContactSearchQueryOptions({
+            mailboxId,
+            query,
+            queryClient,
+            sessionId,
+          })
+        )
+      }
       onAttachFiles={attachFiles}
       onAutosave={queueSave}
       onChange={(fields) => {
@@ -2215,6 +2239,158 @@ function DraftWorkspace({
   );
 }
 
+function MailboxSettingsWorkspace({
+  mailboxId,
+  sessionId,
+}: {
+  readonly mailboxId: string;
+  readonly sessionId: string;
+}) {
+  const queryClient = useQueryClient();
+  const preferenceOptions = mailboxContactPreferenceQueryOptions({
+    mailboxId,
+    queryClient,
+    sessionId,
+  });
+  const preference = useQuery(preferenceOptions);
+  const update = useMutation({
+    mutationFn: async (visibility: "all-participants" | "safe") => {
+      if (preference.data === undefined) {
+        throw new Error("Contact preferences are not loaded");
+      }
+      const result = await updateMailboxContactPreferences({
+        data: decodeContactPreferenceUpdate({
+          expectedVersion: preference.data.version,
+          mailboxId,
+          visibility,
+        }),
+      });
+      await handleMailboxReadDenial(queryClient, result);
+      if (!result.ok) {
+        throw new MailboxRequestError(result.status);
+      }
+      return decodeContactPreference(result.preference);
+    },
+    onSuccess: async (saved) => {
+      queryClient.setQueryData(preferenceOptions.queryKey, saved);
+      await queryClient.invalidateQueries({
+        queryKey: ["mailbox", "contacts", sessionId, mailboxId],
+      });
+    },
+    retry: false,
+  });
+
+  if (preference.isLoading) {
+    return (
+      <output className="flex h-full items-center justify-center text-[var(--sea-ink-soft)]">
+        <LoaderCircle
+          aria-label="Loading mailbox settings"
+          className="animate-spin"
+        />
+      </output>
+    );
+  }
+  if (preference.error || preference.data === undefined) {
+    return (
+      <div className="mx-auto flex h-full max-w-3xl items-center px-5 sm:px-8">
+        <Alert className="w-full rounded-2xl border border-red-200 bg-red-50 p-5 text-red-900">
+          <p className="font-extrabold">Could not load mailbox settings.</p>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => void preference.refetch()}
+            className="mt-4 rounded-xl"
+          >
+            Try again
+          </Button>
+        </Alert>
+      </div>
+    );
+  }
+
+  const includeParticipants = preference.data.visibility === "all-participants";
+  return (
+    <div className="h-full overflow-y-auto bg-[var(--workspace-bg)] px-4 py-6 sm:px-8 sm:py-9 lg:px-12">
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-7 max-w-2xl">
+          <p className="island-kicker">Mailbox preferences</p>
+          <h2 className="display-title mt-2 text-2xl font-bold sm:text-3xl">
+            Choose who appears while you write
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-[var(--sea-ink-soft)]">
+            Suggestions are private to your account and this mailbox.
+          </p>
+        </div>
+
+        <section
+          aria-labelledby="recipient-suggestions-heading"
+          className="overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_20px_60px_rgba(23,58,64,0.09)]"
+        >
+          <div className="border-b border-[var(--line)] px-5 py-5 sm:px-7">
+            <p className="text-[0.64rem] font-extrabold tracking-[0.16em] text-[var(--palm)] uppercase">
+              Contacts
+            </p>
+            <h3
+              id="recipient-suggestions-heading"
+              className="display-title mt-1.5 text-xl font-bold"
+            >
+              Recipient suggestions
+            </h3>
+          </div>
+          <div className="flex items-start justify-between gap-5 px-5 py-6 sm:px-7 sm:py-7">
+            <div className="max-w-xl">
+              <p className="text-sm font-extrabold">
+                Include other conversation participants
+              </p>
+              <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+                Suggest people found in To and Cc on incoming messages. Only
+                participants seen after you enable this option are included.
+              </p>
+              <p className="mt-3 text-xs font-bold text-[var(--sea-ink-soft)]">
+                People you have emailed, senders and Reply-To addresses are
+                always suggested.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={includeParticipants}
+              aria-label="Include other conversation participants"
+              disabled={update.isPending}
+              onClick={() =>
+                update.mutate(includeParticipants ? "safe" : "all-participants")
+              }
+              className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full border transition-colors disabled:cursor-wait disabled:opacity-55 ${
+                includeParticipants
+                  ? "border-[var(--palm)] bg-[var(--palm)]"
+                  : "border-[var(--line)] bg-[var(--control-bg)]"
+              }`}
+            >
+              <span
+                aria-hidden="true"
+                className={`absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform ${
+                  includeParticipants ? "translate-x-5" : "translate-x-0.5"
+                }`}
+              />
+            </button>
+          </div>
+          {update.error === null ? null : (
+            <Alert className="mx-5 mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:mx-7">
+              Settings changed elsewhere or could not be saved. Reload and try
+              again.
+            </Alert>
+          )}
+          {update.isSuccess ? (
+            <output className="border-t border-[var(--line)] px-5 py-3 text-xs font-bold text-[var(--palm)] sm:px-7">
+              Preference saved
+            </output>
+          ) : null}
+        </section>
+      </div>
+    </div>
+  );
+}
+
 // oxlint-disable-next-line eslint/complexity -- The authenticated route selects navigation, workspace, and persistent delivery-tracker states.
 function AuthenticatedInbox({
   data,
@@ -2223,6 +2399,7 @@ function AuthenticatedInbox({
   signOutError,
   search,
   sessionId,
+  settingsMode,
   userId,
 }: {
   readonly data: Schema.Codec.Encoded<typeof MailboxNavigationResult>;
@@ -2231,6 +2408,7 @@ function AuthenticatedInbox({
   readonly signOutError?: string;
   readonly search: Schema.Schema.Type<typeof InboxSearch>;
   readonly sessionId: string;
+  readonly settingsMode: boolean;
   readonly userId: string;
 }) {
   const navigate = useMailboxNavigate();
@@ -2328,9 +2506,10 @@ function AuthenticatedInbox({
         mailboxName={mailbox.displayName}
         onNavigate={navigateToSelection}
         onPrefetch={prefetchSelection}
+        onSettingsNavigate={() => void navigate({ to: "/mail/settings" })}
         outboundDeliveryId={outboundDeliveryId}
         headerAction={
-          draftEditorOpen ? undefined : (
+          settingsMode || draftEditorOpen ? undefined : (
             <Button
               type="button"
               aria-label="Compose new draft"
@@ -2353,20 +2532,28 @@ function AuthenticatedInbox({
           )
         }
         principalLabel={userId}
-        selectedFolderId={selectedFolder?.id}
-        selectedLabelId={selectedLabel?.id}
+        selectedFolderId={settingsMode ? undefined : selectedFolder?.id}
+        selectedLabelId={settingsMode ? undefined : selectedLabel?.id}
+        settingsSelected={settingsMode}
         viewTitle={
-          search.compose === "true"
-            ? "Compose"
-            : search.draft === undefined
-              ? (selectedLabel?.name ?? selectedFolder?.name ?? "Inbox")
-              : "Edit draft"
+          settingsMode
+            ? "Settings"
+            : search.compose === "true"
+              ? "Compose"
+              : search.draft === undefined
+                ? (selectedLabel?.name ?? selectedFolder?.name ?? "Inbox")
+                : "Edit draft"
         }
         isSigningOut={isSigningOut}
         onSignOut={onSignOut}
         signOutError={signOutError}
       >
-        {draftEditorOpen ? (
+        {settingsMode ? (
+          <MailboxSettingsWorkspace
+            mailboxId={mailbox.id}
+            sessionId={sessionId}
+          />
+        ) : draftEditorOpen ? (
           <DraftWorkspace
             key={`${mailbox.id}:${
               search.draft !== undefined &&
@@ -2466,7 +2653,7 @@ function AuthenticatedInbox({
 }
 
 function InboxRoute() {
-  return <MailboxApplication search={Route.useSearch()} />;
+  return <MailboxApplication search={Route.useSearch()} settingsMode={false} />;
 }
 
 // The same authenticated mailbox stays mounted under /mail while child paths
@@ -2474,8 +2661,10 @@ function InboxRoute() {
 // oxlint-disable-next-line eslint/complexity -- The route exhaustively selects session, authorization, navigation, and mailbox states.
 export function MailboxApplication({
   search,
+  settingsMode = false,
 }: {
   readonly search: Schema.Schema.Type<typeof InboxSearch>;
+  readonly settingsMode?: boolean;
 }) {
   const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
@@ -2582,6 +2771,7 @@ export function MailboxApplication({
       }
       search={search}
       sessionId={session.data.sessionId}
+      settingsMode={settingsMode}
       userId={session.data.userId}
     />
   );

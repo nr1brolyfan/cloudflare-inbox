@@ -22,12 +22,17 @@ import {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
+import { SearchContactsInput } from "#/modules/mailbox/domain/MailboxContact";
 import { ReserveDraftAttachmentCommand } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
   ReadMailboxAdministrationOperationQuery,
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
+import {
+  GetMailboxContactPreferenceQuery,
+  UpdateMailboxContactPreferenceCommand,
+} from "#/modules/organization/application/UserMailboxContactPreferences";
 
 import { WebsiteApplication } from "./WebsiteApplication";
 
@@ -39,6 +44,7 @@ const readMailboxOperationInput = Schema.decodeUnknownSync(
 const mailboxMessageListInput = Schema.decodeUnknownSync(
   MailboxMessageListInput
 );
+const searchContactsInput = Schema.decodeUnknownSync(SearchContactsInput);
 const openMailboxThreadInput = Schema.decodeUnknownSync(OpenMailboxThreadInput);
 const mailboxMessageActionInput = Schema.decodeUnknownSync(
   MailboxMessageActionCommand
@@ -56,8 +62,14 @@ const createMailboxReplyDraftInput = Schema.decodeUnknownSync(
   CreateMailboxReplyDraftCommand
 );
 const getMailboxDraftInput = Schema.decodeUnknownSync(GetMailboxDraftQuery);
+const getMailboxContactPreferenceInput = Schema.decodeUnknownSync(
+  GetMailboxContactPreferenceQuery
+);
 const updateMailboxDraftInput = Schema.decodeUnknownSync(
   UpdateMailboxDraftCommand
+);
+const updateMailboxContactPreferenceInput = Schema.decodeUnknownSync(
+  UpdateMailboxContactPreferenceCommand
 );
 const mailboxDraftListInput = Schema.decodeUnknownSync(MailboxDraftListInput);
 const reserveDraftAttachmentInput = Schema.decodeUnknownSync(
@@ -97,6 +109,10 @@ export const getMailboxDraft = createServerFn({ method: "GET" })
   .validator(getMailboxDraftInput)
   .handler(({ data }) => WebsiteApplication.getMailboxDraft(data));
 
+export const getMailboxContactPreferences = createServerFn({ method: "GET" })
+  .validator(getMailboxContactPreferenceInput)
+  .handler(({ data }) => WebsiteApplication.getMailboxContactPreferences(data));
+
 export const getMailboxOutboundDelivery = createServerFn({ method: "GET" })
   .validator(getMailboxOutboundDeliveryInput)
   .handler(({ data }) => WebsiteApplication.getMailboxOutboundDelivery(data));
@@ -135,6 +151,10 @@ export const listMailboxMessages = createServerFn({ method: "GET" })
   .validator(mailboxMessageListInput)
   .handler(({ data }) => WebsiteApplication.listMailboxMessages(data));
 
+export const searchMailboxContacts = createServerFn({ method: "GET" })
+  .validator(searchContactsInput)
+  .handler(({ data }) => WebsiteApplication.searchMailboxContacts(data));
+
 export const listMailboxDrafts = createServerFn({ method: "GET" })
   .validator(mailboxDraftListInput)
   .handler(({ data }) => WebsiteApplication.listMailboxDrafts(data));
@@ -146,6 +166,14 @@ export const getMailboxThread = createServerFn({ method: "GET" })
 export const updateMailboxDraft = createServerFn({ method: "POST" })
   .validator(updateMailboxDraftInput)
   .handler(({ data }) => WebsiteApplication.updateMailboxDraft(data));
+
+export const updateMailboxContactPreferences = createServerFn({
+  method: "POST",
+})
+  .validator(updateMailboxContactPreferenceInput)
+  .handler(({ data }) =>
+    WebsiteApplication.updateMailboxContactPreferences(data)
+  );
 
 export const undoMailboxSend = createServerFn({ method: "POST" })
   .validator(undoMailboxSendInput)

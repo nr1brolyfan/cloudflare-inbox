@@ -8,11 +8,12 @@ export const MailboxChangeScope = Schema.Literals([
   "navigation",
   "outbound",
   "threads",
+  "contacts",
 ]);
 export type MailboxChangeScope = Schema.Schema.Type<typeof MailboxChangeScope>;
 
 export const MailboxChangeScopes = Schema.Array(MailboxChangeScope).pipe(
-  Schema.check(Schema.isLengthBetween(1, 5))
+  Schema.check(Schema.isLengthBetween(1, 6))
 );
 export type MailboxChangeScopes = Schema.Schema.Type<
   typeof MailboxChangeScopes

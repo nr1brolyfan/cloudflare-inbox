@@ -6,6 +6,7 @@ import * as Schema from "effect/Schema";
 import { describe, expect, it } from "vitest";
 
 import { MailboxDoHandler } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
+import { MailboxContactStore } from "#/modules/mailbox/adapters/sqlite/MailboxContactStoreSqlite";
 import { MailboxInboundStore } from "#/modules/mailbox/adapters/sqlite/MailboxInboundStoreSqlite";
 import { MailboxMessageStore } from "#/modules/mailbox/adapters/sqlite/MailboxMessageStoreSqlite";
 import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteDatabase";
@@ -27,6 +28,7 @@ import {
   MailboxId,
   MessageId,
 } from "#/modules/mailbox/domain/Mailbox";
+import { SearchContactsInput } from "#/modules/mailbox/domain/MailboxContact";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   CommitInboundMessageV1,
@@ -271,6 +273,75 @@ const prepareReplay = () =>
   );
 
 describe("MailboxDO SQLite inbound commit", () => {
+  it("indexes safe inbound correspondents but hides other participants", async () => {
+    const runtime = makeRuntime();
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* commit(
+            Schema.decodeUnknownSync(CommitInboundMessageV1)({
+              ...Schema.encodeSync(CommitInboundMessageV1)(commitInput),
+              message: {
+                ...Schema.encodeSync(CommitInboundMessageV1)(commitInput)
+                  .message,
+                cc: [{ address: "participant@example.test" }],
+              },
+            })
+          );
+          const contacts = yield* MailboxContactStore;
+          const search = (query: string) =>
+            contacts.searchContacts(
+              Schema.decodeUnknownSync(SearchContactsInput)({
+                limit: 12,
+                mailboxId,
+                query,
+              })
+            );
+          const sender = yield* search("send");
+          const reply = yield* search("repl");
+          const participant = yield* search("part");
+          const participantAfterEnable = yield* contacts.searchContacts(
+            Schema.decodeUnknownSync(SearchContactsInput)({
+              allParticipantsEnabledAt: 2000,
+              limit: 12,
+              mailboxId,
+              query: "part",
+            })
+          );
+          const participantBeforeEnable = yield* contacts.searchContacts(
+            Schema.decodeUnknownSync(SearchContactsInput)({
+              allParticipantsEnabledAt: 2001,
+              limit: 12,
+              mailboxId,
+              query: "part",
+            })
+          );
+          return {
+            participant,
+            participantAfterEnable,
+            participantBeforeEnable,
+            reply,
+            sender,
+          };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(result.sender.contacts.map(({ address }) => address)).toStrictEqual([
+      "sender@example.test",
+    ]);
+    expect(result.reply.contacts[0]).toMatchObject({
+      address: "reply@example.test",
+      displayName: "Reply Address",
+    });
+    expect(result.participant.contacts).toStrictEqual([]);
+    expect(result.participantAfterEnable.contacts).toMatchObject([
+      { address: "participant@example.test" },
+    ]);
+    expect(result.participantBeforeEnable.contacts).toStrictEqual([]);
+  });
+
   it("replays a failed ingest with an attempt fence and stable Workflow ID", async () => {
     const runtime = makeRuntime();
     const outcome = await Effect.runPromise(

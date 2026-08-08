@@ -32,6 +32,7 @@ import { MailboxDatabase } from "#/modules/mailbox/adapters/sqlite/MailboxSqlite
 import { MailboxRuntime } from "#/modules/mailbox/adapters/sqlite/MailboxSqliteRuntime";
 import {
   attachment,
+  contact,
   draft,
   draftAttachment,
   folder,
@@ -2604,6 +2605,7 @@ describe("Mailbox mail data SQLite", () => {
             },
           })
         );
+        const contactRows = yield* db.select().from(contact);
         const [messageSnapshot] = yield* db
           .select({ senderJson: message.senderJson })
           .from(message)
@@ -2707,6 +2709,13 @@ describe("Mailbox mail data SQLite", () => {
               '{"address":"sender@example.com","displayName":"Sender"}',
           },
         });
+        expect(contactRows).toMatchObject([
+          {
+            address: "to@example.com",
+            outboundCount: 1,
+            safeLastSeenAt: scheduled.delivery.sendAt,
+          },
+        ]);
       }).pipe(Effect.provide(mailboxSqliteTestLive(runtime)))
     );
   });

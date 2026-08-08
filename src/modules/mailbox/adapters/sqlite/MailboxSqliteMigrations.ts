@@ -774,6 +774,147 @@ const migrations = [
           AND deleted_at IS NULL`,
     ],
   },
+  {
+    version: 18,
+    statements: [
+      `CREATE TABLE contact (
+        normalized_address TEXT PRIMARY KEY NOT NULL CHECK (
+          length(normalized_address) BETWEEN 3 AND 320
+          AND normalized_address = trim(normalized_address)
+        ),
+        address TEXT NOT NULL CHECK (
+          length(address) BETWEEN 3 AND 320 AND address = trim(address)
+        ),
+        display_name TEXT CHECK (
+          display_name IS NULL OR length(display_name) BETWEEN 1 AND 200
+        ),
+        display_name_rank INTEGER NOT NULL DEFAULT 0 CHECK (display_name_rank BETWEEN 0 AND 2),
+        safe_last_seen_at INTEGER CHECK (safe_last_seen_at IS NULL OR safe_last_seen_at >= 0),
+        participant_last_seen_at INTEGER CHECK (participant_last_seen_at IS NULL OR participant_last_seen_at >= 0),
+        last_inbound_at INTEGER CHECK (last_inbound_at IS NULL OR last_inbound_at >= 0),
+        last_outbound_at INTEGER CHECK (last_outbound_at IS NULL OR last_outbound_at >= 0),
+        inbound_count INTEGER NOT NULL DEFAULT 0 CHECK (inbound_count >= 0),
+        outbound_count INTEGER NOT NULL DEFAULT 0 CHECK (outbound_count >= 0),
+        hidden_at INTEGER CHECK (hidden_at IS NULL OR hidden_at >= 0)
+      ) STRICT`,
+      `CREATE INDEX contact_safe_recent_idx
+        ON contact(safe_last_seen_at DESC, normalized_address)
+        WHERE safe_last_seen_at IS NOT NULL AND hidden_at IS NULL`,
+      `CREATE VIRTUAL TABLE contact_search USING fts5(
+        address,
+        display_name,
+        content='contact',
+        content_rowid='rowid',
+        tokenize='unicode61 remove_diacritics 2'
+      )`,
+      `CREATE TRIGGER contact_search_ai AFTER INSERT ON contact BEGIN
+        INSERT INTO contact_search(rowid, address, display_name)
+        VALUES (new.rowid, new.address, coalesce(new.display_name, ''));
+      END`,
+      `CREATE TRIGGER contact_search_ad AFTER DELETE ON contact BEGIN
+        INSERT INTO contact_search(contact_search, rowid, address, display_name)
+        VALUES ('delete', old.rowid, old.address, coalesce(old.display_name, ''));
+      END`,
+      `CREATE TRIGGER contact_search_au AFTER UPDATE ON contact BEGIN
+        INSERT INTO contact_search(contact_search, rowid, address, display_name)
+        VALUES ('delete', old.rowid, old.address, coalesce(old.display_name, ''));
+        INSERT INTO contact_search(rowid, address, display_name)
+        VALUES (new.rowid, new.address, coalesce(new.display_name, ''));
+      END`,
+      `WITH observations AS (
+        SELECT
+          json_extract(sender_json, '$.address') AS address,
+          substr(nullif(trim(json_extract(sender_json, '$.displayName')), ''), 1, 200) AS display_name,
+          activity_at,
+          'inbound' AS direction,
+          1 AS name_rank,
+          1 AS is_safe,
+          0 AS is_participant
+        FROM message
+        WHERE direction = 'inbound'
+          AND deleted_at IS NULL
+          AND folder_id NOT IN ('spam', 'trash')
+          AND sender_json IS NOT NULL
+          AND json_type(sender_json) = 'object'
+        UNION ALL
+        SELECT
+          json_extract(reply.value, '$.address'),
+          substr(nullif(trim(json_extract(reply.value, '$.displayName')), ''), 1, 200),
+          message.activity_at,
+          'inbound', 1, 1, 0
+        FROM message, json_each(message.reply_to_json) AS reply
+        WHERE message.direction = 'inbound'
+          AND message.deleted_at IS NULL
+          AND message.folder_id NOT IN ('spam', 'trash')
+          AND message.reply_to_json IS NOT NULL
+          AND json_type(message.reply_to_json) = 'array'
+        UNION ALL
+        SELECT
+          json_extract(recipient.value, '$.address'),
+          substr(nullif(trim(json_extract(recipient.value, '$.displayName')), ''), 1, 200),
+          message.activity_at,
+          'outbound', 2, 1, 0
+        FROM message, json_each(message.recipients_json) AS recipient
+        WHERE message.direction = 'outbound'
+          AND message.deleted_at IS NULL
+          AND json_type(message.recipients_json) = 'array'
+        UNION ALL
+        SELECT
+          json_extract(participant.value, '$.address'),
+          substr(nullif(trim(json_extract(participant.value, '$.displayName')), ''), 1, 200),
+          message.activity_at,
+          'inbound', 1, 0, 1
+        FROM message, json_each(message.to_json) AS participant
+        WHERE message.direction = 'inbound'
+          AND message.deleted_at IS NULL
+          AND message.folder_id NOT IN ('spam', 'trash')
+          AND json_type(message.to_json) = 'array'
+        UNION ALL
+        SELECT
+          json_extract(participant.value, '$.address'),
+          substr(nullif(trim(json_extract(participant.value, '$.displayName')), ''), 1, 200),
+          message.activity_at,
+          'inbound', 1, 0, 1
+        FROM message, json_each(message.cc_json) AS participant
+        WHERE message.direction = 'inbound'
+          AND message.deleted_at IS NULL
+          AND message.folder_id NOT IN ('spam', 'trash')
+          AND json_type(message.cc_json) = 'array'
+      ), normalized AS (
+        SELECT
+          substr(address, 1, instr(address, '@')) || lower(substr(address, instr(address, '@') + 1)) AS normalized_address,
+          address,
+          display_name,
+          activity_at,
+          direction,
+          name_rank,
+          is_safe,
+          is_participant
+        FROM observations
+        WHERE typeof(address) = 'text'
+          AND length(address) BETWEEN 3 AND 320
+          AND instr(address, '@') > 1
+      )
+      INSERT INTO contact (
+        normalized_address, address, display_name, display_name_rank,
+        safe_last_seen_at, participant_last_seen_at,
+        last_inbound_at, last_outbound_at, inbound_count, outbound_count
+      )
+      SELECT
+        normalized_address,
+        address,
+        display_name,
+        max(CASE WHEN display_name IS NULL THEN 0 ELSE name_rank END),
+        max(CASE WHEN is_safe = 1 THEN activity_at END),
+        max(CASE WHEN is_participant = 1 THEN activity_at END),
+        max(CASE WHEN direction = 'inbound' THEN activity_at END),
+        max(CASE WHEN direction = 'outbound' THEN activity_at END),
+        sum(CASE WHEN direction = 'inbound' THEN 1 ELSE 0 END),
+        sum(CASE WHEN direction = 'outbound' THEN 1 ELSE 0 END)
+      FROM normalized
+      GROUP BY normalized_address`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

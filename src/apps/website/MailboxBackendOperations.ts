@@ -50,6 +50,8 @@ import {
   UndoMailboxSendResult,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
+import type { SearchContactsInput } from "#/modules/mailbox/domain/MailboxContact";
+import { ContactSearchResult } from "#/modules/mailbox/domain/MailboxContact";
 import type {
   DraftAttachmentReservationSchema,
   ReserveDraftAttachmentCommand,
@@ -68,6 +70,11 @@ import type {
 import { MailboxAdministrationReceiptSchema } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 import type { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
+import type {
+  GetMailboxContactPreferenceQuery,
+  UpdateMailboxContactPreferenceCommand,
+} from "#/modules/organization/application/UserMailboxContactPreferences";
+import { MailboxContactPreference } from "#/modules/organization/application/UserMailboxContactPreferences";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 
 import { BackendClient } from "./WebsitePlatform";
@@ -107,6 +114,22 @@ export type MailboxMessageListServerResult =
   | {
       readonly messages: Schema.Codec.Encoded<typeof MailboxMessageListResult>;
       readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxContactSearchServerResult =
+  | {
+      readonly contacts: Schema.Codec.Encoded<typeof ContactSearchResult>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxContactPreferenceServerResult =
+  | {
+      readonly ok: true;
+      readonly preference: Schema.Codec.Encoded<
+        typeof MailboxContactPreference
+      >;
     }
   | MailboxServerErrorResult;
 
@@ -421,6 +444,10 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
     readonly query: GetMailboxDraftQuery;
   }) => Effect.Effect<MailboxDraftServerResult>;
+  readonly getContactPreferences: (input: {
+    readonly incoming: Request;
+    readonly query: GetMailboxContactPreferenceQuery;
+  }) => Effect.Effect<MailboxContactPreferenceServerResult>;
   readonly getInboundAttachment: (input: {
     readonly incoming: Request;
     readonly query: MailboxInboundAttachmentInput;
@@ -448,6 +475,10 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
     readonly query: MailboxMessageListInput;
   }) => Effect.Effect<MailboxMessageListServerResult>;
+  readonly searchContacts: (input: {
+    readonly incoming: Request;
+    readonly query: SearchContactsInput;
+  }) => Effect.Effect<MailboxContactSearchServerResult>;
   readonly listDrafts: (input: {
     readonly incoming: Request;
     readonly query: MailboxDraftListInput;
@@ -472,6 +503,10 @@ export interface MailboxBackendOperationsShape {
     readonly command: UpdateMailboxDraftCommand;
     readonly incoming: Request;
   }) => Effect.Effect<MailboxDraftServerResult>;
+  readonly updateContactPreferences: (input: {
+    readonly command: UpdateMailboxContactPreferenceCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxContactPreferenceServerResult>;
   readonly undoSend: (input: {
     readonly command: UndoMailboxSendCommand;
     readonly incoming: Request;
@@ -914,6 +949,30 @@ export const MailboxBackendOperationsLayer = Layer.effect(
             decodeDraftResult(result, query.mailboxId, query.draftId)
           )
         ),
+      getContactPreferences: ({ incoming, query }) =>
+        forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.contact_preferences_get",
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/preferences/contacts`,
+        }).pipe(
+          Effect.map((result): MailboxContactPreferenceServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxContactPreference)
+            )(result.body);
+            return Exit.isSuccess(decoded)
+              ? {
+                  ok: true,
+                  preference: Schema.encodeSync(MailboxContactPreference)(
+                    decoded.value
+                  ),
+                }
+              : invalidBackendResponse();
+          })
+        ),
       getNavigation: (incoming) =>
         forwardRequest({
           incoming,
@@ -1081,6 +1140,35 @@ export const MailboxBackendOperationsLayer = Layer.effect(
             return Exit.isSuccess(decoded)
               ? {
                   messages: Schema.encodeSync(MailboxMessageListResult)(
+                    decoded.value
+                  ),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        );
+      },
+      searchContacts: ({ incoming, query }) => {
+        const search = new URLSearchParams({ limit: String(query.limit) });
+        if (query.query !== undefined) {
+          search.set("q", query.query);
+        }
+        return forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.contacts",
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/contacts?${search.toString()}`,
+        }).pipe(
+          Effect.map((result): MailboxContactSearchServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(ContactSearchResult)
+            )(result.body);
+            return Exit.isSuccess(decoded)
+              ? {
+                  contacts: Schema.encodeSync(ContactSearchResult)(
                     decoded.value
                   ),
                   ok: true,
@@ -1260,6 +1348,34 @@ export const MailboxBackendOperationsLayer = Layer.effect(
           Effect.map((result) =>
             decodeDraftResult(result, command.mailboxId, command.draftId)
           )
+        ),
+      updateContactPreferences: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "PATCH",
+          operation: "website.mailbox.contact_preferences_update",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/preferences/contacts`,
+          payload: {
+            expectedVersion: command.expectedVersion,
+            visibility: command.visibility,
+          },
+        }).pipe(
+          Effect.map((result): MailboxContactPreferenceServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(MailboxContactPreference)
+            )(result.body);
+            return Exit.isSuccess(decoded)
+              ? {
+                  ok: true,
+                  preference: Schema.encodeSync(MailboxContactPreference)(
+                    decoded.value
+                  ),
+                }
+              : invalidBackendResponse();
+          })
         ),
       undoSend: ({ command, incoming }) =>
         forwardRequest({

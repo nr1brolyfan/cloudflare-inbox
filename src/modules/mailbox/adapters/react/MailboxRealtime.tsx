@@ -20,6 +20,7 @@ const allScopes: readonly MailboxChangeScope[] = [
   "navigation",
   "outbound",
   "threads",
+  "contacts",
 ];
 const decodeEvent = Schema.decodeUnknownOption(MailboxChangedEvent);
 
@@ -73,6 +74,10 @@ export const invalidateMailboxChangedEvent = (
       }
       case "threads": {
         resources.add("thread");
+        break;
+      }
+      case "contacts": {
+        resources.add("contacts");
         break;
       }
       default: {

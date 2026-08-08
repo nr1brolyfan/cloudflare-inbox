@@ -10,6 +10,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 
 import { MailboxDoHandlerLayer } from "#/modules/mailbox/adapters/durable-object/MailboxDoHandler";
+import { MailboxContactStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxContactStoreSqlite";
 import { MailboxDirectoryStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDirectoryStoreSqlite";
 import { MailboxDoStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDoStoreSqlite";
 import { MailboxDraftAttachmentStoreSqliteLayer } from "#/modules/mailbox/adapters/sqlite/MailboxDraftAttachmentStoreSqlite";
@@ -88,6 +89,7 @@ export const MailboxDatabaseTestLayer = Layer.unwrap(
 export const MailboxStoresTestLayer = Layer.mergeAll(
   MailboxResourceIndexSqliteLayer,
   MailboxDirectoryStoreSqliteLayer,
+  MailboxContactStoreSqliteLayer,
   MailboxMessageStoreSqliteLayer,
   MailboxInboundStoreSqliteLayer,
   MailboxDraftStoreSqliteLayer,

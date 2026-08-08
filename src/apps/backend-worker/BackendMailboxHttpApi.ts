@@ -62,6 +62,11 @@ import {
   ThreadId,
 } from "#/modules/mailbox/domain/Mailbox";
 import {
+  ContactSearchLimit,
+  ContactSearchResult,
+  ContactSearchTerm,
+} from "#/modules/mailbox/domain/MailboxContact";
+import {
   DraftAttachmentUploadResult,
   ReserveDraftAttachmentCommand,
   ReservedDraftAttachment,
@@ -78,6 +83,10 @@ import {
 } from "#/modules/organization/application/MailboxAdministration";
 import { MailboxNavigationResult } from "#/modules/organization/application/MailboxNavigation";
 import { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
+import {
+  MailboxContactPreference,
+  UpdateMailboxContactPreferenceCommand,
+} from "#/modules/organization/application/UserMailboxContactPreferences";
 import { MailboxRecordSchema } from "#/modules/organization/domain/Mailbox";
 import { BackendRequestContextMiddleware } from "#/platform/observability/BackendRequestContextMiddleware";
 import { OperationId } from "#/shared/Operation";
@@ -133,6 +142,10 @@ export const MailboxMessageViewQuery = Schema.Struct({
       : undefined
   )
 );
+export const MailboxContactSearchQuery = Schema.Struct({
+  limit: Schema.optional(ContactSearchLimit),
+  q: Schema.optional(ContactSearchTerm),
+});
 export const MailboxThreadViewQuery = Schema.Struct({
   folder: Schema.optional(FolderId),
   label: Schema.optional(LabelId),
@@ -199,6 +212,42 @@ export const ListMailboxMessagesEndpoint = HttpApiEndpoint.get(
     params: MailboxParams,
     query: MailboxMessageViewQuery,
     success: MailboxMessageListResult,
+  }
+);
+
+export const SearchMailboxContactsEndpoint = HttpApiEndpoint.get(
+  MailboxOperation.searchContacts,
+  "/api/mailboxes/:mailboxId/contacts",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    query: MailboxContactSearchQuery,
+    success: ContactSearchResult,
+  }
+);
+
+export const GetMailboxContactPreferencesEndpoint = HttpApiEndpoint.get(
+  MailboxOperation.getContactPreferences,
+  "/api/mailboxes/:mailboxId/preferences/contacts",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    success: MailboxContactPreference,
+  }
+);
+
+export const UpdateMailboxContactPreferencesEndpoint = HttpApiEndpoint.patch(
+  MailboxOperation.updateContactPreferences,
+  "/api/mailboxes/:mailboxId/preferences/contacts",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    payload: Schema.Struct({
+      expectedVersion:
+        UpdateMailboxContactPreferenceCommand.fields.expectedVersion,
+      visibility: UpdateMailboxContactPreferenceCommand.fields.visibility,
+    }),
+    success: MailboxContactPreference,
   }
 );
 
@@ -475,6 +524,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     CreateMailboxDraftEndpoint,
     CreateMailboxReplyDraftEndpoint,
     GetMailboxDraftEndpoint,
+    GetMailboxContactPreferencesEndpoint,
     GetMailboxOutboundDeliveryEndpoint,
     GetMailboxThreadEndpoint,
     GetMailboxInboundAttachmentEndpoint,
@@ -483,6 +533,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     GetMailboxNavigationEndpoint,
     ListMailboxDraftsEndpoint,
     ListMailboxMessagesEndpoint,
+    SearchMailboxContactsEndpoint,
     ReadMailboxAdministrationOperationEndpoint,
     RenameMailboxEndpoint,
     ReserveDraftAttachmentEndpoint,
@@ -492,6 +543,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     SubscribeMailboxChangesEndpoint,
     UndoMailboxSendEndpoint,
     UpdateMailboxDraftEndpoint,
+    UpdateMailboxContactPreferencesEndpoint,
     UploadDraftAttachmentEndpoint
   )
   .middleware(AuthSchemaErrorMiddleware)

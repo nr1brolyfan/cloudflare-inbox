@@ -10,6 +10,7 @@ import {
   Menu,
   PanelLeftClose,
   Send,
+  Settings as SettingsIcon,
   ShieldCheck,
   ShieldAlert,
   Tag,
@@ -74,11 +75,13 @@ interface MailboxShellProps {
   readonly onNavigate: (selection: MailboxViewSelection) => void;
   readonly onPrefetch: (selection: MailboxViewSelection) => void;
   readonly onSignOut: () => void;
+  readonly onSettingsNavigate: () => void;
   readonly outboundDeliveryId?: string;
   readonly principalLabel: string;
   readonly selectedFolderId?: string;
   readonly selectedLabelId?: string;
   readonly signOutError?: string;
+  readonly settingsSelected: boolean;
   readonly viewTitle: string;
 }
 
@@ -99,11 +102,13 @@ function MailboxNavigation({
   onNavigate,
   onPrefetch,
   onSignOut,
+  onSettingsNavigate,
   outboundDeliveryId,
   principalLabel,
   selectedFolderId,
   selectedLabelId,
   signOutError,
+  settingsSelected,
 }: MailboxNavigationProps) {
   return (
     <div className="flex h-full flex-col bg-[var(--nav-bg)] text-white">
@@ -291,6 +296,35 @@ function MailboxNavigation({
             </p>
           )}
         </section>
+
+        <a
+          href="/mail/settings"
+          aria-current={settingsSelected ? "page" : undefined}
+          onClick={(event) => {
+            if (
+              event.button === 0 &&
+              !event.altKey &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.shiftKey
+            ) {
+              event.preventDefault();
+              onSettingsNavigate();
+              onClose?.();
+            }
+          }}
+          className={`mt-7 flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
+            settingsSelected
+              ? "bg-[var(--nav-selection)] font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
+              : "font-bold text-white/66 hover:bg-white/8 hover:text-white"
+          }`}
+        >
+          <SettingsIcon
+            size={17}
+            className={settingsSelected ? "text-[var(--palm)]" : ""}
+          />
+          <span>Settings</span>
+        </a>
       </nav>
 
       <div className="border-t border-white/10 p-4">
@@ -342,11 +376,13 @@ export function MailboxShell({
   onNavigate,
   onPrefetch,
   onSignOut,
+  onSettingsNavigate,
   outboundDeliveryId,
   principalLabel,
   selectedFolderId,
   selectedLabelId,
   signOutError,
+  settingsSelected,
   viewTitle,
 }: MailboxShellProps) {
   const [navigationOpen, setNavigationOpen] = useState(false);
@@ -365,11 +401,13 @@ export function MailboxShell({
               onNavigate={onNavigate}
               onPrefetch={onPrefetch}
               onSignOut={onSignOut}
+              onSettingsNavigate={onSettingsNavigate}
               outboundDeliveryId={outboundDeliveryId}
               principalLabel={principalLabel}
               selectedFolderId={selectedFolderId}
               selectedLabelId={selectedLabelId}
               signOutError={signOutError}
+              settingsSelected={settingsSelected}
             />
           </aside>
 
@@ -389,11 +427,13 @@ export function MailboxShell({
               onNavigate={onNavigate}
               onPrefetch={onPrefetch}
               onSignOut={onSignOut}
+              onSettingsNavigate={onSettingsNavigate}
               outboundDeliveryId={outboundDeliveryId}
               principalLabel={principalLabel}
               selectedFolderId={selectedFolderId}
               selectedLabelId={selectedLabelId}
               signOutError={signOutError}
+              settingsSelected={settingsSelected}
             />
           </SheetContent>
 

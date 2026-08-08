@@ -850,6 +850,66 @@ export const outboundDelivery = sqliteTable(
   ]
 );
 
+export const contact = sqliteTable(
+  "contact",
+  {
+    normalizedAddress: text("normalized_address").primaryKey(),
+    address: text("address").notNull(),
+    displayName: text("display_name"),
+    displayNameRank: integer("display_name_rank").notNull().default(0),
+    safeLastSeenAt: integer("safe_last_seen_at"),
+    participantLastSeenAt: integer("participant_last_seen_at"),
+    lastInboundAt: integer("last_inbound_at"),
+    lastOutboundAt: integer("last_outbound_at"),
+    inboundCount: integer("inbound_count").notNull().default(0),
+    outboundCount: integer("outbound_count").notNull().default(0),
+    hiddenAt: integer("hidden_at"),
+  },
+  (t) => [
+    check(
+      "contact_normalized_address_check",
+      sql`length(${t.normalizedAddress}) between 3 and 320 and ${t.normalizedAddress} = trim(${t.normalizedAddress})`
+    ),
+    check(
+      "contact_address_check",
+      sql`length(${t.address}) between 3 and 320 and ${t.address} = trim(${t.address})`
+    ),
+    check(
+      "contact_display_name_check",
+      sql`${t.displayName} is null or length(${t.displayName}) between 1 and 200`
+    ),
+    check(
+      "contact_display_name_rank_check",
+      sql`${t.displayNameRank} between 0 and 2`
+    ),
+    check(
+      "contact_safe_seen_check",
+      sql`${t.safeLastSeenAt} is null or ${t.safeLastSeenAt} >= 0`
+    ),
+    check(
+      "contact_participant_seen_check",
+      sql`${t.participantLastSeenAt} is null or ${t.participantLastSeenAt} >= 0`
+    ),
+    check(
+      "contact_last_inbound_check",
+      sql`${t.lastInboundAt} is null or ${t.lastInboundAt} >= 0`
+    ),
+    check(
+      "contact_last_outbound_check",
+      sql`${t.lastOutboundAt} is null or ${t.lastOutboundAt} >= 0`
+    ),
+    check("contact_inbound_count_check", sql`${t.inboundCount} >= 0`),
+    check("contact_outbound_count_check", sql`${t.outboundCount} >= 0`),
+    check(
+      "contact_hidden_at_check",
+      sql`${t.hiddenAt} is null or ${t.hiddenAt} >= 0`
+    ),
+    index("contact_safe_recent_idx")
+      .on(t.safeLastSeenAt, t.normalizedAddress)
+      .where(sql`safe_last_seen_at is not null and hidden_at is null`),
+  ]
+);
+
 export const mailboxSchema = {
   mailboxSchemaMigration,
   mailboxMetadata,
@@ -867,6 +927,7 @@ export const mailboxSchema = {
   mailboxOperation,
   messageLabel,
   outboundDelivery,
+  contact,
 };
 
 export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({

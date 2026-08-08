@@ -1,6 +1,10 @@
 import * as Schema from "effect/Schema";
 
 import {
+  ContactSearchResult,
+  SearchContactsInput,
+} from "#/modules/mailbox/domain/MailboxContact";
+import {
   CreateFolderInput,
   CreateLabelInput,
   DeleteFolderInput,
@@ -89,6 +93,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "delete-label",
     "list-messages",
     "search-messages",
+    "search-contacts",
     "get-attachment",
     "get-message",
     "get-thread",
@@ -232,6 +237,10 @@ export const MailDataRpcRequest = Schema.Union([
     _tag: Schema.Literal("SearchMessages"),
     input: SearchMessagesInput,
   }),
+  Schema.Struct({
+    _tag: Schema.Literal("SearchContacts"),
+    input: SearchContactsInput,
+  }),
   Schema.Struct({ _tag: Schema.Literal("GetMessage"), input: GetMessageInput }),
   Schema.Struct({
     _tag: Schema.Literal("GetAttachmentBlob"),
@@ -340,6 +349,10 @@ export const MailDataRpcResponse = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("MessagesSearched"),
     value: MessagePage,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("ContactsSearched"),
+    value: ContactSearchResult,
   }),
   Schema.Struct({
     _tag: Schema.Literal("MessageFound"),
@@ -493,6 +506,11 @@ export const mailDataRequestMetadataByTag = {
     operation: "search-messages",
     kind: "read",
     responseTag: "MessagesSearched",
+  },
+  SearchContacts: {
+    operation: "search-contacts",
+    kind: "read",
+    responseTag: "ContactsSearched",
   },
   GetMessage: {
     operation: "get-message",

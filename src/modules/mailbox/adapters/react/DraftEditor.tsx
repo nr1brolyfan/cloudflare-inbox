@@ -1,3 +1,4 @@
+/* oxlint-disable jsx-a11y/prefer-tag-over-role -- Editable ARIA comboboxes require input, listbox, and option roles. */
 import * as Schema from "effect/Schema";
 import {
   CircleAlert,
@@ -51,6 +52,9 @@ interface DraftEditorProps {
   readonly isSendUncertain: boolean;
   readonly isSaving: boolean;
   readonly isSending: boolean;
+  readonly loadRecipientSuggestions?: (
+    query: string
+  ) => Promise<readonly EditorContent["to"][number][]>;
   readonly onAttachFiles: (
     files: readonly File[],
     snapshot: DraftEditorSnapshot
@@ -142,6 +146,229 @@ const parseAddresses = (value: string) => {
     .map(parseAddress);
 };
 
+const recipientTokenRange = (value: string, cursor: number) => {
+  let start = 0;
+  let escaped = false;
+  let inAddress = false;
+  let inQuotes = false;
+  const ranges: { readonly end: number; readonly start: number }[] = [];
+  for (let index = 0; index < value.length; index += 1) {
+    const character = value[index];
+    if (character === '"' && !escaped) {
+      inQuotes = !inQuotes;
+    } else if (character === "<" && !inQuotes) {
+      inAddress = true;
+    } else if (character === ">" && !inQuotes) {
+      inAddress = false;
+    }
+    if (character === "," && !inQuotes && !inAddress) {
+      ranges.push({ end: index, start });
+      start = index + 1;
+    }
+    escaped = character === "\\" && !escaped;
+  }
+  ranges.push({ end: value.length, start });
+  return (
+    ranges.find((range) => cursor >= range.start && cursor <= range.end) ??
+    ranges.at(-1) ?? { end: value.length, start: 0 }
+  );
+};
+
+const suggestionIdentity = (address: string) => address.toLowerCase();
+
+interface RecipientInputProps {
+  readonly allValues: readonly string[];
+  readonly autoFocus?: boolean;
+  readonly disabled: boolean;
+  readonly id: string;
+  readonly label: string;
+  readonly loadSuggestions?: DraftEditorProps["loadRecipientSuggestions"];
+  readonly onChange: (value: string) => void;
+  readonly placeholder?: string;
+  readonly value: string;
+}
+
+function RecipientInput({
+  allValues,
+  autoFocus,
+  disabled,
+  id,
+  label,
+  loadSuggestions,
+  onChange,
+  placeholder,
+  value,
+}: RecipientInputProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const requestId = useRef(0);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [query, setQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<EditorContent["to"]>([]);
+  const hasSuggestionLoader = loadSuggestions !== undefined;
+  const listboxId = `${id}-suggestions`;
+  const load = useEffectEvent(async (term: string, currentRequest: number) => {
+    if (loadSuggestions === undefined) {
+      return;
+    }
+    try {
+      const entered = new Set(
+        allValues
+          .flatMap((item) => parseAddresses(item))
+          .map((item) => suggestionIdentity(String(item.address ?? "")))
+      );
+      const result = await loadSuggestions(term);
+      if (requestId.current !== currentRequest) {
+        return;
+      }
+      setSuggestions(
+        result.filter((item) => !entered.has(suggestionIdentity(item.address)))
+      );
+      setActiveIndex(0);
+    } catch {
+      if (requestId.current === currentRequest) {
+        setSuggestions([]);
+      }
+    }
+  });
+  useEffect(() => {
+    const term = query.trim();
+    requestId.current += 1;
+    const currentRequest = requestId.current;
+    if (term.length < 2 || !hasSuggestionLoader) {
+      return;
+    }
+    const timeout = window.setTimeout(
+      () => void load(term, currentRequest),
+      120
+    );
+    return () => window.clearTimeout(timeout);
+  }, [query, hasSuggestionLoader]);
+
+  const refreshQuery = (nextValue: string, cursor: number) => {
+    const range = recipientTokenRange(nextValue, cursor);
+    const nextQuery = nextValue.slice(range.start, range.end).trim();
+    if (nextQuery.length < 2) {
+      setSuggestions([]);
+    }
+    setQuery(nextQuery);
+  };
+  const closeSuggestions = () => {
+    requestId.current += 1;
+    setSuggestions([]);
+    setQuery("");
+  };
+  const selectSuggestion = (suggestion: EditorContent["to"][number]) => {
+    const input = inputRef.current;
+    const cursor = input?.selectionStart ?? value.length;
+    const range = recipientTokenRange(value, cursor);
+    const formatted = formatAddresses([suggestion]);
+    const prefix = value.slice(0, range.start);
+    const suffix = value.slice(range.end);
+    const leadingSpace = prefix.endsWith(",") ? " " : "";
+    const trailing = suffix.startsWith(",") ? "" : ", ";
+    const next = `${prefix}${leadingSpace}${formatted}${trailing}${suffix}`;
+    const nextCursor =
+      prefix.length + leadingSpace.length + formatted.length + trailing.length;
+    onChange(next);
+    closeSuggestions();
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(nextCursor, nextCursor);
+    });
+  };
+  const expanded = suggestions.length > 0;
+
+  return (
+    <div className="relative grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center">
+      <label
+        htmlFor={id}
+        className="text-xs font-extrabold text-[var(--sea-ink-soft)]"
+      >
+        {label}
+      </label>
+      <Input
+        ref={inputRef}
+        id={id}
+        role="combobox"
+        aria-label={`${label} recipients`}
+        aria-autocomplete="list"
+        aria-controls={listboxId}
+        aria-expanded={expanded}
+        aria-activedescendant={
+          expanded ? `${listboxId}-${activeIndex}` : undefined
+        }
+        autoFocus={autoFocus}
+        disabled={disabled}
+        value={value}
+        onBlur={closeSuggestions}
+        onChange={(event) => {
+          const next = event.target.value;
+          onChange(next);
+          refreshQuery(next, event.target.selectionStart ?? next.length);
+        }}
+        onFocus={(event) =>
+          refreshQuery(
+            value,
+            event.currentTarget.selectionStart ?? value.length
+          )
+        }
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" && expanded) {
+            event.preventDefault();
+            setActiveIndex((index) => (index + 1) % suggestions.length);
+          } else if (event.key === "ArrowUp" && expanded) {
+            event.preventDefault();
+            setActiveIndex(
+              (index) => (index - 1 + suggestions.length) % suggestions.length
+            );
+          } else if (event.key === "Enter" && expanded) {
+            event.preventDefault();
+            selectSuggestion(suggestions[activeIndex] ?? suggestions[0]);
+          } else if (event.key === "Escape") {
+            closeSuggestions();
+          }
+        }}
+        placeholder={placeholder}
+        className="mt-1 h-auto min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-sm transition-none outline-none placeholder:text-[var(--sea-ink-soft)]/42 focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:mt-0 dark:bg-transparent dark:disabled:bg-transparent"
+      />
+      {expanded ? (
+        <div
+          id={listboxId}
+          role="listbox"
+          aria-label={`${label} recipient suggestions`}
+          className="absolute top-[calc(100%-0.25rem)] right-3 left-3 z-30 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] py-1 shadow-[0_16px_45px_rgba(23,58,64,0.18)] sm:left-[4.5rem]"
+        >
+          {suggestions.map((suggestion, index) => (
+            <button
+              id={`${listboxId}-${index}`}
+              key={suggestion.address}
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              className={`flex w-full items-center justify-between gap-4 px-3 py-2 text-left text-sm ${
+                index === activeIndex
+                  ? "bg-[var(--foam)]"
+                  : "hover:bg-[var(--foam)]"
+              }`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => selectSuggestion(suggestion)}
+            >
+              <span className="min-w-0 truncate font-bold">
+                {suggestion.displayName ?? suggestion.address}
+              </span>
+              {suggestion.displayName === undefined ? null : (
+                <span className="min-w-0 truncate text-xs text-[var(--sea-ink-soft)]">
+                  {suggestion.address}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export const draftEditorFieldsFromContent = (
   content: EditorContent
 ): DraftEditorFields => ({
@@ -176,6 +403,7 @@ export function DraftEditor({
   isSendUncertain,
   isSaving,
   isSending,
+  loadRecipientSuggestions,
   onAttachFiles,
   onAutosave,
   onChange,
@@ -281,56 +509,35 @@ export function DraftEditor({
         }}
       >
         <div className="overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_18px_50px_rgba(23,58,64,0.08)]">
-          <label
-            htmlFor="draft-to"
-            className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center"
-          >
-            <span className="text-xs font-extrabold text-[var(--sea-ink-soft)]">
-              To
-            </span>
-            <Input
-              id="draft-to"
-              aria-label="To recipients"
-              autoFocus
-              disabled={editorLocked}
-              value={fields.to}
-              onChange={(event) => updateField({ to: event.target.value })}
-              placeholder="person@example.com, Team <team@example.com>"
-              className="mt-1 h-auto min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-sm transition-none outline-none placeholder:text-[var(--sea-ink-soft)]/42 focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:mt-0 dark:bg-transparent dark:disabled:bg-transparent"
-            />
-          </label>
-          <label
-            htmlFor="draft-cc"
-            className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center"
-          >
-            <span className="text-xs font-extrabold text-[var(--sea-ink-soft)]">
-              Cc
-            </span>
-            <Input
-              id="draft-cc"
-              aria-label="Cc recipients"
-              disabled={editorLocked}
-              value={fields.cc}
-              onChange={(event) => updateField({ cc: event.target.value })}
-              className="mt-1 h-auto min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-sm transition-none outline-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:mt-0 dark:bg-transparent dark:disabled:bg-transparent"
-            />
-          </label>
-          <label
-            htmlFor="draft-bcc"
-            className="grid border-b border-[var(--line)] px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center"
-          >
-            <span className="text-xs font-extrabold text-[var(--sea-ink-soft)]">
-              Bcc
-            </span>
-            <Input
-              id="draft-bcc"
-              aria-label="Bcc recipients"
-              disabled={editorLocked}
-              value={fields.bcc}
-              onChange={(event) => updateField({ bcc: event.target.value })}
-              className="mt-1 h-auto min-w-0 rounded-none border-0 bg-transparent px-0 py-0 text-sm transition-none outline-none focus-visible:ring-0 disabled:bg-transparent disabled:opacity-60 sm:mt-0 dark:bg-transparent dark:disabled:bg-transparent"
-            />
-          </label>
+          <RecipientInput
+            allValues={[fields.to, fields.cc, fields.bcc]}
+            autoFocus
+            disabled={editorLocked}
+            id="draft-to"
+            label="To"
+            loadSuggestions={loadRecipientSuggestions}
+            onChange={(to) => updateField({ to })}
+            placeholder="person@example.com, Team <team@example.com>"
+            value={fields.to}
+          />
+          <RecipientInput
+            allValues={[fields.to, fields.cc, fields.bcc]}
+            disabled={editorLocked}
+            id="draft-cc"
+            label="Cc"
+            loadSuggestions={loadRecipientSuggestions}
+            onChange={(cc) => updateField({ cc })}
+            value={fields.cc}
+          />
+          <RecipientInput
+            allValues={[fields.to, fields.cc, fields.bcc]}
+            disabled={editorLocked}
+            id="draft-bcc"
+            label="Bcc"
+            loadSuggestions={loadRecipientSuggestions}
+            onChange={(bcc) => updateField({ bcc })}
+            value={fields.bcc}
+          />
           <label
             htmlFor="draft-subject"
             className="grid px-4 py-3 sm:grid-cols-[4rem_1fr] sm:items-center"

@@ -613,17 +613,17 @@ describe("patched Alchemy D1 migration batching", () => {
         applyMigrationBatch(database, file, index + 1, true);
       }
 
-      expect(files).toHaveLength(74);
+      expect(files).toHaveLength(75);
       expect(
         database.prepare("select count(*) as count from d1_migrations").get()
-      ).toMatchObject({ count: 74 });
+      ).toMatchObject({ count: 75 });
       expect(
         database
           .prepare("select id,name from d1_migrations order by id desc limit 1")
           .get()
       ).toMatchObject({
-        id: "00074",
-        name: "1034_app_mailbox_bootstrap_optional_recovery.sql",
+        id: "00075",
+        name: "1035_app_user_mailbox_contact_preference.sql",
       });
       expect(
         database

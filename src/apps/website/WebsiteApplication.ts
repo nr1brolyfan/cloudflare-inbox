@@ -27,6 +27,7 @@ import type {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
+import type { SearchContactsInput } from "#/modules/mailbox/domain/MailboxContact";
 import type {
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
@@ -36,6 +37,10 @@ import type {
   RenameMailboxCommand,
 } from "#/modules/organization/application/MailboxAdministration";
 import type { BootstrapOrganizationCommand } from "#/modules/organization/application/OrganizationBootstrap";
+import type {
+  GetMailboxContactPreferenceQuery,
+  UpdateMailboxContactPreferenceCommand,
+} from "#/modules/organization/application/UserMailboxContactPreferences";
 
 import {
   DevEmailOperations,
@@ -187,6 +192,14 @@ export const WebsiteApplication = {
         return yield* operations.getDraft({ incoming, query });
       })
     ),
+  getMailboxContactPreferences: (query: GetMailboxContactPreferenceQuery) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.getContactPreferences({ incoming, query });
+      })
+    ),
   getMailboxMessageHtml: (query: MailboxMessageHtmlInput, incoming: Request) =>
     WebsiteRuntime.runPromise(
       MailboxBackendOperations.pipe(
@@ -217,6 +230,14 @@ export const WebsiteApplication = {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.listMessages({ incoming, query });
+      })
+    ),
+  searchMailboxContacts: (query: SearchContactsInput) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.searchContacts({ incoming, query });
       })
     ),
   listMailboxDrafts: (query: MailboxDraftListInput) =>
@@ -257,6 +278,19 @@ export const WebsiteApplication = {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.updateDraft({ command, incoming });
+      })
+    ),
+  updateMailboxContactPreferences: (
+    command: UpdateMailboxContactPreferenceCommand
+  ) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.updateContactPreferences({
+          command,
+          incoming,
+        });
       })
     ),
   undoMailboxSend: (command: UndoMailboxSendCommand) =>
