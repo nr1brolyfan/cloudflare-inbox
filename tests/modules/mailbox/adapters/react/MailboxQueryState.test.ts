@@ -235,7 +235,7 @@ describe("mailbox optimistic query state", () => {
     });
   });
 
-  it("reconciles every page and thread anchor while preserving cursors", () => {
+  it("reconciles every thread anchor without invalidating conversations", () => {
     const queryClient = new QueryClient();
     const listKey = [
       "mailbox",
@@ -288,12 +288,17 @@ describe("mailbox optimistic query state", () => {
         queryKey: ["mailbox", "thread"],
       })
       .map(([, data]) => data?.thread);
+    const threadInvalidated = queryClient
+      .getQueryCache()
+      .findAll({ queryKey: ["mailbox", "thread"] })
+      .map((query) => query.state.isInvalidated);
 
     expect({
       listMessage: list?.pages[1]?.items[0],
       nextCursor: list?.pages[0]?.nextCursor,
       pageParams: list?.pageParams,
       threadReads: threads.map((item) => item?.messages[0]?.read),
+      threadInvalidated,
       threadUnread: threads.map((item) => item?.thread.unreadCount),
       unreadIds: unread?.pages.flatMap((page) =>
         page.items.map((item) => item.id)
@@ -303,6 +308,7 @@ describe("mailbox optimistic query state", () => {
       nextCursor: "cursor-2",
       pageParams: [undefined, "cursor-2"],
       threadReads: [true, true],
+      threadInvalidated: [false, false],
       threadUnread: [0, 0],
       unreadIds: ["message-a"],
     });
