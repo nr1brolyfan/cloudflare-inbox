@@ -364,7 +364,7 @@ function Home() {
             : passwordAuth;
   const error = activeMutation.error ?? passwordReset.error ?? session.error;
 
-  const submit = (event: React.FormEvent) => {
+  const submit = (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     setNotice(undefined);
     activeMutation.mutate();

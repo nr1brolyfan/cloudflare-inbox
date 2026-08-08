@@ -337,7 +337,7 @@ const failure = <A, E>(result: Result.Result<A, E>) => {
     throw new Error("Expected failure");
   }
   if (!(result.failure instanceof MailboxDomainError)) {
-    throw result.failure;
+    throw new Error("Expected MailboxDomainError", { cause: result.failure });
   }
   return result.failure;
 };

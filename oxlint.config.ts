@@ -1,9 +1,4 @@
-import {
-  antipattern as effectAntipattern,
-  correctness as effectCorrectness,
-  effectNative,
-  style as effectStyle,
-} from "@effect/tsgo/oxlint-presets";
+import { correctness as effectCorrectness } from "@effect/tsgo/oxlint-presets";
 import { defineConfig } from "oxlint";
 import core from "ultracite/oxlint/core";
 import react from "ultracite/oxlint/react";
@@ -14,7 +9,6 @@ const asErrors = (rules: Iterable<string>) =>
   Object.fromEntries(Array.from(rules, (rule) => [rule, "error"] as const));
 
 const productionTypeAwareRules = [
-  "typescript/consistent-return",
   "typescript/no-array-delete",
   "typescript/no-deprecated",
   "typescript/no-unsafe-argument",
@@ -22,12 +16,26 @@ const productionTypeAwareRules = [
   "typescript/no-unsafe-call",
   "typescript/no-unsafe-member-access",
   "typescript/no-unsafe-return",
-  "typescript/no-unsafe-type-assertion",
   "typescript/restrict-plus-operands",
   "typescript/restrict-template-expressions",
-  "typescript/strict-boolean-expressions",
-  "typescript/switch-exhaustiveness-check",
   "typescript/unbound-method",
+] as const;
+
+const productionEffectRules = [
+  "effecttsgo/global-console-in-effect",
+  "effecttsgo/global-date-in-effect",
+  "effecttsgo/global-fetch-in-effect",
+  "effecttsgo/global-random-in-effect",
+  "effecttsgo/global-timers-in-effect",
+  "effecttsgo/layer-merge-all-with-dependencies",
+  "effecttsgo/missing-effect-service-dependency",
+  "effecttsgo/multiple-effect-provide",
+  "effecttsgo/nested-effect-gen-yield",
+  "effecttsgo/return-effect-in-gen",
+  "effecttsgo/run-effect-inside-effect",
+  "effecttsgo/scope-in-layer-effect",
+  "effecttsgo/try-catch-in-effect-gen",
+  "effecttsgo/unsafe-effect-type-assertion",
 ] as const;
 
 const universalTypeAwareRules = [
@@ -38,29 +46,14 @@ const universalTypeAwareRules = [
 ] as const;
 
 export default defineConfig({
-  extends: [
-    core,
-    react,
-    tanstack,
-    vitest,
-    effectCorrectness,
-    effectAntipattern,
-    effectNative,
-    effectStyle,
-  ],
+  extends: [core, react, tanstack, vitest, effectCorrectness],
   ignorePatterns: [...(core.ignorePatterns ?? []), "migrations/**"],
   overrides: [
     {
       files: ["src/**/*.{ts,tsx}", "alchemy.run.ts", "vite.config.ts"],
       rules: {
-        ...asErrors(Object.keys(effectAntipattern.rules ?? {})),
-        ...asErrors(Object.keys(effectNative.rules ?? {})),
+        ...asErrors(productionEffectRules),
         ...asErrors(productionTypeAwareRules),
-        "effecttsgo/deterministic-keys": "error",
-        "effecttsgo/missing-effect-service-dependency": "error",
-        "effecttsgo/nested-effect-gen-yield": "error",
-        "effecttsgo/service-not-as-class": "error",
-        "effecttsgo/strict-boolean-expressions": "error",
       },
     },
     {
@@ -100,6 +93,7 @@ export default defineConfig({
   ],
   rules: {
     ...asErrors(Object.keys(effectCorrectness.rules ?? {})),
+    "effecttsgo/any-unknown-in-error-context": "off",
     "func-names": "off",
     "func-style": "off",
     "no-nested-ternary": "off",

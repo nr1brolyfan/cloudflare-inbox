@@ -59,7 +59,7 @@ const readEntries = (storage: SessionStorageLike, now: number) => {
     return [];
   }
   const decoded = Result.try({
-    try: () => JSON.parse(payload),
+    try: (): unknown => JSON.parse(payload),
     catch: () => null,
   }).pipe(
     Result.flatMap((value) => Schema.decodeUnknownResult(PendingEntries)(value))

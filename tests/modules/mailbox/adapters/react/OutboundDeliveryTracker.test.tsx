@@ -121,7 +121,9 @@ describe(OutboundDeliveryTracker, () => {
 
     expect(screen.getByText("Sending in 1 second.")).toBeTruthy();
     expect(screen.getByRole("button", { name: "Undo" })).toBeTruthy();
-    act(() => vi.advanceTimersByTime(1100));
+    act(() => {
+      vi.advanceTimersByTime(1100);
+    });
     expect(screen.getByText("Waiting to send")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Undo" })).toBeNull();
     expect(screen.getByRole("button", { name: "Check status" })).toBeTruthy();
@@ -149,7 +151,9 @@ describe(OutboundDeliveryTracker, () => {
     );
 
     expect(onMailboxChanged).toHaveBeenCalledOnce();
-    act(() => vi.advanceTimersByTime(3000));
+    act(() => {
+      vi.advanceTimersByTime(3000);
+    });
     expect(onDismiss).toHaveBeenCalledOnce();
   });
 

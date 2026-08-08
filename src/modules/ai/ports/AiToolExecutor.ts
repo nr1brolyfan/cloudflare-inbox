@@ -111,13 +111,16 @@ const CallEnvelope = Schema.Struct({
 
 type CallMetadata = Schema.Schema.Type<typeof CallMetadata>;
 
+const descriptorValue = (descriptor: PropertyDescriptor): unknown =>
+  descriptor.value;
+
 const safeCallMetadata = (value: unknown) =>
   Effect.sync(() => {
     try {
       if (value === null || typeof value !== "object" || Array.isArray(value)) {
         return null;
       }
-      const prototype = Object.getPrototypeOf(value);
+      const prototype: unknown = Object.getPrototypeOf(value);
       if (
         prototype !== Object.prototype &&
         prototype !== AiToolCall.prototype &&
@@ -135,7 +138,10 @@ const safeCallMetadata = (value: unknown) =>
       ) {
         return null;
       }
-      return { callId: callId.value, name: name.value };
+      return {
+        callId: descriptorValue(callId),
+        name: descriptorValue(name),
+      };
     } catch {
       return null;
     }
@@ -158,7 +164,7 @@ const safelyMapCallEnvelope = (value: unknown) =>
       if (value === null || typeof value !== "object" || Array.isArray(value)) {
         throw new Error("Envelope must be an object");
       }
-      const prototype = Object.getPrototypeOf(value);
+      const prototype: unknown = Object.getPrototypeOf(value);
       if (
         prototype !== Object.prototype &&
         prototype !== AiToolCall.prototype &&
@@ -215,7 +221,7 @@ const safelyMapCallEnvelope = (value: unknown) =>
         if (Object.getOwnPropertySymbols(input).length > 0) {
           throw new Error("JSON has symbol fields");
         }
-        const inputPrototype = Object.getPrototypeOf(input);
+        const inputPrototype: unknown = Object.getPrototypeOf(input);
         const inputDescriptors = Object.getOwnPropertyDescriptors(input);
         if (Array.isArray(input)) {
           if (inputPrototype !== Array.prototype) {
@@ -243,7 +249,7 @@ const safelyMapCallEnvelope = (value: unknown) =>
             if (descriptor === undefined || !("value" in descriptor)) {
               throw new Error("JSON arrays must contain data fields only");
             }
-            output.push(copyJson(descriptor.value, depth + 1));
+            output.push(copyJson(descriptorValue(descriptor), depth + 1));
           }
           return output;
         }
@@ -264,7 +270,7 @@ const safelyMapCallEnvelope = (value: unknown) =>
           Object.defineProperty(output, key, {
             configurable: true,
             enumerable: true,
-            value: copyJson(descriptor.value, depth + 1),
+            value: copyJson(descriptorValue(descriptor), depth + 1),
             writable: true,
           });
         }
@@ -272,9 +278,9 @@ const safelyMapCallEnvelope = (value: unknown) =>
       };
 
       return {
-        arguments: copyJson(argumentsDescriptor.value, 1),
-        callId: callIdDescriptor.value,
-        name: nameDescriptor.value,
+        arguments: copyJson(descriptorValue(argumentsDescriptor), 1),
+        callId: descriptorValue(callIdDescriptor),
+        name: descriptorValue(nameDescriptor),
       };
     },
     catch: () =>

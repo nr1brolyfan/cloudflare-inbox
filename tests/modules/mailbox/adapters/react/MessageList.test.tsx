@@ -146,7 +146,9 @@ describe(MessageList, () => {
     fireEvent.click(unreadOption);
     fireEvent.click(screen.getByRole("button", { name: "Starred" }));
     fireEvent.click(screen.getByRole("button", { name: "Files" }));
-    act(() => vi.advanceTimersByTime(350));
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
 
     expect(onQueryChange).toHaveBeenCalledWith({
       delivery: "delivery-1",
@@ -299,7 +301,9 @@ describe(MessageList, () => {
       screen.getByRole("searchbox", { name: "Search messages" }),
       { target: { value: "sent invoice" } }
     );
-    act(() => vi.advanceTimersByTime(350));
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
     expect(onQueryChange).toHaveBeenLastCalledWith({
       delivery: undefined,
       hasAttachment: undefined,
@@ -380,7 +384,9 @@ describe(MessageList, () => {
         target: { value: "!!!" },
       }
     );
-    act(() => vi.advanceTimersByTime(350));
+    act(() => {
+      vi.advanceTimersByTime(350);
+    });
 
     expect(onQueryChange).not.toHaveBeenCalled();
     expect(screen.getByRole("alert").textContent).toContain(

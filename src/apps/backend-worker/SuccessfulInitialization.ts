@@ -9,6 +9,7 @@ export const cacheSuccessfulInitialization = <E, R>(
   Effect.gen(function* () {
     const initialized = yield* Ref.make(false);
     const semaphore = yield* Semaphore.make(1);
+    // oxlint-disable-next-line effecttsgo/return-effect-in-gen -- The nested Effect is the reusable initialization action, not work for this scope.
     return Semaphore.withPermits(
       semaphore,
       1,

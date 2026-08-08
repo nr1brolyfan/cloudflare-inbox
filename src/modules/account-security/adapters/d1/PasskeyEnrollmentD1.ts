@@ -679,7 +679,8 @@ const PasskeyEnrollmentTransactionD1Layer = Layer.effect(
               Effect.mapError((cause) => error("finish", "storage", cause))
             );
           const remediation = recoveryMode
-            ? yield* Effect.gen(function* () {
+            ? // oxlint-disable-next-line effecttsgo/nested-effect-gen-yield -- Keep recovery-only state scoped to this conditional branch.
+              yield* Effect.gen(function* () {
                 const [identity] = yield* database
                   .select({ id: authUserIdentity.id })
                   .from(authUserIdentity)

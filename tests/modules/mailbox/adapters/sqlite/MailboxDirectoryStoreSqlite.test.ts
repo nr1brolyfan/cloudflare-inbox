@@ -54,7 +54,7 @@ const lookup = (input: unknown) =>
 
 const resultSuccess = <A, E>(result: Result.Result<A, E>) => {
   if (Result.isFailure(result)) {
-    throw result.failure;
+    throw new Error("Expected success", { cause: result.failure });
   }
   return result.success;
 };

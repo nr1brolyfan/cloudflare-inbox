@@ -595,7 +595,7 @@ export const inboundWorkflowImplementation = Effect.gen(function* () {
             object === null
               ? null
               : {
-                  arrayBuffer: object.arrayBuffer,
+                  arrayBuffer: () => object.arrayBuffer(),
                   customMetadata: object.customMetadata ?? {},
                   size: object.size,
                 }

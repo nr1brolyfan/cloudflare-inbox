@@ -1,6 +1,7 @@
 import type { RuntimeContext } from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import { sql } from "drizzle-orm";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -111,7 +112,7 @@ const mailboxDoImplementation = Effect.gen(function* () {
       const requestedLease = Number(
         request.headers["x-mailbox-lease-expires-at"]
       );
-      const now = Date.now();
+      const now = yield* Clock.currentTimeMillis;
       if (!Number.isSafeInteger(requestedLease) || requestedLease <= now) {
         return HttpServerResponse.text("Invalid WebSocket lease", {
           status: 400,
@@ -173,6 +174,7 @@ const mailboxDoRuntime = Effect.gen(function* () {
     ? undefined
     : yield* Cloudflare.Email.Send(MailboxEmailSender);
 
+  // oxlint-disable-next-line effecttsgo/return-effect-in-gen -- Alchemy expects the outer Effect to construct the per-instance runtime Effect.
   return Effect.gen(function* () {
     const providerDisabled =
       process.env.MAILBOX_OUTBOUND_PROVIDER_DISABLED === "true";
@@ -196,9 +198,13 @@ const mailboxDoRuntime = Effect.gen(function* () {
     );
   }).pipe(Effect.orDie);
 }).pipe(
-  Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
-  Effect.provide(Cloudflare.Email.SendBinding),
-  Effect.provide(Cloudflare.R2.ReadWriteBucketBinding),
+  Effect.provide(
+    Layer.mergeAll(
+      Cloudflare.D1.QueryDatabaseBinding,
+      Cloudflare.Email.SendBinding,
+      Cloudflare.R2.ReadWriteBucketBinding
+    )
+  ),
   Effect.orDie
 );
 

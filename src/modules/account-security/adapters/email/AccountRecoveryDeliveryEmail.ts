@@ -3,6 +3,8 @@ import { DevEmailStore } from "@effect-auth/core/DevEmail";
 import { EmailSchema, UnixMillis } from "@effect-auth/core/Identifiers";
 import { RuntimeContext } from "alchemy";
 import { WorkerExecutionContext } from "alchemy/Cloudflare";
+import * as Clock from "effect/Clock";
+import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -35,12 +37,15 @@ export const AccountRecoveryDeliveryEmailLayer = Layer.effect(
             { challengeId: flowId, secret: Redacted.value(secret) }
           );
           const subject = "Recover your Cloudflare Inbox account";
-          const text = `Continue account recovery:\n\n${url}\n\nYou will also need one unused recovery code. This link expires at ${new Date(expiresAt).toISOString()}.`;
+          const expiresAtIso = DateTime.formatIso(
+            DateTime.makeUnsafe(expiresAt)
+          );
+          const text = `Continue account recovery:\n\n${url}\n\nYou will also need one unused recovery code. This link expires at ${expiresAtIso}.`;
 
           if (config.delivery._tag === "development") {
             return yield* devEmailStore
               .save({
-                createdAt: UnixMillis(Date.now()),
+                createdAt: UnixMillis(yield* Clock.currentTimeMillis),
                 expiresAt: UnixMillis(expiresAt),
                 id: `account-recovery:${flowId}`,
                 kind: "MagicLink",

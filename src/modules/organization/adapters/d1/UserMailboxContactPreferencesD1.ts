@@ -1,5 +1,6 @@
 import { CurrentActor } from "@effect-auth/core/Sessions";
 import { and, eq, isNull, sql } from "drizzle-orm";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -105,7 +106,7 @@ const UserMailboxContactPreferenceStoreD1Layer = Layer.effect(
     const update = (command: UpdateMailboxContactPreferenceCommand) =>
       Effect.gen(function* () {
         const { actor, organizationId } = yield* context(command.mailboxId);
-        const now = Date.now();
+        const now = yield* Clock.currentTimeMillis;
         if (command.expectedVersion === 0) {
           const [created] = yield* database
             .insert(appUserMailboxContactPreference)

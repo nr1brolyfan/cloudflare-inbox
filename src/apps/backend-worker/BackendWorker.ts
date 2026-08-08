@@ -405,10 +405,14 @@ export default class Backend extends Cloudflare.Worker<Backend>()(
       }),
     };
   }).pipe(
-    Effect.provide(EmailRoutingEventSourceCloudflareLayer),
-    Effect.provide(Cloudflare.AI.QueryGatewayBinding),
-    Effect.provide(Cloudflare.D1.QueryDatabaseBinding),
-    Effect.provide(Cloudflare.Email.SendBinding),
-    Effect.provide(Cloudflare.R2.ReadWriteBucketBinding)
+    Effect.provide(
+      Layer.mergeAll(
+        EmailRoutingEventSourceCloudflareLayer,
+        Cloudflare.AI.QueryGatewayBinding,
+        Cloudflare.D1.QueryDatabaseBinding,
+        Cloudflare.Email.SendBinding,
+        Cloudflare.R2.ReadWriteBucketBinding
+      )
+    )
   )
 ) {}

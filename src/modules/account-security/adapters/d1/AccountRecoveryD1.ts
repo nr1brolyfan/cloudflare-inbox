@@ -300,7 +300,7 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
             if (!safe) {
               return accountRecoveryAccepted;
             }
-            const now = UnixMillis(Date.now());
+            const now = UnixMillis(yield* Clock.currentTimeMillis);
             const secret = Redacted.make(
               yield* crypto
                 .randomToken(32)
@@ -492,7 +492,7 @@ const AccountRecoveryTransactionD1Layer = Layer.effect(
           if (sessions.prepareCreate === undefined) {
             return yield* failure("complete", "storage");
           }
-          const completedAt = UnixMillis(Date.now());
+          const completedAt = UnixMillis(yield* Clock.currentTimeMillis);
           const prepared = yield* sessions
             .prepareCreate({
               authenticationEvents: [

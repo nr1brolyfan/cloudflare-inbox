@@ -498,6 +498,7 @@ export const Route = createFileRoute("/inbox")({
   beforeLoad: ({ search }) => {
     const routeSearch = mailboxRouteSearch(search);
     if (search.draft !== undefined) {
+      // oxlint-disable-next-line typescript/only-throw-error -- TanStack Router uses a thrown redirect control object.
       throw redirect({
         params: { draftId: search.draft },
         replace: true,
@@ -506,6 +507,7 @@ export const Route = createFileRoute("/inbox")({
       });
     }
     if (search.compose === "true") {
+      // oxlint-disable-next-line typescript/only-throw-error -- TanStack Router uses a thrown redirect control object.
       throw redirect({
         replace: true,
         search: routeSearch,
@@ -513,6 +515,7 @@ export const Route = createFileRoute("/inbox")({
       });
     }
     if (search.label !== undefined) {
+      // oxlint-disable-next-line typescript/only-throw-error -- TanStack Router uses a thrown redirect control object.
       throw redirect({
         params: { labelId: search.label },
         replace: true,
@@ -521,6 +524,7 @@ export const Route = createFileRoute("/inbox")({
       });
     }
     const folderId = search.folder ?? "inbox";
+    // oxlint-disable-next-line typescript/only-throw-error -- TanStack Router uses a thrown redirect control object.
     throw isSystemFolderId(folderId)
       ? redirect({
           replace: true,
@@ -2301,7 +2305,9 @@ function DraftWorkspace({
           })
         )
       }
-      onAttachFiles={attachFiles}
+      onAttachFiles={(files, snapshot) => {
+        void attachFiles(files, snapshot);
+      }}
       onAutosave={queueSave}
       onChange={(fields) => {
         latestFields.current = fields;

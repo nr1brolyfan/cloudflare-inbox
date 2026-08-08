@@ -340,7 +340,7 @@ const invalidDraftCursor = () =>
 
 const decodeDraftCursor = (value: string, mailboxId: MailboxId) => {
   const parsed = Result.try({
-    try: () => JSON.parse(decodeURIComponent(atob(value))),
+    try: (): unknown => JSON.parse(decodeURIComponent(atob(value))),
     catch: invalidDraftCursor,
   });
   if (Result.isFailure(parsed)) {

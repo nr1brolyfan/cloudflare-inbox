@@ -1,4 +1,5 @@
 import * as Cloudflare from "alchemy/Cloudflare";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -30,7 +31,7 @@ export const MailboxChangePublisherDoLayer = Layer.effect(
     return MailboxChangePublisher.of({
       publish: (scopes) =>
         Effect.gen(function* () {
-          const now = Date.now();
+          const now = yield* Clock.currentTimeMillis;
           const event = encodeEvent(mailboxChangedEvent(scopes));
           yield* Effect.sync(() => {
             for (const socket of state.raw.getWebSockets()) {

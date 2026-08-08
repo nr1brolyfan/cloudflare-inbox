@@ -4,7 +4,7 @@ import {
   count,
   desc,
   eq,
-  getTableColumns,
+  getColumns,
   isNotNull,
   isNull,
   sql,
@@ -94,7 +94,7 @@ const decodeStoredReplyTo = (
   value === null
     ? Effect.void
     : Effect.try({
-        try: () => JSON.parse(value),
+        try: (): unknown => JSON.parse(value),
         catch: () => storedReplyToError(operation, messageId),
       }).pipe(
         Effect.flatMap((input) =>
@@ -284,7 +284,7 @@ const decodeCursor = (
   operation: MailboxDomainError["operation"]
 ) => {
   const parsed = Result.try({
-    try: () => JSON.parse(decodeURIComponent(atob(value))),
+    try: (): unknown => JSON.parse(decodeURIComponent(atob(value))),
     catch: () =>
       messageDomainError(operation, "validation", "Message cursor is invalid"),
   });
@@ -517,7 +517,7 @@ const searchMessages = (mailboxId: MailboxId, input: SearchMessagesInput) =>
         AND message_search MATCH ${ftsQuery}
     )`;
     const rows = yield* db
-      .select({ ...getTableColumns(message), searchRank: rank })
+      .select({ ...getColumns(message), searchRank: rank })
       .from(message)
       .where(
         and(

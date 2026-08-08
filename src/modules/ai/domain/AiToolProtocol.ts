@@ -91,7 +91,7 @@ const checkJsonObject = (
       return undefined;
     }
 
-    const prototype = Object.getPrototypeOf(json);
+    const prototype: unknown = Object.getPrototypeOf(json);
     if (prototype !== Object.prototype && prototype !== null) {
       return "JSON objects must not carry a custom prototype";
     }

@@ -3,6 +3,7 @@ import { AuthRateLimit } from "@effect-auth/core/AuthRateLimit";
 import * as AuthPermission from "@effect-auth/core/Permission";
 import { RecoveryCodes } from "@effect-auth/core/RecoveryCode";
 import { and, eq, exists, isNull, notExists, sql } from "drizzle-orm";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
@@ -250,7 +251,9 @@ const RecoveryCodeAdministrationTransactionD1Layer = Layer.effect(
             );
 
           const expectedPreviousSetId = yield* snapshotActiveSet(userId);
-          const generatedAt = Schema.decodeUnknownSync(UnixMillis)(Date.now());
+          const generatedAt = Schema.decodeUnknownSync(UnixMillis)(
+            yield* Clock.currentTimeMillis
+          );
           const plaintext = yield* recoveryCodes
             .generate({ count: 10, groupSize: 4, length: 16 })
             .pipe(

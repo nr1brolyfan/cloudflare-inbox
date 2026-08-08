@@ -9,6 +9,7 @@ import {
   mapAuthGuardErrors,
 } from "@effect-auth/core/HttpApi";
 import { CurrentActor, CurrentSession } from "@effect-auth/core/Sessions";
+import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -1013,10 +1014,11 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
           });
           const session = yield* CurrentSession;
           const request = yield* HttpServerRequest.HttpServerRequest;
+          const now = yield* Clock.currentTimeMillis;
           return yield* mailboxDo.subscribeChanges({
             leaseExpiresAt: Math.min(
               Number(session.expiresAt),
-              Date.now() + mailboxRealtimeLeaseMillis
+              now + mailboxRealtimeLeaseMillis
             ),
             mailboxId: params.mailboxId,
             request,

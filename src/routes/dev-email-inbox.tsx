@@ -48,6 +48,7 @@ export const Route = createFileRoute("/dev-email-inbox")({
   loader: async () => {
     const inbox = await listDevEmails();
     if (!inbox.enabled) {
+      // oxlint-disable-next-line typescript/only-throw-error -- TanStack Router uses a thrown not-found control object.
       throw notFound();
     }
     return inbox.messages;

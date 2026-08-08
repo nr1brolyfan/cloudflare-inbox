@@ -41,7 +41,8 @@ describe(OrganizationBootstrap, () => {
       operationId: "00000000-0000-4000-8000-000000000010",
     });
 
-    service.bootstrap(command);
+    const bootstrap = service.bootstrap(command);
+    void bootstrap;
 
     expect(trusted).toStrictEqual({
       displayName: "Inbox",

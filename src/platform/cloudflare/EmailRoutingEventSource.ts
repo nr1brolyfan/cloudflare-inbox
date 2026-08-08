@@ -39,6 +39,7 @@ const requireWorkerEventRuntimeContext = RuntimeContext.pipe(
   })
 );
 
+/* oxlint-disable effecttsgo/unsafe-effect-type-assertion -- RuntimeContext.listen supplies RuntimeContext when it executes the event handler. */
 const listen = <Req = never>(handler: EmailRoutingHandler<Req>) =>
   Effect.gen(function* () {
     const context = yield* requireWorkerEventRuntimeContext;
@@ -51,6 +52,7 @@ const listen = <Req = never>(handler: EmailRoutingHandler<Req>) =>
       return handler(event.input);
     });
   }) as Effect.Effect<void, never, Exclude<Req, RuntimeContext>>;
+/* oxlint-enable effecttsgo/unsafe-effect-type-assertion */
 
 export const EmailRoutingEventSourceCloudflareLayer = Layer.succeed(
   EmailRoutingEventSource,

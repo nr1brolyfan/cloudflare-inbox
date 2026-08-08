@@ -39,7 +39,7 @@ export const readPendingDraftCreate = (
       return undefined;
     }
     const decoded = Result.try({
-      try: () => JSON.parse(payload),
+      try: (): unknown => JSON.parse(payload),
       catch: () => null,
     }).pipe(
       Result.flatMap(Schema.decodeUnknownResult(CreateMailboxDraftCommand))
@@ -97,7 +97,7 @@ export const readDraftEditorFields = (
       return undefined;
     }
     const decoded = Result.try({
-      try: () => JSON.parse(payload),
+      try: (): unknown => JSON.parse(payload),
       catch: () => null,
     }).pipe(Result.flatMap(Schema.decodeUnknownResult(DraftEditorFields)));
     if (Result.isFailure(decoded)) {

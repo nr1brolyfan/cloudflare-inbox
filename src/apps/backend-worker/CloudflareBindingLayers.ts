@@ -88,7 +88,10 @@ export const inboundAttachmentR2ReadClientLayer = (
           Effect.map((object) =>
             object === null
               ? null
-              : { ...attachmentObject(object), arrayBuffer: object.arrayBuffer }
+              : {
+                  ...attachmentObject(object),
+                  arrayBuffer: () => object.arrayBuffer(),
+                }
           )
         ),
     })
@@ -129,7 +132,10 @@ export const outboundDraftAttachmentR2ReadClientLayer = (
           Effect.map((object) =>
             object === null
               ? null
-              : { ...attachmentObject(object), arrayBuffer: object.arrayBuffer }
+              : {
+                  ...attachmentObject(object),
+                  arrayBuffer: () => object.arrayBuffer(),
+                }
           )
         ),
     })
