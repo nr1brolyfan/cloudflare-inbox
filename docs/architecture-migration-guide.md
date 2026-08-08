@@ -167,7 +167,7 @@ Follow `effect-code-style-guide.md`:
 - Ports use class-based `Context.Service` without a canonical production `make`/`layer` when runtime must choose the adapter.
 - `layerNoDeps` never locally provides dependencies; tests must be able to replace every dependency of `make`.
 - Concrete adapter and top-level Layers are standalone PascalCase values ending in `Layer`.
-- Use `Layer.scoped` and `Effect.acquireRelease` for owned resources.
+- Use `Layer.effect` with `Effect.acquireRelease` for Layer-owned resources; use `Effect.scoped` when running a scoped Effect outside a Layer.
 - Build closed feature graphs before final roots. A root merges feature Layers; it does not wire every leaf service.
 - Use `Effect.fn` for meaningful operations/boundaries, not trivial helpers.
 - Install logging/exporters at program boundaries. Preserve one wide completion event and current privacy/redaction rules.
@@ -207,7 +207,7 @@ export const MailboxMessageRepositoryDoLayer = Layer.effect(
 ## Models, Contracts, And Errors
 
 - Validate and brand primitives once at the owning contract.
-- Use `Schema.Class` for identity-bearing entities/results; use `Schema.Struct` for commands, queries, payloads and DTOs without identity.
+- Use `Schema.Struct` for plain structural data. Use `Schema.Class` when validated construction, methods, inheritance, or runtime class identity materially improves an entity or result.
 - Keep cross-field invariants in checked schemas. Decode `unknown` at every external/storage boundary.
 - Keep cohesive models, commands, results, invariants, errors and service construction together when they form one topic. Do not split for file-count symmetry.
 - Domain errors live with domain rules; application errors with the use case; port/infrastructure errors with the port or adapter; public HTTP errors in the HTTP adapter; serialized DO errors in the DO codec.
