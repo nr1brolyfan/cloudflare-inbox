@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 import * as Effect from "effect/Effect";
 import * as Redacted from "effect/Redacted";
-import * as TypeScript from "typescript";
+import * as TypeScript from "typescript-legacy";
 import { describe, expect, it } from "vitest";
 
 import {

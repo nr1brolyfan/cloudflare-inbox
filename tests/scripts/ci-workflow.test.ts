@@ -93,12 +93,13 @@ describe("CI workflow source contract", () => {
     });
   });
 
-  it("installs inertly and runs separate gates in order", () => {
+  it("installs inertly, patches trusted tooling, and runs separate gates", () => {
     const commands = steps
       .map((step) => step.run)
       .filter((command): command is string => typeof command === "string");
     expect(commands).toStrictEqual([
       "bun install --frozen-lockfile --ignore-scripts",
+      "bun run prepare",
       "bun run check",
       "bun run typecheck",
       "bun run test",
@@ -107,6 +108,7 @@ describe("CI workflow source contract", () => {
 
     const packageJson = asRecord(JSON.parse(packageSource), "package.json");
     const scripts = asRecord(packageJson.scripts, "package scripts");
+    expect(scripts.prepare).toBe("effect-tsgo patch --oxlint");
     expect(scripts.check).toBe(
       "bun run check:auth-migrations && bun run check:auth-schema && bun run check:architecture && bun run check:no-raw-sql && bun run format:check && bun run lint"
     );

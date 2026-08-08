@@ -38,6 +38,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile --ignore-scripts
 
+      - name: Patch TypeScript and Oxlint
+        run: bun run prepare
+
       - name: Check
         run: bun run check
 

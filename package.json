@@ -13,6 +13,7 @@
     "#/*": "./src/*.ts"
   },
   "scripts": {
+    "prepare": "effect-tsgo patch --oxlint",
     "dev": "ALCHEMY_STATE=local alchemy dev",
     "dev:vite": "vite dev --port 3000",
     "config:production": "bun scripts/check-production-config.ts",
@@ -74,6 +75,7 @@
     "@cloudflare/workers-types": "5.20260717.1",
     "@effect/platform-node": "4.0.0-beta.98",
     "@effect/sql-sqlite-node": "4.0.0-beta.98",
+    "@effect/tsgo": "0.36.0",
     "@effect/vitest": "4.0.0-beta.98",
     "@rolldown/plugin-babel": "^0.2.3",
     "@tailwindcss/typography": "^0.5.16",
@@ -89,8 +91,10 @@
     "babel-plugin-react-compiler": "^1.0.0",
     "jsdom": "^28.1.0",
     "oxfmt": "0.59.0",
-    "oxlint": "1.74.0",
-    "typescript": "^6.0.2",
+    "oxlint": "1.77.0",
+    "oxlint-tsgolint": "7.0.2001",
+    "typescript": "7.0.2",
+    "typescript-legacy": "npm:typescript@6.0.2",
     "ultracite": "7.9.4",
     "vite": "^8.0.0",
     "vitest": "^4.1.5",

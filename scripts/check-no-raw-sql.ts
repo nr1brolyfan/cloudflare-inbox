@@ -2,7 +2,7 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import * as ts from "typescript";
+import * as ts from "typescript-legacy";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const sourceDirectory = path.join(root, "src");
