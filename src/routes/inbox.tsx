@@ -2311,81 +2311,106 @@ function MailboxSettingsWorkspace({
   const includeParticipants = preference.data.visibility === "all-participants";
   return (
     <div className="h-full overflow-y-auto bg-[var(--workspace-bg)] px-4 py-6 sm:px-8 sm:py-9 lg:px-12">
-      <div className="mx-auto max-w-3xl">
+      <div className="mx-auto max-w-5xl">
         <div className="mb-7 max-w-2xl">
           <p className="island-kicker">Mailbox preferences</p>
           <h2 className="display-title mt-2 text-2xl font-bold sm:text-3xl">
-            Choose who appears while you write
+            Mailbox settings
           </h2>
           <p className="mt-3 text-sm leading-6 text-[var(--sea-ink-soft)]">
-            Suggestions are private to your account and this mailbox.
+            Customize how this mailbox works for your account.
           </p>
         </div>
 
-        <section
-          aria-labelledby="recipient-suggestions-heading"
-          className="overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_20px_60px_rgba(23,58,64,0.09)]"
-        >
-          <div className="border-b border-[var(--line)] px-5 py-5 sm:px-7">
-            <p className="text-[0.64rem] font-extrabold tracking-[0.16em] text-[var(--palm)] uppercase">
-              Contacts
-            </p>
-            <h3
-              id="recipient-suggestions-heading"
-              className="display-title mt-1.5 text-xl font-bold"
-            >
-              Recipient suggestions
-            </h3>
-          </div>
-          <div className="flex items-start justify-between gap-5 px-5 py-6 sm:px-7 sm:py-7">
-            <div className="max-w-xl">
-              <p className="text-sm font-extrabold">
-                Include other conversation participants
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
-                Suggest people found in To and Cc on incoming messages. Only
-                participants seen after you enable this option are included.
-              </p>
-              <p className="mt-3 text-xs font-bold text-[var(--sea-ink-soft)]">
-                People you have emailed, senders and Reply-To addresses are
-                always suggested.
-              </p>
-            </div>
+        <div className="grid items-start gap-5 lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-7">
+          <div
+            aria-label="Settings categories"
+            className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:overflow-visible lg:pb-0"
+            role="tablist"
+          >
             <button
+              aria-controls="contacts-settings-panel"
+              aria-selected="true"
+              className="shrink-0 rounded-xl border border-[var(--line)] bg-[var(--surface-strong)] px-4 py-3 text-left text-sm font-extrabold text-[var(--sea-ink)] shadow-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--lagoon-deep)] lg:w-full"
+              id="contacts-settings-tab"
+              role="tab"
               type="button"
-              role="switch"
-              aria-checked={includeParticipants}
-              aria-label="Include other conversation participants"
-              disabled={update.isPending}
-              onClick={() =>
-                update.mutate(includeParticipants ? "safe" : "all-participants")
-              }
-              className={`relative mt-0.5 h-7 w-12 shrink-0 rounded-full border transition-colors disabled:cursor-wait disabled:opacity-55 ${
-                includeParticipants
-                  ? "border-[var(--palm)] bg-[var(--palm)]"
-                  : "border-[var(--line)] bg-[var(--control-bg)]"
-              }`}
             >
-              <span
-                aria-hidden="true"
-                className={`absolute top-0.5 size-5 rounded-full bg-white shadow-sm transition-transform ${
-                  includeParticipants ? "translate-x-5" : "translate-x-0.5"
-                }`}
-              />
+              Contacts
             </button>
           </div>
-          {update.error === null ? null : (
-            <Alert className="mx-5 mb-5 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 sm:mx-7">
-              Settings changed elsewhere or could not be saved. Reload and try
-              again.
-            </Alert>
-          )}
-          {update.isSuccess ? (
-            <output className="border-t border-[var(--line)] px-5 py-3 text-xs font-bold text-[var(--palm)] sm:px-7">
-              Preference saved
-            </output>
-          ) : null}
-        </section>
+
+          <section
+            aria-labelledby="contacts-settings-tab"
+            className="min-w-0 overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_20px_60px_rgba(23,58,64,0.09)]"
+            id="contacts-settings-panel"
+            role="tabpanel"
+          >
+            <div className="border-b border-[var(--line)] px-5 py-5 sm:px-7">
+              <p className="text-[0.64rem] font-extrabold tracking-[0.16em] text-[var(--palm)] uppercase">
+                Contacts
+              </p>
+              <h3 className="display-title mt-1.5 text-xl font-bold">
+                Recipient suggestions
+              </h3>
+              <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+                Suggestions are private to your account and this mailbox.
+              </p>
+            </div>
+            <div className="flex items-start justify-between gap-4 px-5 py-6 sm:gap-6 sm:px-7 sm:py-7">
+              <div className="max-w-xl min-w-0">
+                <p className="text-sm font-extrabold">
+                  Include other conversation participants
+                </p>
+                <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+                  Suggest people found in To and Cc on incoming messages. Only
+                  participants seen after you enable this option are included.
+                </p>
+                <p className="mt-3 text-xs font-bold text-[var(--sea-ink-soft)]">
+                  People you have emailed, senders and Reply-To addresses are
+                  always suggested.
+                </p>
+                <div aria-live="polite" className="mt-3 min-h-5">
+                  {update.error === null ? null : (
+                    <Alert className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+                      Settings changed elsewhere or could not be saved. Reload
+                      and try again.
+                    </Alert>
+                  )}
+                  {update.isPending ? (
+                    <output className="block text-xs font-bold text-[var(--sea-ink-soft)]">
+                      Saving preference...
+                    </output>
+                  ) : null}
+                  {update.isSuccess ? (
+                    <output className="block text-xs font-bold text-[var(--palm)]">
+                      Preference saved
+                    </output>
+                  ) : null}
+                </div>
+              </div>
+              <button
+                aria-checked={includeParticipants}
+                aria-label="Include other conversation participants"
+                className="group relative mt-0.5 h-7 w-12 shrink-0 rounded-full border border-[var(--line)] bg-[var(--control-bg)] p-0 shadow-inner transition-colors outline-none focus-visible:ring-2 focus-visible:ring-[var(--lagoon-deep)] focus-visible:ring-offset-2 focus-visible:ring-offset-[var(--surface-strong)] disabled:cursor-wait disabled:opacity-55 data-[state=checked]:border-[var(--palm)] data-[state=checked]:bg-[var(--palm)]"
+                data-state={includeParticipants ? "checked" : "unchecked"}
+                disabled={update.isPending}
+                onClick={() =>
+                  update.mutate(
+                    includeParticipants ? "safe" : "all-participants"
+                  )
+                }
+                role="switch"
+                type="button"
+              >
+                <span
+                  aria-hidden="true"
+                  className="absolute top-1 left-1 size-5 rounded-full bg-white shadow-sm transition-transform group-data-[state=checked]:translate-x-5"
+                />
+              </button>
+            </div>
+          </section>
+        </div>
       </div>
     </div>
   );
