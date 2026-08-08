@@ -908,6 +908,11 @@ function ConversationPane({
         pendingThreadIds
       )}
       filters={filters}
+      isContactSaved={(address) =>
+        savedAddresses.has(
+          normalizeEmailAddressDomain(decodeEmailAddress(address.address))
+        )
+      }
       mailboxId={mailboxId}
       onClose={onClose}
       onPreviewAccessFailure={(status) => {
@@ -2658,7 +2663,7 @@ function MailboxContactsWorkspace({
                       size="sm"
                       type="button"
                     >
-                      Add
+                      Save contact
                     </Button>
                   )}
                 </li>

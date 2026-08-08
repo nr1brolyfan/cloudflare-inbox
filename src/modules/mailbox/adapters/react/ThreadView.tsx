@@ -7,6 +7,7 @@ import {
   Paperclip,
   Reply,
   Search,
+  UserRoundCheck,
   Users,
   X,
 } from "lucide-react";
@@ -33,6 +34,7 @@ type ThreadData = Schema.Codec.Encoded<typeof MailboxThreadResult>;
 const ignoreReply = (_messageId: string) => null;
 const plainContactAddress = (_address: MailAddressShape, label: ReactNode) =>
   label;
+const contactNotSaved = (_address: MailAddressShape) => false;
 
 interface MailAddressShape {
   readonly address: string;
@@ -191,9 +193,11 @@ function QuotedPlainText({
 }
 
 function ThreadParticipants({
+  isContactSaved,
   messageCount,
   participants,
 }: {
+  readonly isContactSaved: (address: MailAddressShape) => boolean;
   readonly messageCount: number;
   readonly participants: readonly {
     readonly address: string;
@@ -307,7 +311,7 @@ function ThreadParticipants({
                   <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--sand)] text-[0.62rem] font-extrabold text-[var(--palm)]">
                     {addressName(participant).slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="min-w-0">
+                  <span className="min-w-0 flex-1">
                     <span className="block truncate text-xs font-bold text-[var(--sea-ink)]">
                       {addressName(participant)}
                     </span>
@@ -317,6 +321,13 @@ function ThreadParticipants({
                       </span>
                     )}
                   </span>
+                  {isContactSaved(participant) ? (
+                    <UserRoundCheck
+                      aria-label="Saved contact"
+                      className="ml-auto shrink-0 text-[var(--palm)]"
+                      size={14}
+                    />
+                  ) : null}
                 </div>
               ))
             )}
@@ -418,6 +429,7 @@ function MessageBody({
 export function ThreadView({
   data,
   filters,
+  isContactSaved = contactNotSaved,
   mailboxId,
   onClose,
   onPreviewAccessFailure,
@@ -429,6 +441,7 @@ export function ThreadView({
 }: {
   readonly data: ThreadData;
   readonly filters: MailboxMessageQueryState;
+  readonly isContactSaved?: (address: MailAddressShape) => boolean;
   readonly mailboxId: string;
   readonly onClose: () => void;
   readonly onPreviewAccessFailure?: (status: 401 | 403) => void;
@@ -488,6 +501,7 @@ export function ThreadView({
               {data.thread.subject || "(No subject)"}
             </h2>
             <ThreadParticipants
+              isContactSaved={isContactSaved}
               messageCount={data.thread.messageCount}
               participants={participants}
             />

@@ -253,6 +253,9 @@ describe(ThreadView, () => {
           thread: { ...thread.thread, participants },
         }}
         filters={{}}
+        isContactSaved={(address) =>
+          address.address === "participant-102@example.test"
+        }
         mailboxId="primary"
         onClose={vi.fn<() => void>()}
         selection={{ folder: "inbox" }}
@@ -286,9 +289,10 @@ describe(ThreadView, () => {
       { target: { value: "participant-102@" } }
     );
     expect({
+      saved: Boolean(screen.getByLabelText("Saved contact")),
       match: Boolean(screen.getByText("Participant 102")),
       nonMatch: screen.queryByText("Participant 1"),
-    }).toStrictEqual({ match: true, nonMatch: null });
+    }).toStrictEqual({ match: true, nonMatch: null, saved: true });
 
     fireEvent.pointerDown(document.body);
     expect(screen.queryByLabelText("Conversation participants")).toBeNull();
