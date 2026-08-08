@@ -100,6 +100,7 @@ const threadResult = Schema.decodeUnknownSync(MailboxThreadResult)({
         size: 4096,
       },
     ],
+    bcc: [],
     cc: [],
     direction: "inbound",
     hasHtmlBody: true,

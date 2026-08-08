@@ -53,6 +53,7 @@ const thread = {
     {
       activityAt: 1000,
       attachments: [],
+      bcc: [],
       cc: [],
       direction: "inbound" as const,
       hasHtmlBody: false,

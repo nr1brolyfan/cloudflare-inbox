@@ -22,7 +22,12 @@ import {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
-import { SearchContactsInput } from "#/modules/mailbox/domain/MailboxContact";
+import {
+  GetContactInput,
+  RemoveContactCommand,
+  SaveContactCommand,
+  SearchContactsInput,
+} from "#/modules/mailbox/domain/MailboxContact";
 import { ReserveDraftAttachmentCommand } from "#/modules/mailbox/domain/MailboxDraftAttachment";
 import {
   ReadMailboxAdministrationOperationQuery,
@@ -45,6 +50,9 @@ const mailboxMessageListInput = Schema.decodeUnknownSync(
   MailboxMessageListInput
 );
 const searchContactsInput = Schema.decodeUnknownSync(SearchContactsInput);
+const getContactInput = Schema.decodeUnknownSync(GetContactInput);
+const saveContactInput = Schema.decodeUnknownSync(SaveContactCommand);
+const removeContactInput = Schema.decodeUnknownSync(RemoveContactCommand);
 const openMailboxThreadInput = Schema.decodeUnknownSync(OpenMailboxThreadInput);
 const mailboxMessageActionInput = Schema.decodeUnknownSync(
   MailboxMessageActionCommand
@@ -154,6 +162,18 @@ export const listMailboxMessages = createServerFn({ method: "GET" })
 export const searchMailboxContacts = createServerFn({ method: "GET" })
   .validator(searchContactsInput)
   .handler(({ data }) => WebsiteApplication.searchMailboxContacts(data));
+
+export const getMailboxContact = createServerFn({ method: "GET" })
+  .validator(getContactInput)
+  .handler(({ data }) => WebsiteApplication.getMailboxContact(data));
+
+export const saveMailboxContact = createServerFn({ method: "POST" })
+  .validator(saveContactInput)
+  .handler(({ data }) => WebsiteApplication.saveMailboxContact(data));
+
+export const removeMailboxContact = createServerFn({ method: "POST" })
+  .validator(removeContactInput)
+  .handler(({ data }) => WebsiteApplication.removeMailboxContact(data));
 
 export const listMailboxDrafts = createServerFn({ method: "GET" })
   .validator(mailboxDraftListInput)

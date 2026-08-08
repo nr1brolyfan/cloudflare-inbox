@@ -27,7 +27,12 @@ import type {
   UndoMailboxSendCommand,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
-import type { SearchContactsInput } from "#/modules/mailbox/domain/MailboxContact";
+import type {
+  GetContactInput,
+  RemoveContactCommand,
+  SaveContactCommand,
+  SearchContactsInput,
+} from "#/modules/mailbox/domain/MailboxContact";
 import type {
   ReserveDraftAttachmentCommand,
   UploadDraftAttachmentCommand,
@@ -238,6 +243,30 @@ export const WebsiteApplication = {
         const operations = yield* MailboxBackendOperations;
         const incoming = yield* Effect.sync(getRequest);
         return yield* operations.searchContacts({ incoming, query });
+      })
+    ),
+  getMailboxContact: (query: GetContactInput) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.getContact({ incoming, query });
+      })
+    ),
+  saveMailboxContact: (command: SaveContactCommand) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.saveContact({ command, incoming });
+      })
+    ),
+  removeMailboxContact: (command: RemoveContactCommand) =>
+    WebsiteRuntime.runPromise(
+      Effect.gen(function* () {
+        const operations = yield* MailboxBackendOperations;
+        const incoming = yield* Effect.sync(getRequest);
+        return yield* operations.removeContact({ command, incoming });
       })
     ),
   listMailboxDrafts: (query: MailboxDraftListInput) =>

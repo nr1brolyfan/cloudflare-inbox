@@ -1004,6 +1004,30 @@ const migrations = [
       END`,
     ],
   },
+  {
+    version: 20,
+    statements: [
+      `CREATE TABLE saved_contact (
+        user_id TEXT NOT NULL,
+        normalized_address TEXT NOT NULL,
+        address TEXT NOT NULL,
+        display_name TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        version INTEGER NOT NULL DEFAULT 1,
+        PRIMARY KEY (user_id, normalized_address),
+        CONSTRAINT saved_contact_user_id_check CHECK (length(user_id) BETWEEN 1 AND 128 AND user_id = trim(user_id)),
+        CONSTRAINT saved_contact_normalized_address_check CHECK (length(normalized_address) BETWEEN 3 AND 320 AND normalized_address = trim(normalized_address)),
+        CONSTRAINT saved_contact_address_check CHECK (length(address) BETWEEN 3 AND 320 AND address = trim(address)),
+        CONSTRAINT saved_contact_display_name_check CHECK (display_name IS NULL OR length(display_name) BETWEEN 1 AND 200),
+        CONSTRAINT saved_contact_created_at_check CHECK (created_at >= 0),
+        CONSTRAINT saved_contact_updated_at_check CHECK (updated_at >= created_at),
+        CONSTRAINT saved_contact_version_check CHECK (version >= 1)
+      ) STRICT, WITHOUT ROWID`,
+      `CREATE INDEX saved_contact_user_updated_idx
+        ON saved_contact (user_id, updated_at DESC, normalized_address)`,
+    ],
+  },
 ] as const satisfies readonly MailboxMigration[];
 
 export const mailboxSchemaVersion = migrations.length;

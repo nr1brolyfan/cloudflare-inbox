@@ -15,6 +15,7 @@ import {
   ShieldAlert,
   Tag,
   Trash2,
+  UsersRound,
 } from "lucide-react";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -67,12 +68,14 @@ const folderIconByKind = {
 interface MailboxShellProps {
   readonly children: ReactNode;
   readonly folders: readonly NavigationFolder[];
+  readonly contactsSelected: boolean;
   readonly headerAction?: ReactNode;
   readonly isSigningOut: boolean;
   readonly labels: readonly NavigationLabel[];
   readonly mailboxAddress: string;
   readonly mailboxName: string;
   readonly onNavigate: (selection: MailboxViewSelection) => void;
+  readonly onContactsNavigate: () => void;
   readonly onPrefetch: (selection: MailboxViewSelection) => void;
   readonly onSignOut: () => void;
   readonly onSettingsNavigate: () => void;
@@ -94,11 +97,13 @@ interface MailboxNavigationProps extends Omit<
 
 function MailboxNavigation({
   folders,
+  contactsSelected,
   isSigningOut,
   labels,
   mailboxAddress,
   mailboxName,
   onClose,
+  onContactsNavigate,
   onNavigate,
   onPrefetch,
   onSignOut,
@@ -298,6 +303,35 @@ function MailboxNavigation({
         </section>
 
         <a
+          href="/mail/contacts"
+          aria-current={contactsSelected ? "page" : undefined}
+          onClick={(event) => {
+            if (
+              event.button === 0 &&
+              !event.altKey &&
+              !event.ctrlKey &&
+              !event.metaKey &&
+              !event.shiftKey
+            ) {
+              event.preventDefault();
+              onContactsNavigate();
+              onClose?.();
+            }
+          }}
+          className={`mt-7 flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
+            contactsSelected
+              ? "bg-[var(--nav-selection)] font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
+              : "font-bold text-white/66 hover:bg-white/8 hover:text-white"
+          }`}
+        >
+          <UsersRound
+            size={17}
+            className={contactsSelected ? "text-[var(--palm)]" : ""}
+          />
+          <span>Contacts</span>
+        </a>
+
+        <a
           href="/mail/settings"
           aria-current={settingsSelected ? "page" : undefined}
           onClick={(event) => {
@@ -313,7 +347,7 @@ function MailboxNavigation({
               onClose?.();
             }
           }}
-          className={`mt-7 flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
+          className={`mt-1 flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm no-underline ${
             settingsSelected
               ? "bg-[var(--nav-selection)] font-extrabold text-[var(--sea-ink)] shadow-[0_8px_22px_rgba(0,0,0,0.13)] hover:text-[var(--sea-ink)]"
               : "font-bold text-white/66 hover:bg-white/8 hover:text-white"
@@ -367,6 +401,7 @@ function MailboxNavigation({
 
 export function MailboxShell({
   children,
+  contactsSelected,
   folders,
   headerAction,
   isSigningOut,
@@ -374,6 +409,7 @@ export function MailboxShell({
   mailboxAddress,
   mailboxName,
   onNavigate,
+  onContactsNavigate,
   onPrefetch,
   onSignOut,
   onSettingsNavigate,
@@ -393,12 +429,14 @@ export function MailboxShell({
         <div className="flex h-full min-h-0 overflow-hidden bg-[var(--surface-strong)]">
           <aside className="hidden w-72 shrink-0 xl:block">
             <MailboxNavigation
+              contactsSelected={contactsSelected}
               folders={folders}
               isSigningOut={isSigningOut}
               labels={labels}
               mailboxAddress={mailboxAddress}
               mailboxName={mailboxName}
               onNavigate={onNavigate}
+              onContactsNavigate={onContactsNavigate}
               onPrefetch={onPrefetch}
               onSignOut={onSignOut}
               onSettingsNavigate={onSettingsNavigate}
@@ -418,6 +456,7 @@ export function MailboxShell({
           >
             <SheetTitle className="sr-only">Mailbox navigation</SheetTitle>
             <MailboxNavigation
+              contactsSelected={contactsSelected}
               folders={folders}
               isSigningOut={isSigningOut}
               labels={labels}
@@ -425,6 +464,7 @@ export function MailboxShell({
               mailboxName={mailboxName}
               onClose={() => setNavigationOpen(false)}
               onNavigate={onNavigate}
+              onContactsNavigate={onContactsNavigate}
               onPrefetch={onPrefetch}
               onSignOut={onSignOut}
               onSettingsNavigate={onSettingsNavigate}

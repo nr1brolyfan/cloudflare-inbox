@@ -198,13 +198,20 @@ const mapInboundDomainError = (
     ? Effect.fail(
         new AuthNotFoundError({
           code: "not_found",
-          message: "Inbound processing not found",
+          message:
+            error.operation === "get-contact"
+              ? "Contact not found"
+              : "Inbound processing not found",
         })
       )
     : Effect.fail(
         new AuthConflictError({
           code: "conflict",
-          message: "Inbound processing cannot be replayed",
+          message:
+            error.operation === "save-contact" ||
+            error.operation === "remove-contact"
+              ? "Saved contact changed"
+              : "Inbound processing cannot be replayed",
         })
       );
 
@@ -812,12 +819,15 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
       .handle("searchContacts", ({ params, query }) =>
         Effect.gen(function* () {
           const preference = yield* contactPreferences.get(params);
+          const session = yield* CurrentSession;
           const response = yield* mailboxDo.executeMailData({
             _tag: "SearchContacts",
             input: {
               mailboxId: params.mailboxId,
               query: query.q,
               limit: query.limit ?? 12,
+              mode: query.mode ?? "all",
+              userId: session.userId,
               allParticipantsEnabledAt:
                 preference.allParticipantsEnabledAt ?? undefined,
             },
@@ -828,6 +838,75 @@ export const MailboxHttpHandlersLayer = HttpApiBuilder.group(
           if (response._tag !== "ContactsSearched") {
             return yield* Effect.die(
               new Error("Contact search RPC response invariant failed")
+            );
+          }
+          return response.value;
+        }).pipe(mapHttpErrors)
+      )
+      .handle("getContact", ({ params, query }) =>
+        Effect.gen(function* () {
+          const preference = yield* contactPreferences.get(params);
+          const session = yield* CurrentSession;
+          const response = yield* mailboxDo.executeMailData({
+            _tag: "GetContact",
+            input: {
+              ...params,
+              address: query.address,
+              allParticipantsEnabledAt:
+                preference.allParticipantsEnabledAt ?? undefined,
+              userId: session.userId,
+            },
+          });
+          if (response._tag === "DomainError") {
+            return yield* decodeMailboxDomainError(response);
+          }
+          if (response._tag !== "ContactFound") {
+            return yield* Effect.die(
+              new Error("Contact detail RPC response invariant failed")
+            );
+          }
+          return response.value;
+        }).pipe(mapHttpErrors)
+      )
+      .handle("saveContact", ({ params, payload }) =>
+        Effect.gen(function* () {
+          yield* authorization.requireMailbox({
+            action: "read",
+            resource: { _tag: "Mailbox", mailboxId: params.mailboxId },
+          });
+          const session = yield* CurrentSession;
+          const response = yield* mailboxDo.executeMailData({
+            _tag: "SaveContact",
+            input: { ...params, ...payload, userId: session.userId },
+          });
+          if (response._tag === "DomainError") {
+            return yield* decodeMailboxDomainError(response);
+          }
+          if (response._tag !== "ContactSaved") {
+            return yield* Effect.die(
+              new Error("Save contact RPC response invariant failed")
+            );
+          }
+          return response.value;
+        }).pipe(mapHttpErrors)
+      )
+      .handle("removeContact", ({ params, payload }) =>
+        Effect.gen(function* () {
+          yield* authorization.requireMailbox({
+            action: "read",
+            resource: { _tag: "Mailbox", mailboxId: params.mailboxId },
+          });
+          const session = yield* CurrentSession;
+          const response = yield* mailboxDo.executeMailData({
+            _tag: "RemoveContact",
+            input: { ...params, ...payload, userId: session.userId },
+          });
+          if (response._tag === "DomainError") {
+            return yield* decodeMailboxDomainError(response);
+          }
+          if (response._tag !== "ContactRemoved") {
+            return yield* Effect.die(
+              new Error("Remove contact RPC response invariant failed")
             );
           }
           return response.value;

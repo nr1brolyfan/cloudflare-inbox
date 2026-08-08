@@ -32,6 +32,10 @@ export const mailDataResponseChangeScopes = (
     case "MessagesBatchMutated": {
       return ["messages", "navigation", "threads"];
     }
+    case "ContactSaved":
+    case "ContactRemoved": {
+      return ["contacts"];
+    }
     case "InboundCommitted": {
       return ["contacts", "messages", "navigation", "threads"];
     }

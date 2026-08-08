@@ -88,6 +88,21 @@ const expectedMailDataMetadata = {
     kind: "read",
     responseTag: "ContactsSearched",
   },
+  GetContact: {
+    operation: "get-contact",
+    kind: "read",
+    responseTag: "ContactFound",
+  },
+  SaveContact: {
+    operation: "save-contact",
+    kind: "write",
+    responseTag: "ContactSaved",
+  },
+  RemoveContact: {
+    operation: "remove-contact",
+    kind: "write",
+    responseTag: "ContactRemoved",
+  },
   GetMessage: {
     operation: "get-message",
     kind: "read",

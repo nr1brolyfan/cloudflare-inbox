@@ -50,8 +50,17 @@ import {
   UndoMailboxSendResult,
 } from "#/modules/mailbox/application/MailboxOutboundSending";
 import type { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
-import type { SearchContactsInput } from "#/modules/mailbox/domain/MailboxContact";
-import { ContactSearchResult } from "#/modules/mailbox/domain/MailboxContact";
+import type {
+  GetContactInput,
+  RemoveContactCommand,
+  SaveContactCommand,
+  SearchContactsInput,
+} from "#/modules/mailbox/domain/MailboxContact";
+import {
+  ContactDetail,
+  ContactSearchResult,
+  RemoveContactResult,
+} from "#/modules/mailbox/domain/MailboxContact";
 import type {
   DraftAttachmentReservationSchema,
   ReserveDraftAttachmentCommand,
@@ -121,6 +130,20 @@ export type MailboxContactSearchServerResult =
   | {
       readonly contacts: Schema.Codec.Encoded<typeof ContactSearchResult>;
       readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type MailboxContactServerResult =
+  | {
+      readonly contact: Schema.Codec.Encoded<typeof ContactDetail>;
+      readonly ok: true;
+    }
+  | MailboxServerErrorResult;
+
+export type RemoveMailboxContactServerResult =
+  | {
+      readonly ok: true;
+      readonly result: Schema.Codec.Encoded<typeof RemoveContactResult>;
     }
   | MailboxServerErrorResult;
 
@@ -243,7 +266,7 @@ export type MailboxOutboundDeliveryServerResult =
 
 interface ForwardMailboxRequestInput {
   readonly incoming: Request;
-  readonly method: "GET" | "PATCH" | "POST";
+  readonly method: "DELETE" | "GET" | "PATCH" | "POST";
   readonly operation: string;
   readonly path: string;
   readonly payload?: Readonly<Record<string, unknown>>;
@@ -448,6 +471,10 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
     readonly query: GetMailboxContactPreferenceQuery;
   }) => Effect.Effect<MailboxContactPreferenceServerResult>;
+  readonly getContact: (input: {
+    readonly incoming: Request;
+    readonly query: GetContactInput;
+  }) => Effect.Effect<MailboxContactServerResult>;
   readonly getInboundAttachment: (input: {
     readonly incoming: Request;
     readonly query: MailboxInboundAttachmentInput;
@@ -479,6 +506,14 @@ export interface MailboxBackendOperationsShape {
     readonly incoming: Request;
     readonly query: SearchContactsInput;
   }) => Effect.Effect<MailboxContactSearchServerResult>;
+  readonly saveContact: (input: {
+    readonly command: SaveContactCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<MailboxContactServerResult>;
+  readonly removeContact: (input: {
+    readonly command: RemoveContactCommand;
+    readonly incoming: Request;
+  }) => Effect.Effect<RemoveMailboxContactServerResult>;
   readonly listDrafts: (input: {
     readonly incoming: Request;
     readonly query: MailboxDraftListInput;
@@ -1150,6 +1185,9 @@ export const MailboxBackendOperationsLayer = Layer.effect(
       },
       searchContacts: ({ incoming, query }) => {
         const search = new URLSearchParams({ limit: String(query.limit) });
+        if (query.mode !== undefined) {
+          search.set("mode", query.mode);
+        }
         if (query.query !== undefined) {
           search.set("q", query.query);
         }
@@ -1177,6 +1215,83 @@ export const MailboxBackendOperationsLayer = Layer.effect(
           })
         );
       },
+      getContact: ({ incoming, query }) =>
+        forwardRequest({
+          incoming,
+          method: "GET",
+          operation: "website.mailbox.contact_detail",
+          path: `/api/mailboxes/${encodeURIComponent(query.mailboxId)}/contacts/detail?address=${encodeURIComponent(query.address)}`,
+        }).pipe(
+          Effect.map((result): MailboxContactServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(ContactDetail)
+            )(result.body);
+            return Exit.isSuccess(decoded)
+              ? {
+                  contact: Schema.encodeSync(ContactDetail)(decoded.value),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        ),
+      saveContact: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "POST",
+          operation: "website.mailbox.contact_save",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/contacts`,
+          payload: {
+            displayName: command.displayName,
+            email: command.email,
+            expectedVersion: command.expectedVersion,
+            operationId: command.operationId,
+          },
+        }).pipe(
+          Effect.map((result): MailboxContactServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(ContactDetail)
+            )(result.body);
+            return Exit.isSuccess(decoded)
+              ? {
+                  contact: Schema.encodeSync(ContactDetail)(decoded.value),
+                  ok: true,
+                }
+              : invalidBackendResponse();
+          })
+        ),
+      removeContact: ({ command, incoming }) =>
+        forwardRequest({
+          incoming,
+          method: "DELETE",
+          operation: "website.mailbox.contact_remove",
+          path: `/api/mailboxes/${encodeURIComponent(command.mailboxId)}/contacts`,
+          payload: {
+            email: command.email,
+            expectedVersion: command.expectedVersion,
+            operationId: command.operationId,
+          },
+        }).pipe(
+          Effect.map((result): RemoveMailboxContactServerResult => {
+            if (!result.ok) {
+              return result;
+            }
+            const decoded = Schema.decodeUnknownExit(
+              Schema.toCodecJson(RemoveContactResult)
+            )(result.body);
+            return Exit.isSuccess(decoded)
+              ? {
+                  ok: true,
+                  result: Schema.encodeSync(RemoveContactResult)(decoded.value),
+                }
+              : invalidBackendResponse();
+          })
+        ),
       listDrafts: ({ incoming, query }) => {
         const search = new URLSearchParams();
         if (query.page?.cursor !== undefined) {

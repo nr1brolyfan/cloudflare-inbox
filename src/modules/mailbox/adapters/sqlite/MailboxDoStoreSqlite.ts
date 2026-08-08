@@ -102,6 +102,36 @@ const executeMailDataRequest = (
         (value) => ({ _tag: "ContactsSearched", value })
       );
     }
+    case "GetContact": {
+      return encodeMailDataResult(
+        request,
+        stores.getContact(request.input),
+        (value) => ({
+          _tag: "ContactFound",
+          value,
+        })
+      );
+    }
+    case "SaveContact": {
+      return encodeMailDataResult(
+        request,
+        stores.saveContact(request.input),
+        (value) => ({
+          _tag: "ContactSaved",
+          value,
+        })
+      );
+    }
+    case "RemoveContact": {
+      return encodeMailDataResult(
+        request,
+        stores.removeContact(request.input),
+        (value) => ({
+          _tag: "ContactRemoved",
+          value,
+        })
+      );
+    }
     case "GetMessage": {
       return encodeMailDataResult(
         request,

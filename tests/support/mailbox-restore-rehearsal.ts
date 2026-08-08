@@ -49,6 +49,7 @@ const authoritativeTables = [
   "async_rule_job",
   "mailbox_operation",
   "outbound_delivery",
+  "saved_contact",
 ] as const;
 
 const Metadata = Schema.Record(Schema.String, Schema.String);
@@ -83,10 +84,10 @@ export type LocalRestoreManifestEntry = Schema.Schema.Type<
 >;
 
 const SupportedRestoreSchemaVersion = Schema.Literals([
-  12, 13, 14, 15, 16, 17, 18, 19,
+  12, 13, 14, 15, 16, 17, 18, 19, 20,
 ]);
-type SupportedRestoreSchemaVersion = 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19;
-type LegacyRestoreSchemaVersion = 12 | 13 | 14 | 15 | 16 | 17 | 18;
+type SupportedRestoreSchemaVersion = 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19 | 20;
+type LegacyRestoreSchemaVersion = 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19;
 
 export const LocalMailboxRestoreManifest = Schema.Struct({
   entries: Schema.Array(LocalRestoreManifestEntry),
@@ -110,7 +111,7 @@ export const LocalMailboxRestoreEvidence = Schema.Struct({
   mode: Schema.Literal("local-rehearsal"),
   orphanInFlightObjectCount: Count,
   restoreOutcome: Schema.Literals(["restored", "already-restored"]),
-  schemaVersion: Schema.Literal(19),
+  schemaVersion: Schema.Literal(20),
   sqliteRowsSha256: Sha256Digest,
   limitations: RehearsalLimitations,
 });
@@ -396,7 +397,8 @@ const databaseSchemaVersion = (
     version !== 16 &&
     version !== 17 &&
     version !== 18 &&
-    version !== 19
+    version !== 19 &&
+    version !== 20
   ) {
     throw new Error("SQLite snapshot has an unsupported schema version");
   }
@@ -440,6 +442,9 @@ export const canonicalMailboxRows = (database: DatabaseSync): CanonicalRows =>
         .all()
         .map((row) => String(row.name));
       if (columns.length === 0) {
+        if (table === "saved_contact" && databaseSchemaVersion(database) < 20) {
+          return [table, []];
+        }
         throw new Error(`SQLite snapshot is missing ${table}`);
       }
       const statement = database.prepare(
@@ -1151,7 +1156,7 @@ const assertMigratedLegacyState = (
   database: DatabaseSync,
   sourceVersion: LegacyRestoreSchemaVersion
 ) => {
-  assertHealthy(database, 19);
+  assertHealthy(database, 20);
   if (sourceVersion < 14) {
     const archiveRow = database
       .prepare(
@@ -1181,7 +1186,7 @@ const assertCurrentDatabaseMatches = (
 ) => {
   const actual = sqliteDigests(database);
   if (
-    actual.schemaVersion !== 19 ||
+    actual.schemaVersion !== 20 ||
     sha256(mailboxIdFrom(database)) !== mailboxIdSha256 ||
     actual.rowsSha256 !== expected.rowsSha256 ||
     actual.schemaSha256 !== expected.schemaSha256
@@ -1211,7 +1216,7 @@ const migratedLegacyCompatibilityDigests = (
       0
     ),
     rowsSha256: sha256(canonicalJson(normalizedRows)),
-    schemaVersion: 19 as const,
+    schemaVersion: 20 as const,
     schemaSha256: sha256(canonicalJson(canonicalMailboxSchema(database))),
   };
 };
@@ -1253,7 +1258,7 @@ const deriveMigratedLegacyDigests = async (
     try {
       assertDatabaseMatchesManifest(proof, manifest);
       applyMailboxMigrations(migrationStorage(proof));
-      if (manifest.schemaVersion === 19) {
+      if (manifest.schemaVersion === 20) {
         throw new Error("current schema does not require migration proof");
       }
       assertMigratedLegacyState(proof, manifest.schemaVersion);
@@ -1310,7 +1315,7 @@ const preflightExistingTarget = (
   const target = new DatabaseSync(targetPath, { readOnly: true });
   try {
     assertOwnedRegularFile(targetPath, ownership, "destination SQLite");
-    if (manifest.schemaVersion === 19) {
+    if (manifest.schemaVersion === 20) {
       assertDatabaseMatchesManifest(target, manifest);
     } else {
       assertMigratedLegacyCompatible(
@@ -1350,7 +1355,7 @@ export const restoreLocalMailboxArchive = async (input: {
   });
   assertArchiveObjects(manifest, archive.objects);
   const expectedCurrentDigests =
-    manifest.schemaVersion === 19
+    manifest.schemaVersion === 20
       ? sourceDigests
       : await deriveMigratedLegacyDigests(
           archive,
@@ -1407,7 +1412,7 @@ export const restoreLocalMailboxArchive = async (input: {
         targetOwnership,
         "destination SQLite"
       );
-      if (manifest.schemaVersion === 19) {
+      if (manifest.schemaVersion === 20) {
         assertDatabaseMatchesManifest(target, manifest);
       } else {
         assertMigratedLegacyCompatible(
@@ -1421,7 +1426,7 @@ export const restoreLocalMailboxArchive = async (input: {
       }
       rebuildAndVerifyFtsTransactionally(target);
       restoredDigests =
-        manifest.schemaVersion === 19
+        manifest.schemaVersion === 20
           ? assertDatabaseMatchesManifest(target, manifest)
           : (assertMigratedLegacyCompatible(
               target,
@@ -1457,14 +1462,14 @@ export const restoreLocalMailboxArchive = async (input: {
       const staged = new DatabaseSync(stagingPath);
       try {
         assertOwnedRegularFile(stagingPath, stagingOwnership, "staged SQLite");
-        if (manifest.schemaVersion !== 19) {
+        if (manifest.schemaVersion !== 20) {
           assertDatabaseMatchesManifest(staged, manifest);
           applyMailboxMigrations(migrationStorage(staged));
           assertMigratedLegacyState(staged, manifest.schemaVersion);
         }
         rebuildAndVerifyFtsTransactionally(staged);
         restoredDigests =
-          manifest.schemaVersion === 19
+          manifest.schemaVersion === 20
             ? assertDatabaseMatchesManifest(staged, manifest)
             : (assertMigratedLegacyCompatible(
                 staged,
@@ -1485,7 +1490,7 @@ export const restoreLocalMailboxArchive = async (input: {
       const publicationCandidate = new DatabaseSync(stagingPath);
       try {
         assertOwnedRegularFile(stagingPath, stagingOwnership, "staged SQLite");
-        if (manifest.schemaVersion === 19) {
+        if (manifest.schemaVersion === 20) {
           assertDatabaseMatchesManifest(publicationCandidate, manifest);
         } else {
           assertMigratedLegacyState(
@@ -1538,7 +1543,7 @@ export const restoreLocalMailboxArchive = async (input: {
       (entry) => entry.classification === "mailbox-orphan-in-flight"
     ).length,
     restoreOutcome,
-    schemaVersion: 19,
+    schemaVersion: 20,
     sqliteRowsSha256: restoredDigests.rowsSha256,
     limitations: manifest.limitations,
   });

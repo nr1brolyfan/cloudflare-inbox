@@ -89,6 +89,7 @@ const thread = {
     {
       activityAt: 2000,
       attachments: [],
+      bcc: [],
       cc: [],
       direction: "inbound",
       hasHtmlBody: false,

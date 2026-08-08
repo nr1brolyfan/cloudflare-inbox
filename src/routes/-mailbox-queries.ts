@@ -3,6 +3,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import * as Schema from "effect/Schema";
 
 import {
+  getMailboxContact,
   getMailboxContactPreferences,
   listMailboxDrafts,
   listMailboxMessages,
@@ -17,7 +18,9 @@ import { MailboxDraftListInput } from "#/modules/mailbox/application/MailboxDraf
 import { MailboxMessageListInput } from "#/modules/mailbox/application/MailboxMessageReading";
 import type { MailboxMessageView } from "#/modules/mailbox/application/MailboxMessageReading";
 import {
+  ContactDetail,
   ContactSearchResult,
+  GetContactInput,
   SearchContactsInput,
 } from "#/modules/mailbox/domain/MailboxContact";
 import {
@@ -33,6 +36,8 @@ const decodeMailboxMessageListInput = Schema.decodeUnknownSync(
 );
 const decodeContactSearchInput = Schema.decodeUnknownSync(SearchContactsInput);
 const decodeContactSearchResult = Schema.decodeUnknownSync(ContactSearchResult);
+const decodeContactInput = Schema.decodeUnknownSync(GetContactInput);
+const decodeContactDetail = Schema.decodeUnknownSync(ContactDetail);
 const decodeContactPreferenceQuery = Schema.decodeUnknownSync(
   GetMailboxContactPreferenceQuery
 );
@@ -139,11 +144,13 @@ export const mailboxMessageListQueryOptions = ({
 
 export const mailboxContactSearchQueryOptions = ({
   mailboxId,
+  mode,
   query,
   queryClient,
   sessionId,
 }: {
   readonly mailboxId: string;
+  readonly mode?: "all" | "saved" | "suggested";
   readonly query?: string;
   readonly queryClient: QueryClient;
   readonly sessionId: string;
@@ -156,6 +163,7 @@ export const mailboxContactSearchQueryOptions = ({
         data: decodeContactSearchInput({
           mailboxId,
           limit: normalizedQuery === undefined ? 100 : 12,
+          mode,
           query: normalizedQuery,
         }),
       });
@@ -170,12 +178,40 @@ export const mailboxContactSearchQueryOptions = ({
       "contacts",
       sessionId,
       mailboxId,
+      mode ?? "all",
       normalizedQuery ?? "recent",
     ],
     retry: false,
     staleTime: 2 * 60_000,
   });
 };
+
+export const mailboxContactDetailQueryOptions = ({
+  address,
+  mailboxId,
+  queryClient,
+  sessionId,
+}: {
+  readonly address: string;
+  readonly mailboxId: string;
+  readonly queryClient: QueryClient;
+  readonly sessionId: string;
+}) =>
+  queryOptions({
+    queryFn: async () => {
+      const result = await getMailboxContact({
+        data: decodeContactInput({ address, mailboxId }),
+      });
+      await handleMailboxReadDenial(queryClient, result);
+      if (!result.ok) {
+        throw new MailboxRequestError(result.status);
+      }
+      return decodeContactDetail(result.contact);
+    },
+    queryKey: ["mailbox", "contacts", sessionId, mailboxId, "detail", address],
+    retry: false,
+    staleTime: 30_000,
+  });
 
 export const mailboxContactPreferenceQueryOptions = ({
   mailboxId,

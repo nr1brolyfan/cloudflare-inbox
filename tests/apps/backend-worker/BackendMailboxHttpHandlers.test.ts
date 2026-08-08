@@ -257,6 +257,7 @@ const mailboxThread = Schema.decodeUnknownSync(MailboxThreadResult)({
     {
       activityAt: 2000,
       attachments: [],
+      bcc: [],
       cc: [],
       direction: "inbound",
       hasHtmlBody: true,

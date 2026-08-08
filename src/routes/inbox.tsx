@@ -22,8 +22,17 @@ import {
   LoaderCircle,
   PenLine,
   RotateCcw,
+  Search,
+  UserPlus,
+  UsersRound,
 } from "lucide-react";
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useEffectEvent,
+  useRef,
+  useState,
+} from "react";
 
 import {
   getMailboxNavigation,
@@ -34,6 +43,8 @@ import {
   createMailboxDraft,
   createMailboxReplyDraft,
   reserveMailboxDraftAttachment,
+  removeMailboxContact,
+  saveMailboxContact,
   sendMailboxDraft,
   setMailboxThreadRead,
   undoMailboxSend,
@@ -65,6 +76,7 @@ import {
   replyCommandsHaveSameTarget,
   retainReplyOperationForStatus,
 } from "#/modules/mailbox/adapters/browser/ReplyDraftOperationStorage";
+import { ContactCard } from "#/modules/mailbox/adapters/react/ContactCard";
 import {
   DraftEditor,
   draftEditorFieldsFromContent,
@@ -127,6 +139,11 @@ import {
 import { SendMailboxDraftCommand } from "#/modules/mailbox/application/MailboxOutboundSending";
 import { CreateMailboxReplyDraftCommand } from "#/modules/mailbox/application/MailboxReplyDraftCreation";
 import {
+  ContactDetail,
+  RemoveContactCommand,
+  SaveContactCommand,
+} from "#/modules/mailbox/domain/MailboxContact";
+import {
   DraftAttachmentUploadResult,
   draftAttachmentMaxBytes,
   ReserveDraftAttachmentCommand,
@@ -137,14 +154,20 @@ import {
   UpdateMailboxContactPreferenceCommand,
 } from "#/modules/organization/application/UserMailboxContactPreferences";
 import {
+  mailboxContactDetailQueryOptions,
   mailboxContactPreferenceQueryOptions,
   mailboxContactSearchQueryOptions,
   mailboxDraftListQueryOptions,
   mailboxMessageListQueryOptions,
   MailboxRequestError,
 } from "#/routes/-mailbox-queries";
+import {
+  EmailAddress,
+  normalizeEmailAddressDomain,
+} from "#/shared/EmailAddress";
 import { Alert } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 const InboxSearch = MailboxSearch;
 const decodeInboxSearch = decodeMailboxSearch;
@@ -159,6 +182,7 @@ type MailboxNavigateOptions =
       readonly to: "/inbox";
     }
   | { readonly replace?: boolean; readonly to: "/" }
+  | { readonly replace?: boolean; readonly to: "/mail/contacts" }
   | { readonly replace?: boolean; readonly to: "/mail/settings" };
 
 const navigateToMailbox = (
@@ -221,6 +245,10 @@ const decodeContactPreferenceUpdate = Schema.decodeUnknownSync(
 const decodeContactPreference = Schema.decodeUnknownSync(
   MailboxContactPreference
 );
+const decodeContactDetail = Schema.decodeUnknownSync(ContactDetail);
+const decodeSaveContact = Schema.decodeUnknownSync(SaveContactCommand);
+const decodeRemoveContact = Schema.decodeUnknownSync(RemoveContactCommand);
+const decodeEmailAddress = Schema.decodeUnknownSync(EmailAddress);
 
 const prefetchMailboxSelection = ({
   folders,
@@ -727,6 +755,14 @@ function ConversationPane({
     ],
     retry: false,
   });
+  const savedContacts = useQuery(
+    mailboxContactSearchQueryOptions({
+      mailboxId,
+      mode: "saved",
+      queryClient,
+      sessionId,
+    })
+  );
   const reply = useMutation({
     mutationFn: (
       command: Schema.Schema.Type<typeof CreateMailboxReplyDraftCommand>
@@ -814,6 +850,55 @@ function ConversationPane({
       />
     );
   }
+  const savedAddresses = new Set(
+    (savedContacts.data ?? []).map((contact) =>
+      normalizeEmailAddressDomain(contact.address)
+    )
+  );
+  const invalidateContactData = () =>
+    queryClient.invalidateQueries({
+      queryKey: ["mailbox", "contacts", sessionId, mailboxId],
+    });
+  const saveContactAddress = async (
+    address: string,
+    displayName?: string,
+    expectedVersion?: number
+  ) => {
+    const result = await saveMailboxContact({
+      data: decodeSaveContact({
+        displayName,
+        email: address,
+        expectedVersion,
+        mailboxId,
+        operationId: crypto.randomUUID(),
+      }),
+    });
+    await handleMailboxReadDenial(queryClient, result);
+    if (!result.ok) {
+      throw new MailboxRequestError(result.status);
+    }
+    const saved = decodeContactDetail(result.contact);
+    await invalidateContactData();
+    return saved;
+  };
+  const removeContactAddress = async (
+    address: string,
+    expectedVersion?: number
+  ) => {
+    const result = await removeMailboxContact({
+      data: decodeRemoveContact({
+        email: address,
+        expectedVersion,
+        mailboxId,
+        operationId: crypto.randomUUID(),
+      }),
+    });
+    await handleMailboxReadDenial(queryClient, result);
+    if (!result.ok) {
+      throw new MailboxRequestError(result.status);
+    }
+    await invalidateContactData();
+  };
 
   return (
     <ThreadView
@@ -860,6 +945,32 @@ function ConversationPane({
       replyingMessageId={
         reply.isPending ? reply.variables?.messageId : undefined
       }
+      renderContactAddress={(address, label) => (
+        <ContactCard
+          address={address}
+          initialSaved={savedAddresses.has(
+            normalizeEmailAddressDomain(decodeEmailAddress(address.address))
+          )}
+          loadDetail={() =>
+            queryClient.fetchQuery(
+              mailboxContactDetailQueryOptions({
+                address: address.address,
+                mailboxId,
+                queryClient,
+                sessionId,
+              })
+            )
+          }
+          onRemove={(expectedVersion) =>
+            removeContactAddress(address.address, expectedVersion)
+          }
+          onSave={(displayName, expectedVersion) =>
+            saveContactAddress(address.address, displayName, expectedVersion)
+          }
+        >
+          {label}
+        </ContactCard>
+      )}
       selection={selection}
     />
   );
@@ -2239,6 +2350,337 @@ function DraftWorkspace({
   );
 }
 
+const contactListDate = new Intl.DateTimeFormat("en-US", {
+  dateStyle: "medium",
+  timeZone: "UTC",
+});
+
+interface ContactEditorState {
+  readonly email: string;
+  readonly name: string;
+  readonly version?: number;
+}
+
+function MailboxContactsWorkspace({
+  mailboxId,
+  sessionId,
+}: {
+  readonly mailboxId: string;
+  readonly sessionId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [mode, setMode] = useState<"saved" | "suggested">("saved");
+  const [query, setQuery] = useState("");
+  const [editor, setEditor] = useState<ContactEditorState>();
+  const deferredQuery = useDeferredValue(query.trim());
+  const contacts = useQuery(
+    mailboxContactSearchQueryOptions({
+      mailboxId,
+      mode,
+      query: deferredQuery.length >= 2 ? deferredQuery : undefined,
+      queryClient,
+      sessionId,
+    })
+  );
+  const invalidateContacts = () =>
+    queryClient.invalidateQueries({
+      queryKey: ["mailbox", "contacts", sessionId, mailboxId],
+    });
+  const save = useMutation({
+    mutationFn: async (value: ContactEditorState) => {
+      const result = await saveMailboxContact({
+        data: decodeSaveContact({
+          displayName: value.name.trim() || undefined,
+          email: value.email.trim(),
+          expectedVersion: value.version,
+          mailboxId,
+          operationId: crypto.randomUUID(),
+        }),
+      });
+      await handleMailboxReadDenial(queryClient, result);
+      if (!result.ok) {
+        throw new MailboxRequestError(result.status);
+      }
+      return decodeContactDetail(result.contact);
+    },
+    onSuccess: async () => {
+      setEditor(undefined);
+      await invalidateContacts();
+    },
+    retry: false,
+  });
+  const remove = useMutation({
+    mutationFn: async (contact: Schema.Schema.Type<typeof ContactDetail>) => {
+      const result = await removeMailboxContact({
+        data: decodeRemoveContact({
+          email: contact.address,
+          expectedVersion: contact.version,
+          mailboxId,
+          operationId: crypto.randomUUID(),
+        }),
+      });
+      await handleMailboxReadDenial(queryClient, result);
+      if (!result.ok) {
+        throw new MailboxRequestError(result.status);
+      }
+    },
+    onSuccess: invalidateContacts,
+    retry: false,
+  });
+
+  return (
+    <div className="h-full overflow-y-auto bg-[var(--workspace-bg)] px-4 py-6 sm:px-8 sm:py-9 lg:px-12">
+      <div className="mx-auto max-w-5xl">
+        <div className="flex flex-col gap-5 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="island-kicker">Your address book</p>
+            <h2 className="display-title mt-2 text-2xl font-bold sm:text-3xl">
+              People you write to
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--sea-ink-soft)]">
+              Saved contacts are private to your account. Suggestions come from
+              this mailbox&apos;s conversation history.
+            </p>
+          </div>
+          <Button
+            className="h-11 shrink-0 rounded-xl bg-[var(--sea-ink)] px-4 text-[var(--bg-base)] hover:bg-[var(--palm)]"
+            onClick={() => setEditor({ email: "", name: "" })}
+            type="button"
+          >
+            <UserPlus size={16} /> Add contact
+          </Button>
+        </div>
+
+        <div className="mt-7 overflow-hidden rounded-3xl border border-[var(--line)] bg-[var(--surface-strong)] shadow-[0_20px_60px_rgba(23,58,64,0.09)]">
+          <div className="border-b border-[var(--line)] p-4 sm:p-5">
+            <fieldset className="flex gap-1 rounded-xl bg-[var(--control-bg)] p-1">
+              <legend className="sr-only">Contact views</legend>
+              {(["saved", "suggested"] as const).map((item) => (
+                <button
+                  aria-pressed={mode === item}
+                  className={`flex-1 rounded-lg px-3 py-2 text-xs font-extrabold capitalize ${
+                    mode === item
+                      ? "bg-[var(--surface-strong)] text-[var(--sea-ink)] shadow-sm"
+                      : "text-[var(--sea-ink-soft)] hover:text-[var(--sea-ink)]"
+                  }`}
+                  key={item}
+                  onClick={() => setMode(item)}
+                  type="button"
+                >
+                  {item}
+                </button>
+              ))}
+            </fieldset>
+            <label className="relative mt-3 block" htmlFor="contact-search">
+              <span className="sr-only">Search contacts</span>
+              <Search
+                aria-hidden="true"
+                className="absolute top-1/2 left-3 -translate-y-1/2 text-[var(--sea-ink-soft)]"
+                size={16}
+              />
+              <Input
+                className="h-11 rounded-xl border-[var(--line)] bg-[var(--control-bg)] pl-9"
+                id="contact-search"
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Search by name or email"
+                value={query}
+              />
+            </label>
+          </div>
+
+          {editor === undefined ? null : (
+            <form
+              className="grid gap-3 border-b border-[var(--line)] bg-[var(--sand)]/35 p-4 sm:grid-cols-[1fr_1fr_auto] sm:items-end sm:p-5"
+              onSubmit={(event) => {
+                event.preventDefault();
+                save.mutate(editor);
+              }}
+            >
+              <div>
+                <label className="text-xs font-bold" htmlFor="contact-email">
+                  Email address
+                </label>
+                <Input
+                  autoFocus
+                  className="mt-1.5 h-10 rounded-xl bg-[var(--surface-strong)]"
+                  disabled={editor.version !== undefined || save.isPending}
+                  id="contact-email"
+                  onChange={(event) =>
+                    setEditor({ ...editor, email: event.target.value })
+                  }
+                  required
+                  type="email"
+                  value={editor.email}
+                />
+              </div>
+              <div>
+                <label className="text-xs font-bold" htmlFor="contact-name">
+                  Name
+                </label>
+                <Input
+                  className="mt-1.5 h-10 rounded-xl bg-[var(--surface-strong)]"
+                  id="contact-name"
+                  maxLength={200}
+                  onChange={(event) =>
+                    setEditor({ ...editor, name: event.target.value })
+                  }
+                  placeholder="Optional"
+                  value={editor.name}
+                />
+              </div>
+              <div className="flex gap-2">
+                <Button
+                  className="h-10 flex-1 rounded-xl sm:flex-none"
+                  disabled={save.isPending}
+                  type="submit"
+                >
+                  {save.isPending ? (
+                    <LoaderCircle className="animate-spin" />
+                  ) : null}
+                  Save
+                </Button>
+                <Button
+                  className="h-10 rounded-xl"
+                  onClick={() => setEditor(undefined)}
+                  type="button"
+                  variant="ghost"
+                >
+                  Cancel
+                </Button>
+              </div>
+              {save.error === null ? null : (
+                <Alert className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900 sm:col-span-3">
+                  Contact could not be saved. Check the address and try again.
+                </Alert>
+              )}
+            </form>
+          )}
+
+          {contacts.isLoading ? (
+            <output className="flex min-h-64 items-center justify-center text-[var(--sea-ink-soft)]">
+              <LoaderCircle
+                aria-label="Loading contacts"
+                className="animate-spin"
+              />
+            </output>
+          ) : contacts.isError ? (
+            <div className="p-6 text-center">
+              <p className="text-sm font-bold">Could not load contacts.</p>
+              <Button
+                className="mt-3 rounded-xl"
+                onClick={() => void contacts.refetch()}
+                type="button"
+                variant="outline"
+              >
+                Try again
+              </Button>
+            </div>
+          ) : contacts.data?.length === 0 ? (
+            <div className="px-5 py-14 text-center">
+              <span className="mx-auto flex size-12 items-center justify-center rounded-2xl bg-[var(--sand)] text-[var(--palm)]">
+                <UsersRound size={21} />
+              </span>
+              <p className="mt-4 text-sm font-extrabold">
+                {mode === "saved" ? "No saved contacts yet" : "No suggestions"}
+              </p>
+              <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-[var(--sea-ink-soft)]">
+                {mode === "saved"
+                  ? "Add someone manually or save a person from Suggestions."
+                  : "New correspondents will appear here as you use this mailbox."}
+              </p>
+            </div>
+          ) : (
+            <ul className="divide-y divide-[var(--line)]">
+              {contacts.data?.map((contact) => (
+                <li
+                  className="flex items-center gap-3 px-4 py-4 sm:px-5"
+                  key={contact.address}
+                >
+                  <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[var(--sand)] text-xs font-extrabold text-[var(--palm)]">
+                    {(contact.displayName ?? contact.address)
+                      .slice(0, 2)
+                      .toUpperCase()}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-extrabold">
+                      {contact.displayName ?? contact.address}
+                    </p>
+                    <p className="truncate text-xs text-[var(--sea-ink-soft)]">
+                      {contact.address}
+                    </p>
+                    <p className="mt-1 text-[0.65rem] font-bold text-[var(--sea-ink-soft)]">
+                      {contact.sentCount} sent · {contact.receivedCount}{" "}
+                      received
+                      {contact.lastInteractionAt === undefined
+                        ? ""
+                        : ` · Last ${contactListDate.format(new Date(contact.lastInteractionAt))}`}
+                    </p>
+                  </div>
+                  {mode === "saved" ? (
+                    <div className="flex shrink-0 gap-1">
+                      <Button
+                        className="rounded-xl"
+                        onClick={() =>
+                          setEditor({
+                            email: contact.address,
+                            name: contact.displayName ?? "",
+                            version: contact.version,
+                          })
+                        }
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        Edit
+                      </Button>
+                      <Button
+                        aria-label={`Remove ${contact.address} from contacts`}
+                        className="rounded-xl text-red-700 hover:bg-red-50"
+                        disabled={remove.isPending}
+                        onClick={() => remove.mutate(contact)}
+                        size="sm"
+                        type="button"
+                        variant="ghost"
+                      >
+                        Remove
+                      </Button>
+                    </div>
+                  ) : (
+                    <Button
+                      className="shrink-0 rounded-xl"
+                      disabled={save.isPending}
+                      onClick={() =>
+                        save.mutate({
+                          email: contact.address,
+                          name: contact.displayName ?? "",
+                        })
+                      }
+                      size="sm"
+                      type="button"
+                    >
+                      Add
+                    </Button>
+                  )}
+                </li>
+              ))}
+            </ul>
+          )}
+          {contacts.data?.length === 100 ? (
+            <p className="border-t border-[var(--line)] px-5 py-3 text-center text-[0.68rem] font-bold text-[var(--sea-ink-soft)]">
+              Showing 100 contacts. Use search to find older entries.
+            </p>
+          ) : null}
+          {remove.error === null ? null : (
+            <Alert className="m-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-900">
+              Contact could not be removed. Refresh and try again.
+            </Alert>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MailboxSettingsWorkspace({
   mailboxId,
   sessionId,
@@ -2246,6 +2688,7 @@ function MailboxSettingsWorkspace({
   readonly mailboxId: string;
   readonly sessionId: string;
 }) {
+  const navigate = useMailboxNavigate();
   const queryClient = useQueryClient();
   const preferenceOptions = mailboxContactPreferenceQueryOptions({
     mailboxId,
@@ -2346,16 +2789,36 @@ function MailboxSettingsWorkspace({
             id="contacts-settings-panel"
             role="tabpanel"
           >
-            <div className="border-b border-[var(--line)] px-5 py-5 sm:px-7">
-              <p className="text-[0.64rem] font-extrabold tracking-[0.16em] text-[var(--palm)] uppercase">
-                Contacts
-              </p>
-              <h3 className="display-title mt-1.5 text-xl font-bold">
-                Recipient suggestions
-              </h3>
-              <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
-                Suggestions are private to your account and this mailbox.
-              </p>
+            <div className="flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-5 sm:px-7">
+              <div>
+                <p className="text-[0.64rem] font-extrabold tracking-[0.16em] text-[var(--palm)] uppercase">
+                  Contacts
+                </p>
+                <h3 className="display-title mt-1.5 text-xl font-bold">
+                  Recipient suggestions
+                </h3>
+                <p className="mt-2 text-sm leading-6 text-[var(--sea-ink-soft)]">
+                  Suggestions are private to your account and this mailbox.
+                </p>
+              </div>
+              <a
+                className="shrink-0 rounded-xl border border-[var(--line)] bg-[var(--control-bg)] px-3 py-2 text-xs font-extrabold text-[var(--sea-ink)] no-underline hover:bg-[var(--surface-strong)]"
+                href="/mail/contacts"
+                onClick={(event) => {
+                  if (
+                    event.button === 0 &&
+                    !event.altKey &&
+                    !event.ctrlKey &&
+                    !event.metaKey &&
+                    !event.shiftKey
+                  ) {
+                    event.preventDefault();
+                    void navigate({ to: "/mail/contacts" });
+                  }
+                }}
+              >
+                Manage
+              </a>
             </div>
             <div className="flex items-start justify-between gap-4 px-5 py-6 sm:gap-6 sm:px-7 sm:py-7">
               <div className="max-w-xl min-w-0">
@@ -2418,6 +2881,7 @@ function MailboxSettingsWorkspace({
 
 // oxlint-disable-next-line eslint/complexity -- The authenticated route selects navigation, workspace, and persistent delivery-tracker states.
 function AuthenticatedInbox({
+  contactsMode,
   data,
   isSigningOut,
   onSignOut,
@@ -2427,6 +2891,7 @@ function AuthenticatedInbox({
   settingsMode,
   userId,
 }: {
+  readonly contactsMode: boolean;
   readonly data: Schema.Codec.Encoded<typeof MailboxNavigationResult>;
   readonly isSigningOut: boolean;
   readonly onSignOut: () => void;
@@ -2525,16 +2990,18 @@ function AuthenticatedInbox({
         userId={userId}
       />
       <MailboxShell
+        contactsSelected={contactsMode}
         folders={folders}
         labels={labels}
         mailboxAddress={mailbox.primaryAddress}
         mailboxName={mailbox.displayName}
         onNavigate={navigateToSelection}
+        onContactsNavigate={() => void navigate({ to: "/mail/contacts" })}
         onPrefetch={prefetchSelection}
         onSettingsNavigate={() => void navigate({ to: "/mail/settings" })}
         outboundDeliveryId={outboundDeliveryId}
         headerAction={
-          settingsMode || draftEditorOpen ? undefined : (
+          settingsMode || contactsMode || draftEditorOpen ? undefined : (
             <Button
               type="button"
               aria-label="Compose new draft"
@@ -2557,23 +3024,34 @@ function AuthenticatedInbox({
           )
         }
         principalLabel={userId}
-        selectedFolderId={settingsMode ? undefined : selectedFolder?.id}
-        selectedLabelId={settingsMode ? undefined : selectedLabel?.id}
+        selectedFolderId={
+          settingsMode || contactsMode ? undefined : selectedFolder?.id
+        }
+        selectedLabelId={
+          settingsMode || contactsMode ? undefined : selectedLabel?.id
+        }
         settingsSelected={settingsMode}
         viewTitle={
-          settingsMode
-            ? "Settings"
-            : search.compose === "true"
-              ? "Compose"
-              : search.draft === undefined
-                ? (selectedLabel?.name ?? selectedFolder?.name ?? "Inbox")
-                : "Edit draft"
+          contactsMode
+            ? "Contacts"
+            : settingsMode
+              ? "Settings"
+              : search.compose === "true"
+                ? "Compose"
+                : search.draft === undefined
+                  ? (selectedLabel?.name ?? selectedFolder?.name ?? "Inbox")
+                  : "Edit draft"
         }
         isSigningOut={isSigningOut}
         onSignOut={onSignOut}
         signOutError={signOutError}
       >
-        {settingsMode ? (
+        {contactsMode ? (
+          <MailboxContactsWorkspace
+            mailboxId={mailbox.id}
+            sessionId={sessionId}
+          />
+        ) : settingsMode ? (
           <MailboxSettingsWorkspace
             mailboxId={mailbox.id}
             sessionId={sessionId}
@@ -2678,16 +3156,24 @@ function AuthenticatedInbox({
 }
 
 function InboxRoute() {
-  return <MailboxApplication search={Route.useSearch()} settingsMode={false} />;
+  return (
+    <MailboxApplication
+      contactsMode={false}
+      search={Route.useSearch()}
+      settingsMode={false}
+    />
+  );
 }
 
 // The same authenticated mailbox stays mounted under /mail while child paths
 // select a collection, draft, or compose workspace.
 // oxlint-disable-next-line eslint/complexity -- The route exhaustively selects session, authorization, navigation, and mailbox states.
 export function MailboxApplication({
+  contactsMode = false,
   search,
   settingsMode = false,
 }: {
+  readonly contactsMode?: boolean;
   readonly search: Schema.Schema.Type<typeof InboxSearch>;
   readonly settingsMode?: boolean;
 }) {
@@ -2788,6 +3274,7 @@ export function MailboxApplication({
 
   return (
     <AuthenticatedInbox
+      contactsMode={contactsMode}
       data={navigation.data.navigation}
       isSigningOut={logout.isPending}
       onSignOut={() => logout.mutate()}

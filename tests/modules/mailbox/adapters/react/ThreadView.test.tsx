@@ -24,6 +24,7 @@ const thread = {
           size: 512,
         },
       ],
+      bcc: [],
       cc: [],
       direction: "inbound" as const,
       hasHtmlBody: true,
@@ -37,6 +38,7 @@ const thread = {
     {
       activityAt: 2000,
       attachments: [],
+      bcc: [],
       cc: [],
       direction: "outbound" as const,
       hasHtmlBody: true,
@@ -117,6 +119,34 @@ describe(ThreadView, () => {
         .getByRole("link", { name: "Close conversation" })
         .getAttribute("href")
     ).toBe("/mail/labels/work?read=unread&delivery=delivery-1");
+  });
+
+  it("renders each structured address through the contact trigger", () => {
+    const rendered: string[] = [];
+    render(
+      <ThreadView
+        data={thread}
+        filters={{}}
+        mailboxId="primary"
+        onClose={vi.fn<() => void>()}
+        renderContactAddress={(address, label) => {
+          rendered.push(address.address);
+          return <button type="button">{label}</button>;
+        }}
+        selection={{ folder: "inbox" }}
+      />
+    );
+
+    expect(rendered).toStrictEqual([
+      "sender@example.test",
+      "owner@example.test",
+      "owner@example.test",
+    ]);
+    expect(
+      screen.getByRole("button", {
+        name: "Sender <sender@example.test>",
+      })
+    ).toBeTruthy();
   });
 
   it("closes a conversation without a document navigation", () => {

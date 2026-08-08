@@ -507,6 +507,10 @@ const seedMailbox = (database: DatabaseSync) => {
       (operation_id, operation_kind, request_key, resource_id, result_payload, created_at) VALUES
       ('operation-1', 'draft.update', ' {"request":"exact", "spaces": true} ', 'draft-active', ' {"result":"exact", "version":5} ', 2200),
       ('operation-2', 'message.move', 'request-key:exact:02', 'inbound-active', '{"folderId":"custom-project","version":3}', 2300);
+
+    INSERT INTO saved_contact
+      (user_id, normalized_address, address, display_name, created_at, updated_at, version) VALUES
+      ('private-user', 'saved@example.test', 'saved@example.test', 'Private Saved Name', 2100, 2200, 2);
   `);
 
   seedOutboundDeliveries(database);
@@ -1114,7 +1118,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
     rmSync(directory, { force: true, recursive: true });
   });
 
-  it("restores schema v19, every authoritative row, FTS, and exact blob state to the same mailbox", async () => {
+  it("restores schema v20, every authoritative row, FTS, and exact blob state to the same mailbox", async () => {
     const targetPath = path.join(directory, "restored.sqlite");
     const destinationObjects = new InMemoryRehearsalObjectDestination();
 
@@ -1125,8 +1129,8 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       targetPath,
     });
     expect(evidence.restoreOutcome).toBe("restored");
-    expect(evidence.schemaVersion).toBe(19);
-    expect(archive.manifest.schemaVersion).toBe(19);
+    expect(evidence.schemaVersion).toBe(20);
+    expect(archive.manifest.schemaVersion).toBe(20);
 
     const restored = new DatabaseSync(targetPath);
     try {
@@ -1198,6 +1202,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
         "outbound_delivery_archive_recipient_update_check",
         "outbound_delivery_status_send_idx",
         "rule_application_rule_applied_idx",
+        "saved_contact_user_updated_idx",
       ]);
 
       const search = (term: string) =>
@@ -1224,7 +1229,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       ).toStrictEqual([]);
 
       const beforeIdempotentMigration = canonicalMailboxRows(restored);
-      expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(19);
+      expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(20);
       expect(canonicalMailboxRows(restored)).toStrictEqual(
         beforeIdempotentMigration
       );
@@ -1306,7 +1311,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
     }
   });
 
-  it("verifies an exact v13 archive, migrates it to v19, and preserves a null private archive snapshot", async () => {
+  it("verifies an exact v13 archive, migrates it to v20, and preserves a null private archive snapshot", async () => {
     const v13Path = path.join(directory, "v13-source.sqlite");
     const v13Source = new DatabaseSync(v13Path);
     let v13Archive: LocalMailboxRestoreArchive | undefined;
@@ -1325,7 +1330,8 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
         DROP TRIGGER contact_search_au;
         DROP TABLE contact_search;
         DROP TABLE contact;
-        DELETE FROM mailbox_schema_migration WHERE version IN (14, 15, 16, 17, 18, 19);
+        DROP TABLE saved_contact;
+        DELETE FROM mailbox_schema_migration WHERE version IN (14, 15, 16, 17, 18, 19, 20);
       `);
       v13Archive = await captureLocalMailboxRestoreArchive({
         archiveDirectory: directory,
@@ -1352,7 +1358,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       });
       expect(retryEvidence).toMatchObject({
         restoreOutcome: "already-restored",
-        schemaVersion: 19,
+        schemaVersion: 20,
       });
 
       const restored = new DatabaseSync(targetPath);
@@ -1364,7 +1370,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
             )
             .all()
             .map((row) => row.version)
-        ).toStrictEqual(Array.from({ length: 19 }, (_, index) => index + 1));
+        ).toStrictEqual(Array.from({ length: 20 }, (_, index) => index + 1));
         expect(
           restored
             .prepare(
@@ -1392,7 +1398,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
           "outbound_delivery_archive_recipient_insert_check",
           "outbound_delivery_archive_recipient_update_check",
         ]);
-        expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(19);
+        expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(20);
         expect(restored.prepare("PRAGMA integrity_check").get()).toMatchObject({
           integrity_check: "ok",
         });
@@ -1447,7 +1453,8 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
         DROP TRIGGER contact_search_au;
         DROP TABLE contact_search;
         DROP TABLE contact;
-        DELETE FROM mailbox_schema_migration WHERE version IN (15, 16, 17, 18, 19);
+        DROP TABLE saved_contact;
+        DELETE FROM mailbox_schema_migration WHERE version IN (15, 16, 17, 18, 19, 20);
       `);
       v14Archive = await captureLocalMailboxRestoreArchive({
         archiveDirectory: directory,
@@ -1467,7 +1474,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       });
       expect(evidence).toMatchObject({
         restoreOutcome: "restored",
-        schemaVersion: 19,
+        schemaVersion: 20,
       });
 
       const restored = new DatabaseSync(targetPath);
@@ -1499,7 +1506,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
             )
             .get()?.archive_recipient
         ).toBe("Private.Archive@example.net");
-        expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(19);
+        expect(applyMailboxMigrations(makeMigrationStorage(restored))).toBe(20);
       } finally {
         restored.close();
       }
@@ -1534,7 +1541,8 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
         DROP TRIGGER contact_search_au;
         DROP TABLE contact_search;
         DROP TABLE contact;
-        DELETE FROM mailbox_schema_migration WHERE version IN (16, 17, 18, 19);
+        DROP TABLE saved_contact;
+        DELETE FROM mailbox_schema_migration WHERE version IN (16, 17, 18, 19, 20);
       `);
       v15Archive = await captureLocalMailboxRestoreArchive({
         archiveDirectory: directory,
@@ -1553,7 +1561,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       });
       expect(evidence).toMatchObject({
         restoreOutcome: "restored",
-        schemaVersion: 19,
+        schemaVersion: 20,
       });
 
       const restored = new DatabaseSync(targetPath, { readOnly: true });
@@ -2325,7 +2333,7 @@ describe("SAFE-015 local mailbox logical/physical restore rehearsal", () => {
       mode: "local-rehearsal",
       orphanInFlightObjectCount: 1,
       restoreOutcome: "restored",
-      schemaVersion: 19,
+      schemaVersion: 20,
       sqliteRowsSha256: expect.stringMatching(/^[a-f0-9]{64}$/u),
       limitations: {
         cloudflare: "not-exercised",

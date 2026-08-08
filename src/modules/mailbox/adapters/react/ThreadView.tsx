@@ -11,6 +11,7 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import type { ReactNode } from "react";
 
 import type { MailboxThreadResult } from "#/modules/mailbox/application/MailboxMessageReading";
 import { Alert } from "@/components/ui/alert";
@@ -30,6 +31,13 @@ import { SandboxedMessageHtml } from "./SandboxedMessageHtml";
 
 type ThreadData = Schema.Codec.Encoded<typeof MailboxThreadResult>;
 const ignoreReply = (_messageId: string) => null;
+const plainContactAddress = (_address: MailAddressShape, label: ReactNode) =>
+  label;
+
+interface MailAddressShape {
+  readonly address: string;
+  readonly displayName?: string;
+}
 
 const messageDate = new Intl.DateTimeFormat("en-US", {
   dateStyle: "medium",
@@ -414,6 +422,7 @@ export function ThreadView({
   onClose,
   onPreviewAccessFailure,
   onReply = ignoreReply,
+  renderContactAddress = plainContactAddress,
   replyError,
   replyingMessageId,
   selection,
@@ -429,6 +438,10 @@ export function ThreadView({
     readonly retryable: boolean;
   };
   readonly replyingMessageId?: string;
+  readonly renderContactAddress?: (
+    address: MailAddressShape,
+    label: ReactNode
+  ) => ReactNode;
   readonly selection: MailboxViewSelection;
 }) {
   const participants = data.thread.participants ?? [
@@ -438,6 +451,7 @@ export function ThreadView({
           ...(message.sender === undefined ? [] : [message.sender]),
           ...message.to,
           ...message.cc,
+          ...message.bcc,
         ])
         .map((address) => [address.address, address])
     ).values(),
@@ -507,17 +521,65 @@ export function ThreadView({
                         : messageAuthor(message).slice(0, 2).toUpperCase()}
                     </span>
                     <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-extrabold">
-                        {outbound ? "You" : messageAuthor(message)}
+                      <p className="flex min-w-0 items-center text-sm font-extrabold">
+                        {outbound || message.sender === undefined
+                          ? outbound
+                            ? "You"
+                            : "Unknown sender"
+                          : renderContactAddress(
+                              message.sender,
+                              messageAuthor(message)
+                            )}
                       </p>
-                      <p className="mt-1 truncate text-[0.68rem] text-[var(--sea-ink-soft)]">
+                      <p className="mt-1 flex min-w-0 items-center gap-1 overflow-hidden text-[0.68rem] text-[var(--sea-ink-soft)]">
                         To{" "}
-                        {message.to.map(addressText).join(", ") ||
-                          "undisclosed"}
+                        {message.to.length === 0
+                          ? "undisclosed"
+                          : message.to.map((address, index) => (
+                              <span
+                                className="inline-flex min-w-0 items-center"
+                                key={`${address.address}:${index}`}
+                              >
+                                {index === 0 ? null : ",\u00A0"}
+                                {renderContactAddress(
+                                  address,
+                                  addressText(address)
+                                )}
+                              </span>
+                            ))}
                       </p>
                       {message.cc.length > 0 ? (
-                        <p className="mt-0.5 truncate text-[0.68rem] text-[var(--sea-ink-soft)]">
-                          Cc {message.cc.map(addressText).join(", ")}
+                        <p className="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden text-[0.68rem] text-[var(--sea-ink-soft)]">
+                          Cc{" "}
+                          {message.cc.map((address, index) => (
+                            <span
+                              className="inline-flex min-w-0 items-center"
+                              key={`${address.address}:${index}`}
+                            >
+                              {index === 0 ? null : ",\u00A0"}
+                              {renderContactAddress(
+                                address,
+                                addressText(address)
+                              )}
+                            </span>
+                          ))}
+                        </p>
+                      ) : null}
+                      {message.bcc.length > 0 ? (
+                        <p className="mt-0.5 flex min-w-0 items-center gap-1 overflow-hidden text-[0.68rem] text-[var(--sea-ink-soft)]">
+                          Bcc{" "}
+                          {message.bcc.map((address, index) => (
+                            <span
+                              className="inline-flex min-w-0 items-center"
+                              key={`${address.address}:${index}`}
+                            >
+                              {index === 0 ? null : ",\u00A0"}
+                              {renderContactAddress(
+                                address,
+                                addressText(address)
+                              )}
+                            </span>
+                          ))}
                         </p>
                       ) : null}
                     </div>

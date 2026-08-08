@@ -1,8 +1,13 @@
 import * as Schema from "effect/Schema";
 
 import {
+  ContactDetail,
   ContactSearchResult,
-  SearchContactsInput,
+  RemoveContactResult,
+  TrustedGetContactInput,
+  TrustedListContactsInput,
+  TrustedRemoveContactCommand,
+  TrustedSaveContactCommand,
 } from "#/modules/mailbox/domain/MailboxContact";
 import {
   CreateFolderInput,
@@ -94,6 +99,9 @@ export const MailboxDomainErrorDto = Schema.Struct({
     "list-messages",
     "search-messages",
     "search-contacts",
+    "get-contact",
+    "save-contact",
+    "remove-contact",
     "get-attachment",
     "get-message",
     "get-thread",
@@ -137,6 +145,7 @@ export const MailboxDomainErrorDto = Schema.Struct({
       "draft",
       "inbound",
       "outbound",
+      "contact",
     ])
   ),
   resourceId: Schema.optional(Schema.String),
@@ -239,7 +248,19 @@ export const MailDataRpcRequest = Schema.Union([
   }),
   Schema.Struct({
     _tag: Schema.Literal("SearchContacts"),
-    input: SearchContactsInput,
+    input: TrustedListContactsInput,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("GetContact"),
+    input: TrustedGetContactInput,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("SaveContact"),
+    input: TrustedSaveContactCommand,
+  }),
+  Schema.Struct({
+    _tag: Schema.Literal("RemoveContact"),
+    input: TrustedRemoveContactCommand,
   }),
   Schema.Struct({ _tag: Schema.Literal("GetMessage"), input: GetMessageInput }),
   Schema.Struct({
@@ -353,6 +374,12 @@ export const MailDataRpcResponse = Schema.Union([
   Schema.Struct({
     _tag: Schema.Literal("ContactsSearched"),
     value: ContactSearchResult,
+  }),
+  Schema.Struct({ _tag: Schema.Literal("ContactFound"), value: ContactDetail }),
+  Schema.Struct({ _tag: Schema.Literal("ContactSaved"), value: ContactDetail }),
+  Schema.Struct({
+    _tag: Schema.Literal("ContactRemoved"),
+    value: RemoveContactResult,
   }),
   Schema.Struct({
     _tag: Schema.Literal("MessageFound"),
@@ -511,6 +538,21 @@ export const mailDataRequestMetadataByTag = {
     operation: "search-contacts",
     kind: "read",
     responseTag: "ContactsSearched",
+  },
+  GetContact: {
+    operation: "get-contact",
+    kind: "read",
+    responseTag: "ContactFound",
+  },
+  SaveContact: {
+    operation: "save-contact",
+    kind: "write",
+    responseTag: "ContactSaved",
+  },
+  RemoveContact: {
+    operation: "remove-contact",
+    kind: "write",
+    responseTag: "ContactRemoved",
   },
   GetMessage: {
     operation: "get-message",

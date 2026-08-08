@@ -934,6 +934,49 @@ export const contact = sqliteTable(
   ]
 );
 
+export const savedContact = sqliteTable(
+  "saved_contact",
+  {
+    userId: text("user_id").notNull(),
+    normalizedAddress: text("normalized_address").notNull(),
+    address: text("address").notNull(),
+    displayName: text("display_name"),
+    createdAt: integer("created_at").notNull(),
+    updatedAt: integer("updated_at").notNull(),
+    version: integer("version").notNull().default(1),
+  },
+  (t) => [
+    primaryKey({ columns: [t.userId, t.normalizedAddress] }),
+    check(
+      "saved_contact_user_id_check",
+      sql`length(${t.userId}) between 1 and 128 and ${t.userId} = trim(${t.userId})`
+    ),
+    check(
+      "saved_contact_normalized_address_check",
+      sql`length(${t.normalizedAddress}) between 3 and 320 and ${t.normalizedAddress} = trim(${t.normalizedAddress})`
+    ),
+    check(
+      "saved_contact_address_check",
+      sql`length(${t.address}) between 3 and 320 and ${t.address} = trim(${t.address})`
+    ),
+    check(
+      "saved_contact_display_name_check",
+      sql`${t.displayName} is null or length(${t.displayName}) between 1 and 200`
+    ),
+    check("saved_contact_created_at_check", sql`${t.createdAt} >= 0`),
+    check(
+      "saved_contact_updated_at_check",
+      sql`${t.updatedAt} >= ${t.createdAt}`
+    ),
+    check("saved_contact_version_check", sql`${t.version} >= 1`),
+    index("saved_contact_user_updated_idx").on(
+      t.userId,
+      desc(t.updatedAt),
+      t.normalizedAddress
+    ),
+  ]
+);
+
 export const mailboxSchema = {
   mailboxSchemaMigration,
   mailboxMetadata,
@@ -952,6 +995,7 @@ export const mailboxSchema = {
   messageLabel,
   outboundDelivery,
   contact,
+  savedContact,
 };
 
 export const mailboxRelations = defineRelations(mailboxSchema, (r) => ({

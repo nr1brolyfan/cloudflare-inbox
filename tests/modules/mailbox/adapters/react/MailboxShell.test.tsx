@@ -87,6 +87,7 @@ describe(MailboxShell, () => {
     const onSettingsNavigate = vi.fn<() => void>();
     render(
       <MailboxShell
+        contactsSelected={false}
         folders={folders}
         labels={labels}
         mailboxAddress="inbox@example.test"
@@ -94,6 +95,7 @@ describe(MailboxShell, () => {
         onNavigate={vi.fn<
           (selection: { folder?: string; label?: string }) => void
         >()}
+        onContactsNavigate={vi.fn<() => void>()}
         onPrefetch={vi.fn<
           (selection: { folder?: string; label?: string }) => void
         >()}
@@ -115,11 +117,48 @@ describe(MailboxShell, () => {
     expect(onSettingsNavigate).toHaveBeenCalledOnce();
   });
 
+  it("navigates to the private contacts workspace", () => {
+    const onContactsNavigate = vi.fn<() => void>();
+    render(
+      <MailboxShell
+        contactsSelected
+        folders={folders}
+        isSigningOut={false}
+        labels={labels}
+        mailboxAddress="inbox@example.test"
+        mailboxName="Primary"
+        onContactsNavigate={onContactsNavigate}
+        onNavigate={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
+        onPrefetch={vi.fn<
+          (selection: { folder?: string; label?: string }) => void
+        >()}
+        onSettingsNavigate={vi.fn<() => void>()}
+        onSignOut={vi.fn<() => void>()}
+        principalLabel="user-a"
+        settingsSelected={false}
+        viewTitle="Contacts"
+      >
+        <div>Contacts workspace</div>
+      </MailboxShell>
+    );
+
+    const contacts = screen.getByRole("link", { name: "Contacts" });
+    expect({
+      current: contacts.getAttribute("aria-current"),
+      href: contacts.getAttribute("href"),
+    }).toStrictEqual({ current: "page", href: "/mail/contacts" });
+    fireEvent.click(contacts);
+    expect(onContactsNavigate).toHaveBeenCalledOnce();
+  });
+
   it("renders the mailbox chrome and workspace content", () => {
     const signOut = vi.fn<() => void>();
 
     render(
       <MailboxShell
+        contactsSelected={false}
         folders={folders}
         labels={labels}
         mailboxAddress="inbox@example.com"
@@ -129,6 +168,7 @@ describe(MailboxShell, () => {
         onNavigate={vi.fn<
           (selection: { folder?: string; label?: string }) => void
         >()}
+        onContactsNavigate={vi.fn<() => void>()}
         onPrefetch={vi.fn<
           (selection: { folder?: string; label?: string }) => void
         >()}
@@ -193,6 +233,7 @@ describe(MailboxShell, () => {
       vi.fn<(selection: { folder?: string; label?: string }) => void>();
     render(
       <MailboxShell
+        contactsSelected={false}
         folders={folders}
         labels={labels}
         mailboxAddress="inbox@example.com"
@@ -200,6 +241,7 @@ describe(MailboxShell, () => {
         principalLabel="user-123"
         isSigningOut={false}
         onNavigate={navigate}
+        onContactsNavigate={vi.fn<() => void>()}
         onPrefetch={prefetch}
         onSignOut={vi.fn<() => void>()}
         onSettingsNavigate={vi.fn<() => void>()}
@@ -230,6 +272,7 @@ describe(MailboxShell, () => {
       vi.fn<(selection: { folder?: string; label?: string }) => void>();
     render(
       <MailboxShell
+        contactsSelected={false}
         folders={folders}
         labels={[]}
         mailboxAddress="inbox@example.com"
@@ -237,6 +280,7 @@ describe(MailboxShell, () => {
         principalLabel="user-123"
         isSigningOut={false}
         onNavigate={navigate}
+        onContactsNavigate={vi.fn<() => void>()}
         onPrefetch={vi.fn<
           (selection: { folder?: string; label?: string }) => void
         >()}
@@ -296,6 +340,7 @@ describe(MailboxShell, () => {
     const signOut = vi.fn<() => void>();
     render(
       <MailboxShell
+        contactsSelected={false}
         folders={folders}
         labels={labels}
         mailboxAddress="inbox@example.com"
@@ -305,6 +350,7 @@ describe(MailboxShell, () => {
         onNavigate={vi.fn<
           (selection: { folder?: string; label?: string }) => void
         >()}
+        onContactsNavigate={vi.fn<() => void>()}
         onPrefetch={vi.fn<
           (selection: { folder?: string; label?: string }) => void
         >()}

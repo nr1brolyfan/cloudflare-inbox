@@ -18,14 +18,16 @@ function MailLayoutRoute() {
     select: (state) => state.location.pathname,
   });
   const settingsMode = pathname === "/mail/settings";
+  const contactsMode = pathname === "/mail/contacts";
 
   return (
     <MailboxApplication
       search={mailboxSearchForPath(
-        settingsMode ? "/mail/inbox" : pathname,
+        settingsMode || contactsMode ? "/mail/inbox" : pathname,
         routeSearch
       )}
       settingsMode={settingsMode}
+      contactsMode={contactsMode}
     />
   );
 }

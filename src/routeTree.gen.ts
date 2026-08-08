@@ -21,6 +21,7 @@ import { Route as MailSentRouteImport } from './routes/mail.sent'
 import { Route as MailScheduledRouteImport } from './routes/mail.scheduled'
 import { Route as MailInboxRouteImport } from './routes/mail.inbox'
 import { Route as MailDraftsRouteImport } from './routes/mail.drafts'
+import { Route as MailContactsRouteImport } from './routes/mail.contacts'
 import { Route as MailComposeRouteImport } from './routes/mail.compose'
 import { Route as MailArchiveRouteImport } from './routes/mail.archive'
 import { Route as AuthSplatRouteImport } from './routes/auth/$'
@@ -97,6 +98,11 @@ const MailInboxRoute = MailInboxRouteImport.update({
 const MailDraftsRoute = MailDraftsRouteImport.update({
   id: '/drafts',
   path: '/drafts',
+  getParentRoute: () => MailRoute,
+} as any)
+const MailContactsRoute = MailContactsRouteImport.update({
+  id: '/contacts',
+  path: '/contacts',
   getParentRoute: () => MailRoute,
 } as any)
 const MailComposeRoute = MailComposeRouteImport.update({
@@ -214,6 +220,7 @@ export interface FileRoutesByFullPath {
   '/auth/$': typeof AuthSplatRoute
   '/mail/archive': typeof MailArchiveRoute
   '/mail/compose': typeof MailComposeRoute
+  '/mail/contacts': typeof MailContactsRoute
   '/mail/drafts': typeof MailDraftsRouteWithChildren
   '/mail/inbox': typeof MailInboxRoute
   '/mail/scheduled': typeof MailScheduledRoute
@@ -244,6 +251,7 @@ export interface FileRoutesByTo {
   '/auth/$': typeof AuthSplatRoute
   '/mail/archive': typeof MailArchiveRoute
   '/mail/compose': typeof MailComposeRoute
+  '/mail/contacts': typeof MailContactsRoute
   '/mail/drafts': typeof MailDraftsRouteWithChildren
   '/mail/inbox': typeof MailInboxRoute
   '/mail/scheduled': typeof MailScheduledRoute
@@ -276,6 +284,7 @@ export interface FileRoutesById {
   '/auth/$': typeof AuthSplatRoute
   '/mail/archive': typeof MailArchiveRoute
   '/mail/compose': typeof MailComposeRoute
+  '/mail/contacts': typeof MailContactsRoute
   '/mail/drafts': typeof MailDraftsRouteWithChildren
   '/mail/inbox': typeof MailInboxRoute
   '/mail/scheduled': typeof MailScheduledRoute
@@ -309,6 +318,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/mail/archive'
     | '/mail/compose'
+    | '/mail/contacts'
     | '/mail/drafts'
     | '/mail/inbox'
     | '/mail/scheduled'
@@ -339,6 +349,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/mail/archive'
     | '/mail/compose'
+    | '/mail/contacts'
     | '/mail/drafts'
     | '/mail/inbox'
     | '/mail/scheduled'
@@ -370,6 +381,7 @@ export interface FileRouteTypes {
     | '/auth/$'
     | '/mail/archive'
     | '/mail/compose'
+    | '/mail/contacts'
     | '/mail/drafts'
     | '/mail/inbox'
     | '/mail/scheduled'
@@ -491,6 +503,13 @@ declare module '@tanstack/react-router' {
       path: '/drafts'
       fullPath: '/mail/drafts'
       preLoaderRoute: typeof MailDraftsRouteImport
+      parentRoute: typeof MailRoute
+    }
+    '/mail/contacts': {
+      id: '/mail/contacts'
+      path: '/contacts'
+      fullPath: '/mail/contacts'
+      preLoaderRoute: typeof MailContactsRouteImport
       parentRoute: typeof MailRoute
     }
     '/mail/compose': {
@@ -630,6 +649,7 @@ const MailDraftsRouteWithChildren = MailDraftsRoute._addFileChildren(
 interface MailRouteChildren {
   MailArchiveRoute: typeof MailArchiveRoute
   MailComposeRoute: typeof MailComposeRoute
+  MailContactsRoute: typeof MailContactsRoute
   MailDraftsRoute: typeof MailDraftsRouteWithChildren
   MailInboxRoute: typeof MailInboxRoute
   MailScheduledRoute: typeof MailScheduledRoute
@@ -645,6 +665,7 @@ interface MailRouteChildren {
 const MailRouteChildren: MailRouteChildren = {
   MailArchiveRoute: MailArchiveRoute,
   MailComposeRoute: MailComposeRoute,
+  MailContactsRoute: MailContactsRoute,
   MailDraftsRoute: MailDraftsRouteWithChildren,
   MailInboxRoute: MailInboxRoute,
   MailScheduledRoute: MailScheduledRoute,

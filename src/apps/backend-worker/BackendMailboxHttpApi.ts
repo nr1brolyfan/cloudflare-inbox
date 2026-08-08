@@ -62,9 +62,14 @@ import {
   ThreadId,
 } from "#/modules/mailbox/domain/Mailbox";
 import {
+  ContactDetail,
   ContactSearchLimit,
   ContactSearchResult,
   ContactSearchTerm,
+  GetContactInput,
+  RemoveContactCommand,
+  RemoveContactResult,
+  SaveContactCommand,
 } from "#/modules/mailbox/domain/MailboxContact";
 import {
   DraftAttachmentUploadResult,
@@ -144,7 +149,11 @@ export const MailboxMessageViewQuery = Schema.Struct({
 );
 export const MailboxContactSearchQuery = Schema.Struct({
   limit: Schema.optional(ContactSearchLimit),
+  mode: Schema.optional(Schema.Literals(["saved", "suggested"])),
   q: Schema.optional(ContactSearchTerm),
+});
+export const MailboxContactDetailQuery = Schema.Struct({
+  address: GetContactInput.fields.address,
 });
 export const MailboxThreadViewQuery = Schema.Struct({
   folder: Schema.optional(FolderId),
@@ -223,6 +232,48 @@ export const SearchMailboxContactsEndpoint = HttpApiEndpoint.get(
     params: MailboxParams,
     query: MailboxContactSearchQuery,
     success: ContactSearchResult,
+  }
+);
+
+export const GetMailboxContactEndpoint = HttpApiEndpoint.get(
+  MailboxOperation.getContact,
+  "/api/mailboxes/:mailboxId/contacts/detail",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    query: MailboxContactDetailQuery,
+    success: ContactDetail,
+  }
+);
+
+export const SaveMailboxContactEndpoint = HttpApiEndpoint.post(
+  MailboxOperation.saveContact,
+  "/api/mailboxes/:mailboxId/contacts",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    payload: Schema.Struct({
+      displayName: SaveContactCommand.fields.displayName,
+      email: SaveContactCommand.fields.email,
+      expectedVersion: SaveContactCommand.fields.expectedVersion,
+      operationId: SaveContactCommand.fields.operationId,
+    }),
+    success: ContactDetail,
+  }
+);
+
+export const RemoveMailboxContactEndpoint = HttpApiEndpoint.delete(
+  MailboxOperation.removeContact,
+  "/api/mailboxes/:mailboxId/contacts",
+  {
+    error: MailboxErrors,
+    params: MailboxParams,
+    payload: Schema.Struct({
+      email: RemoveContactCommand.fields.email,
+      expectedVersion: RemoveContactCommand.fields.expectedVersion,
+      operationId: RemoveContactCommand.fields.operationId,
+    }),
+    success: RemoveContactResult,
   }
 );
 
@@ -524,6 +575,7 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     CreateMailboxDraftEndpoint,
     CreateMailboxReplyDraftEndpoint,
     GetMailboxDraftEndpoint,
+    GetMailboxContactEndpoint,
     GetMailboxContactPreferencesEndpoint,
     GetMailboxOutboundDeliveryEndpoint,
     GetMailboxThreadEndpoint,
@@ -534,6 +586,8 @@ export class MailboxGroup extends HttpApiGroup.make("mailboxes")
     ListMailboxDraftsEndpoint,
     ListMailboxMessagesEndpoint,
     SearchMailboxContactsEndpoint,
+    SaveMailboxContactEndpoint,
+    RemoveMailboxContactEndpoint,
     ReadMailboxAdministrationOperationEndpoint,
     RenameMailboxEndpoint,
     ReserveDraftAttachmentEndpoint,

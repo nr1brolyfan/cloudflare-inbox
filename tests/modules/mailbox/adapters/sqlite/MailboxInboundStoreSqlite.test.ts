@@ -29,7 +29,12 @@ import {
   MailboxId,
   MessageId,
 } from "#/modules/mailbox/domain/Mailbox";
-import { SearchContactsInput } from "#/modules/mailbox/domain/MailboxContact";
+import {
+  TrustedGetContactInput,
+  TrustedListContactsInput,
+  TrustedRemoveContactCommand,
+  TrustedSaveContactCommand,
+} from "#/modules/mailbox/domain/MailboxContact";
 import { MailboxDomainError } from "#/modules/mailbox/domain/MailboxError";
 import {
   CommitInboundMessageV1,
@@ -293,29 +298,35 @@ describe("MailboxDO SQLite inbound commit", () => {
           const contacts = yield* MailboxContactStore;
           const search = (query: string) =>
             contacts.searchContacts(
-              Schema.decodeUnknownSync(SearchContactsInput)({
+              Schema.decodeUnknownSync(TrustedListContactsInput)({
                 limit: 12,
                 mailboxId,
+                mode: "suggested",
                 query,
+                userId: "user-a",
               })
             );
           const sender = yield* search("send");
           const reply = yield* search("repl");
           const participant = yield* search("part");
           const participantAfterEnable = yield* contacts.searchContacts(
-            Schema.decodeUnknownSync(SearchContactsInput)({
+            Schema.decodeUnknownSync(TrustedListContactsInput)({
               allParticipantsEnabledAt: 2000,
               limit: 12,
               mailboxId,
+              mode: "suggested",
               query: "part",
+              userId: "user-a",
             })
           );
           const participantBeforeEnable = yield* contacts.searchContacts(
-            Schema.decodeUnknownSync(SearchContactsInput)({
+            Schema.decodeUnknownSync(TrustedListContactsInput)({
               allParticipantsEnabledAt: 2001,
               limit: 12,
               mailboxId,
+              mode: "suggested",
               query: "part",
+              userId: "user-a",
             })
           );
           const db = yield* MailboxDatabase;
@@ -367,6 +378,115 @@ describe("MailboxDO SQLite inbound commit", () => {
       beforeEnable: [],
       hidden: [],
     });
+  });
+
+  it("keeps saved overlays private and restores evidence after unsaving", async () => {
+    const runtime = makeRuntime();
+    const result = await Effect.runPromise(
+      Effect.scoped(
+        Effect.gen(function* () {
+          yield* initializeInbox;
+          yield* commit();
+          const contacts = yield* MailboxContactStore;
+          const savedWithoutEvidence = yield* contacts.saveContact(
+            Schema.decodeUnknownSync(TrustedSaveContactCommand)({
+              email: "ghost@example.test",
+              mailboxId,
+              operationId: "save-ghost",
+              userId: "user-a",
+            })
+          );
+          const saved = yield* contacts.saveContact(
+            Schema.decodeUnknownSync(TrustedSaveContactCommand)({
+              displayName: "Manual Sender",
+              email: "sender@EXAMPLE.TEST",
+              mailboxId,
+              operationId: "save-sender",
+              userId: "user-a",
+            })
+          );
+          const privateList = yield* contacts.searchContacts(
+            Schema.decodeUnknownSync(TrustedListContactsInput)({
+              limit: 100,
+              mailboxId,
+              mode: "saved",
+              userId: "user-a",
+            })
+          );
+          const otherUserList = yield* contacts.searchContacts(
+            Schema.decodeUnknownSync(TrustedListContactsInput)({
+              limit: 100,
+              mailboxId,
+              mode: "saved",
+              userId: "user-b",
+            })
+          );
+          const detail = yield* contacts.getContact(
+            Schema.decodeUnknownSync(TrustedGetContactInput)({
+              address: "sender@example.test",
+              mailboxId,
+              userId: "user-a",
+            })
+          );
+          const removed = yield* contacts.removeContact(
+            Schema.decodeUnknownSync(TrustedRemoveContactCommand)({
+              email: "sender@example.test",
+              expectedVersion: saved.version,
+              mailboxId,
+              operationId: "remove-sender",
+              userId: "user-a",
+            })
+          );
+          const suggested = yield* contacts.searchContacts(
+            Schema.decodeUnknownSync(TrustedListContactsInput)({
+              limit: 12,
+              mailboxId,
+              mode: "suggested",
+              query: "send",
+              userId: "user-a",
+            })
+          );
+          return {
+            detail,
+            otherUserList,
+            privateList,
+            removed,
+            saved,
+            savedWithoutEvidence,
+            suggested,
+          };
+        }).pipe(Effect.provide(testLive(runtime.service)))
+      )
+    );
+
+    expect(result.saved).toMatchObject({
+      displayName: "Manual Sender",
+      receivedCount: 1,
+      saved: true,
+      version: 1,
+    });
+    expect({
+      detail: result.detail,
+      other: result.otherUserList.contacts,
+      private: result.privateList.contacts,
+    }).toStrictEqual({
+      detail: result.saved,
+      other: [],
+      private: [result.savedWithoutEvidence, result.saved],
+    });
+    expect(result.savedWithoutEvidence).toMatchObject({
+      address: "ghost@example.test",
+      receivedCount: 0,
+      saved: true,
+      sentCount: 0,
+    });
+    expect(result.removed).toStrictEqual({
+      address: "sender@example.test",
+      removed: true,
+    });
+    expect(result.suggested.contacts).toMatchObject([
+      { address: "sender@example.test", saved: false },
+    ]);
   });
 
   it("replays a failed ingest with an attempt fence and stable Workflow ID", async () => {

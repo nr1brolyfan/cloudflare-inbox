@@ -18,6 +18,9 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "list-messages"
     | "search-messages"
     | "search-contacts"
+    | "get-contact"
+    | "save-contact"
+    | "remove-contact"
     | "get-attachment"
     | "get-message"
     | "get-thread"
@@ -58,7 +61,8 @@ export class MailboxDomainError extends Data.TaggedError("MailboxDomainError")<{
     | "thread"
     | "draft"
     | "inbound"
-    | "outbound";
+    | "outbound"
+    | "contact";
   readonly resourceId?: string;
   readonly expectedVersion?: Version;
   readonly actualVersion?: Version;
