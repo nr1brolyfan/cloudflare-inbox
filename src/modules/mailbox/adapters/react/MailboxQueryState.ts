@@ -224,3 +224,34 @@ export const reconcileMailboxMessageActionCaches = (
     }
   }
 };
+
+/** Applies the aggregate guarantee returned by a successful thread-read command. */
+export const reconcileMailboxThreadReadCaches = (
+  queryClient: QueryClient,
+  mailboxId: string,
+  threadId: string
+) => {
+  const threadQueries = queryClient.getQueriesData<{
+    readonly ok: boolean;
+    readonly thread?: ThreadData;
+  }>({ queryKey: ["mailbox", "thread"] });
+  for (const [queryKey, data] of threadQueries) {
+    if (
+      data?.ok === true &&
+      data.thread !== undefined &&
+      queryKey[3] === mailboxId &&
+      data.thread.thread.id === threadId
+    ) {
+      queryClient.setQueryData(queryKey, {
+        ...data,
+        thread: {
+          ...data.thread,
+          messages: data.thread.messages.map((message) =>
+            message.read ? message : { ...message, read: true }
+          ),
+          thread: { ...data.thread.thread, unreadCount: 0 },
+        },
+      });
+    }
+  }
+};

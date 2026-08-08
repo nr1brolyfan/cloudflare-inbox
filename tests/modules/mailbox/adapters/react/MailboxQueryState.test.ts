@@ -6,6 +6,7 @@ import {
   projectPendingMessageActions,
   projectPendingThreadActions,
   reconcileMailboxMessageActionCaches,
+  reconcileMailboxThreadReadCaches,
 } from "#/modules/mailbox/adapters/react/MailboxQueryState";
 import { MailboxMessageActionCommand } from "#/modules/mailbox/application/MailboxMessageActions";
 
@@ -311,6 +312,30 @@ describe("mailbox optimistic query state", () => {
       threadInvalidated: [false, false],
       threadUnread: [0, 0],
       unreadIds: ["message-a"],
+    });
+  });
+
+  it("clears stale aggregate unread state after an empty thread-read result", () => {
+    const queryClient = new QueryClient();
+    const threadKey = [
+      "mailbox",
+      "thread",
+      "session-1",
+      "primary",
+      "Folder",
+      "inbox",
+      "message-b",
+      "thread-shared",
+    ] as const;
+    queryClient.setQueryData(threadKey, { ok: true, thread });
+
+    reconcileMailboxThreadReadCaches(queryClient, "primary", "thread-shared");
+
+    expect(queryClient.getQueryData(threadKey)).toMatchObject({
+      thread: {
+        messages: [{ id: "message-b", read: true }],
+        thread: { id: "thread-shared", unreadCount: 0 },
+      },
     });
   });
 

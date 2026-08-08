@@ -77,6 +77,7 @@ import {
   projectPendingMessageActions,
   projectPendingThreadActions,
   reconcileMailboxMessageActionCaches,
+  reconcileMailboxThreadReadCaches,
 } from "#/modules/mailbox/adapters/react/MailboxQueryState";
 import { MailboxRealtime } from "#/modules/mailbox/adapters/react/MailboxRealtime";
 import {
@@ -758,13 +759,14 @@ function ConversationPane({
   const openedThread = thread.data?.thread.thread;
   useEffect(() => {
     if (
+      !thread.isFetching &&
       openedThread !== undefined &&
       openedThread.id === threadId &&
       openedThread.unreadCount > 0
     ) {
       markOpenedThreadRead(openedThread.id);
     }
-  }, [openedThread, threadId]);
+  }, [openedThread, thread.isFetching, threadId]);
   if (threadId === undefined) {
     return <NoThreadSelected />;
   }
@@ -1123,6 +1125,11 @@ function MailboxWorkspace({
         for (const changed of result.result.changed) {
           reconcileMailboxMessageActionCaches(queryClient, mailboxId, changed);
         }
+        reconcileMailboxThreadReadCaches(
+          queryClient,
+          mailboxId,
+          result.result.threadId
+        );
       } else {
         setThreadReadFailure({
           command,
@@ -1132,10 +1139,9 @@ function MailboxWorkspace({
             "The conversation could not be marked as read.",
         });
       }
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ["mailbox", "messages"] }),
-        queryClient.invalidateQueries({ queryKey: mailboxNavigationQueryKey }),
-      ]);
+      void queryClient.invalidateQueries({
+        queryKey: mailboxNavigationQueryKey,
+      });
     },
     onError: async (_error, command) => {
       setThreadReadFailure({

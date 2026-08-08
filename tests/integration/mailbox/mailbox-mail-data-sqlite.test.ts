@@ -958,6 +958,7 @@ describe("Mailbox mail data SQLite", () => {
             direction: "inbound" as const,
             subject: "Thread",
             recipientsJson: "[]",
+            receivedAt: index,
             snippet: "",
             activityAt: index,
             read: index === 101 ? 1 : 0,
@@ -982,6 +983,12 @@ describe("Mailbox mail data SQLite", () => {
           Schema.decodeUnknownSync(SetThreadReadInput)({
             mailboxId,
             operationId: "large-thread-read-empty-op",
+            threadId: "large-thread",
+          })
+        );
+        const reopened = yield* getThread(
+          Schema.decodeUnknownSync(GetThreadInput)({
+            mailboxId,
             threadId: "large-thread",
           })
         );
@@ -1019,6 +1026,7 @@ describe("Mailbox mail data SQLite", () => {
         });
         expect(replay).toStrictEqual(first);
         expect(empty.changed).toStrictEqual([]);
+        expect(reopened.thread.unreadCount).toBe(0);
         expect(missing).toMatchObject({
           reason: "not-found",
           resourceType: "thread",
